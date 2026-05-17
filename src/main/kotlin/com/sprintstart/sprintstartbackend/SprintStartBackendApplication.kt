@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstart_backend
+package com.sprintstart.sprintstartbackend
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -7,5 +7,5 @@ import org.springframework.boot.runApplication
 class SprintStartBackendApplication
 
 fun main(args: Array<String>) {
-	runApplication<SprintStartBackendApplication>(*args)
+    runApplication<SprintStartBackendApplication>(*args)
 }

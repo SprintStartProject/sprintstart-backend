@@ -2,7 +2,7 @@
 The following was discovered as part of building this project:
 
 * The JVM level was changed from '25' to '24' as the Kotlin version does not support Java 25 yet.
-* The original package name 'com.sprintstart.sprintstart-backend' is invalid and this project uses 'com.sprintstart.sprintstart_backend' instead.
+* The original package name 'com.sprintstart.sprintstart-backend' is invalid and this project uses 'com.sprintstart.sprintstartbackend' instead.
 
 # Getting Started
 
