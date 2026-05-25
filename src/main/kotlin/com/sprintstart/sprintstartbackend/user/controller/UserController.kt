@@ -9,9 +9,6 @@ import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import io.swagger.v3.oas.annotations.Operation
-import io.swagger.v3.oas.annotations.media.ArraySchema
-import io.swagger.v3.oas.annotations.media.Content
-import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
