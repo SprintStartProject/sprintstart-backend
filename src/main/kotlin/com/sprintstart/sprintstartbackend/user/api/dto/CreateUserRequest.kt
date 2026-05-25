@@ -1,6 +1,6 @@
-package com.sprintstart.sprintstartbackend.user.model.dto
+package com.sprintstart.sprintstartbackend.user.api.dto
 
-import com.sprintstart.sprintstartbackend.user.model.WorkingAreas
+import com.sprintstart.sprintstartbackend.user.api.enums.WorkingAreas
 
 data class CreateUserRequest(
     val username: String,

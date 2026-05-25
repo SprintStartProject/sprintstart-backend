@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
-import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.CreateUserRequest
+import com.sprintstart.sprintstartbackend.user.api.dto.CreateUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.PatchUserRequest
+import com.sprintstart.sprintstartbackend.user.api.dto.PatchUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.UpdateUserRequest
+import com.sprintstart.sprintstartbackend.user.api.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping

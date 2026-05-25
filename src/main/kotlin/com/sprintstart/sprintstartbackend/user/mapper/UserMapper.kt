@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.user.mapper
 
-import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.CreateUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.PatchUserResponse
+import com.sprintstart.sprintstartbackend.user.api.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 
 fun User.toCreateResponse(): CreateUserResponse {

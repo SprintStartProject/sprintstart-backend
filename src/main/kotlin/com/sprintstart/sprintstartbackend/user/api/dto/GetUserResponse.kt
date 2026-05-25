@@ -1,7 +1,7 @@
-package com.sprintstart.sprintstartbackend.user.model.dto
+package com.sprintstart.sprintstartbackend.user.api.dto
 
-import com.sprintstart.sprintstartbackend.user.model.Roles
-import com.sprintstart.sprintstartbackend.user.model.WorkingAreas
+import com.sprintstart.sprintstartbackend.user.api.enums.Roles
+import com.sprintstart.sprintstartbackend.user.api.enums.WorkingAreas
 import java.util.UUID
 
 data class GetUserResponse(

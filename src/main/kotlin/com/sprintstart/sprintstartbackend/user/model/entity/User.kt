@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.model.entity
 
-import com.sprintstart.sprintstartbackend.user.model.Roles
-import com.sprintstart.sprintstartbackend.user.model.WorkingAreas
+import com.sprintstart.sprintstartbackend.user.api.enums.Roles
+import com.sprintstart.sprintstartbackend.user.api.enums.WorkingAreas
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
