@@ -1,4 +1,7 @@
 spring:
+  config:
+    import: optional:file:./run.local.env[.properties]
+
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
