@@ -56,22 +56,6 @@ This file is used when running the backend locally
 
 The application uses these variables in `application.yml`:
 
-To load them into a terminal:
-
-For `Linux:`
-```bash
-set -a
-source run.local.env
-set +a
-```
-
-For `Windows: (CMD)`
-```bash
-set POSTGRES_DB=sprintstart
-set POSTGRES_USER=sprintstart
-set POSTGRES_PASSWORD=change-me
-```
-
 ## Run Database in Docker and Backend Locally
 
 Use this option during normal development when running the Spring Boot backend separately from the database.
