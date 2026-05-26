@@ -12,10 +12,7 @@ data class UpdateUserRequest(
     val firstname: String,
     @field:NotBlank
     val lastname: String,
-    @field:NotNull
     val primaryRole: Role,
-    @field:NotNull
     val secondaryRole: Role,
-    @field:NotNull
     val workingArea: WorkingArea,
 )

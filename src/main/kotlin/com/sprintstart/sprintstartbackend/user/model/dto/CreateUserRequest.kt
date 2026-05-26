@@ -11,6 +11,5 @@ data class CreateUserRequest(
     val firstname: String,
     @field:NotBlank
     val lastname: String,
-    @field:NotNull
     val workingArea: WorkingArea,
 )
