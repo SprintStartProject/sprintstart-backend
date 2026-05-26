@@ -46,6 +46,8 @@ dependencies {
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("com.h2database:h2")
+    testImplementation("io.mockk:mockk:1.14.6")
+    testImplementation("org.assertj:assertj-core:3.27.4")
 }
 
 dependencyManagement {
