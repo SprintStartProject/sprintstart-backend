@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.user.model.dto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 
 data class UpdateUserRequest(
     @field:NotBlank
@@ -11,10 +12,10 @@ data class UpdateUserRequest(
     val firstname: String,
     @field:NotBlank
     val lastname: String,
-    @field:NotBlank
+    @field:NotNull
     val primaryRole: Role,
-    @field:NotBlank
+    @field:NotNull
     val secondaryRole: Role,
-    @field:NotBlank
+    @field:NotNull
     val workingArea: WorkingArea,
 )
