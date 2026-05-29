@@ -11,3 +11,8 @@ spring:
     hibernate:
       ddl-auto: create-drop
     show-sql: true
+
+app:
+  upload:
+    directory: uploads
+    max-file-size-bytes: 10485760

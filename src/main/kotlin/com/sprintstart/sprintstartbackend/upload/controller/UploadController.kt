@@ -1,0 +1,51 @@
+package com.sprintstart.sprintstartbackend.upload.controller
+
+import com.sprintstart.sprintstartbackend.upload.model.dto.UploadArtifactResponse
+import com.sprintstart.sprintstartbackend.upload.service.UploadService
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
+import java.util.UUID
+
+@RestController
+@RequestMapping("/v1/uploads")
+class UploadController(
+
+    private val uploadService: UploadService,
+
+    ) {
+
+    @Operation(summary = "Upload markdown artifacts")
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Upload processed",
+            ),
+        ]
+    )
+    @PostMapping(
+        consumes = [MediaType.MULTIPART_FORM_DATA_VALUE]
+    )
+    fun upload(
+
+        @RequestPart("files")
+        files: List<MultipartFile>,
+
+        @RequestParam("uploaderId")
+        uploaderId: UUID,
+
+        ): ResponseEntity<List<UploadArtifactResponse>> {
+
+        val response = uploadService.upload(
+            files = files,
+            uploaderId = uploaderId,
+        )
+
+        return ResponseEntity.ok(response)
+    }
+}
