@@ -4,7 +4,6 @@ import org.springframework.web.multipart.MultipartFile
 import java.util.UUID
 
 interface ArtifactStorageService {
-
     fun store(
         file: MultipartFile,
         artifactId: UUID,

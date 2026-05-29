@@ -5,20 +5,19 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class MarkdownImageReferenceExtractorTest {
-
     private val extractor =
         MarkdownImageReferenceExtractor()
 
     @Test
     fun `should extract image references`() {
-
-        val markdown = """
+        val markdown =
+            """
             # Title
             
             ![](./img/logo.png)
             
             ![Diagram](../assets/test.webp)
-        """.trimIndent()
+            """.trimIndent()
 
         val result = extractor.extract(markdown)
 
@@ -33,14 +32,14 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `should return empty list when no images`() {
-
-        val markdown = """
+        val markdown =
+            """
             # Title
             
             Some text
             
             ## Subtitle
-        """.trimIndent()
+            """.trimIndent()
 
         val result = extractor.extract(markdown)
 

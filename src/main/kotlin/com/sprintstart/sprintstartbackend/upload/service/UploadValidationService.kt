@@ -6,12 +6,9 @@ import org.springframework.web.multipart.MultipartFile
 
 @Service
 class UploadValidationService(
-
     @Value("\${app.upload.max-file-size-bytes}")
     private val maxFileSizeBytes: Long,
-
-    ) {
-
+) {
     private val allowedExtensions = setOf(
         "md",
         "png",
@@ -21,7 +18,6 @@ class UploadValidationService(
     )
 
     fun validate(file: MultipartFile) {
-
         validateEmpty(file)
 
         validateSize(file)
@@ -32,23 +28,20 @@ class UploadValidationService(
     }
 
     private fun validateEmpty(file: MultipartFile) {
-
         if (file.isEmpty) {
             throw IllegalArgumentException("File is empty")
         }
     }
 
     private fun validateSize(file: MultipartFile) {
-
         if (file.size > maxFileSizeBytes) {
             throw IllegalArgumentException(
-                "File exceeds maximum allowed size"
+                "File exceeds maximum allowed size",
             )
         }
     }
 
     private fun validateFilename(file: MultipartFile) {
-
         val filename = file.originalFilename
             ?: throw IllegalArgumentException("Missing filename")
 
@@ -66,18 +59,18 @@ class UploadValidationService(
     }
 
     private fun validateExtension(file: MultipartFile) {
-
         val filename = file.originalFilename
             ?: throw IllegalArgumentException("Missing filename")
 
-        val extension = filename.substringAfterLast(
-            delimiter = ".",
-            missingDelimiterValue = "",
-        ).lowercase()
+        val extension = filename
+            .substringAfterLast(
+                delimiter = ".",
+                missingDelimiterValue = "",
+            ).lowercase()
 
         if (extension !in allowedExtensions) {
             throw IllegalArgumentException(
-                "Unsupported file extension: $extension"
+                "Unsupported file extension: $extension",
             )
         }
     }

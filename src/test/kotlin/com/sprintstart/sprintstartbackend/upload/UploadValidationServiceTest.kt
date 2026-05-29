@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockMultipartFile
 
 class UploadValidationServiceTest {
-
     private val validationService =
         UploadValidationService(
             maxFileSizeBytes = 1024 * 1024,
@@ -14,7 +13,6 @@ class UploadValidationServiceTest {
 
     @Test
     fun `should validate correct markdown file`() {
-
         val file = MockMultipartFile(
             "file",
             "intro.md",
@@ -27,7 +25,6 @@ class UploadValidationServiceTest {
 
     @Test
     fun `should reject unsupported extension`() {
-
         val file = MockMultipartFile(
             "file",
             "virus.exe",
@@ -44,7 +41,6 @@ class UploadValidationServiceTest {
 
     @Test
     fun `should reject invalid filename`() {
-
         val file = MockMultipartFile(
             "file",
             "../secret.md",
@@ -61,7 +57,6 @@ class UploadValidationServiceTest {
 
     @Test
     fun `should reject oversized file`() {
-
         val bytes = ByteArray(2 * 1024 * 1024)
 
         val file = MockMultipartFile(

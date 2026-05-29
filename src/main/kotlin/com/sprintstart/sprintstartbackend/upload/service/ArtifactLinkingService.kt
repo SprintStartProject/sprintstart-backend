@@ -8,18 +8,13 @@ import java.nio.file.Paths
 
 @Service
 class ArtifactLinkingService(
-
     private val artifactImageRepository: ArtifactImageRepository,
-
     private val extractor: MarkdownImageReferenceExtractor,
-
-    ) {
-
+) {
     fun linkMarkdownImages(
         markdownArtifacts: List<Pair<UploadedArtifact, String>>,
         uploadedArtifactsByFilename: Map<String, UploadedArtifact>,
     ) {
-
         markdownArtifacts.forEach { (artifact, markdownContent) ->
 
             val imagePaths = extractor.extract(markdownContent)
@@ -27,7 +22,8 @@ class ArtifactLinkingService(
             imagePaths.forEach { imagePath ->
 
                 val normalizedFilename =
-                    Paths.get(imagePath)
+                    Paths
+                        .get(imagePath)
                         .fileName
                         .toString()
 

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.upload.service
 
 import com.sprintstart.sprintstartbackend.upload.events.ArtifactUploadedEvent
 import com.sprintstart.sprintstartbackend.upload.model.dto.UploadArtifactResponse
+import com.sprintstart.sprintstartbackend.upload.model.dto.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
 import com.sprintstart.sprintstartbackend.upload.repository.UploadedArtifactRepository
 import com.sprintstart.sprintstartbackend.upload.service.storage.ArtifactStorageService
@@ -15,29 +16,20 @@ import java.util.UUID
 
 @Service
 class UploadService(
-
     private val uploadedArtifactRepository: UploadedArtifactRepository,
-
     private val userApi: UserApi,
-
     private val validationService: UploadValidationService,
-
     private val storageService: ArtifactStorageService,
-
     private val artifactLinkingService: ArtifactLinkingService,
-
     private val publisher: ApplicationEventPublisher,
-
-    ) {
-
+) {
     fun upload(
         files: List<MultipartFile>,
         uploaderId: UUID,
     ): List<UploadArtifactResponse> {
-
         if (!userApi.exists(uploaderId)) {
             throw IllegalArgumentException(
-                "Uploader does not exist"
+                "Uploader does not exist",
             )
         }
 
@@ -52,7 +44,6 @@ class UploadService(
         files.forEach { file ->
 
             try {
-
                 val uploadResult = uploadSingle(
                     file = file,
                     uploaderId = uploaderId,
@@ -63,21 +54,21 @@ class UploadService(
                 uploadResult.artifact?.let { artifact ->
 
                     uploadedArtifactsByFilename[
-                        artifact.filename
+                        artifact.filename,
                     ] = artifact
 
                     if (
                         artifact.mime.contains("markdown")
                     ) {
-
                         markdownArtifacts.add(
-                            artifact to String(file.bytes)
+                            artifact to String(file.bytes),
                         )
                     }
                 }
-
-            } catch (ex: Exception) {
-
+            } catch (
+                @Suppress("TooGenericExceptionCaught")
+                ex: Exception
+            ) {
                 responses.add(
                     UploadArtifactResponse(
                         id = null,
@@ -85,7 +76,7 @@ class UploadService(
                             ?: "unknown",
                         status = "failed",
                         error = ex.message,
-                    )
+                    ),
                 )
             }
         }
@@ -93,7 +84,7 @@ class UploadService(
         artifactLinkingService.linkMarkdownImages(
             markdownArtifacts = markdownArtifacts,
             uploadedArtifactsByFilename =
-                uploadedArtifactsByFilename,
+            uploadedArtifactsByFilename,
         )
 
         return responses
@@ -104,7 +95,6 @@ class UploadService(
         file: MultipartFile,
         uploaderId: UUID,
     ): UploadResult {
-
         validationService.validate(file)
 
         val bytes = file.bytes
@@ -115,7 +105,6 @@ class UploadService(
             uploadedArtifactRepository.findByHash(hash)
 
         if (existingArtifact != null) {
-
             return UploadResult(
                 response = UploadArtifactResponse(
                     id = existingArtifact.id,
@@ -149,7 +138,7 @@ class UploadService(
                 artifactId = artifact.id,
                 storagePath = artifact.storagePath,
                 mime = artifact.mime,
-            )
+            ),
         )
 
         return UploadResult(
@@ -163,20 +152,32 @@ class UploadService(
     }
 
     private fun sha256(bytes: ByteArray): String {
-
         val digest =
             MessageDigest.getInstance("SHA-256")
 
-        return digest.digest(bytes)
+        return digest
+            .digest(bytes)
             .joinToString("") {
                 "%02x".format(it)
             }
     }
 
     data class UploadResult(
-
         val response: UploadArtifactResponse,
-
         val artifact: UploadedArtifact?,
     )
+
+    fun listUploads(
+        uploaderId: UUID,
+    ): List<UploadListItemResponse> =
+        uploadedArtifactRepository
+            .findAllByUploaderId(uploaderId)
+            .map {
+                UploadListItemResponse(
+                    id = it.id,
+                    filename = it.filename,
+                    mime = it.mime,
+                    uploadedAt = it.uploadedAt,
+                )
+            }
 }

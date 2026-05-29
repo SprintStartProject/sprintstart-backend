@@ -20,7 +20,6 @@ import org.springframework.mock.web.MockMultipartFile
 import java.util.UUID
 
 class UploadServiceTest {
-
     private val uploadedArtifactRepository =
         mock<UploadedArtifactRepository>()
 
@@ -41,34 +40,28 @@ class UploadServiceTest {
 
     private val uploadService = UploadService(
         uploadedArtifactRepository =
-            uploadedArtifactRepository,
-
+        uploadedArtifactRepository,
         userApi = userApi,
-
         validationService = validationService,
-
         storageService = storageService,
-
         artifactLinkingService =
-            artifactLinkingService,
-
+        artifactLinkingService,
         publisher = publisher,
     )
 
     @Test
     fun `should upload markdown file`() {
-
         val uploaderId = UUID.randomUUID()
 
         whenever(userApi.exists(uploaderId))
             .thenReturn(true)
 
         whenever(
-            storageService.store(any(), any())
+            storageService.store(any(), any()),
         ).thenReturn("uploads/test.md")
 
         whenever(
-            uploadedArtifactRepository.save(any())
+            uploadedArtifactRepository.save(any()),
         ).thenAnswer { invocation ->
             invocation.arguments[0] as UploadedArtifact
         }
@@ -94,7 +87,6 @@ class UploadServiceTest {
 
     @Test
     fun `should return existing artifact when hash already exists`() {
-
         val uploaderId = UUID.randomUUID()
 
         whenever(userApi.exists(uploaderId))
@@ -109,7 +101,7 @@ class UploadServiceTest {
         )
 
         whenever(
-            uploadedArtifactRepository.findByHash(any())
+            uploadedArtifactRepository.findByHash(any()),
         ).thenReturn(existingArtifact)
 
         val file = MockMultipartFile(
@@ -137,14 +129,13 @@ class UploadServiceTest {
 
     @Test
     fun `should return failed status for invalid file`() {
-
         val uploaderId = UUID.randomUUID()
 
         whenever(userApi.exists(uploaderId))
             .thenReturn(true)
 
         doThrow(
-            IllegalArgumentException("Invalid file")
+            IllegalArgumentException("Invalid file"),
         ).whenever(validationService)
             .validate(any())
 
