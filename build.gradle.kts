@@ -51,6 +51,7 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.27.4")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("com.ninja-squad:springmockk:4.0.2")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 }
 
 dependencyManagement {

@@ -6,8 +6,16 @@ spring:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
-
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
   jpa:
     hibernate:
       ddl-auto: create-drop
     show-sql: true
+
+app:
+  upload:
+    directory: uploads
+    max-file-size-bytes: 10485760

@@ -1,5 +1,14 @@
-.idea
-.gradle
-build
+.idea/
+.gradle/
+build/
+
+.env
 *.env
 *.local.env
+
+uploads/
+
+*.iml
+
+logs/
+*.log
