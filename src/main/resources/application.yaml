@@ -1,3 +1,6 @@
+sprintstart:
+  ai:
+    base-url: "http://localhost:8080"
 spring:
   config:
     import: optional:file:./run.local.env[.properties]

@@ -3,3 +3,4 @@
 build
 *.env
 *.local.env
+.notes
