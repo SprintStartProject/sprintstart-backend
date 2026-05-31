@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -39,7 +40,14 @@ class ChatServiceTests {
     private val chatRepository: ChatRepository = mockk()
     private val chatMessageRepository: ChatMessageRepository = mockk()
     private val webRequestClient: AiWebClientImpl = mockk()
-    private val chatService = ChatService(applicationConfig, chatRepository, chatMessageRepository, webRequestClient)
+    private val userApi: UserApi = mockk()
+    private val chatService = ChatService(
+        applicationConfig,
+        chatRepository,
+        chatMessageRepository,
+        webRequestClient,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
 
@@ -203,12 +211,25 @@ class ChatServiceTests {
             val request = CreateChatRequest(userId = userId)
             val chatSlot = slot<Chat>()
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
+            every { userApi.exists(any()) } returns true
 
             val result = chatService.createChat(request)
 
             assertEquals(userId, chatSlot.captured.userId)
             assertEquals(chatSlot.captured.id, result.id)
             verify(exactly = 1) { chatRepository.save(any()) }
+        }
+
+        @Test
+        fun `throws exception when creating chat with incorrect userId`() {
+            val request = CreateChatRequest(userId = userId)
+            val chatSlot = slot<Chat>()
+            every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
+            every { userApi.exists(any()) } returns false
+
+            assertThrows<IllegalArgumentException> { chatService.createChat(request) }
+
+            verify(exactly = 0) { chatRepository.save(any()) }
         }
     }
 

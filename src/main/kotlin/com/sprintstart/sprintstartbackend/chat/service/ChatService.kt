@@ -20,6 +20,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onCompletion
@@ -41,6 +42,7 @@ internal class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
     private val webRequestClient: AiWebClientImpl,
+    private val userApi: UserApi,
 ) {
     /**
      * Retrieves the n latest chats without their messages. N is determined by `request.limit`.
@@ -106,6 +108,10 @@ internal class ChatService(
      * @see CreateChatResponse
      */
     fun createChat(@Valid request: CreateChatRequest): CreateChatResponse {
+        if (!userApi.exists(request.userId)) {
+            throw IllegalArgumentException("Attempted to create chat with non-existing user")
+        }
+
         val chat = Chat(
             userId = request.userId,
             createdAt = OffsetDateTime.now(),
