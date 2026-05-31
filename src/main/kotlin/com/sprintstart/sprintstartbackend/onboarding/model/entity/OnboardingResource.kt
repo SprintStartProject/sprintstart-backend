@@ -17,9 +17,9 @@ class OnboardingResource (
     @JoinColumn(name = "step_id", nullable = false)
     val step: OnboardingStep,
     @Column(nullable = false)
-    val title: String,
+    var title: String,
     @Column(nullable = false)
-    val description: String,
+    var description: String,
     @Column(nullable = false)
-    val url: String,
+    var url: String,
 )

@@ -17,11 +17,11 @@ class OnboardingTask (
     @JoinColumn(name = "step_id", nullable = false)
     val step: OnboardingStep,
     @Column(nullable = false)
-    val position: Int,
+    var position: Int,
     @Column(nullable = false)
-    val title: String,
+    var title: String,
     @Column(nullable = false)
-    val description: String,
+    var description: String,
     @Column(nullable = false)
-    val finished: Boolean = false,
+    var finished: Boolean = false,
 )

@@ -20,11 +20,11 @@ class OnboardingPhase (
     @JoinColumn(name = "path_id", nullable = false)
     val path: OnboardingPath,
     @Column(nullable = false)
-    val position: Int,
+    var position: Int,
     @Column(nullable = false)
-    val title: String,
+    var title: String,
     @Column(nullable = false)
-    val description: String,
+    var description: String,
     @OneToMany(
         mappedBy = "phase",
         cascade = [CascadeType.ALL],
