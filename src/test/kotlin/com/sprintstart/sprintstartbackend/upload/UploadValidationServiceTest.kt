@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockMultipartFile
 
 class UploadValidationServiceTest {
-
     private val service =
         UploadValidationService(
             maxFileSizeBytes = 100,

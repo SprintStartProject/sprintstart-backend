@@ -24,7 +24,6 @@ import java.util.UUID
 
 @WebMvcTest(UploadController::class)
 class UploadControllerTest {
-
     @Autowired
     lateinit var mockMvc: MockMvc
 
@@ -57,20 +56,19 @@ class UploadControllerTest {
             ),
         ).thenReturn(response)
 
-        mockMvc.perform(
-            multipart("/v1/uploads")
-                .file(file)
-                .param(
-                    "uploaderId",
-                    uploaderId.toString(),
-                ),
-        )
-            .andExpect(status().isOk)
+        mockMvc
+            .perform(
+                multipart("/v1/uploads")
+                    .file(file)
+                    .param(
+                        "uploaderId",
+                        uploaderId.toString(),
+                    ),
+            ).andExpect(status().isOk)
             .andExpect(
                 jsonPath("$[0].filename")
                     .value("test.md"),
-            )
-            .andExpect(
+            ).andExpect(
                 jsonPath("$[0].status")
                     .value("ok"),
             )
@@ -100,19 +98,18 @@ class UploadControllerTest {
             ),
         ).thenReturn(uploads)
 
-        mockMvc.perform(
-            get("/v1/uploads")
-                .param(
-                    "uploaderId",
-                    uploaderId.toString(),
-                ),
-        )
-            .andExpect(status().isOk)
+        mockMvc
+            .perform(
+                get("/v1/uploads")
+                    .param(
+                        "uploaderId",
+                        uploaderId.toString(),
+                    ),
+            ).andExpect(status().isOk)
             .andExpect(
                 jsonPath("$[0].filename")
                     .value("doc.md"),
-            )
-            .andExpect(
+            ).andExpect(
                 jsonPath("$[0].mime")
                     .value("text/markdown"),
             )
@@ -125,10 +122,10 @@ class UploadControllerTest {
     fun `deleteUpload returns 204`() {
         val artifactId = UUID.randomUUID()
 
-        mockMvc.perform(
-            delete("/v1/uploads/$artifactId"),
-        )
-            .andExpect(status().isNoContent)
+        mockMvc
+            .perform(
+                delete("/v1/uploads/$artifactId"),
+            ).andExpect(status().isNoContent)
 
         verify(uploadService)
             .deleteUpload(artifactId)

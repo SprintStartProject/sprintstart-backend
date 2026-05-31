@@ -16,7 +16,6 @@ import org.mockito.Mockito.verify
 import java.util.UUID
 
 class ArtifactLinkingServiceTest {
-
     private val repository =
         mock(ArtifactImageRepository::class.java)
 
@@ -37,7 +36,7 @@ class ArtifactLinkingServiceTest {
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
                 markdownArtifact to
-                        "![Logo](logo.png)",
+                    "![Logo](logo.png)",
             ),
             uploadedArtifactsByFilename = mapOf(
                 "logo.png" to imageArtifact,
@@ -79,7 +78,7 @@ class ArtifactLinkingServiceTest {
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
                 markdownArtifact to
-                        "![Logo](missing.png)",
+                    "![Logo](missing.png)",
             ),
             uploadedArtifactsByFilename = emptyMap(),
         )
@@ -103,10 +102,11 @@ class ArtifactLinkingServiceTest {
 
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
-                markdownArtifact to """
+                markdownArtifact to
+                    """
                     ![One](one.png)
                     ![Two](two.png)
-                """.trimIndent(),
+                    """.trimIndent(),
             ),
             uploadedArtifactsByFilename =
                 mapOf(
@@ -134,7 +134,7 @@ class ArtifactLinkingServiceTest {
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
                 markdownArtifact to
-                        "![Logo](images/logo.png)",
+                    "![Logo](images/logo.png)",
             ),
             uploadedArtifactsByFilename = mapOf(
                 "logo.png" to imageArtifact,
@@ -163,9 +163,9 @@ class ArtifactLinkingServiceTest {
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
                 markdownOne to
-                        "![One](one.png)",
+                    "![One](one.png)",
                 markdownTwo to
-                        "![Two](two.png)",
+                    "![Two](two.png)",
             ),
             uploadedArtifactsByFilename =
                 mapOf(

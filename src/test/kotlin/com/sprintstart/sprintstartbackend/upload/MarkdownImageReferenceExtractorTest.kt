@@ -5,17 +5,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class MarkdownImageReferenceExtractorTest {
-
     private val extractor =
         MarkdownImageReferenceExtractor()
 
     @Test
     fun `extract returns empty list when markdown contains no images`() {
-        val markdown = """
+        val markdown =
+            """
             # Title
             
             Some text here.
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
@@ -28,9 +28,10 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `extract finds single image`() {
-        val markdown = """
+        val markdown =
+            """
             ![Logo](logo.png)
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
@@ -43,12 +44,13 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `extract finds multiple images`() {
-        val markdown = """
+        val markdown =
+            """
             ![One](one.png)
             Some text
             ![Two](two.jpg)
             ![Three](three.webp)
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
@@ -65,10 +67,11 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `extract preserves relative paths`() {
-        val markdown = """
+        val markdown =
+            """
             ![Image](images/logo.png)
             ![Image](../assets/banner.jpg)
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
@@ -84,9 +87,10 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `extract supports absolute urls`() {
-        val markdown = """
+        val markdown =
+            """
             ![Image](https://example.com/image.png)
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
@@ -101,11 +105,12 @@ class MarkdownImageReferenceExtractorTest {
 
     @Test
     fun `extract ignores normal links`() {
-        val markdown = """
+        val markdown =
+            """
             [OpenAI](https://example.com)
             
             ![Image](image.png)
-        """.trimIndent()
+            """.trimIndent()
 
         val result =
             extractor.extract(markdown)
