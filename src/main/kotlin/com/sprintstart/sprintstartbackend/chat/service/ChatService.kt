@@ -28,9 +28,11 @@ import kotlinx.coroutines.flow.onEach
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
+import org.springframework.web.client.HttpClientErrorException
 import java.net.URI
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -60,9 +62,9 @@ internal class ChatService(
     @Transactional(readOnly = true)
     fun getChats(@Valid request: GetChatsRequest): GetChatsResponse {
         val pageable = if (request.limit == null) {
-            Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt"))
+            Pageable.unpaged(Sort.by(Sort.Direction.ASC, "created_at"))
         } else {
-            PageRequest.of(0, request.limit, Sort.Direction.ASC, "createdAt")
+            PageRequest.of(0, request.limit, Sort.Direction.ASC, "created_at")
         }
 
         val chats = chatRepository.findAll(pageable)
@@ -109,7 +111,10 @@ internal class ChatService(
      */
     fun createChat(@Valid request: CreateChatRequest): CreateChatResponse {
         if (!userApi.exists(request.userId)) {
-            throw IllegalArgumentException("Attempted to create chat with non-existing user")
+            throw HttpClientErrorException(
+                HttpStatus.BAD_REQUEST,
+                "Attempted to create chat with non-existing user",
+            )
         }
 
         val chat = Chat(
@@ -136,7 +141,12 @@ internal class ChatService(
      * @see Flow
      */
     fun prompt(@Valid request: PromptRequest): Flow<String> {
-        val chat = chatRepository.findById(request.chatId).orElseThrow()
+        val chat = chatRepository.findById(request.chatId).orElseThrow {
+            HttpClientErrorException(
+                HttpStatus.BAD_REQUEST,
+                "Attempted to prompt a non-existing chat",
+            )
+        }
         val msg = ChatMessage(
             role = ChatRole.USER,
             chat = chat,

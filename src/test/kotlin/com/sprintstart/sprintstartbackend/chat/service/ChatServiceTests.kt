@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import org.springframework.web.client.HttpClientErrorException
 import java.time.OffsetDateTime
 import java.util.Optional
 import java.util.UUID
@@ -227,7 +228,7 @@ class ChatServiceTests {
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
             every { userApi.exists(any()) } returns false
 
-            assertThrows<IllegalArgumentException> { chatService.createChat(request) }
+            assertThrows<HttpClientErrorException> { chatService.createChat(request) }
 
             verify(exactly = 0) { chatRepository.save(any()) }
         }
@@ -318,7 +319,7 @@ class ChatServiceTests {
         fun `throws when chat is not found`() {
             every { chatRepository.findById(chatId) } returns Optional.empty()
 
-            assertThrows<NoSuchElementException> {
+            assertThrows<HttpClientErrorException> {
                 chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello"))
             }
         }

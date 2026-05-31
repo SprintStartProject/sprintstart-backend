@@ -36,7 +36,8 @@ internal class ChatController(
     @Operation(
         summary = "Retrieves chats with their metadata (No messages!)",
         description =
-            "Retrieves the n chats that were last interacted with, including only their metadata, not the messages!",
+            "Retrieves the n chats that were last interacted with, including only their metadata, not the messages!" +
+                " Quick side note: not passing the limit fetches all.",
     )
     @ApiResponses(
         value = [
@@ -52,7 +53,7 @@ internal class ChatController(
 
     @Operation(
         summary = "Retrieves a chat's messages",
-        description = "Retrieves the n last messages of a specific chat",
+        description = "Retrieves the n last messages of a specific chat. Not specifying the limit fetches all.",
     )
     @ApiResponses(
         value = [

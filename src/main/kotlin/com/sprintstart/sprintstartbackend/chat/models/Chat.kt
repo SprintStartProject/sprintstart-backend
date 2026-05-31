@@ -10,12 +10,8 @@ import java.util.UUID
 @Entity
 @Table(name = "chats")
 internal data class Chat(
-    @Column(unique = true, nullable = false) @Id val id: UUID = UUID.randomUUID(),
+    @Column @Id val id: UUID = UUID.randomUUID(),
     @Column var title: String = "",
     @Column("user_id", nullable = false) val userId: UUID,
     @Column("created_at") val createdAt: OffsetDateTime,
-) {
-    init {
-        require(userId != UUID(0, 0)) { "userId must not be empty" }
-    }
-}
+)
