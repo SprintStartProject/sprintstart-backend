@@ -16,6 +16,25 @@ on:
       - "**"
 
 jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Gitleaks
+        run: |
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz
+
+      - name: Verify Gitleaks
+        run: ./gitleaks version
+
+      - name: Scan repository
+        run: ./gitleaks detect --verbose --redact
+
   build:
 
     runs-on: ubuntu-latest
