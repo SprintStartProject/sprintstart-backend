@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.AiWebRequestClient
+import com.sprintstart.sprintstartbackend.chat.AiWebClientImpl
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -11,7 +11,6 @@ import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRe
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.toAiContextEntry
-import com.sprintstart.sprintstartbackend.chat.models.responses.AiChatTitleResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
@@ -21,6 +20,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import jakarta.validation.Valid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
@@ -28,15 +28,19 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.validation.annotation.Validated
 import java.net.URI
 import java.time.OffsetDateTime
 import java.util.UUID
 
 @Service
+@Validated
 internal class ChatService(
     private val applicationConfig: ApplicationConfig,
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
+    private val webRequestClient: AiWebClientImpl,
 ) {
     /**
      * Retrieves the n latest chats without their messages. N is determined by `request.limit`.
@@ -51,7 +55,8 @@ internal class ChatService(
      * @see GetChatsRequest
      * @see GetChatsResponse
      */
-    fun getChats(request: GetChatsRequest): GetChatsResponse {
+    @Transactional(readOnly = true)
+    fun getChats(@Valid request: GetChatsRequest): GetChatsResponse {
         val pageable = if (request.limit == null) {
             Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt"))
         } else {
@@ -75,7 +80,8 @@ internal class ChatService(
      * @see GetChatMessagesRequest
      * @see GetChatMessagesRequest
      */
-    fun getChat(chatId: UUID, request: GetChatMessagesRequest): GetChatMessagesResponse {
+    @Transactional(readOnly = true)
+    fun getChat(chatId: UUID, @Valid request: GetChatMessagesRequest): GetChatMessagesResponse {
         val pageable = if (request.limit == null) {
             Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt"))
         } else {
@@ -99,7 +105,7 @@ internal class ChatService(
      * @see CreateChatRequest
      * @see CreateChatResponse
      */
-    fun createChat(request: CreateChatRequest): CreateChatResponse {
+    fun createChat(@Valid request: CreateChatRequest): CreateChatResponse {
         val chat = Chat(
             userId = request.userId,
             createdAt = OffsetDateTime.now(),
@@ -120,11 +126,10 @@ internal class ChatService(
      *
      * @param request The request that contains the chat metadata as well as the actual prompt.
      * @return [Flow<String>] A flow of strings (tokens in this case).
-     * @see AiChatTitleRequest
      * @see PromptRequest
      * @see Flow
      */
-    fun prompt(request: PromptRequest): Flow<String> {
+    fun prompt(@Valid request: PromptRequest): Flow<String> {
         val chat = chatRepository.findById(request.chatId).orElseThrow()
         val msg = ChatMessage(
             role = ChatRole.USER,
@@ -136,7 +141,7 @@ internal class ChatService(
         // If the title is empty, the chat is new, and a title needs to be generated
         if (chat.title.isBlank()) {
             val uri = URI.create("${applicationConfig.ai.baseUrl}/generate-title")
-            val generatedTitle = AiWebRequestClient().get<AiChatTitleResponse>(uri)
+            val generatedTitle = webRequestClient.getChatTitle(uri)
             chat.title = generatedTitle.title
             chatRepository.save(chat)
         }
@@ -153,9 +158,9 @@ internal class ChatService(
 
         // Make call to AI repo
         val promptingPayload = AiPromptRequest(request.msg, context)
-        val stream = AiWebRequestClient.streamPost<AiPromptRequest>(
-            uri = URI.create("${applicationConfig.ai.baseUrl}/prompt"),
-            body = promptingPayload,
+        val stream = webRequestClient.streamPrompt(
+            URI.create("${applicationConfig.ai.baseUrl}/prompt"),
+            promptingPayload,
         )
         val sb = StringBuilder()
 
@@ -165,12 +170,13 @@ internal class ChatService(
         return stream
             .onEach { rawJson ->
                 try {
-                    val message = AiWebRequestClient().jsonParser.decodeFromString<AiStreamMessage>(rawJson)
+                    val message = webRequestClient.jsonParser.decodeFromString<AiStreamMessage>(rawJson)
                     message.content?.let { token ->
                         sb.append(token) // Collect tokens
                     }
                 } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-                    // We can ignore errors here, as they're handled in the streamPost() method already
+                    // We can technically ignore errors here too, as they're handled in the streamPost() method already
+                    System.err.println("Error: " + e.message)
                 }
             }.onCompletion { cause ->
                 if (cause == null) {

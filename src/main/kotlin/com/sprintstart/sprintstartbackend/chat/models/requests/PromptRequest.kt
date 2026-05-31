@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.models.requests
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import java.util.UUID
 
 /**
@@ -10,6 +11,6 @@ import java.util.UUID
  * @property msg The actual text prompt. Must not be empty/blank.
  */
 data class PromptRequest(
-    @NotBlank val chatId: UUID,
+    @NotNull val chatId: UUID,
     @NotBlank val msg: String,
 )

@@ -3,19 +3,22 @@ package com.sprintstart.sprintstartbackend.chat.models.requests
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import jakarta.validation.constraints.NotBlank
+import kotlinx.serialization.Serializable
 
 /**
- * Used for prompting the ai on a new prompt, providing the chat context
+ * Used for prompting the AI on a new prompt, providing the chat context
  *
- * @property prompt The new prompt the ai should answer
+ * @property prompt The new prompt the AI should answer
  * @property context All relevant chat context, e.g. previous messages in this chat
  */
-internal data class AiPromptRequest(
+@Serializable
+data class AiPromptRequest(
     @NotBlank val prompt: String,
     val context: List<ContextEntry>,
 )
 
-internal data class ContextEntry(
+@Serializable
+data class ContextEntry(
     @NotBlank val role: ChatRole,
     @NotBlank val content: String,
 )

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.chat.models.requests
 
-import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import java.util.UUID
 
 /**
@@ -9,5 +9,5 @@ import java.util.UUID
  * @property userId The id of the user this chat belongs to.
  */
 internal data class CreateChatRequest(
-    @NotBlank val userId: UUID,
+    @NotNull val userId: UUID,
 )
