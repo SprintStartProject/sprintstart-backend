@@ -41,8 +41,29 @@ class LocalFileStorageService(
     override fun delete(
         storagePath: String,
     ) {
-        Files.deleteIfExists(
-            Paths.get(storagePath),
+        val filePath = Paths.get(
+            storagePath,
         )
+
+        Files.deleteIfExists(
+            filePath,
+        )
+
+        val parentDirectory =
+            filePath.parent
+
+        if (
+            parentDirectory != null &&
+            Files.exists(parentDirectory)
+        ) {
+            Files.list(parentDirectory).use { files ->
+
+                if (files.findAny().isEmpty) {
+                    Files.deleteIfExists(
+                        parentDirectory,
+                    )
+                }
+            }
+        }
     }
 }
