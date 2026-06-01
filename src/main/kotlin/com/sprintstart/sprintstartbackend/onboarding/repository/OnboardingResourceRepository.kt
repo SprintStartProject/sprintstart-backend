@@ -4,7 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingReso
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
-@Suppress("ktlint:standard:function-naming")
+@Suppress("ktlint:standard:function-naming", "FunctionNaming")
 interface OnboardingResourceRepository : JpaRepository<OnboardingResource, UUID> {
     fun findAllByStep_Id(stepId: UUID): MutableList<OnboardingResource>
 }

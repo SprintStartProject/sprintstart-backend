@@ -90,7 +90,8 @@ class OnboardingStepController(
      */
     @Operation(
         summary = "Get all onboarding steps",
-        description = "Returns a flat list of all onboarding steps across all phases. No nested content is included. Intended for administrative overviews.",
+        description = "Returns a flat list of all onboarding steps across all phases. " +
+            "No nested content is included. Intended for administrative overviews.",
     )
     @ApiResponse(responseCode = "200", description = "Flat list of all onboarding steps")
     @GetMapping("/steps")

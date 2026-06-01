@@ -396,7 +396,7 @@ class OnboardingServiceTest {
     }
 
     @Test
-    fun `updateOnboardingStep should set completedAt and default skip reason when status changes to SKIPPED without reason`() {
+    fun `updateOnboardingStep should set completedAt and default skip reason when changed to SKIPPED without reason`() {
         val step = step(status = StepStatus.WAITING)
         val request = updateStepRequest(
             status = StepStatus.SKIPPED,

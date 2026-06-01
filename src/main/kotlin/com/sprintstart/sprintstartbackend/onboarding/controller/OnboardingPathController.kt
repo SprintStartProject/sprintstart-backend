@@ -64,7 +64,8 @@ class OnboardingPathController(
      */
     @Operation(
         summary = "Get onboarding path by ID",
-        description = "Returns a single onboarding path by its UUID. Includes one level of nesting: the path's direct phases are included, but steps within those phases are not.",
+        description = "Returns a single onboarding path by its UUID. Includes one level of nesting: " +
+                " the path's direct phases are included, but steps within those phases are not.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding path with direct phases"),
@@ -117,7 +118,8 @@ class OnboardingPathController(
     @Operation(
         summary = "Delete onboarding path by ID",
         description = "Permanently deletes the onboarding path with the given UUID. " +
-            "All associated phases, steps, tasks, and resources are removed via cascade. This operation is not reversible.",
+            "All associated phases, steps, tasks, and resources are removed via cascade." +
+            " This operation is not reversible.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding path deleted"),

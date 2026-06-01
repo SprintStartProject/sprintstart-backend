@@ -65,6 +65,7 @@ import java.util.UUID
  * Position management (insert/update/delete) is handled automatically for
  * phases, steps, and tasks by shifting sibling positions as needed.
  */
+@Suppress("TooManyFunctions")
 @Service
 class OnboardingService(
     private val onboardingPathRepository: OnboardingPathRepository,
@@ -86,7 +87,9 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId].
      */
     fun createOnboardingPathForUser(userId: UUID): CreateOnboardingPathResponse {
-        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        if (!userApi.exists(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
         return onboardingPathRepository.save(OnboardingPath(userId = userId)).toCreateResponse()
     }
 
@@ -124,7 +127,9 @@ class OnboardingService(
      *   or if no path has been created for that user yet.
      */
     fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathForUserResponse {
-        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        if (!userApi.exists(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
         return onboardingPathRepository
             .findOnboardingPathByUserId(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found for user with id: $userId") }
@@ -149,7 +154,9 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId].
      */
     fun deleteOnboardingPathByUserId(userId: UUID) {
-        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        if (!userApi.exists(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
         onboardingPathRepository.deleteByUserId(userId)
     }
 
@@ -169,7 +176,10 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no path exists with [pathId].
      */
     @Transactional
-    fun createOnboardingPhaseForPathId(pathId: UUID, request: CreateOnboardingPhaseRequest): CreateOnboardingPhaseResponse {
+    fun createOnboardingPhaseForPathId(
+        pathId: UUID,
+        request: CreateOnboardingPhaseRequest,
+    ): CreateOnboardingPhaseResponse {
         val path = onboardingPathRepository
             .findById(pathId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found with id: $pathId") }
@@ -208,7 +218,9 @@ class OnboardingService(
      */
     @Transactional(readOnly = true)
     fun getOnboardingPhasesByPathId(pathId: UUID): List<GetOnboardingPhaseResponse> {
-        if (!onboardingPathRepository.existsById(pathId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No path found with id: $pathId")
+        if (!onboardingPathRepository.existsById(pathId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No path found with id: $pathId")
+        }
         return onboardingPhaseRepository.findAllByPath_Id(pathId).map { phase -> phase.toGetResponse() }
     }
 
@@ -247,11 +259,13 @@ class OnboardingService(
         var phasesToShift: MutableList<OnboardingPhase> = mutableListOf()
         if (phase.position < request.position) {
             // Shift from new position up to current position
-            phasesToShift = onboardingPhaseRepository.findByPath_IdAndPositionBetween(phase.path.id, phase.position + 1, request.position)
+            phasesToShift = onboardingPhaseRepository
+                .findByPath_IdAndPositionBetween(phase.path.id, phase.position + 1, request.position)
             phasesToShift.forEach { it.position -= 1 }
         }
         if (phase.position > request.position) {
-            phasesToShift = onboardingPhaseRepository.findByPath_IdAndPositionBetween(phase.path.id, request.position, phase.position - 1)
+            phasesToShift = onboardingPhaseRepository
+                .findByPath_IdAndPositionBetween(phase.path.id, request.position, phase.position - 1)
             phasesToShift.forEach { it.position += 1 }
         }
         onboardingPhaseRepository.saveAll(phasesToShift)
@@ -276,7 +290,8 @@ class OnboardingService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
 
         // Shift left
-        val phasesToShift = onboardingPhaseRepository.findByPath_IdAndPositionGreaterThan(phase.path.id, phase.position)
+        val phasesToShift = onboardingPhaseRepository
+            .findByPath_IdAndPositionGreaterThan(phase.path.id, phase.position)
         phasesToShift.forEach { it.position -= 1 }
         if (phasesToShift.isNotEmpty()) onboardingPhaseRepository.saveAll(phasesToShift)
 
@@ -299,13 +314,17 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
      */
     @Transactional
-    fun createOnboardingStepForPhaseId(phaseId: UUID, request: CreateOnboardingStepRequest): CreateOnboardingStepResponse {
+    fun createOnboardingStepForPhaseId(
+        phaseId: UUID,
+        request: CreateOnboardingStepRequest,
+    ): CreateOnboardingStepResponse {
         val phase = onboardingPhaseRepository
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
 
         // Shift right
-        val stepsToShift = onboardingStepRepository.findByPhase_IdAndPositionGreaterThanEqual(phaseId, request.position)
+        val stepsToShift = onboardingStepRepository
+            .findByPhase_IdAndPositionGreaterThanEqual(phaseId, request.position)
         stepsToShift.forEach { it.position += 1 }
         if (stepsToShift.isNotEmpty()) onboardingStepRepository.saveAll(stepsToShift)
 
@@ -344,7 +363,9 @@ class OnboardingService(
      */
     @Transactional(readOnly = true)
     fun getOnboardingStepsByPhaseId(phaseId: UUID): List<GetOnboardingStepResponse> {
-        if (!onboardingPhaseRepository.existsById(phaseId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId")
+        if (!onboardingPhaseRepository.existsById(phaseId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId")
+        }
         return onboardingStepRepository
             .findAllByPhase_Id(phaseId)
             .map { step -> step.toGetResponse() }
@@ -391,11 +412,13 @@ class OnboardingService(
         var stepsToShift: MutableList<OnboardingStep> = mutableListOf()
         if (step.position < request.position) {
             // Shift from new position up to current position
-            stepsToShift = onboardingStepRepository.findByPhase_IdAndPositionBetween(step.phase.id, step.position + 1, request.position)
+            stepsToShift = onboardingStepRepository
+                .findByPhase_IdAndPositionBetween(step.phase.id, step.position + 1, request.position)
             stepsToShift.forEach { it.position -= 1 }
         }
         if (step.position > request.position) {
-            stepsToShift = onboardingStepRepository.findByPhase_IdAndPositionBetween(step.phase.id, request.position, step.position - 1)
+            stepsToShift = onboardingStepRepository
+                .findByPhase_IdAndPositionBetween(step.phase.id, request.position, step.position - 1)
             stepsToShift.forEach { it.position += 1 }
         }
         onboardingStepRepository.saveAll(stepsToShift)
@@ -444,7 +467,8 @@ class OnboardingService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
         // Shift left
-        val stepsToShift = onboardingStepRepository.findByPhase_IdAndPositionGreaterThan(step.phase.id, step.position)
+        val stepsToShift = onboardingStepRepository
+            .findByPhase_IdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }
         onboardingStepRepository.saveAll(stepsToShift)
 
@@ -467,12 +491,16 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional
-    fun createOnboardingTaskForStepId(stepId: UUID, request: CreateOnboardingTaskRequest): CreateOnboardingTaskResponse {
+    fun createOnboardingTaskForStepId(
+        stepId: UUID,
+        request: CreateOnboardingTaskRequest,
+    ): CreateOnboardingTaskResponse {
         val step = onboardingStepRepository
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
-        val tasksToShift = onboardingTaskRepository.findByStep_IdAndPositionGreaterThanEqual(stepId, request.position)
+        val tasksToShift = onboardingTaskRepository
+            .findByStep_IdAndPositionGreaterThanEqual(stepId, request.position)
         tasksToShift.forEach { it.position += 1 }
         onboardingTaskRepository.saveAll(tasksToShift)
 
@@ -505,7 +533,9 @@ class OnboardingService(
      */
     @Transactional(readOnly = true)
     fun getOnboardingTasksByStepId(stepId: UUID): List<GetOnboardingTaskResponse> {
-        if (!onboardingStepRepository.existsById(stepId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
+        if (!onboardingStepRepository.existsById(stepId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
+        }
         return onboardingTaskRepository.findAllByStep_Id(stepId).map { task -> task.toGetResponse() }
     }
 
@@ -544,11 +574,13 @@ class OnboardingService(
         var tasksToShift: MutableList<OnboardingTask> = mutableListOf()
         if (task.position < request.position) {
             // Shift from new position up to current position
-            tasksToShift = onboardingTaskRepository.findByStep_IdAndPositionBetween(task.step.id, task.position + 1, request.position)
+            tasksToShift = onboardingTaskRepository
+                .findByStep_IdAndPositionBetween(task.step.id, task.position + 1, request.position)
             tasksToShift.forEach { it.position -= 1 }
         }
         if (task.position > request.position) {
-            tasksToShift = onboardingTaskRepository.findByStep_IdAndPositionBetween(task.step.id, request.position, task.position - 1)
+            tasksToShift = onboardingTaskRepository
+                .findByStep_IdAndPositionBetween(task.step.id, request.position, task.position - 1)
             tasksToShift.forEach { it.position += 1 }
         }
         onboardingTaskRepository.saveAll(tasksToShift)
@@ -573,7 +605,8 @@ class OnboardingService(
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No task found with id: $taskId") }
 
-        val tasksToShift = onboardingTaskRepository.findByStep_IdAndPositionGreaterThan(task.step.id, task.position)
+        val tasksToShift = onboardingTaskRepository
+            .findByStep_IdAndPositionGreaterThan(task.step.id, task.position)
         tasksToShift.forEach { it.position -= 1 }
         onboardingTaskRepository.saveAll(tasksToShift)
 
@@ -595,7 +628,10 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional
-    fun createOnboardingResourceForStepId(stepId: UUID, request: CreateOnboardingResourceRequest): CreateOnboardingResourceResponse {
+    fun createOnboardingResourceForStepId(
+        stepId: UUID,
+        request: CreateOnboardingResourceRequest,
+    ): CreateOnboardingResourceResponse {
         val step = onboardingStepRepository
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
@@ -630,7 +666,9 @@ class OnboardingService(
      */
     @Transactional(readOnly = true)
     fun getOnboardingResourceByStepId(stepId: UUID): List<GetOnboardingResourceResponse> {
-        if (!onboardingStepRepository.existsById(stepId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
+        if (!onboardingStepRepository.existsById(stepId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
+        }
         return onboardingResourceRepository
             .findAllByStep_Id(stepId)
             .map { resource -> resource.toGetResponse() }
@@ -660,7 +698,10 @@ class OnboardingService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
      */
     @Transactional
-    fun updateOnboardingResource(resourceId: UUID, request: UpdateOnboardingResourceRequest): UpdateOnboardingResourceResponse {
+    fun updateOnboardingResource(
+        resourceId: UUID,
+        request: UpdateOnboardingResourceRequest,
+    ): UpdateOnboardingResourceResponse {
         val resource = onboardingResourceRepository
             .findById(resourceId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No resource found with id: $resourceId") }

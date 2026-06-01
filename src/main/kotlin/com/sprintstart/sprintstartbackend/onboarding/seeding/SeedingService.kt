@@ -32,6 +32,7 @@ import java.util.UUID
  * @property userApi Module-facing API used to check whether a user exists.
  * @property resourceLoader Loader used to access seed files from the classpath.
  */
+@Suppress("ReturnCount")
 @Service
 class SeedingService(
     private val onboardingPathRepository: OnboardingPathRepository,
@@ -55,6 +56,7 @@ class SeedingService(
      *
      * @param userId The unique identifier of the user for whom onboarding data should be created.
      */
+    @Suppress("LongMethod")
     @Transactional
     fun seed(userId: UUID) {
         if (!userApi.exists(userId)) return
@@ -65,9 +67,7 @@ class SeedingService(
             resourceLoader.getResource("classpath:frontend-seed-data.yml"),
             resourceLoader.getResource("classpath:backend-seed-data.yml"),
         )
-
         val resource = resources.random()
-
         if (!resource.exists()) return
 
         val filename = resource.filename ?: return
@@ -122,13 +122,10 @@ class SeedingService(
                             ),
                         )
                     }
-
                     phase.steps.add(step)
                 }
-
                 path.phases.add(phase)
             }
-
             onboardingPathRepository.save(path) // CascadeType.ALL takes care of the rest
         }
     }

@@ -85,7 +85,8 @@ class OnboardingPhaseController(
      */
     @Operation(
         summary = "Get all onboarding phases",
-        description = "Returns a flat list of all onboarding phases across all paths. No nested content is included. Intended for administrative overviews.",
+        description = "Returns a flat list of all onboarding phases across all paths. " +
+            "No nested content is included. Intended for administrative overviews.",
     )
     @ApiResponse(responseCode = "200", description = "Flat list of all onboarding phases")
     @GetMapping("/phases")
@@ -132,7 +133,8 @@ class OnboardingPhaseController(
     @Operation(
         summary = "Get onboarding phase by ID",
         description = "Returns a single onboarding phase by its UUID. " +
-            "Includes one level of nesting: the phase's direct steps are included, but tasks and resources within those steps are not.",
+            "Includes one level of nesting: the phase's direct steps are " +
+            "included, but tasks and resources within those steps are not.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding phase with direct steps"),
@@ -160,8 +162,9 @@ class OnboardingPhaseController(
     @Operation(
         summary = "Update onboarding phase",
         description = "Updates all fields of an existing onboarding phase, including its position. " +
-            "If the position changes, sibling phases between the old and new positions are shifted automatically " +
-            "to maintain contiguous ordering. Moving forward shifts intermediaries back; moving backward shifts them forward.",
+            "If the position changes, sibling phases between the old and new positions are shifted " +
+            "automatically to maintain contiguous ordering. Moving forward shifts intermediaries" +
+            " back; moving backward shifts them forward.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Phase updated successfully"),

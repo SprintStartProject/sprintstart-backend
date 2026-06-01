@@ -85,7 +85,8 @@ class OnboardingTaskController(
      */
     @Operation(
         summary = "Get all onboarding tasks",
-        description = "Returns a flat list of all onboarding tasks across all steps. Tasks are leaf nodes — no nested content exists.",
+        description = "Returns a flat list of all onboarding tasks across all steps." +
+            " Tasks are leaf nodes — no nested content exists.",
     )
     @ApiResponse(responseCode = "200", description = "Flat list of all onboarding tasks")
     @GetMapping("/tasks")
@@ -156,8 +157,9 @@ class OnboardingTaskController(
      */
     @Operation(
         summary = "Update onboarding task",
-        description = "Updates all fields of an existing onboarding task, including its position and finished status. " +
-            "If the position changes, sibling tasks are shifted automatically to maintain contiguous ordering.",
+        description = "Updates all fields of an existing onboarding task, including its position " +
+            "and finished status. If the position changes, sibling tasks are shifted automatically " +
+            "to maintain contiguous ordering.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Task updated successfully"),

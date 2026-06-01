@@ -58,8 +58,9 @@ class OnboardingResourceController(
      */
     @Operation(
         summary = "Create onboarding resource",
-        description = "Creates a new reference resource (e.g. a documentation link or video) attached to the specified step. " +
-            "Resources are unordered — unlike phases, steps, and tasks, they have no position field.",
+        description = "Creates a new reference resource (e.g. a documentation link or video) " +
+            "attached to the specified step. Resources are unordered — unlike phases, steps, and" +
+            " tasks, they have no position field.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Resource created successfully"),
@@ -84,7 +85,8 @@ class OnboardingResourceController(
      */
     @Operation(
         summary = "Get all onboarding resources",
-        description = "Returns a flat list of all onboarding resources across all steps. Resources are leaf nodes — no nested content exists.",
+        description = "Returns a flat list of all onboarding resources across all steps." +
+            " Resources are leaf nodes — no nested content exists.",
     )
     @ApiResponse(responseCode = "200", description = "Flat list of all onboarding resources")
     @GetMapping("/resources")
@@ -128,7 +130,8 @@ class OnboardingResourceController(
      */
     @Operation(
         summary = "Get onboarding resource by ID",
-        description = "Returns a single onboarding resource by its UUID. Resources are leaf nodes — no nested content exists.",
+        description = "Returns a single onboarding resource by its UUID." +
+            " Resources are leaf nodes — no nested content exists.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding resource found"),

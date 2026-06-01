@@ -4,7 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhas
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
-@Suppress("ktlint:standard:function-naming")
+@Suppress("ktlint:standard:function-naming", "FunctionNaming")
 interface OnboardingPhaseRepository : JpaRepository<OnboardingPhase, UUID> {
     fun findByPath_IdAndPositionGreaterThanEqual(pathId: UUID, positionIsGreaterThan: Int): MutableList<OnboardingPhase>
 
@@ -12,5 +12,8 @@ interface OnboardingPhaseRepository : JpaRepository<OnboardingPhase, UUID> {
 
     fun findByPath_IdAndPositionGreaterThan(pathId: UUID, positionIsGreaterThan: Int): MutableList<OnboardingPhase>
 
-    fun findByPath_IdAndPositionBetween(pathId: UUID, positionAfter: Int, positionBefore: Int): MutableList<OnboardingPhase>
+    fun findByPath_IdAndPositionBetween(
+        pathId: UUID, positionAfter: Int,
+        positionBefore: Int,
+    ): MutableList<OnboardingPhase>
 }
