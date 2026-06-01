@@ -1,0 +1,195 @@
+paths:
+  - userId: "00000000-0000-0000-0000-000000000002"
+    phases:
+      - position: 1
+        title: "Backend Foundations"
+        description: "Get familiar with our backend stack and standards"
+        steps:
+          - position: 1
+            title: "Watch the backend architecture overview"
+            description: "High-level walkthrough of our Spring Boot service structure and module boundaries"
+            type: VIDEO
+            estimatedMinutes: 35
+            expectedOutcome: "Understand how the backend is organized, how modules interact and where the boundaries are"
+            tasks: [ ]
+            resources:
+              - title: "Backend Architecture Video"
+                description: "Overview of our Spring Modulith + Kotlin setup"
+                url: "https://internal.example.com/videos/backend-architecture"
+          - position: 2
+            title: "Read the backend guidelines"
+            description: "Our coding standards, module conventions, error handling and API design rules"
+            type: DOCUMENT
+            estimatedMinutes: 45
+            expectedOutcome: "Know how we structure modules, write endpoints and handle errors consistently"
+            tasks:
+              - position: 1
+                title: "Read the module structure guide"
+                description: "How we organize code within a Spring Modulith module"
+              - position: 2
+                title: "Read the error handling standards"
+                description: "How we use problem details and exception handlers"
+              - position: 3
+                title: "Read the API design guide"
+                description: "REST conventions, naming, versioning and Swagger documentation rules"
+              - position: 4
+                title: "Read the database conventions"
+                description: "JPA annotations, naming, migration rules with Flyway"
+            resources:
+              - title: "Backend Guidelines"
+                description: "Full backend coding standards document"
+                url: "https://internal.example.com/backend-guidelines"
+              - title: "API Design Guide"
+                description: "Our REST API conventions and Swagger standards"
+                url: "https://internal.example.com/api-design"
+          - position: 3
+            title: "Set up the backend dev environment"
+            description: "Get the service running locally with the database and all tooling configured"
+            type: TASK
+            estimatedMinutes: 60
+            expectedOutcome: "Service running locally, connected to a local database, all tests green"
+            tasks:
+              - position: 1
+                title: "Install JDK 21"
+                description: "Use the version specified in .tool-versions or gradle wrapper"
+              - position: 2
+                title: "Set up local PostgreSQL"
+                description: "Install and start a local PostgreSQL instance"
+              - position: 3
+                title: "Configure environment variables"
+                description: "Copy .env.example to .env and fill in local DB credentials"
+              - position: 4
+                title: "Run the service"
+                description: "Start the Spring Boot app and verify the health endpoint responds"
+              - position: 5
+                title: "Run the test suite"
+                description: "Run ./gradlew test and confirm everything passes"
+            resources:
+              - title: "Backend Setup Guide"
+                description: "Step-by-step local setup instructions"
+                url: "https://internal.example.com/backend-setup"
+              - title: "Environment Variables Reference"
+                description: "All supported env vars and what they do"
+                url: "https://internal.example.com/env-reference"
+      - position: 2
+        title: "Codebase Walkthrough"
+        description: "Dig into the codebase and understand how key flows are implemented"
+        steps:
+          - position: 1
+            title: "Watch the data flow walkthrough video"
+            description: "How a request travels from controller through service to database and back"
+            type: VIDEO
+            estimatedMinutes: 30
+            expectedOutcome: "Understand the full request lifecycle and where logic belongs at each layer"
+            tasks: [ ]
+            resources:
+              - title: "Data Flow Walkthrough Video"
+                description: "End-to-end trace of a real feature from HTTP request to DB query"
+                url: "https://internal.example.com/videos/data-flow"
+          - position: 2
+            title: "Read the testing guide"
+            description: "How we write unit, integration and module tests and what we expect to be covered"
+            type: DOCUMENT
+            estimatedMinutes: 35
+            expectedOutcome: "Know how to write tests that follow our conventions and pass CI"
+            tasks:
+              - position: 1
+                title: "Read the unit testing standards"
+                description: "When and how we write unit tests with JUnit and Mockk"
+              - position: 2
+                title: "Read the integration testing standards"
+                description: "How we use H2 for integration tests and what needs to be covered"
+              - position: 3
+                title: "Read the CI testing requirements"
+                description: "What must pass before a PR can be merged"
+            resources:
+              - title: "Testing Guide"
+                description: "Our full testing standards and examples"
+                url: "https://internal.example.com/testing-guide"
+              - title: "CI Pipeline Overview"
+                description: "What runs in GitHub Actions and when"
+                url: "https://internal.example.com/ci-overview"
+          - position: 3
+            title: "Trace an existing feature end to end"
+            description: "Pick a completed feature and follow it from controller to database"
+            type: TASK
+            estimatedMinutes: 60
+            expectedOutcome: "Solid understanding of how a full backend feature is structured"
+            tasks:
+              - position: 1
+                title: "Pick a feature module to explore"
+                description: "Choose any module other than the core module"
+              - position: 2
+                title: "Trace the controller and request mapping"
+                description: "Find the endpoint, its mapping and request/response DTOs"
+              - position: 3
+                title: "Trace the service layer"
+                description: "Follow the business logic and any cross-module calls"
+              - position: 4
+                title: "Trace the repository and entity"
+                description: "Find the JPA entity, repository and any custom queries"
+              - position: 5
+                title: "Note down any questions"
+                description: "Write down anything unclear to discuss with your lead"
+            resources:
+              - title: "Module Overview Doc"
+                description: "Summary of what each module owns and exposes"
+                url: "https://internal.example.com/module-overview"
+      - position: 3
+        title: "First Backend Contribution"
+        description: "Deliver your first real backend change"
+        steps:
+          - position: 1
+            title: "Watch the PR and review process video"
+            description: "How we open, review and merge backend PRs"
+            type: VIDEO
+            estimatedMinutes: 20
+            expectedOutcome: "Know what a good backend PR looks like and how the review process works"
+            tasks: [ ]
+            resources:
+              - title: "PR Process Video"
+                description: "Walkthrough of opening and getting a backend PR merged"
+                url: "https://internal.example.com/videos/backend-pr-process"
+          - position: 2
+            title: "Read the pre-PR checklist"
+            description: "What we verify before marking any backend change as ready for review"
+            type: DOCUMENT
+            estimatedMinutes: 20
+            expectedOutcome: "Know what to self-review before requesting a review"
+            tasks:
+              - position: 1
+                title: "Read the code review checklist"
+                description: "Error handling, test coverage, Swagger docs, migration safety"
+              - position: 2
+                title: "Read the migration safety rules"
+                description: "What makes a Flyway migration safe to run in production"
+            resources:
+              - title: "Pre-PR Checklist"
+                description: "Backend self-review checklist"
+                url: "https://internal.example.com/backend-pr-checklist"
+              - title: "Migration Safety Guide"
+                description: "Rules for writing safe, backwards-compatible DB migrations"
+                url: "https://internal.example.com/migration-safety"
+          - position: 3
+            title: "Complete your first backend ticket"
+            description: "Pick up, implement and merge a starter backend ticket"
+            type: TASK
+            estimatedMinutes: 120
+            expectedOutcome: "First backend PR merged to main with tests passing in CI"
+            tasks:
+              - position: 1
+                title: "Pick up a good-first-issue"
+                description: "Find a backend starter ticket in Jira"
+              - position: 2
+                title: "Implement the change with tests"
+                description: "Write the feature or fix with appropriate test coverage"
+              - position: 3
+                title: "Run the pre-PR checklist on your own work"
+                description: "Self-review before opening the PR"
+              - position: 4
+                title: "Open a PR and address feedback"
+                description: "Submit for review and resolve any comments"
+            resources:
+              - title: "Backend Good First Issues"
+                description: "Jira board filtered for backend starter tickets"
+                url: "https://internal.example.com/jira/backend-good-first-issues"

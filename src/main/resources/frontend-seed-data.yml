@@ -1,0 +1,180 @@
+paths:
+  - userId: "00000000-0000-0000-0000-000000000002"
+    phases:
+      - position: 1
+        title: "Frontend Foundations"
+        description: "Get familiar with our frontend stack and standards"
+        steps:
+          - position: 1
+            title: "Watch the frontend architecture overview"
+            description: "High-level walkthrough of our React app structure"
+            type: VIDEO
+            estimatedMinutes: 30
+            expectedOutcome: "Understand how the frontend is organized and how it talks to the backend"
+            tasks: [ ]
+            resources:
+              - title: "Frontend Architecture Video"
+                description: "Overview of our React + TypeScript setup"
+                url: "https://internal.example.com/videos/frontend-architecture"
+          - position: 2
+            title: "Read the frontend guidelines"
+            description: "Our coding standards, component conventions and styling rules"
+            type: DOCUMENT
+            estimatedMinutes: 40
+            expectedOutcome: "Know how we structure components, name things and write CSS"
+            tasks:
+              - position: 1
+                title: "Read component conventions"
+                description: "How we structure and name React components"
+              - position: 2
+                title: "Read the styling guide"
+                description: "How we use Tailwind and when to write custom CSS"
+              - position: 3
+                title: "Read the state management rules"
+                description: "When to use local state vs global store"
+            resources:
+              - title: "Frontend Guidelines"
+                description: "Full frontend coding standards document"
+                url: "https://internal.example.com/frontend-guidelines"
+              - title: "Component Library"
+                description: "Our shared component library with usage examples"
+                url: "https://internal.example.com/component-library"
+          - position: 3
+            title: "Set up the frontend dev environment"
+            description: "Get the app running locally with all tooling configured"
+            type: TASK
+            estimatedMinutes: 45
+            expectedOutcome: "App running locally with hot reload and lint working"
+            tasks:
+              - position: 1
+                title: "Install Node and pnpm"
+                description: "Use the version specified in .nvmrc"
+              - position: 2
+                title: "Install dependencies"
+                description: "Run pnpm install in the project root"
+              - position: 3
+                title: "Configure environment variables"
+                description: "Copy .env.example to .env and fill in local values"
+              - position: 4
+                title: "Run the dev server"
+                description: "Start the app and verify it loads in the browser"
+            resources:
+              - title: "Frontend Setup Guide"
+                description: "Step-by-step local setup instructions"
+                url: "https://internal.example.com/frontend-setup"
+      - position: 2
+        title: "Codebase Walkthrough"
+        description: "Dig into the actual codebase and understand how key flows work"
+        steps:
+          - position: 1
+            title: "Watch the key user flows video"
+            description: "A walkthrough of our most important frontend flows end to end"
+            type: VIDEO
+            estimatedMinutes: 35
+            expectedOutcome: "Understand how the main user journeys are implemented"
+            tasks: [ ]
+            resources:
+              - title: "Key User Flows Video"
+                description: "Walkthrough of auth, dashboard and core feature flows"
+                url: "https://internal.example.com/videos/key-flows"
+          - position: 2
+            title: "Read the API integration guide"
+            description: "How we call the backend, handle errors and manage loading states"
+            type: DOCUMENT
+            estimatedMinutes: 30
+            expectedOutcome: "Know how to fetch data and handle API responses consistently"
+            tasks:
+              - position: 1
+                title: "Read the data fetching patterns"
+                description: "How we use React Query across the app"
+              - position: 2
+                title: "Read the error handling guide"
+                description: "How we surface API errors to users"
+            resources:
+              - title: "API Integration Guide"
+                description: "Our patterns for talking to the backend"
+                url: "https://internal.example.com/api-integration"
+              - title: "React Query Docs"
+                description: "Official React Query documentation"
+                url: "https://tanstack.com/query/latest"
+          - position: 3
+            title: "Explore and annotate a feature"
+            description: "Pick a completed feature and trace it from route to API call"
+            type: TASK
+            estimatedMinutes: 60
+            expectedOutcome: "Solid understanding of how a full feature is wired together"
+            tasks:
+              - position: 1
+                title: "Pick a feature to explore"
+                description: "Choose any completed feature from the features directory"
+              - position: 2
+                title: "Trace the route and page component"
+                description: "Follow the routing from URL to page component"
+              - position: 3
+                title: "Trace the data fetching"
+                description: "Find the React Query hook and the API call it makes"
+              - position: 4
+                title: "Note down any questions"
+                description: "Write down anything unclear to discuss with your lead"
+            resources:
+              - title: "Routing Overview"
+                description: "How our React Router setup is structured"
+                url: "https://internal.example.com/routing-overview"
+      - position: 3
+        title: "First Frontend Contribution"
+        description: "Deliver your first real frontend change"
+        steps:
+          - position: 1
+            title: "Watch the PR and review process video"
+            description: "How we open, review and merge frontend PRs"
+            type: VIDEO
+            estimatedMinutes: 20
+            expectedOutcome: "Know what a good frontend PR looks like and how review works"
+            tasks: [ ]
+            resources:
+              - title: "PR Process Video"
+                description: "Walkthrough of opening and getting a frontend PR merged"
+                url: "https://internal.example.com/videos/frontend-pr-process"
+          - position: 2
+            title: "Read the accessibility and QA checklist"
+            description: "What we check before marking any UI change as ready"
+            type: DOCUMENT
+            estimatedMinutes: 25
+            expectedOutcome: "Know what to self-review before requesting a review"
+            tasks:
+              - position: 1
+                title: "Read the accessibility requirements"
+                description: "ARIA labels, keyboard nav and contrast standards we follow"
+              - position: 2
+                title: "Read the QA checklist"
+                description: "Responsiveness, browser targets and visual regression checks"
+            resources:
+              - title: "Accessibility Guide"
+                description: "Our frontend accessibility standards"
+                url: "https://internal.example.com/accessibility"
+              - title: "QA Checklist"
+                description: "Pre-review checklist for frontend changes"
+                url: "https://internal.example.com/frontend-qa-checklist"
+          - position: 3
+            title: "Complete your first frontend ticket"
+            description: "Pick up, implement and merge a starter frontend ticket"
+            type: TASK
+            estimatedMinutes: 120
+            expectedOutcome: "First frontend PR merged to main"
+            tasks:
+              - position: 1
+                title: "Pick up a good-first-issue"
+                description: "Find a frontend starter ticket in Jira"
+              - position: 2
+                title: "Implement the change"
+                description: "Write the component or fix following our conventions"
+              - position: 3
+                title: "Run the QA checklist on your own work"
+                description: "Self-review before opening the PR"
+              - position: 4
+                title: "Open a PR and address feedback"
+                description: "Submit for review and resolve any comments"
+            resources:
+              - title: "Frontend Good First Issues"
+                description: "Jira board filtered for frontend starter tickets"
+                url: "https://internal.example.com/jira/frontend-good-first-issues"
