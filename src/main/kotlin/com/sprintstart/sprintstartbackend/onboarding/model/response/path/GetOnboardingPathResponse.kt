@@ -8,5 +8,5 @@ data class GetOnboardingPathResponse(
     val id: UUID,
     val userId: UUID,
     val createdAt: Instant,
-    val phases: List<GetOnboardingPhasesResponse>
+    val phases: List<GetOnboardingPhasesResponse>,
 )

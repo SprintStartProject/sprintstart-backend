@@ -24,7 +24,7 @@ fun OnboardingPhase.toGetResponse(): GetOnboardingPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
-        steps = this.steps.map { step -> step.toGetAllResponse()},
+        steps = this.steps.map { step -> step.toGetAllResponse() },
     )
 }
 

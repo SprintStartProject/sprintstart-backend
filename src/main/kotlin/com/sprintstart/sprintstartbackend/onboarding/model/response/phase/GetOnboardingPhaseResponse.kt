@@ -9,5 +9,5 @@ data class GetOnboardingPhaseResponse(
     val position: Int,
     val title: String,
     val description: String,
-    val steps: List<GetOnboardingStepsResponse>
+    val steps: List<GetOnboardingStepsResponse>,
 )

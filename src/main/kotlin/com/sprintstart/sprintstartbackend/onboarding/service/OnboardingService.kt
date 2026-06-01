@@ -52,6 +52,19 @@ import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.UUID
 
+/**
+ * Service handling all business logic for the onboarding module.
+ *
+ * Manages the full hierarchy of onboarding entities:
+ * - **Path** — top-level container tied to a specific user
+ * - **Phase** — ordered group of steps within a path
+ * - **Step** — individual unit of work within a phase, with a [StepStatus]
+ * - **Task** — ordered checklist item within a step
+ * - **Resource** — reference material (link) attached to a step
+ *
+ * Position management (insert/update/delete) is handled automatically for
+ * phases, steps, and tasks by shifting sibling positions as needed.
+ */
 @Service
 class OnboardingService(
     private val onboardingPathRepository: OnboardingPathRepository,
@@ -61,18 +74,40 @@ class OnboardingService(
     private val onboardingResourceRepository: OnboardingResourceRepository,
     private val userApi: UserApi,
 ) {
+    // -------------------------------------------------------------------------
     // Paths
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new onboarding path for the given user.
+     *
+     * @param userId The ID of the user to create the path for.
+     * @return The created path response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId].
+     */
     fun createOnboardingPathForUser(userId: UUID): CreateOnboardingPathResponse {
         if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         return onboardingPathRepository.save(OnboardingPath(userId = userId)).toCreateResponse()
     }
 
+    /**
+     * Retrieves all onboarding paths across all users.
+     *
+     * @return A list of all onboarding paths.
+     */
     fun getAllOnboardingPaths(): List<GetOnboardingPathsResponse> {
         return onboardingPathRepository.findAll().map {
             it.toGetAllResponse()
         }
     }
 
+    /**
+     * Retrieves a single onboarding path by its ID.
+     *
+     * @param pathId The ID of the onboarding path.
+     * @return The onboarding path response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no path exists with [pathId].
+     */
     fun getOnboardingPath(pathId: UUID): GetOnboardingPathResponse {
         return onboardingPathRepository
             .findById(pathId)
@@ -80,6 +115,14 @@ class OnboardingService(
             .toGetResponse()
     }
 
+    /**
+     * Retrieves the onboarding path associated with a specific user.
+     *
+     * @param userId The ID of the user.
+     * @return The user's onboarding path response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId],
+     *   or if no path has been created for that user yet.
+     */
     fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathForUserResponse {
         if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         return onboardingPathRepository
@@ -88,16 +131,43 @@ class OnboardingService(
             .toGetForUserResponse()
     }
 
+    /**
+     * Deletes an onboarding path by its ID.
+     *
+     * No-op if no path exists with the given ID.
+     *
+     * @param pathId The ID of the onboarding path to delete.
+     */
     fun deleteOnboardingPathById(pathId: UUID) {
         onboardingPathRepository.deleteById(pathId)
     }
 
+    /**
+     * Deletes the onboarding path associated with a specific user.
+     *
+     * @param userId The ID of the user whose path should be deleted.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId].
+     */
     fun deleteOnboardingPathByUserId(userId: UUID) {
         if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         onboardingPathRepository.deleteByUserId(userId)
     }
 
+    // -------------------------------------------------------------------------
     // Phases
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new onboarding phase within the specified path at the requested position.
+     *
+     * All existing phases at or after [CreateOnboardingPhaseRequest.position] are shifted
+     * one position forward to make room for the new phase.
+     *
+     * @param pathId The ID of the path to add the phase to.
+     * @param request The phase creation request containing position, title, and description.
+     * @return The created phase response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no path exists with [pathId].
+     */
     @Transactional
     fun createOnboardingPhaseForPathId(pathId: UUID, request: CreateOnboardingPhaseRequest): CreateOnboardingPhaseResponse {
         val path = onboardingPathRepository
@@ -119,17 +189,36 @@ class OnboardingService(
         return onboardingPhaseRepository.save(onboardingPhase).toCreateResponse()
     }
 
+    /**
+     * Retrieves all onboarding phases across all paths.
+     *
+     * @return A list of all onboarding phases.
+     */
     @Transactional(readOnly = true)
     fun getOnboardingPhases(): List<GetOnboardingPhasesResponse> {
         return onboardingPhaseRepository.findAll().map { phase -> phase.toGetAllResponse() }
     }
 
+    /**
+     * Retrieves all onboarding phases belonging to the specified path.
+     *
+     * @param pathId The ID of the path whose phases should be retrieved.
+     * @return A list of phases for the given path.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no path exists with [pathId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingPhasesByPathId(pathId: UUID): List<GetOnboardingPhaseResponse> {
         if (!onboardingPathRepository.existsById(pathId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No path found with id: $pathId")
         return onboardingPhaseRepository.findAllByPath_Id(pathId).map { phase -> phase.toGetResponse() }
     }
 
+    /**
+     * Retrieves a single onboarding phase by its ID.
+     *
+     * @param phaseId The ID of the onboarding phase.
+     * @return The onboarding phase response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingPhase(phaseId: UUID): GetOnboardingPhaseResponse {
         return onboardingPhaseRepository
@@ -138,6 +227,17 @@ class OnboardingService(
             .toGetResponse()
     }
 
+    /**
+     * Updates an existing onboarding phase, including repositioning it within its path.
+     *
+     * When the position changes, sibling phases between the old and new positions are
+     * shifted accordingly to maintain a contiguous ordering.
+     *
+     * @param phaseId The ID of the phase to update.
+     * @param request The update request containing the new position, title, and description.
+     * @return The updated phase response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
+     */
     @Transactional
     fun updateOnboardingPhase(phaseId: UUID, request: UpdateOnboardingPhaseRequest): UpdateOnboardingPhaseResponse {
         val phase = onboardingPhaseRepository
@@ -163,6 +263,12 @@ class OnboardingService(
         return onboardingPhaseRepository.save(phase).toUpdateResponse()
     }
 
+    /**
+     * Deletes an onboarding phase and shifts subsequent sibling phases one position back.
+     *
+     * @param phaseId The ID of the phase to delete.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
+     */
     @Transactional
     fun deleteOnboardingPhase(phaseId: UUID) {
         val phase = onboardingPhaseRepository
@@ -177,7 +283,21 @@ class OnboardingService(
         onboardingPhaseRepository.delete(phase)
     }
 
+    // -------------------------------------------------------------------------
     // Steps
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new onboarding step within the specified phase at the requested position.
+     *
+     * All existing steps at or after [CreateOnboardingStepRequest.position] are shifted
+     * one position forward. The new step is initialized with [StepStatus.WAITING].
+     *
+     * @param phaseId The ID of the phase to add the step to.
+     * @param request The step creation request.
+     * @return The created step response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
+     */
     @Transactional
     fun createOnboardingStepForPhaseId(phaseId: UUID, request: CreateOnboardingStepRequest): CreateOnboardingStepResponse {
         val phase = onboardingPhaseRepository
@@ -203,6 +323,11 @@ class OnboardingService(
         return onboardingStepRepository.save(onboardingStep).toCreateResponse()
     }
 
+    /**
+     * Retrieves all onboarding steps across all phases.
+     *
+     * @return A list of all onboarding steps.
+     */
     @Transactional(readOnly = true)
     fun getOnboardingSteps(): List<GetOnboardingStepsResponse> {
         return onboardingStepRepository
@@ -210,6 +335,13 @@ class OnboardingService(
             .map { step -> step.toGetAllResponse() }
     }
 
+    /**
+     * Retrieves all onboarding steps belonging to the specified phase.
+     *
+     * @param phaseId The ID of the phase whose steps should be retrieved.
+     * @return A list of steps for the given phase.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingStepsByPhaseId(phaseId: UUID): List<GetOnboardingStepResponse> {
         if (!onboardingPhaseRepository.existsById(phaseId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId")
@@ -218,6 +350,13 @@ class OnboardingService(
             .map { step -> step.toGetResponse() }
     }
 
+    /**
+     * Retrieves a single onboarding step by its ID.
+     *
+     * @param stepId The ID of the onboarding step.
+     * @return The onboarding step response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingStep(stepId: UUID): GetOnboardingStepResponse {
         return onboardingStepRepository
@@ -226,6 +365,23 @@ class OnboardingService(
             .toGetResponse()
     }
 
+    /**
+     * Updates an existing onboarding step, including repositioning and status transitions.
+     *
+     * When the position changes, sibling steps between the old and new positions are shifted
+     * to maintain contiguous ordering.
+     *
+     * Status transition side-effects:
+     * - [StepStatus.FINISHED] — sets [OnboardingStep.completedAt] to now.
+     * - [StepStatus.SKIPPED] — sets [OnboardingStep.completedAt] to now and records
+     *   [UpdateOnboardingStepRequest.skipReason] (defaults to `"No reason given"`).
+     * - [StepStatus.WAITING] — clears [OnboardingStep.completedAt] and [OnboardingStep.skipReason].
+     *
+     * @param stepId The ID of the step to update.
+     * @param request The update request.
+     * @return The updated step response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional
     fun updateOnboardingStep(stepId: UUID, request: UpdateOnboardingStepRequest): UpdateOnboardingStepResponse {
         val step = onboardingStepRepository
@@ -250,7 +406,6 @@ class OnboardingService(
         step.type = request.type
         step.estimatedMinutes = request.estimatedMinutes
         step.expectedOutcome = request.expectedOutcome
-        step.status = request.status
 
         if (step.status != request.status) {
             when (step.status) {
@@ -270,9 +425,17 @@ class OnboardingService(
             }
         }
 
+        step.status = request.status
+
         return onboardingStepRepository.save(step).toUpdateResponse()
     }
 
+    /**
+     * Deletes an onboarding step and shifts subsequent sibling steps one position back.
+     *
+     * @param stepId The ID of the step to delete.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional
     fun deleteOnboardingStep(stepId: UUID) {
         val step = onboardingStepRepository
@@ -287,7 +450,21 @@ class OnboardingService(
         onboardingStepRepository.delete(step)
     }
 
+    // -------------------------------------------------------------------------
     // Tasks
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new onboarding task within the specified step at the requested position.
+     *
+     * All existing tasks at or after [CreateOnboardingTaskRequest.position] are shifted
+     * one position forward.
+     *
+     * @param stepId The ID of the step to add the task to.
+     * @param request The task creation request.
+     * @return The created task response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional
     fun createOnboardingTaskForStepId(stepId: UUID, request: CreateOnboardingTaskRequest): CreateOnboardingTaskResponse {
         val step = onboardingStepRepository
@@ -308,17 +485,36 @@ class OnboardingService(
         return onboardingTaskRepository.save(onboardingTask).toCreateResponse()
     }
 
+    /**
+     * Retrieves all onboarding tasks across all steps.
+     *
+     * @return A list of all onboarding tasks.
+     */
     @Transactional(readOnly = true)
     fun getOnboardingTasks(): List<GetOnboardingTasksResponse> {
         return onboardingTaskRepository.findAll().map { task -> task.toGetAllResponse() }
     }
 
+    /**
+     * Retrieves all onboarding tasks belonging to the specified step.
+     *
+     * @param stepId The ID of the step whose tasks should be retrieved.
+     * @return A list of tasks for the given step.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingTasksByStepId(stepId: UUID): List<GetOnboardingTaskResponse> {
         if (!onboardingStepRepository.existsById(stepId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
         return onboardingTaskRepository.findAllByStep_Id(stepId).map { task -> task.toGetResponse() }
     }
 
+    /**
+     * Retrieves a single onboarding task by its ID.
+     *
+     * @param taskId The ID of the onboarding task.
+     * @return The onboarding task response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingTask(taskId: UUID): GetOnboardingTaskResponse {
         return onboardingTaskRepository
@@ -327,6 +523,17 @@ class OnboardingService(
             .toGetResponse()
     }
 
+    /**
+     * Updates an existing onboarding task, including repositioning it within its step.
+     *
+     * When the position changes, sibling tasks between the old and new positions are shifted
+     * to maintain contiguous ordering.
+     *
+     * @param taskId The ID of the task to update.
+     * @param request The update request.
+     * @return The updated task response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
+     */
     @Transactional
     fun updateOnboardingTask(taskId: UUID, request: UpdateOnboardingTaskRequest): UpdateOnboardingTaskResponse {
         val task = onboardingTaskRepository
@@ -353,6 +560,12 @@ class OnboardingService(
         return onboardingTaskRepository.save(task).toUpdateResponse()
     }
 
+    /**
+     * Deletes an onboarding task and shifts subsequent sibling tasks one position back.
+     *
+     * @param taskId The ID of the task to delete.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
+     */
     @Transactional
     fun deleteOnboardingTask(taskId: UUID) {
         val task = onboardingTaskRepository
@@ -366,7 +579,20 @@ class OnboardingService(
         onboardingTaskRepository.delete(task)
     }
 
+    // -------------------------------------------------------------------------
     // Resources
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a new onboarding resource (reference link) attached to the specified step.
+     *
+     * Unlike phases, steps, and tasks, resources are not position-ordered.
+     *
+     * @param stepId The ID of the step to attach the resource to.
+     * @param request The resource creation request containing title, description, and URL.
+     * @return The created resource response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
+     */
     @Transactional
     fun createOnboardingResourceForStepId(stepId: UUID, request: CreateOnboardingResourceRequest): CreateOnboardingResourceResponse {
         val step = onboardingStepRepository
@@ -383,6 +609,11 @@ class OnboardingService(
         return onboardingResourceRepository.save(resource).toCreateResponse()
     }
 
+    /**
+     * Retrieves all onboarding resources across all steps.
+     *
+     * @return A list of all onboarding resources.
+     */
     @Transactional(readOnly = true)
     fun getOnboardingResources(): List<GetOnboardingResourcesResponse> {
         return onboardingResourceRepository
@@ -390,6 +621,12 @@ class OnboardingService(
             .map { resource -> resource.toGetAllResponse() }
     }
 
+    /**
+     * Retrieves all onboarding resources attached to the specified step.
+     *
+     * @param stepId The ID of the step whose resources should be retrieved.
+     * @return A list of resources for the given step.
+     */
     @Transactional(readOnly = true)
     fun getOnboardingResourceByStepId(stepId: UUID): List<GetOnboardingResourceResponse> {
         return onboardingResourceRepository
@@ -397,6 +634,13 @@ class OnboardingService(
             .map { resource -> resource.toGetResponse() }
     }
 
+    /**
+     * Retrieves a single onboarding resource by its ID.
+     *
+     * @param resourceId The ID of the onboarding resource.
+     * @return The onboarding resource response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
+     */
     @Transactional(readOnly = true)
     fun getOnboardingResource(resourceId: UUID): GetOnboardingResourceResponse {
         return onboardingResourceRepository
@@ -405,6 +649,14 @@ class OnboardingService(
             .toGetResponse()
     }
 
+    /**
+     * Updates an existing onboarding resource's title, description, and URL.
+     *
+     * @param resourceId The ID of the resource to update.
+     * @param request The update request.
+     * @return The updated resource response.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
+     */
     @Transactional
     fun updateOnboardingResource(resourceId: UUID, request: UpdateOnboardingResourceRequest): UpdateOnboardingResourceResponse {
         val resource = onboardingResourceRepository
@@ -418,6 +670,12 @@ class OnboardingService(
         return onboardingResourceRepository.save(resource).toUpdateResponse()
     }
 
+    /**
+     * Deletes an onboarding resource by its ID.
+     *
+     * @param resourceId The ID of the resource to delete.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
+     */
     @Transactional
     fun deleteOnboardingResource(resourceId: UUID) {
         val resource = onboardingResourceRepository

@@ -13,7 +13,7 @@ import java.util.UUID
 
 @Entity
 @Table(name = "onboarding_phases")
-class OnboardingPhase (
+class OnboardingPhase(
     @Id
     val id: UUID = UUID.randomUUID(),
     @ManyToOne
