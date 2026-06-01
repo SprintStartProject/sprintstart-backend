@@ -4,4 +4,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhas
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
-interface OnboardingPhaseRepository : JpaRepository<OnboardingPhase, UUID>
+interface OnboardingPhaseRepository : JpaRepository<OnboardingPhase, UUID> {
+    fun findByPath_IdAndPositionGreaterThanEqual(pathId: UUID, positionIsGreaterThan: Int): MutableList<OnboardingPhase>
+    fun findAllByPath_Id(pathId: UUID): MutableList<OnboardingPhase>
+    fun findByPath_IdAndPositionGreaterThan(pathId: UUID, positionIsGreaterThan: Int): MutableList<OnboardingPhase>
+    fun findByPath_IdAndPositionBetween(pathId: UUID, positionAfter: Int, positionBefore: Int): MutableList<OnboardingPhase>
+}

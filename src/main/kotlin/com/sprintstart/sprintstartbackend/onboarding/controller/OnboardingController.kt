@@ -8,12 +8,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOn
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.UpdateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.CreateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.CreateOnboardingPhaseResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhasesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.CreateOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhasesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.UpdateOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.CreateOnboardingResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourceResponse
@@ -21,6 +21,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.Get
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.UpdateOnboardingResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.CreateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.CreateOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
@@ -72,9 +73,9 @@ class OnboardingController(
         @PathVariable pathId: UUID,
         @RequestBody request: CreateOnboardingPhaseRequest,
     ): CreateOnboardingPhaseResponse {
-        return onboardingService.createOnbaordingPhaseForPathId(pathId, request)
+        return onboardingService.createOnboardingPhaseForPathId(pathId, request)
     }
-    
+
     @GetMapping("/phases")
     fun getOnboardingPhases(): List<GetOnboardingPhasesResponse> {
         return onboardingService.getOnboardingPhases()
@@ -82,7 +83,7 @@ class OnboardingController(
 
     @GetMapping("/paths/{pathId}/phases")
     fun getAllOnboardingPhasesByPathId(@PathVariable pathId: UUID): List<GetOnboardingPhaseResponse> {
-        return onboardingService.getOnboardingPhasesForPathId(pathId)
+        return onboardingService.getOnboardingPhasesByPathId(pathId)
     }
 
     @GetMapping("/phases/{phaseId}")
@@ -114,13 +115,13 @@ class OnboardingController(
     }
 
     @GetMapping("/steps")
-    fun getOnboardingSteps(): List<GetOnboardingPhaseResponse> {
-        return onboardingService.getOnboardingPhases()
+    fun getOnboardingSteps(): List<GetOnboardingStepsResponse> {
+        return onboardingService.getOnboardingSteps()
     }
 
     @GetMapping("/phases/{phaseId}/steps")
     fun getOnboardingStepsForPhaseId(@PathVariable phaseId: UUID): List<GetOnboardingStepResponse> {
-        return onboardingService.getOnboardingStepsForPhaseId(phaseId)
+        return onboardingService.getOnboardingStepsByPhaseId(phaseId)
     }
 
     @GetMapping("/steps/{stepId}")
@@ -143,6 +144,14 @@ class OnboardingController(
 
     // Task Specific Endpoints
 
+    @PostMapping("/step/{stepId}/tasks")
+    fun createOnboardingTask(
+        @PathVariable stepId: UUID,
+        @RequestBody request: CreateOnboardingTaskRequest,
+    ): CreateOnboardingTaskResponse {
+        return onboardingService.createOnboardingTaskForStepId(stepId, request)
+    }
+
     @GetMapping("/tasks")
     fun getOnboardingTasks(): List<GetOnboardingTasksResponse> {
         return onboardingService.getOnboardingTasks()
@@ -156,14 +165,6 @@ class OnboardingController(
     @GetMapping("/tasks/{taskId}")
     fun getOnboardingTask(@PathVariable taskId: UUID): GetOnboardingTaskResponse {
         return onboardingService.getOnboardingTask(taskId)
-    }
-
-    @PostMapping("/step/{stepId}/tasks")
-    fun createOnboardingTask(
-        @PathVariable stepId: UUID,
-        @RequestBody request: CreateOnboardingTaskRequest,
-    ): CreateOnboardingTaskResponse {
-        return onboardingService.createOnboardingTaskforStepId(stepId, request)
     }
 
     @PutMapping("/tasks/{taskId}")
@@ -210,10 +211,4 @@ class OnboardingController(
     fun deleteOnboardingResourceForStepId(@PathVariable resourceId: UUID) {
         return onboardingService.deleteOnboardingResource(resourceId)
     }
-
-    // Todo: - endpoints for phase
-    //       - endpoints for step
-    //       - endpoints for task - done -> maybe ad patch endpoint
-    //       - endpoints for resource - done
-    //       - add way to load default paths
 }

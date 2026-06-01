@@ -9,5 +9,4 @@ data class CreateOnboardingPhaseResponse(
     val position: Int,
     val title: String,
     val description: String,
-    val steps: List<GetOnboardingStepsResponse>
 )

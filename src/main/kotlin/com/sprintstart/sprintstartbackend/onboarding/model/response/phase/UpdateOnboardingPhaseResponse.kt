@@ -5,8 +5,8 @@ import java.util.UUID
 
 data class UpdateOnboardingPhaseResponse(
     val id: UUID,
-    val phaseId: UUID,
+    val pathId: UUID,
+    val position: Int,
     val title: String,
     val description: String,
-    val step: List<GetOnboardingStepsResponse>,
 )

@@ -54,7 +54,7 @@ class OnboardingStep (
         cascade = [CascadeType.ALL],
         orphanRemoval = true,
     )
-    val resources: MutableList<OnboardingResource>,
+    val resources: MutableList<OnboardingResource> = mutableListOf(),
 
     @Column(nullable = false)
     var expectedOutcome: String,
@@ -64,8 +64,8 @@ class OnboardingStep (
     var status: StepStatus,
 
     @Column(nullable = true)
-    var completedAt: Instant,
+    var completedAt: Instant? = null,
 
     @Column(nullable = true)
-    var skipReason: String,
+    var skipReason: String? = null,
 )
