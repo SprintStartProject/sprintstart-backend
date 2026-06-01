@@ -57,6 +57,7 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     runtimeOnly("org.postgresql:postgresql")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 }
 
 dependencyManagement {
