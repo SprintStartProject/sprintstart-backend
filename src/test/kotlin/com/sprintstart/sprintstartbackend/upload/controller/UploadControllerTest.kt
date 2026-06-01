@@ -3,8 +3,9 @@ package com.sprintstart.sprintstartbackend.upload.controller
 import com.sprintstart.sprintstartbackend.upload.model.dto.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.service.UploadService
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -15,6 +16,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
+import org.springframework.web.multipart.MultipartFile
 import java.time.Instant
 import java.util.UUID
 
@@ -47,32 +49,29 @@ class UploadControllerTest {
 
         whenever(
             uploadService.upload(
-                any(),
+                eq(listOf(file)),
                 eq(uploaderId),
             ),
         ).thenReturn(response)
 
         mockMvc
             .perform(
-                MockMvcRequestBuilders.multipart("/v1/uploads")
+                MockMvcRequestBuilders
+                    .multipart("/api/v1/uploads")
                     .file(file)
-                    .param(
-                        "uploaderId",
-                        uploaderId.toString(),
-                    ),
+                    .param("uploaderId", uploaderId.toString()),
             ).andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(
-                MockMvcResultMatchers.jsonPath("$[0].filename")
-                    .value("test.md"),
+                MockMvcResultMatchers.jsonPath("$[0].filename").value("test.md"),
             ).andExpect(
-                MockMvcResultMatchers.jsonPath("$[0].status")
-                    .value("ok"),
+                MockMvcResultMatchers.jsonPath("$[0].status").value("ok"),
             )
 
-        verify(uploadService).upload(
-            any(),
-            eq(uploaderId),
-        )
+        val filesCaptor = argumentCaptor<List<MultipartFile>>()
+        verify(uploadService).upload(filesCaptor.capture(), eq(uploaderId))
+
+        assertEquals(1, filesCaptor.firstValue.size)
+        assertEquals("test.md", filesCaptor.firstValue.first().originalFilename)
     }
 
     @Test
@@ -88,30 +87,21 @@ class UploadControllerTest {
             ),
         )
 
-        whenever(
-            uploadService.listUploads(
-                uploaderId,
-            ),
-        ).thenReturn(uploads)
+        whenever(uploadService.listUploads(eq(uploaderId))).thenReturn(uploads)
 
         mockMvc
             .perform(
-                MockMvcRequestBuilders.get("/v1/uploads")
-                    .param(
-                        "uploaderId",
-                        uploaderId.toString(),
-                    ),
+                MockMvcRequestBuilders
+                    .get("/api/v1/uploads")
+                    .param("uploaderId", uploaderId.toString()),
             ).andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(
-                MockMvcResultMatchers.jsonPath("$[0].filename")
-                    .value("doc.md"),
+                MockMvcResultMatchers.jsonPath("$[0].filename").value("doc.md"),
             ).andExpect(
-                MockMvcResultMatchers.jsonPath("$[0].mime")
-                    .value("text/markdown"),
+                MockMvcResultMatchers.jsonPath("$[0].mime").value("text/markdown"),
             )
 
-        verify(uploadService)
-            .listUploads(uploaderId)
+        verify(uploadService).listUploads(eq(uploaderId))
     }
 
     @Test
@@ -120,10 +110,9 @@ class UploadControllerTest {
 
         mockMvc
             .perform(
-                MockMvcRequestBuilders.delete("/v1/uploads/$artifactId"),
+                MockMvcRequestBuilders.delete("/api/v1/uploads/$artifactId"),
             ).andExpect(MockMvcResultMatchers.status().isNoContent)
 
-        verify(uploadService)
-            .deleteUpload(artifactId)
+        verify(uploadService).deleteUpload(eq(artifactId))
     }
 }

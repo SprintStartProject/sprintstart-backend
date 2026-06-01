@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.springframework.mock.web.MockMultipartFile
 
@@ -19,7 +21,7 @@ class UploadValidationServiceTest {
             "# Hello".toByteArray(),
         )
 
-        Assertions.assertDoesNotThrow {
+        assertDoesNotThrow {
             service.validate(file)
         }
     }
@@ -33,17 +35,11 @@ class UploadValidationServiceTest {
             ByteArray(0),
         )
 
-        val ex =
-            Assertions.assertThrows(
-                IllegalArgumentException::class.java,
-            ) {
-                service.validate(file)
-            }
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.validate(file)
+        }
 
-        Assertions.assertEquals(
-            "File is empty",
-            ex.message,
-        )
+        assertEquals("File is empty", ex.message)
     }
 
     @Test
@@ -55,17 +51,11 @@ class UploadValidationServiceTest {
             ByteArray(101),
         )
 
-        val ex =
-            Assertions.assertThrows(
-                IllegalArgumentException::class.java,
-            ) {
-                service.validate(file)
-            }
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.validate(file)
+        }
 
-        Assertions.assertEquals(
-            "File exceeds maximum allowed size",
-            ex.message,
-        )
+        assertEquals("File exceeds maximum allowed size", ex.message)
     }
 
     @Test
@@ -77,17 +67,11 @@ class UploadValidationServiceTest {
             "# Hello".toByteArray(),
         )
 
-        val ex =
-            Assertions.assertThrows(
-                IllegalArgumentException::class.java,
-            ) {
-                service.validate(file)
-            }
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.validate(file)
+        }
 
-        Assertions.assertEquals(
-            "Invalid filename",
-            ex.message,
-        )
+        assertEquals("Invalid filename", ex.message)
     }
 
     @Test
@@ -99,17 +83,11 @@ class UploadValidationServiceTest {
             "# Hello".toByteArray(),
         )
 
-        val ex =
-            Assertions.assertThrows(
-                IllegalArgumentException::class.java,
-            ) {
-                service.validate(file)
-            }
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.validate(file)
+        }
 
-        Assertions.assertEquals(
-            "Invalid filename",
-            ex.message,
-        )
+        assertEquals("Invalid filename", ex.message)
     }
 
     @Test
@@ -121,17 +99,11 @@ class UploadValidationServiceTest {
             "hello".toByteArray(),
         )
 
-        val ex =
-            Assertions.assertThrows(
-                IllegalArgumentException::class.java,
-            ) {
-                service.validate(file)
-            }
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.validate(file)
+        }
 
-        Assertions.assertEquals(
-            "Unsupported file extension: txt",
-            ex.message,
-        )
+        assertEquals("Unsupported file extension: txt", ex.message)
     }
 
     @Test
@@ -143,7 +115,7 @@ class UploadValidationServiceTest {
             byteArrayOf(1, 2, 3),
         )
 
-        Assertions.assertDoesNotThrow {
+        assertDoesNotThrow {
             service.validate(file)
         }
     }
@@ -157,7 +129,7 @@ class UploadValidationServiceTest {
             byteArrayOf(1, 2, 3),
         )
 
-        Assertions.assertDoesNotThrow {
+        assertDoesNotThrow {
             service.validate(file)
         }
     }
@@ -171,7 +143,7 @@ class UploadValidationServiceTest {
             byteArrayOf(1, 2, 3),
         )
 
-        Assertions.assertDoesNotThrow {
+        assertDoesNotThrow {
             service.validate(file)
         }
     }

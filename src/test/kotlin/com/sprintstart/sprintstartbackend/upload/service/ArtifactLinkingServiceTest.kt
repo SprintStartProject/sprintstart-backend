@@ -3,7 +3,7 @@ package com.sprintstart.sprintstartbackend.upload.service
 import com.sprintstart.sprintstartbackend.upload.model.entity.ArtifactImage
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
 import com.sprintstart.sprintstartbackend.upload.repository.ArtifactImageRepository
-import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
@@ -30,8 +30,7 @@ class ArtifactLinkingServiceTest {
 
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
-                markdownArtifact to
-                    "![Logo](logo.png)",
+                markdownArtifact to "![Logo](logo.png)",
             ),
             uploadedArtifactsByFilename = mapOf(
                 "logo.png" to imageArtifact,
@@ -39,30 +38,15 @@ class ArtifactLinkingServiceTest {
         )
 
         val captor =
-            ArgumentCaptor.forClass(
-                ArtifactImage::class.java,
-            )
+            ArgumentCaptor.forClass(ArtifactImage::class.java)
 
-        Mockito.verify(repository).save(
-            captor.capture(),
-        )
+        Mockito.verify(repository).save(captor.capture())
 
         val saved = captor.value
 
-        Assertions.assertEquals(
-            markdownArtifact.id,
-            saved.artifact.id,
-        )
-
-        Assertions.assertEquals(
-            imageArtifact.id,
-            saved.imageArtifact.id,
-        )
-
-        Assertions.assertEquals(
-            "logo.png",
-            saved.originalPath,
-        )
+        assertEquals(markdownArtifact.id, saved.artifact.id)
+        assertEquals(imageArtifact.id, saved.imageArtifact.id)
+        assertEquals("logo.png", saved.originalPath)
     }
 
     @Test
@@ -72,16 +56,14 @@ class ArtifactLinkingServiceTest {
 
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
-                markdownArtifact to
-                    "![Logo](missing.png)",
+                markdownArtifact to "![Logo](missing.png)",
             ),
             uploadedArtifactsByFilename = emptyMap(),
         )
 
-        Mockito.verify(
-            repository,
-            Mockito.never(),
-        ).save(ArgumentMatchers.any())
+        Mockito
+            .verify(repository, Mockito.never())
+            .save(ArgumentMatchers.any())
     }
 
     @Test
@@ -103,19 +85,15 @@ class ArtifactLinkingServiceTest {
                     ![Two](two.png)
                     """.trimIndent(),
             ),
-            uploadedArtifactsByFilename =
-                mapOf(
-                    "one.png" to firstImage,
-                    "two.png" to secondImage,
-                ),
+            uploadedArtifactsByFilename = mapOf(
+                "one.png" to firstImage,
+                "two.png" to secondImage,
+            ),
         )
 
-        Mockito.verify(
-            repository,
-            Mockito.times(2),
-        ).save(
-            ArgumentMatchers.any(),
-        )
+        Mockito
+            .verify(repository, Mockito.times(2))
+            .save(ArgumentMatchers.any())
     }
 
     @Test
@@ -128,17 +106,14 @@ class ArtifactLinkingServiceTest {
 
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
-                markdownArtifact to
-                    "![Logo](images/logo.png)",
+                markdownArtifact to "![Logo](images/logo.png)",
             ),
             uploadedArtifactsByFilename = mapOf(
                 "logo.png" to imageArtifact,
             ),
         )
 
-        Mockito.verify(repository).save(
-            ArgumentMatchers.any(),
-        )
+        Mockito.verify(repository).save(ArgumentMatchers.any())
     }
 
     @Test
@@ -157,24 +132,18 @@ class ArtifactLinkingServiceTest {
 
         service.linkMarkdownImages(
             markdownArtifacts = listOf(
-                markdownOne to
-                    "![One](one.png)",
-                markdownTwo to
-                    "![Two](two.png)",
+                markdownOne to "![One](one.png)",
+                markdownTwo to "![Two](two.png)",
             ),
-            uploadedArtifactsByFilename =
-                mapOf(
-                    "one.png" to imageOne,
-                    "two.png" to imageTwo,
-                ),
+            uploadedArtifactsByFilename = mapOf(
+                "one.png" to imageOne,
+                "two.png" to imageTwo,
+            ),
         )
 
-        Mockito.verify(
-            repository,
-            Mockito.times(2),
-        ).save(
-            ArgumentMatchers.any(),
-        )
+        Mockito
+            .verify(repository, Mockito.times(2))
+            .save(ArgumentMatchers.any())
     }
 
     private fun artifact(

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class MarkdownImageReferenceExtractorTest {
@@ -12,33 +12,22 @@ class MarkdownImageReferenceExtractorTest {
         val markdown =
             """
             # Title
-            
+
             Some text here.
             """.trimIndent()
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            emptyList<String>(),
-            result,
-        )
+        assertEquals(emptyList<String>(), result)
     }
 
     @Test
     fun `extract finds single image`() {
-        val markdown =
-            """
-            ![Logo](logo.png)
-            """.trimIndent()
+        val markdown = "![Logo](logo.png)"
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            listOf("logo.png"),
-            result,
-        )
+        assertEquals(listOf("logo.png"), result)
     }
 
     @Test
@@ -51,15 +40,10 @@ class MarkdownImageReferenceExtractorTest {
             ![Three](three.webp)
             """.trimIndent()
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            listOf(
-                "one.png",
-                "two.jpg",
-                "three.webp",
-            ),
+        assertEquals(
+            listOf("one.png", "two.jpg", "three.webp"),
             result,
         )
     }
@@ -72,32 +56,22 @@ class MarkdownImageReferenceExtractorTest {
             ![Image](../assets/banner.jpg)
             """.trimIndent()
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            listOf(
-                "images/logo.png",
-                "../assets/banner.jpg",
-            ),
+        assertEquals(
+            listOf("images/logo.png", "../assets/banner.jpg"),
             result,
         )
     }
 
     @Test
     fun `extract supports absolute urls`() {
-        val markdown =
-            """
-            ![Image](https://example.com/image.png)
-            """.trimIndent()
+        val markdown = "![Image](https://example.com/image.png)"
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            listOf(
-                "https://example.com/image.png",
-            ),
+        assertEquals(
+            listOf("https://example.com/image.png"),
             result,
         )
     }
@@ -107,16 +81,12 @@ class MarkdownImageReferenceExtractorTest {
         val markdown =
             """
             [OpenAI](https://example.com)
-            
+
             ![Image](image.png)
             """.trimIndent()
 
-        val result =
-            extractor.extract(markdown)
+        val result = extractor.extract(markdown)
 
-        Assertions.assertEquals(
-            listOf("image.png"),
-            result,
-        )
+        assertEquals(listOf("image.png"), result)
     }
 }
