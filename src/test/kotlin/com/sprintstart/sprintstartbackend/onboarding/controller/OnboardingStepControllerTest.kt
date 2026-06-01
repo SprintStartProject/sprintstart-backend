@@ -63,15 +63,16 @@ class OnboardingStepControllerTest(
 
         every { onboardingService.createOnboardingStepForPhaseId(phaseId, request) } returns response
 
-        mockMvc.post("/api/v1/onboarding/phases/$phaseId/steps") {
-            contentType = MediaType.APPLICATION_JSON
-            content = objectMapper.writeValueAsString(request)
-        }.andExpect {
-            status { isCreated() }
-            jsonPath("$.id") { value(stepId.toString()) }
-            jsonPath("$.phaseId") { value(phaseId.toString()) }
-            jsonPath("$.status") { value("WAITING") }
-        }
+        mockMvc
+            .post("/api/v1/onboarding/phases/$phaseId/steps") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(request)
+            }.andExpect {
+                status { isCreated() }
+                jsonPath("$.id") { value(stepId.toString()) }
+                jsonPath("$.phaseId") { value(phaseId.toString()) }
+                jsonPath("$.status") { value("WAITING") }
+            }
 
         verify(exactly = 1) { onboardingService.createOnboardingStepForPhaseId(phaseId, request) }
     }
@@ -94,7 +95,8 @@ class OnboardingStepControllerTest(
 
         every { onboardingService.getOnboardingSteps() } returns response
 
-        mockMvc.get("/api/v1/onboarding/steps")
+        mockMvc
+            .get("/api/v1/onboarding/steps")
             .andExpect {
                 status { isOk() }
                 jsonPath("$[0].id") { value(stepId.toString()) }
@@ -125,7 +127,8 @@ class OnboardingStepControllerTest(
 
         every { onboardingService.getOnboardingStepsByPhaseId(phaseId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/phases/$phaseId/steps")
+        mockMvc
+            .get("/api/v1/onboarding/phases/$phaseId/steps")
             .andExpect {
                 status { isOk() }
                 jsonPath("$[0].id") { value(stepId.toString()) }
@@ -154,7 +157,8 @@ class OnboardingStepControllerTest(
 
         every { onboardingService.getOnboardingStep(stepId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/steps/$stepId")
+        mockMvc
+            .get("/api/v1/onboarding/steps/$stepId")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.id") { value(stepId.toString()) }
@@ -192,15 +196,16 @@ class OnboardingStepControllerTest(
 
         every { onboardingService.updateOnboardingStep(stepId, request) } returns response
 
-        mockMvc.put("/api/v1/onboarding/steps/$stepId") {
-            contentType = MediaType.APPLICATION_JSON
-            content = objectMapper.writeValueAsString(request)
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.id") { value(stepId.toString()) }
-            jsonPath("$.position") { value(2) }
-            jsonPath("$.status") { value("FINISHED") }
-        }
+        mockMvc
+            .put("/api/v1/onboarding/steps/$stepId") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(request)
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.id") { value(stepId.toString()) }
+                jsonPath("$.position") { value(2) }
+                jsonPath("$.status") { value("FINISHED") }
+            }
 
         verify(exactly = 1) { onboardingService.updateOnboardingStep(stepId, request) }
     }
@@ -209,7 +214,8 @@ class OnboardingStepControllerTest(
     fun `deleteOnboardingStep should return 204`() {
         every { onboardingService.deleteOnboardingStep(stepId) } just Runs
 
-        mockMvc.delete("/api/v1/onboarding/steps/$stepId")
+        mockMvc
+            .delete("/api/v1/onboarding/steps/$stepId")
             .andExpect {
                 status { isNoContent() }
             }

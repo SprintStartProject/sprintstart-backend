@@ -64,8 +64,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Create onboarding step",
         description = "Creates a new step within the specified phase at the given position. " +
-                "Existing steps at or after the requested position are shifted forward by one. " +
-                "The new step is always initialized with status WAITING regardless of request content.",
+            "Existing steps at or after the requested position are shifted forward by one. " +
+            "The new step is always initialized with status WAITING regardless of request content.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Step created successfully"),
@@ -110,7 +110,7 @@ class OnboardingStepController(
     @Operation(
         summary = "Get steps by phase ID",
         description = "Returns all onboarding steps belonging to the specified phase, ordered by position. " +
-                "Each step includes its direct tasks and resources (one level of nesting).",
+            "Each step includes its direct tasks and resources (one level of nesting).",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Ordered list of steps with direct tasks and resources"),
@@ -134,7 +134,7 @@ class OnboardingStepController(
     @Operation(
         summary = "Get onboarding step by ID",
         description = "Returns a single onboarding step by its UUID. " +
-                "Includes one level of nesting: the step's direct tasks and resources are included.",
+            "Includes one level of nesting: the step's direct tasks and resources are included.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding step with direct tasks and resources"),
@@ -164,11 +164,11 @@ class OnboardingStepController(
     @Operation(
         summary = "Update onboarding step",
         description = "Updates all fields of an existing onboarding step, including its status and position. " +
-                "If the position changes, sibling steps are shifted automatically. " +
-                "Status transitions carry side-effects: " +
-                "FINISHED records a completion timestamp; " +
-                "SKIPPED records a completion timestamp and a skip reason (defaults to 'No reason given' if omitted); " +
-                "WAITING clears both the completion timestamp and skip reason.",
+            "If the position changes, sibling steps are shifted automatically. " +
+            "Status transitions carry side-effects: " +
+            "FINISHED records a completion timestamp; " +
+            "SKIPPED records a completion timestamp and a skip reason (defaults to 'No reason given' if omitted); " +
+            "WAITING clears both the completion timestamp and skip reason.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Step updated successfully"),
@@ -194,8 +194,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Delete onboarding step",
         description = "Permanently deletes the specified onboarding step. " +
-                "Subsequent sibling steps are shifted back by one to keep ordering contiguous. " +
-                "All child tasks and resources are removed via cascade.",
+            "Subsequent sibling steps are shifted back by one to keep ordering contiguous. " +
+            "All child tasks and resources are removed via cascade.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Step deleted successfully"),

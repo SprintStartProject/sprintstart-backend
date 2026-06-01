@@ -105,7 +105,7 @@ class OnboardingTaskController(
     @Operation(
         summary = "Get tasks by step ID",
         description = "Returns all onboarding tasks belonging to the specified step, ordered by position. " +
-                "Tasks are leaf nodes — no nested content exists.",
+            "Tasks are leaf nodes — no nested content exists.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Ordered list of tasks for the step"),
@@ -157,7 +157,7 @@ class OnboardingTaskController(
     @Operation(
         summary = "Update onboarding task",
         description = "Updates all fields of an existing onboarding task, including its position and finished status. " +
-                "If the position changes, sibling tasks are shifted automatically to maintain contiguous ordering.",
+            "If the position changes, sibling tasks are shifted automatically to maintain contiguous ordering.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Task updated successfully"),
@@ -182,7 +182,7 @@ class OnboardingTaskController(
     @Operation(
         summary = "Delete onboarding task",
         description = "Permanently deletes the specified onboarding task. " +
-                "Subsequent sibling tasks are shifted back by one to keep ordering contiguous.",
+            "Subsequent sibling tasks are shifted back by one to keep ordering contiguous.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Task deleted successfully"),

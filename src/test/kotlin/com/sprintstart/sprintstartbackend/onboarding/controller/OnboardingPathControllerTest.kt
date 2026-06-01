@@ -46,7 +46,8 @@ class OnboardingPathControllerTest(
 
         every { onboardingService.getAllOnboardingPaths() } returns response
 
-        mockMvc.get("/api/v1/onboarding/paths")
+        mockMvc
+            .get("/api/v1/onboarding/paths")
             .andExpect {
                 status { isOk() }
                 jsonPath("$[0].id") { value(pathId.toString()) }
@@ -70,7 +71,8 @@ class OnboardingPathControllerTest(
 
         every { onboardingService.getOnboardingPath(pathId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/paths/$pathId")
+        mockMvc
+            .get("/api/v1/onboarding/paths/$pathId")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.id") { value(pathId.toString()) }
@@ -87,7 +89,8 @@ class OnboardingPathControllerTest(
             onboardingService.getOnboardingPath(pathId)
         } throws ResponseStatusException(HttpStatus.NOT_FOUND, "No onboarding path found")
 
-        mockMvc.get("/api/v1/onboarding/paths/$pathId")
+        mockMvc
+            .get("/api/v1/onboarding/paths/$pathId")
             .andExpect {
                 status { isNotFound() }
             }
@@ -106,7 +109,8 @@ class OnboardingPathControllerTest(
 
         every { onboardingService.getOnboardingPathByUserId(userId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/$userId/path")
+        mockMvc
+            .get("/api/v1/onboarding/$userId/path")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.id") { value(pathId.toString()) }
@@ -121,7 +125,8 @@ class OnboardingPathControllerTest(
     fun `deletePath should return 204`() {
         every { onboardingService.deleteOnboardingPathById(pathId) } just Runs
 
-        mockMvc.delete("/api/v1/onboarding/paths/$pathId")
+        mockMvc
+            .delete("/api/v1/onboarding/paths/$pathId")
             .andExpect {
                 status { isNoContent() }
             }
@@ -133,7 +138,8 @@ class OnboardingPathControllerTest(
     fun `deletePathByUserId should return 204`() {
         every { onboardingService.deleteOnboardingPathByUserId(userId) } just Runs
 
-        mockMvc.delete("/api/v1/onboarding/$userId/path")
+        mockMvc
+            .delete("/api/v1/onboarding/$userId/path")
             .andExpect {
                 status { isNoContent() }
             }

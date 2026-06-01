@@ -53,15 +53,16 @@ class OnboardingResourceControllerTest(
 
         every { onboardingService.createOnboardingResourceForStepId(stepId, request) } returns response
 
-        mockMvc.post("/api/v1/onboarding/steps/$stepId/resources") {
-            contentType = MediaType.APPLICATION_JSON
-            content = objectMapper.writeValueAsString(request)
-        }.andExpect {
-            status { isCreated() }
-            jsonPath("$.id") { value(resourceId.toString()) }
-            jsonPath("$.stepId") { value(stepId.toString()) }
-            jsonPath("$.url") { value("https://example.com/docs") }
-        }
+        mockMvc
+            .post("/api/v1/onboarding/steps/$stepId/resources") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(request)
+            }.andExpect {
+                status { isCreated() }
+                jsonPath("$.id") { value(resourceId.toString()) }
+                jsonPath("$.stepId") { value(stepId.toString()) }
+                jsonPath("$.url") { value("https://example.com/docs") }
+            }
 
         verify(exactly = 1) { onboardingService.createOnboardingResourceForStepId(stepId, request) }
     }
@@ -80,7 +81,8 @@ class OnboardingResourceControllerTest(
 
         every { onboardingService.getOnboardingResources() } returns response
 
-        mockMvc.get("/api/v1/onboarding/resources")
+        mockMvc
+            .get("/api/v1/onboarding/resources")
             .andExpect {
                 status { isOk() }
                 jsonPath("$[0].id") { value(resourceId.toString()) }
@@ -104,7 +106,8 @@ class OnboardingResourceControllerTest(
 
         every { onboardingService.getOnboardingResourceByStepId(stepId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/steps/$stepId/resources")
+        mockMvc
+            .get("/api/v1/onboarding/steps/$stepId/resources")
             .andExpect {
                 status { isOk() }
                 jsonPath("$[0].id") { value(resourceId.toString()) }
@@ -126,7 +129,8 @@ class OnboardingResourceControllerTest(
 
         every { onboardingService.getOnboardingResource(resourceId) } returns response
 
-        mockMvc.get("/api/v1/onboarding/resources/$resourceId")
+        mockMvc
+            .get("/api/v1/onboarding/resources/$resourceId")
             .andExpect {
                 status { isOk() }
                 jsonPath("$.id") { value(resourceId.toString()) }
@@ -153,15 +157,16 @@ class OnboardingResourceControllerTest(
 
         every { onboardingService.updateOnboardingResource(resourceId, request) } returns response
 
-        mockMvc.put("/api/v1/onboarding/resources/$resourceId") {
-            contentType = MediaType.APPLICATION_JSON
-            content = objectMapper.writeValueAsString(request)
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.id") { value(resourceId.toString()) }
-            jsonPath("$.title") { value("Updated documentation") }
-            jsonPath("$.url") { value("https://example.com/updated-docs") }
-        }
+        mockMvc
+            .put("/api/v1/onboarding/resources/$resourceId") {
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(request)
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.id") { value(resourceId.toString()) }
+                jsonPath("$.title") { value("Updated documentation") }
+                jsonPath("$.url") { value("https://example.com/updated-docs") }
+            }
 
         verify(exactly = 1) { onboardingService.updateOnboardingResource(resourceId, request) }
     }
@@ -170,7 +175,8 @@ class OnboardingResourceControllerTest(
     fun `deleteOnboardingResource should return 204`() {
         every { onboardingService.deleteOnboardingResource(resourceId) } just Runs
 
-        mockMvc.delete("/api/v1/onboarding/resources/$resourceId")
+        mockMvc
+            .delete("/api/v1/onboarding/resources/$resourceId")
             .andExpect {
                 status { isNoContent() }
             }
