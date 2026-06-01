@@ -23,7 +23,7 @@ class OnboardingStep (
     val id: UUID = UUID.randomUUID(),
     // This is a foreign key into onboarding_paths
     @ManyToOne
-    @JoinColumn(name="path_id", nullable = false)
+    @JoinColumn(name="phase_id", nullable = false)
     val phase: OnboardingPhase,
 
     @Column(nullable = false)

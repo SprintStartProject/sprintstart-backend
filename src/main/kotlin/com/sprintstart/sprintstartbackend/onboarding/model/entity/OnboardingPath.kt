@@ -27,4 +27,3 @@ class OnboardingPath(
     @OrderBy("position ASC")
     val phases: MutableList<OnboardingPhase> = mutableListOf(),
 )
-
