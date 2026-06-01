@@ -7,4 +7,5 @@ import java.util.UUID
 
 interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
     fun findOnboardingPathByUserId(userId: UUID): Optional<OnboardingPath>
+    fun deleteByUserId(userId: UUID)
 }

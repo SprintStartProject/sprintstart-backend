@@ -55,7 +55,7 @@ class OnboardingController(
     }
 
     // Get: Path for user -> includes all upto step_id
-    @GetMapping("/paths/for-user/{userId}")
+    @GetMapping("/{userId}/path")
     fun getPathForUser(@PathVariable userId: UUID): GetOnboardingPathForUserResponse{
         return onboardingService.getOnboardingPathByUserId(userId)
     }
@@ -64,6 +64,11 @@ class OnboardingController(
     @DeleteMapping("/paths/{pathId}")
     fun deletePath(@PathVariable pathId: UUID) {
         onboardingService.deleteOnboardingPathById(pathId)
+    }
+
+    @DeleteMapping("/{userId}/path")
+    fun deletePathByUserId(@PathVariable userId: UUID) {
+        onboardingService.deleteOnboardingPathByUserId(userId)
     }
 
     // Phase specific endpoints

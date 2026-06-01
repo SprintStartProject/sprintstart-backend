@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingResource
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
@@ -18,6 +19,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOn
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.UpdateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.CreateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CreateOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
@@ -42,6 +44,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseR
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingResourceRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingTaskRepository
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -56,8 +59,14 @@ class OnboardingService(
     private val onboardingStepRepository: OnboardingStepRepository,
     private val onboardingTaskRepository: OnboardingTaskRepository,
     private val onboardingResourceRepository: OnboardingResourceRepository,
+    private val userApi: UserApi,
 ) {
     // Paths
+    fun createOnboardingPathForUser(userId: UUID): CreateOnboardingPathResponse {
+        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        return onboardingPathRepository.save(OnboardingPath(userId = userId)).toCreateResponse()
+    }
+
     fun getAllOnboardingPaths(): List<GetOnboardingPathsResponse> {
         return onboardingPathRepository.findAll().map {
             it.toGetAllResponse()
@@ -72,6 +81,7 @@ class OnboardingService(
     }
 
     fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathForUserResponse {
+        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         return onboardingPathRepository
             .findOnboardingPathByUserId(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found for user with id: $userId") }
@@ -80,6 +90,11 @@ class OnboardingService(
 
     fun deleteOnboardingPathById(pathId: UUID) {
         onboardingPathRepository.deleteById(pathId)
+    }
+
+    fun deleteOnboardingPathByUserId(userId: UUID) {
+        if (!userApi.exists(userId)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        onboardingPathRepository.deleteByUserId(userId)
     }
 
     // Phases

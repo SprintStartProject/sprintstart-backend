@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CreateOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
@@ -34,5 +35,13 @@ fun OnboardingPath.toGetForUserResponse(): GetOnboardingPathForUserResponse {
         userId = this.userId,
         createdAt = this.createdAt,
         phases = phases.map { phase -> phase.toGetForUserResponse() },
+    )
+}
+
+fun OnboardingPath.toCreateResponse(): CreateOnboardingPathResponse {
+    return CreateOnboardingPathResponse(
+        id = this.id,
+        userId = this.userId,
+        createdAt = this.createdAt,
     )
 }
