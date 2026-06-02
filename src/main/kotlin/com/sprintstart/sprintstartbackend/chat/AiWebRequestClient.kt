@@ -98,7 +98,7 @@ class AiWebRequestClient : WebRequestClient() {
 
                         when (message.type) {
                             "done", "" -> break
-                            "token" -> emit(rawJson)
+                            "token", "citation" -> emit(rawJson)
                             "error" -> throw AiResponseException("Ai responded with error: ${message.content}")
                         }
                     } catch (e: AiResponseException) {
