@@ -141,6 +141,7 @@ class UploadService(
         publisher.publishEvent(
             ArtifactUploadedEvent(
                 artifactId = artifact.id,
+                filename = artifact.filename,
                 storagePath = artifact.storagePath,
                 mime = artifact.mime,
             ),
