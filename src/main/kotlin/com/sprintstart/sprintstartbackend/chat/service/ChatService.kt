@@ -62,9 +62,9 @@ internal class ChatService(
     @Transactional(readOnly = true)
     fun getChats(@Valid request: GetChatsRequest): GetChatsResponse {
         val pageable = if (request.limit == null) {
-            Pageable.unpaged(Sort.by(Sort.Direction.DESC, "createdAt"))
+            Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt"))
         } else {
-            PageRequest.of(0, request.limit, Sort.Direction.DESC, "createdAt")
+            PageRequest.of(0, request.limit, Sort.Direction.ASC, "createdAt")
         }
 
         val chats = chatRepository.findAll(pageable)
@@ -87,9 +87,9 @@ internal class ChatService(
     @Transactional(readOnly = true)
     fun getChat(chatId: UUID, @Valid request: GetChatMessagesRequest): GetChatMessagesResponse {
         val pageable = if (request.limit == null) {
-            Pageable.unpaged(Sort.by(Sort.Direction.DESC, "created_at"))
+            Pageable.unpaged(Sort.by(Sort.Direction.ASC, "created_at"))
         } else {
-            PageRequest.of(0, request.limit, Sort.Direction.DESC, "created_at")
+            PageRequest.of(0, request.limit, Sort.Direction.ASC, "created_at")
         }
 
         val msgs = messageRepository.findAllByChat(chatId, pageable).map { it.toChatMessageResponse() }.toList()
