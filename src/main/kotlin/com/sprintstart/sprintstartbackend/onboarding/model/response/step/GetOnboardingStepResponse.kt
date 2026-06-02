@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.response.step
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import java.time.Instant
@@ -12,6 +13,7 @@ data class GetOnboardingStepResponse(
     val position: Int,
     val title: String,
     val description: String,
+    val type: StepType,
     val estimatedMinutes: Int,
     val tasks: List<GetOnboardingTasksResponse>,
     val resources: List<GetOnboardingResourcesResponse>,
