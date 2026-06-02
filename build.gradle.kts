@@ -39,6 +39,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
 //    testImplementation("org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server-test")
 //    testImplementation("org.springframework.boot:spring-boot-starter-security-test")

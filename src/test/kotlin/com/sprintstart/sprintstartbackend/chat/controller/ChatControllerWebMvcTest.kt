@@ -13,6 +13,8 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import io.mockk.every
 import jakarta.validation.ConstraintViolationException
+import kotlinx.coroutines.flow.flowOf
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -25,6 +27,8 @@ import org.springframework.http.ResponseEntity
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import tools.jackson.module.kotlin.jacksonObjectMapper
@@ -209,11 +213,30 @@ class ChatControllerWebMvcTest(
         }
     }
 
-    // Here we only verify routing + validation on the servlet layer.
-    // The actual SSE streaming logic is service (and below) territory.
-
     @Nested
     inner class Prompt {
+        @Test
+        fun `returns 200 when valid msg`() {
+            val tokens = listOf(
+                """{"type":"token","content":"The"}""",
+                """{"type":"token","content":" goal"}""",
+                """{"type":"done"}""",
+            )
+            every { chatService.prompt(any()) } returns flowOf(*tokens.toTypedArray())
+            val mvcResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/prompt")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""{"chatId": "$chatId", "msg": "Test msg"}"""),
+                ).andExpect(status().isOk)
+                .andReturn()
+                .response
+                .contentAsString
+
+            val result = mvcResult.replace("data:", "").replace("\n", "")
+            assertEquals(tokens[0] + tokens[1] + tokens[2], result)
+        }
+
         @Test
         fun `returns 400 when msg is blank`() {
             mockMvc

@@ -166,7 +166,7 @@ internal class ChatService(
         val context = messageRepository
             .findAllByChat(
                 chat.id,
-                Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt")),
+                Pageable.unpaged(Sort.by(Sort.Direction.ASC, "created_at")),
             ).map { it.toAiContextEntry() }
             .toList()
 
