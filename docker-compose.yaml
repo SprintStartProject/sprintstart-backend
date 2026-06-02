@@ -26,6 +26,8 @@ services:
       - ./uploads:/app/uploads
     depends_on:
       - database
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   sprintstart-db-data:
