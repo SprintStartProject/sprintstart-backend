@@ -4,14 +4,28 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
- * Contains YAML config parameters under the `sprintstart: ...` section.
+ * Contains the following application.yml config parameters
+ *
+ * ```yml
+ * sprintstart:
+ *     ai: ...
+ * ```
  */
 @ConfigurationProperties(prefix = "sprintstart")
-internal data class ApplicationConfig(
+data class ApplicationConfig(
     val ai: AiConfig,
 )
 
-internal data class AiConfig(
+/**
+ * Contains the following application.yml config parameters
+ *
+ * ```yml
+ * sprintstart:
+ *     ai:
+ *         base-url: ...
+ * ````
+ */
+data class AiConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
 )

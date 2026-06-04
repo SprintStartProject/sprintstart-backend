@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
+import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
@@ -122,7 +123,7 @@ internal class ChatController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/prompt", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun prompt(@Valid @RequestBody request: PromptRequest): Flow<String> {
+    suspend fun prompt(@Valid @RequestBody request: PromptRequest): Flow<AiStreamMessage> {
         return chatService.prompt(request)
     }
 }

@@ -5,12 +5,14 @@ import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
+import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatMessageResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
+import io.mockk.coEvery
 import io.mockk.every
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
@@ -218,11 +220,11 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 200 when valid msg`() {
             val tokens = listOf(
-                """{"type":"token","content":"The"}""",
-                """{"type":"token","content":" goal"}""",
-                """{"type":"done"}""",
+                AiStreamMessage("token", "The"),
+                AiStreamMessage("token", " goal"),
+                AiStreamMessage("done"),
             )
-            every { chatService.prompt(any()) } returns flowOf(*tokens.toTypedArray())
+            coEvery { chatService.prompt(any()) } returns flowOf(*tokens.toTypedArray())
             val mvcResult = mockMvc
                 .perform(
                     post("/api/v1/chats/prompt")
@@ -233,8 +235,11 @@ class ChatControllerWebMvcTest(
                 .response
                 .contentAsString
 
-            val result = mvcResult.replace("data:", "").replace("\n", "")
-            assertEquals(tokens[0] + tokens[1] + tokens[2], result)
+            val actual = mvcResult.replace("data:", "").replace("\n", "")
+            val expected = objectMapper.writeValueAsString(tokens[0]) +
+                objectMapper.writeValueAsString(tokens[1]) +
+                objectMapper.writeValueAsString(tokens[2]).replace(",\"content\":null", "")
+            assertEquals(expected, actual)
         }
 
         @Test

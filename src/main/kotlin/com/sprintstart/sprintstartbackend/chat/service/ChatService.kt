@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.AiWebClientImpl
+import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
+import com.sprintstart.sprintstartbackend.chat.models.requests.AiGenerateChatTitleRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiPromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
@@ -33,17 +33,15 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.client.HttpClientErrorException
-import java.net.URI
 import java.time.OffsetDateTime
 import java.util.UUID
 
 @Service
 @Validated
 internal class ChatService(
-    private val applicationConfig: ApplicationConfig,
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
-    private val webRequestClient: AiWebClientImpl,
+    private val chatAiClient: ChatAiClient,
     private val userApi: UserApi,
 ) {
     /**
@@ -140,7 +138,7 @@ internal class ChatService(
      * @see PromptRequest
      * @see Flow
      */
-    fun prompt(@Valid request: PromptRequest): Flow<String> {
+    suspend fun prompt(@Valid request: PromptRequest): Flow<AiStreamMessage> {
         val chat = chatRepository.findById(request.chatId).orElseThrow {
             HttpClientErrorException(
                 HttpStatus.BAD_REQUEST,
@@ -156,8 +154,7 @@ internal class ChatService(
 
         // If the title is empty, the chat is new, and a title needs to be generated
         if (chat.title.isBlank()) {
-            val uri = URI.create("${applicationConfig.ai.baseUrl}/api/v1/generate-title")
-            val generatedTitle = webRequestClient.getChatTitle(uri, request.msg)
+            val generatedTitle = chatAiClient.getChatTitle(AiGenerateChatTitleRequest(request.msg))
             chat.title = generatedTitle.title
             chatRepository.save(chat)
         }
@@ -172,35 +169,21 @@ internal class ChatService(
 
         messageRepository.save(msg)
 
-        // Make call to AI repo
-        val promptingPayload = AiPromptRequest(request.msg, context)
-        val stream = webRequestClient.streamPrompt(
-            URI.create("${applicationConfig.ai.baseUrl}/api/v1/chat"),
-            promptingPayload,
-        )
         val sb = StringBuilder()
 
         // Define stream handler
         // - On each token we collect the token and emit it to the controller
         // - On completion, we store the entire response as msg in db
-        return stream
-            .onEach { rawJson ->
-                try {
-                    val message = webRequestClient.jsonParser.decodeFromString<AiStreamMessage>(rawJson)
-                    message.content?.let { token ->
-                        sb.append(token) // Collect tokens
-                    }
-                } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") e: Exception) {
-                    // We can technically ignore errors here too, as they're handled in the streamPost() method already
-                    System.err.println("Error: " + e.message)
-                }
+        return chatAiClient
+            .streamPrompt(AiPromptRequest(request.msg, context))
+            .onEach { msg ->
+                msg.content?.let { sb.append(it) }
             }.onCompletion { cause ->
                 if (cause == null) {
-                    val finalPromptResponse = sb.toString()
                     val msg = ChatMessage(
                         role = ChatRole.ASSISTANT,
                         chat = chat,
-                        content = finalPromptResponse,
+                        content = sb.toString(),
                         createdAt = OffsetDateTime.now(),
                     )
                     messageRepository.save(msg)
