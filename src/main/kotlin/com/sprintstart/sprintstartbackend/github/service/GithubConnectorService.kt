@@ -11,7 +11,7 @@ class GithubConnectorService(
     private val webClient: WebClient,
     val githubClient: GithubClient,
 ) {
-    suspend fun getPreferredLanguage() {
-        githubClient.fetchRepositoryMainLanguage()
+    suspend fun connectRepository(owner: String, name: String) {
+        githubClient.connectGithub(owner, name)
     }
 }

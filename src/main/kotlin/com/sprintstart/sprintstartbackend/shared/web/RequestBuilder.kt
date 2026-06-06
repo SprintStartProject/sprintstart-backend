@@ -64,6 +64,12 @@ class RequestBuilder(
         )
     }
 
+    fun rawBody(body: String): RequestBuilder =
+        copy(
+            rawBody = body,
+            headers = headers + ("Content-Type" to "application/json"),
+        )
+
     // ── Execution context selection ───────────────────────────────────────────
 
     /**

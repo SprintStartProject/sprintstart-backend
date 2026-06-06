@@ -1,0 +1,29 @@
+query RepoIssues($owner: String!, $name: String!, $cursor: String) {
+    repository(owner: $owner, name: $name) {
+        issues(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: ASC}) {
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+            nodes {
+                number
+                title
+                state
+                createdAt
+                closedAt
+                url
+                author {
+                    login
+                }
+                labels(first: 10) {
+                    nodes {
+                        name
+                    }
+                }
+                comments {
+                    totalCount
+                }
+            }
+        }
+    }
+}
