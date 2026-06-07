@@ -14,9 +14,16 @@ import java.util.UUID
 @Entity
 @Table(name = "chat_messages")
 internal data class ChatMessage(
-    @Column @Id val id: UUID = UUID.randomUUID(),
-    @Enumerated(EnumType.STRING) @Column(nullable = false) val role: ChatRole,
-    @JoinColumn("chat_id", nullable = false) @ManyToOne val chat: Chat,
-    @Column(nullable = false, columnDefinition = "TEXT") val content: String,
-    @Column("created_at") val createdAt: OffsetDateTime,
+    @Id
+    var id: UUID = UUID.randomUUID(),
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    var role: ChatRole,
+    @JoinColumn("chat_id", nullable = false)
+    @ManyToOne
+    var chat: Chat,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    var content: String,
+    @Column("created_at")
+    var createdAt: OffsetDateTime,
 )
