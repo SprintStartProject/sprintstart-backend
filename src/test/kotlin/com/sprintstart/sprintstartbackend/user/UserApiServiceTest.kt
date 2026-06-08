@@ -53,4 +53,38 @@ class UserApiServiceTest {
 
         assertThat(result).isFalse()
     }
+
+    @Test
+    fun `existsByAuthId should return true when user exists`() {
+        val authId = "keycloak-id-1"
+
+        every {
+            userRepository.existsByAuthId(authId)
+        } returns true
+
+        val result = userApi.existsByAuthId(authId)
+
+        verify(exactly = 1) {
+            userRepository.existsByAuthId(authId)
+        }
+
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun `existsByAuthId should return false when user does not exist`() {
+        val authId = "keycloak-id-2"
+
+        every {
+            userRepository.existsByAuthId(authId)
+        } returns false
+
+        val result = userApi.existsByAuthId(authId)
+
+        verify(exactly = 1) {
+            userRepository.existsByAuthId(authId)
+        }
+
+        assertThat(result).isFalse()
+    }
 }

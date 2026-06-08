@@ -28,4 +28,9 @@ class UserApiService(
     override fun exists(id: UUID): Boolean {
         return userRepository.existsById(id)
     }
+
+    @Transactional(readOnly = true)
+    override fun existsByAuthId(authId: String): Boolean {
+        return userRepository.existsByAuthId(authId)
+    }
 }

@@ -21,29 +21,31 @@ class SecurityConfig {
             .cors { }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
-                it
-                    .requestMatchers(
-                        "/swagger-ui/**",
-                        "/v3/api-docs/**",
-                        "/actuator/health",
-                    ).permitAll()
+//                it
+//                    .requestMatchers(
+//                        "/swagger-ui/**",
+//                        "/v3/api-docs/**",
+//                        "/actuator/health",
+//                    ).permitAll()
 
-                it
-                    .requestMatchers(
-                        HttpMethod.GET,
-                        "/api/v1/users",
-                    ).authenticated()
+//                it
+//                    .requestMatchers(
+//                        HttpMethod.GET,
+//                        "/api/v1/users",
+//                    ).authenticated()
 
                 // TODO: remove after frontend auth is implemented
-                it
-                    .requestMatchers(
-                        "/api/v1/users/**",
-                        "/api/v1/onboarding/**",
-                        "/api/v1/chats/**",
-                    ).permitAll()
+//                it
+//                    .requestMatchers(
+//                        "/api/v1/users/**",
+//                        "/api/v1/onboarding/**",
+//                        "/api/v1/chats/**",
+//                    ).permitAll()
 
-                it.anyRequest().authenticated()
-            }.oauth2ResourceServer { it.jwt {} }
+//                it.anyRequest().authenticated()
+                it.anyRequest().permitAll()
+            }
+//            .oauth2ResourceServer { it.jwt {} }
             .build()
     }
 }

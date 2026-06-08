@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.user
 
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
+import com.sprintstart.sprintstartbackend.user.model.dto.SyncUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.User
@@ -22,7 +22,6 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
-import java.util.UUID
 
 class UserServiceTest {
     private val userRepository: UserRepository = mockk()
@@ -30,8 +29,8 @@ class UserServiceTest {
 
     @Test
     fun `createUser should save and return created user`() {
-        // give
         val request = CreateUserRequest(
+            authId = "keycloak-id-1",
             username = "max_backend",
             firstname = "Max",
             lastname = "Backend",
@@ -41,44 +40,73 @@ class UserServiceTest {
         val savedUserSlot = slot<User>()
 
         every {
+            userRepository.existsByAuthId(request.authId)
+        } returns false
+
+        every {
             userRepository.save(capture(savedUserSlot))
         } answers {
             savedUserSlot.captured
         }
 
-        // when
         val response = userService.createUser(request)
 
-        // then
         verify(exactly = 1) {
+            userRepository.existsByAuthId(request.authId)
             userRepository.save(any())
         }
 
         val savedUser = savedUserSlot.captured
-
         assertThat(savedUser.id).isNotNull()
-        assertThat(savedUser.username).isEqualTo("max_backend")
-        assertThat(savedUser.firstname).isEqualTo("Max")
-        assertThat(savedUser.lastname).isEqualTo("Backend")
-        assertThat(savedUser.primaryRole).isEqualTo(Role.NO_ROLE)
-        assertThat(savedUser.secondaryRole).isEqualTo(Role.NO_ROLE)
-        assertThat(savedUser.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
-
-        // Testing the mapping entity -> dto
+        assertThat(savedUser.authId).isEqualTo(request.authId)
+        assertThat(savedUser.username).isEqualTo(request.username)
+        assertThat(savedUser.firstname).isEqualTo(request.firstname)
+        assertThat(savedUser.lastname).isEqualTo(request.lastname)
+        assertThat(savedUser.workingArea).isEqualTo(request.workingArea)
         assertUserMatchesResponse(savedUser, response)
     }
 
     @Test
-    fun `getAllUsers should return mapped users`() {
-        // given
-        val user1 = User(
+    fun `createUser should throw BAD_REQUEST when auth id already exists`() {
+        val request = CreateUserRequest(
+            authId = "keycloak-id-1",
             username = "max_backend",
             firstname = "Max",
             lastname = "Backend",
             workingArea = WorkingArea.BACKEND_DEV,
         )
 
-        val user2 = User(
+        every {
+            userRepository.existsByAuthId(request.authId)
+        } returns true
+
+        val exception = assertThrows<ResponseStatusException> {
+            userService.createUser(request)
+        }
+
+        verify(exactly = 1) {
+            userRepository.existsByAuthId(request.authId)
+        }
+
+        verify(exactly = 0) {
+            userRepository.save(any())
+        }
+
+        assertThat(exception.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        assertThat(exception.reason).isEqualTo("User with authId: ${request.authId} already exists")
+    }
+
+    @Test
+    fun `getAllUsers should return mapped users`() {
+        val user1 = user(
+            authId = "keycloak-id-1",
+            username = "max_backend",
+            firstname = "Max",
+            lastname = "Backend",
+            workingArea = WorkingArea.BACKEND_DEV,
+        )
+        val user2 = user(
+            authId = "keycloak-id-2",
             username = "anna_frontend",
             firstname = "Anna",
             lastname = "Frontend",
@@ -89,10 +117,8 @@ class UserServiceTest {
             userRepository.findAll()
         } returns listOf(user1, user2)
 
-        // when
         val response = userService.getAllUsers()
 
-        // then
         verify(exactly = 1) {
             userRepository.findAll()
         }
@@ -103,27 +129,9 @@ class UserServiceTest {
     }
 
     @Test
-    fun `getAllUsers should return empty list`() {
-        // given
-        every {
-            userRepository.findAll()
-        } returns emptyList()
-
-        // when
-        val response = userService.getAllUsers()
-
-        // then
-        verify(exactly = 1) {
-            userRepository.findAll()
-        }
-
-        assertThat(response).isEmpty()
-    }
-
-    @Test
     fun `getUserById should return user when found`() {
-        // given
-        val user = User(
+        val user = user(
+            authId = "keycloak-id-1",
             username = "max_backend",
             firstname = "Max",
             lastname = "Backend",
@@ -134,10 +142,8 @@ class UserServiceTest {
             userRepository.findById(user.id)
         } returns Optional.of(user)
 
-        // when
         val response = userService.getUserById(user.id)
 
-        // then
         verify(exactly = 1) {
             userRepository.findById(user.id)
         }
@@ -146,31 +152,52 @@ class UserServiceTest {
     }
 
     @Test
-    fun `getUserById should throw NOT_FOUND when missing`() {
-        // given
-        val userId = UUID.randomUUID()
+    fun `getUserByAuthId should return user when found`() {
+        val user = user(
+            authId = "keycloak-id-1",
+            username = "max_backend",
+            firstname = "Max",
+            lastname = "Backend",
+            workingArea = WorkingArea.BACKEND_DEV,
+        )
 
         every {
-            userRepository.findById(userId)
-        } returns Optional.empty()
+            userRepository.findByAuthId(user.authId)
+        } returns Optional.of(user)
 
-        // when
-        val exception = assertThrows<ResponseStatusException> {
-            userService.getUserById(userId)
+        val response = userService.getUserByAuthId(user.authId)
+
+        verify(exactly = 1) {
+            userRepository.findByAuthId(user.authId)
         }
 
-        // then
+        assertUserMatchesResponse(user, response)
+    }
+
+    @Test
+    fun `getUserByAuthId should throw NOT_FOUND when missing`() {
+        val authId = "missing-id"
+
+        every {
+            userRepository.findByAuthId(authId)
+        } returns Optional.empty()
+
+        val exception = assertThrows<ResponseStatusException> {
+            userService.getUserByAuthId(authId)
+        }
+
         verify(exactly = 1) {
-            userRepository.findById(userId)
+            userRepository.findByAuthId(authId)
         }
 
         assertThat(exception.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(exception.reason).isEqualTo("User with id: $userId not found")
+        assertThat(exception.reason).isEqualTo("User with authId: $authId not found")
     }
 
     @Test
     fun `updateUserById should update and return user`() {
-        val user = User(
+        val user = user(
+            authId = "keycloak-id-1",
             username = "old_username",
             firstname = "Old",
             lastname = "Username",
@@ -181,8 +208,6 @@ class UserServiceTest {
             username = "max_backend",
             firstname = "Max",
             lastname = "Backend",
-            primaryRole = Role.EXISTING_MEMBER,
-            secondaryRole = Role.NO_ROLE,
             workingArea = WorkingArea.BACKEND_DEV,
         )
 
@@ -194,110 +219,25 @@ class UserServiceTest {
             userRepository.save(user)
         } returns user
 
-        // when
         val response = userService.updateUserById(user.id, request)
 
-        // then
         verify(exactly = 1) {
             userRepository.findById(user.id)
-        }
-
-        verify(exactly = 1) {
             userRepository.save(user)
         }
 
-        // check if it updated correctly
-        assertThat(user.username).isEqualTo("max_backend")
-        assertThat(user.firstname).isEqualTo("Max")
-        assertThat(user.lastname).isEqualTo("Backend")
-        assertThat(user.primaryRole).isEqualTo(Role.EXISTING_MEMBER)
-        assertThat(user.secondaryRole).isEqualTo(Role.NO_ROLE)
-        assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
-
-        // check if it mapped correctly
+        assertThat(user.authId).isEqualTo("keycloak-id-1")
+        assertThat(user.username).isEqualTo(request.username)
+        assertThat(user.firstname).isEqualTo(request.firstname)
+        assertThat(user.lastname).isEqualTo(request.lastname)
+        assertThat(user.workingArea).isEqualTo(request.workingArea)
         assertUserMatchesResponse(user, response)
-    }
-
-    @Test
-    fun `updateUserById should throw NOT_FOUND when missing`() {
-        // given
-        val userId = UUID.randomUUID()
-
-        val request = UpdateUserRequest(
-            username = "max_backend",
-            firstname = "Max",
-            lastname = "Backend",
-            primaryRole = Role.EXISTING_MEMBER,
-            secondaryRole = Role.NO_ROLE,
-            workingArea = WorkingArea.BACKEND_DEV,
-        )
-
-        every {
-            userRepository.findById(userId)
-        } returns Optional.empty()
-
-        // when
-        val exception = assertThrows<ResponseStatusException> {
-            userService.updateUserById(userId, request)
-        }
-
-        // then
-        verify(exactly = 1) {
-            userRepository.findById(userId)
-        }
-
-        verify(exactly = 0) {
-            userRepository.save(any())
-        }
-
-        assertThat(exception.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(exception.reason).isEqualTo("User with id: $userId not found")
-    }
-
-    @Test
-    fun `updateUserById should throw BAD_REQUEST when secondary role is set without primary role`() {
-        // given
-        val user = User(
-            username = "old_username",
-            firstname = "Old",
-            lastname = "Username",
-            workingArea = WorkingArea.NO_WORKING_AREA,
-        )
-
-        val request = UpdateUserRequest(
-            username = "max_backend",
-            firstname = "Max",
-            lastname = "Backend",
-            primaryRole = Role.NO_ROLE,
-            secondaryRole = Role.EXISTING_MEMBER,
-            workingArea = WorkingArea.BACKEND_DEV,
-        )
-
-        every {
-            userRepository.findById(user.id)
-        } returns Optional.of(user)
-
-        // when
-        val exception = assertThrows<ResponseStatusException> {
-            userService.updateUserById(user.id, request)
-        }
-
-        // then
-        verify(exactly = 1) {
-            userRepository.findById(user.id)
-        }
-
-        verify(exactly = 0) {
-            userRepository.save(any())
-        }
-
-        assertThat(exception.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
-        assertThat(exception.reason).isEqualTo("Secondary role cannot be set without a primary role")
     }
 
     @Test
     fun `patchUserById should update and return user`() {
-        val user = User(
+        val user = user(
+            authId = "keycloak-id-1",
             username = "max_backend",
             firstname = "Old",
             lastname = "Backend",
@@ -306,8 +246,7 @@ class UserServiceTest {
 
         val request = PatchUserRequest(
             firstname = "Max",
-            primaryRole = Role.EXISTING_MEMBER,
-            secondaryRole = Role.ADMIN,
+            workingArea = WorkingArea.FRONTEND_DEV,
         )
 
         every {
@@ -318,113 +257,100 @@ class UserServiceTest {
             userRepository.save(user)
         } returns user
 
-        // when
         val response = userService.patchUserById(user.id, request)
 
-        // then
         verify(exactly = 1) {
             userRepository.findById(user.id)
-        }
-
-        verify(exactly = 1) {
             userRepository.save(user)
         }
 
+        assertThat(user.authId).isEqualTo("keycloak-id-1")
         assertThat(user.username).isEqualTo("max_backend")
         assertThat(user.firstname).isEqualTo("Max")
         assertThat(user.lastname).isEqualTo("Backend")
-        assertThat(user.primaryRole).isEqualTo(Role.EXISTING_MEMBER)
-        assertThat(user.secondaryRole).isEqualTo(Role.ADMIN)
-        assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
-
+        assertThat(user.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
         assertUserMatchesResponse(user, response)
     }
 
     @Test
-    fun `patchUserById should throw NOT_FOUND when missing`() {
-        // given
-        val user = User(
-            username = "max_backend",
+    fun `syncUser should update existing user by auth id`() {
+        val user = user(
+            authId = "keycloak-id-1",
+            username = "old_username",
             firstname = "Old",
-            lastname = "Backend",
+            lastname = "Name",
             workingArea = WorkingArea.BACKEND_DEV,
         )
-
-        val request = PatchUserRequest(
-            firstname = "Max",
-            secondaryRole = Role.ADMIN,
+        val request = SyncUserRequest(
+            authId = "keycloak-id-1",
+            username = "new_username",
+            firstname = "New",
+            lastname = "Name",
         )
 
         every {
-            userRepository.findById(user.id)
+            userRepository.findByAuthId(request.authId)
         } returns Optional.of(user)
 
-        // when
-        val exception = assertThrows<ResponseStatusException> {
-            userService.patchUserById(user.id, request)
-        }
+        every {
+            userRepository.save(user)
+        } returns user
 
-        // then
+        val response = userService.syncUser(request)
+
         verify(exactly = 1) {
-            userRepository.findById(user.id)
+            userRepository.findByAuthId(request.authId)
+            userRepository.save(user)
         }
 
-        verify(exactly = 0) {
+        assertThat(user.username).isEqualTo(request.username)
+        assertThat(user.firstname).isEqualTo(request.firstname)
+        assertThat(user.lastname).isEqualTo(request.lastname)
+        assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
+        assertUserMatchesResponse(user, response)
+    }
+
+    @Test
+    fun `syncUser should create new user when auth id does not exist`() {
+        val request = SyncUserRequest(
+            authId = "keycloak-id-1",
+            username = "new_username",
+            firstname = "New",
+            lastname = "Name",
+        )
+
+        val savedUserSlot = slot<User>()
+
+        every {
+            userRepository.findByAuthId(request.authId)
+        } returns Optional.empty()
+
+        every {
+            userRepository.save(capture(savedUserSlot))
+        } answers {
+            savedUserSlot.captured
+        }
+
+        val response = userService.syncUser(request)
+
+        verify(exactly = 1) {
+            userRepository.findByAuthId(request.authId)
             userRepository.save(any())
         }
 
-        assertThat(exception.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
-        assertThat(exception.reason).isEqualTo("Secondary role cannot be set without a primary role")
-    }
-
-    @Test
-    fun `patchUserById should throw BAD_REQUEST when secondary role is set without primary role`() {
-        val user = User(
-            username = "max_backend",
-            firstname = "Old",
-            lastname = "Backend",
-            workingArea = WorkingArea.BACKEND_DEV,
-        )
-
-        val request = PatchUserRequest(
-            firstname = "Max",
-            primaryRole = Role.EXISTING_MEMBER,
-            secondaryRole = Role.ADMIN,
-        )
-
-        every {
-            userRepository.findById(user.id)
-        } returns Optional.of(user)
-
-        every {
-            userRepository.save(user)
-        } returns user
-
-        // when
-        val response = userService.patchUserById(user.id, request)
-
-        // then
-        verify(exactly = 1) {
-            userRepository.findById(user.id)
-        }
-
-        verify(exactly = 1) {
-            userRepository.save(user)
-        }
-
-        assertThat(user.username).isEqualTo("max_backend")
-        assertThat(user.firstname).isEqualTo("Max")
-        assertThat(user.lastname).isEqualTo("Backend")
-        assertThat(user.primaryRole).isEqualTo(Role.EXISTING_MEMBER)
-        assertThat(user.secondaryRole).isEqualTo(Role.ADMIN)
-        assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
-
-        assertUserMatchesResponse(user, response)
+        val savedUser = savedUserSlot.captured
+        assertThat(savedUser.authId).isEqualTo(request.authId)
+        assertThat(savedUser.username).isEqualTo(request.username)
+        assertThat(savedUser.firstname).isEqualTo(request.firstname)
+        assertThat(savedUser.lastname).isEqualTo(request.lastname)
+        assertThat(savedUser.workingArea).isEqualTo(WorkingArea.NO_WORKING_AREA)
+        assertUserMatchesResponse(savedUser, response)
     }
 
     @Test
     fun `deleteUserById should delete existing user`() {
-        val user = User(
+        val user = user(
+            authId = "keycloak-id-1",
             username = "max_backend",
             firstname = "Max",
             lastname = "Backend",
@@ -439,84 +365,63 @@ class UserServiceTest {
             userRepository.delete(user)
         } returns Unit
 
-        // when
         userService.deleteUserById(user.id)
 
-        // then
         verify(exactly = 1) {
             userRepository.findById(user.id)
-        }
-
-        verify(exactly = 1) {
             userRepository.delete(user)
         }
     }
 
-    @Test
-    fun `deleteUserById should throw NOT_FOUND when missing`() {
-        val userId = UUID.randomUUID()
-
-        every {
-            userRepository.findById(userId)
-        } returns Optional.empty()
-
-        // when
-        val exception = assertThrows<ResponseStatusException> {
-            userService.deleteUserById(userId)
-        }
-
-        // then
-        verify(exactly = 1) {
-            userRepository.findById(userId)
-        }
-
-        verify(exactly = 0) {
-            userRepository.delete(any())
-        }
-
-        assertThat(exception.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
-        assertThat(exception.reason).isEqualTo("User with id: $userId not found")
+    private fun user(
+        authId: String,
+        username: String,
+        firstname: String,
+        lastname: String,
+        workingArea: WorkingArea,
+    ): User {
+        return User(
+            authId = authId,
+            username = username,
+            firstname = firstname,
+            lastname = lastname,
+            workingArea = workingArea,
+        )
     }
-
-    // Helpers
 
     private fun assertUserMatchesResponse(user: User, response: GetUserResponse) {
         assertThat(response.id).isEqualTo(user.id)
+        assertThat(response.authId).isEqualTo(user.authId)
         assertThat(response.username).isEqualTo(user.username)
         assertThat(response.firstname).isEqualTo(user.firstname)
         assertThat(response.lastname).isEqualTo(user.lastname)
-        assertThat(response.primaryRole).isEqualTo(user.primaryRole)
-        assertThat(response.secondaryRole).isEqualTo(user.secondaryRole)
         assertThat(response.workingArea).isEqualTo(user.workingArea)
     }
 
     private fun assertUserMatchesResponse(user: User, response: CreateUserResponse) {
         assertThat(response.id).isEqualTo(user.id)
+        assertThat(response.authId).isEqualTo(user.authId)
         assertThat(response.username).isEqualTo(user.username)
         assertThat(response.firstname).isEqualTo(user.firstname)
         assertThat(response.lastname).isEqualTo(user.lastname)
-        assertThat(response.primaryRole).isEqualTo(user.primaryRole)
-        assertThat(response.secondaryRole).isEqualTo(user.secondaryRole)
         assertThat(response.workingArea).isEqualTo(user.workingArea)
     }
 
     private fun assertUserMatchesResponse(user: User, response: UpdateUserResponse) {
         assertThat(response.id).isEqualTo(user.id)
+        assertThat(response.authId).isEqualTo(user.authId)
         assertThat(response.username).isEqualTo(user.username)
         assertThat(response.firstname).isEqualTo(user.firstname)
         assertThat(response.lastname).isEqualTo(user.lastname)
-        assertThat(response.primaryRole).isEqualTo(user.primaryRole)
-        assertThat(response.secondaryRole).isEqualTo(user.secondaryRole)
         assertThat(response.workingArea).isEqualTo(user.workingArea)
     }
 
     private fun assertUserMatchesResponse(user: User, response: PatchUserResponse) {
         assertThat(response.id).isEqualTo(user.id)
+        assertThat(response.authId).isEqualTo(user.authId)
         assertThat(response.username).isEqualTo(user.username)
         assertThat(response.firstname).isEqualTo(user.firstname)
         assertThat(response.lastname).isEqualTo(user.lastname)
-        assertThat(response.primaryRole).isEqualTo(user.primaryRole)
-        assertThat(response.secondaryRole).isEqualTo(user.secondaryRole)
         assertThat(response.workingArea).isEqualTo(user.workingArea)
     }
 }

@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
+import com.sprintstart.sprintstartbackend.user.model.dto.SyncUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.User
@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
+import kotlin.jvm.optionals.getOrNull
 
 /**
  * Service responsible for handling user-related business logic.
@@ -44,8 +45,11 @@ class UserService(
      */
     @Transactional
     fun createUser(request: CreateUserRequest): CreateUserResponse {
+        validateAuthIdAvailability(request.authId)
+
         val user: User =
             User(
+                authId = request.authId,
                 username = request.username,
                 firstname = request.firstname,
                 lastname = request.lastname,
@@ -82,18 +86,24 @@ class UserService(
             .toGetResponse()
     }
 
+    @Transactional(readOnly = true)
+    fun getUserByAuthId(authId: String): GetUserResponse {
+        return userRepository
+            .findByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
+            .toGetResponse()
+    }
+
     /**
      * Updates an existing user with the provided data.
      *
      * This method replaces all editable user fields with the values from the
-     * given update request. After applying the new values, the user's role
-     * configuration is validated before the updated user is persisted.
+     * given update request before the updated user is persisted.
      *
      * @param id The unique identifier of the user to update.
      * @param request The complete data used to update the user.
      * @return The response data of the updated user.
-     * @throws ResponseStatusException If no user with the given identifier exists,
-     * or if the resulting role configuration is invalid.
+     * @throws ResponseStatusException If no user with the given identifier exists.
      */
     @Transactional
     fun updateUserById(id: UUID, request: UpdateUserRequest): UpdateUserResponse {
@@ -104,11 +114,7 @@ class UserService(
         user.username = request.username
         user.firstname = request.firstname
         user.lastname = request.lastname
-        user.primaryRole = request.primaryRole
-        user.secondaryRole = request.secondaryRole
         user.workingArea = request.workingArea
-
-        validateUserRoles(user)
 
         return userRepository.save(user).toUpdateResponse()
     }
@@ -117,15 +123,13 @@ class UserService(
      * Partially updates an existing user with the provided data.
      *
      * Only fields that are present in the patch request are applied to the
-     * existing user. Fields with `null` values are left unchanged. After applying
-     * the changes, the user's role configuration is validated before the patched
-     * user is persisted.
+     * existing user. Fields with `null` values are left unchanged before the
+     * patched user is persisted.
      *
      * @param id The unique identifier of the user to patch.
      * @param request The partial data used to update the user.
      * @return The response data of the patched user.
-     * @throws ResponseStatusException If no user with the given identifier exists,
-     * or if the resulting role configuration is invalid.
+     * @throws ResponseStatusException If no user with the given identifier exists.
      */
     @Transactional
     fun patchUserById(id: UUID, request: PatchUserRequest): PatchUserResponse {
@@ -136,13 +140,32 @@ class UserService(
         request.username?.let { user.username = it }
         request.firstname?.let { user.firstname = it }
         request.lastname?.let { user.lastname = it }
-        request.primaryRole?.let { user.primaryRole = it }
-        request.secondaryRole?.let { user.secondaryRole = it }
         request.workingArea?.let { user.workingArea = it }
 
-        validateUserRoles(user)
-
         return userRepository.save(user).toPatchResponse()
+    }
+
+    @Transactional
+    fun syncUser(request: SyncUserRequest): GetUserResponse {
+        val existingUser = userRepository.findByAuthId(request.authId).getOrNull()
+
+        if (existingUser != null) {
+            existingUser.username = request.username
+            existingUser.firstname = request.firstname
+            existingUser.lastname = request.lastname
+
+            return userRepository.save(existingUser).toGetResponse()
+        }
+
+        val user = User(
+            authId = request.authId,
+            username = request.username,
+            firstname = request.firstname,
+            lastname = request.lastname,
+            workingArea = com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea.NO_WORKING_AREA,
+        )
+
+        return userRepository.save(user).toGetResponse()
     }
 
     /**
@@ -160,23 +183,11 @@ class UserService(
         userRepository.delete(user)
     }
 
-    // Helper
-
-    /**
-     * Validates that the user's role configuration is consistent.
-     *
-     * A secondary role is only valid when a primary role has already been set.
-     * If the user has no primary role but has a secondary role, the configuration
-     * is rejected as an invalid request.
-     *
-     * @param user The user whose role configuration should be validated.
-     * @throws ResponseStatusException If a secondary role is set without a primary role.
-     */
-    private fun validateUserRoles(user: User) {
-        if (user.primaryRole == Role.NO_ROLE && user.secondaryRole != Role.NO_ROLE) {
+    private fun validateAuthIdAvailability(authId: String) {
+        if (userRepository.existsByAuthId(authId)) {
             throw ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
-                "Secondary role cannot be set without a primary role",
+                "User with authId: $authId already exists",
             )
         }
     }

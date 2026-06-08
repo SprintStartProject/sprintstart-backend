@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
+import com.sprintstart.sprintstartbackend.user.model.dto.SyncUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.service.UserService
@@ -91,6 +92,22 @@ class UserController(
     }
 
     @Operation(
+        summary = "Get user by auth id",
+        description = "Returns a single user by their Keycloak auth id.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "User found"),
+            ApiResponse(responseCode = "404", description = "User not found"),
+        ],
+    )
+    @GetMapping("/auth-id/{authId}")
+    @ResponseStatus(HttpStatus.OK)
+    fun getUserByAuthId(@PathVariable authId: String): GetUserResponse {
+        return userService.getUserByAuthId(authId)
+    }
+
+    @Operation(
         summary = "Patch user by ID",
         description = "Partially updates the user with the given ID. Only provided fields are changed.",
     )
@@ -144,5 +161,21 @@ class UserController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun deleteUserById(@PathVariable userId: UUID) {
         userService.deleteUserById(userId)
+    }
+
+    @Operation(
+        summary = "Sync user identity",
+        description = "Creates or updates a persisted user from an authenticated identity payload.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "User synced successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid request body"),
+        ],
+    )
+    @PostMapping("/sync")
+    @ResponseStatus(HttpStatus.OK)
+    fun syncUser(@Valid @RequestBody request: SyncUserRequest): GetUserResponse {
+        return userService.syncUser(request)
     }
 }
