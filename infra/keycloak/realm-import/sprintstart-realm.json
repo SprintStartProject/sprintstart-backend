@@ -1,0 +1,64 @@
+{
+  "realm": "sprintstart",
+  "enabled": true,
+  "displayName": "SprintStart",
+  "registrationAllowed": false,
+  "rememberMe": true,
+  "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Default application user role"
+      },
+      {
+        "name": "admin",
+        "description": "Administrative application role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "sprintstart-frontend",
+      "name": "SprintStart Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173"
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "dev-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dev",
+      "lastName": "User",
+      "email": "dev-user@sprintstart.local",
+      "realmRoles": [
+        "user"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dev-password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}
