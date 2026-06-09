@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GithubCommitsResponse(
-    val data: GhRepository,
+    val data: CommitData,
 ) : PageableResponse<Commit> {
     override val hasNextPage: Boolean
         get() = data.repository.defaultBranchRef.target.history.pageInfo.hasNextPage
@@ -15,33 +15,33 @@ data class GithubCommitsResponse(
 }
 
 @Serializable
-data class GhRepository(
-    val repository: Repository,
+data class CommitData(
+    val repository: CommitRepository,
 )
 
 @Serializable
-data class Repository(
-    val defaultBranchRef: DefaultBranchRef
+data class CommitRepository(
+    val defaultBranchRef: CommitDefaultBranchRef,
 )
 
 @Serializable
-data class DefaultBranchRef(
-    val target: Target
+data class CommitDefaultBranchRef(
+    val target: CommitTarget,
 )
 
 @Serializable
-data class Target(
-    val history: History,
+data class CommitTarget(
+    val history: CommitHistory,
 )
 
 @Serializable
-data class History(
-    val pageInfo: PageInfo,
-    val nodes: List<Commit>
+data class CommitHistory(
+    val pageInfo: CommitPageInfo,
+    val nodes: List<Commit>,
 )
 
 @Serializable
-data class PageInfo(
+data class CommitPageInfo(
     val hasNextPage: Boolean,
     val endCursor: String?,
 )
@@ -50,8 +50,10 @@ data class PageInfo(
 data class Commit(
     val oid: String,
     val messageHeadline: String,
+    val message: String,
     val committedDate: String,
     val author: CommitAuthor?,
+    val changedFilesIfAvailable: Int?,
     val url: String,
 )
 

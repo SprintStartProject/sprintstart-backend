@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GithubIssuesResponse(
-    val data: IRepository
+    val data: IssuesData,
 ) : PageableResponse<Issue> {
     override val hasNextPage: Boolean
         get() = data.repository.issues.pageInfo.hasNextPage
@@ -15,31 +15,40 @@ data class GithubIssuesResponse(
 }
 
 @Serializable
-data class IRepository(
+data class IssuesData(
     val repository: IssuesRepository,
 )
 
 @Serializable
 data class IssuesRepository(
-    val issues: Issues
+    val issues: IssueConnection,
 )
 
 @Serializable
-data class Issues(
-    val pageInfo: PageInfo,
-    val nodes: List<Issue>
+data class IssueConnection(
+    val pageInfo: IssuesPageInfo,
+    val nodes: List<Issue>,
+)
+
+@Serializable
+data class IssuesPageInfo(
+    val hasNextPage: Boolean,
+    val endCursor: String?,
 )
 
 @Serializable
 data class Issue(
     val number: Int,
     val title: String,
-    val state: String,
+    val body: String?,
+    val state: String?,
     val createdAt: String,
-    val closedAt: String?,
+    val closedAt: String,
     val url: String,
     val author: IssueAuthor?,
-    val labels: LabelConnection,
+    val labels: IssueLabels,
+    val assignees: IssueAssignees,
+    val comments: IssueComments,
 )
 
 @Serializable
@@ -48,11 +57,33 @@ data class IssueAuthor(
 )
 
 @Serializable
-data class LabelConnection(
-    val nodes: List<Label>,
+data class IssueLabels(
+    val nodes: List<IssueLabel>,
 )
 
 @Serializable
-data class Label(
+data class IssueLabel(
     val name: String,
+)
+
+@Serializable
+data class IssueAssignees(
+    val nodes: List<IssueAssignee>,
+)
+
+@Serializable
+data class IssueAssignee(
+    val login: String,
+)
+
+@Serializable
+data class IssueComments(
+    val nodes: List<IssueComment>,
+)
+
+@Serializable
+data class IssueComment(
+    val body: String,
+    val author: IssueAuthor?,
+    val createdAt: String,
 )

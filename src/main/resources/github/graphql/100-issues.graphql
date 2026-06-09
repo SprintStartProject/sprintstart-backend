@@ -8,6 +8,7 @@ query RepoIssues($owner: String!, $name: String!, $cursor: String) {
             nodes {
                 number
                 title
+                body
                 state
                 createdAt
                 closedAt
@@ -15,13 +16,24 @@ query RepoIssues($owner: String!, $name: String!, $cursor: String) {
                 author {
                     login
                 }
-                labels(first: 10) {
+                labels(first: 100) {
                     nodes {
                         name
                     }
                 }
-                comments {
-                    totalCount
+                assignees(first: 100) {
+                    nodes {
+                        login
+                    }
+                }
+                comments(first: 100) {
+                    nodes {
+                        body
+                        author {
+                            login
+                        }
+                        createdAt
+                    }
                 }
             }
         }

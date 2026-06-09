@@ -11,11 +11,13 @@ query RepoCommits($owner: String!, $name: String!, $cursor: String) {
                         nodes {
                             oid
                             messageHeadline
+                            message
                             committedDate
                             author {
                                 name
                                 email
                             }
+                            changedFilesIfAvailable
                             url
                         }
                     }

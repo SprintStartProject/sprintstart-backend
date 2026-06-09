@@ -1,16 +1,7 @@
 package com.sprintstart.sprintstartbackend.github.models
 
-import jakarta.persistence.CascadeType
-import jakarta.persistence.Column
-import jakarta.persistence.Entity
-import jakarta.persistence.EnumType
-import jakarta.persistence.Enumerated
-import jakarta.persistence.FetchType
-import jakarta.persistence.Id
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.OneToOne
-import jakarta.persistence.Table
-import java.util.UUID
+import jakarta.persistence.*
+import java.util.*
 
 @Entity
 @Table(name = "gh_repository_connections")
@@ -24,10 +15,8 @@ data class GithubRepositoryConnection(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: ConnectionStatus = ConnectionStatus.UPDATING,
-    @JoinColumn(name = "snapshot_id")
-    @OneToOne(
-        cascade = [CascadeType.ALL],
-        fetch = FetchType.LAZY,
-    )
+    @OneToOne(mappedBy = "repository", fetch = FetchType.LAZY)
     var snapshot: GithubRepositorySnapshot? = null,
+    @OneToMany(mappedBy = "repository", orphanRemoval = true)
+    var filesSnapshots: MutableList<GithubFileSnapshot> = mutableListOf(),
 )
