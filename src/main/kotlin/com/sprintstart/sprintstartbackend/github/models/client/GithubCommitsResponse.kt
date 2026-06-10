@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.github.models.client
 
+import com.sprintstart.sprintstartbackend.github.external.events.CommitFetchedEvent
 import kotlinx.serialization.Serializable
 
 @Serializable

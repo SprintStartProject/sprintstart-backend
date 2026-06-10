@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
+import com.sprintstart.sprintstartbackend.github.external.events.CommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.CommitsFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshotSharedId
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
@@ -15,24 +17,28 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.Instant
 import java.util.Base64
+import java.util.UUID
 
 val DECODER: Base64.Decoder = Base64.getDecoder()
 
 @Service
 class GithubConnectorService(
-    val repoConnectionRepository: GithubRepositoryConnectionRepository,
-    val repoSnapshotRepository: GithubRepositorySnapshotRepository,
-    val fileSnapshotRepository: GithubFileSnapshotRepository,
-    val applicationScope: CoroutineScope,
-    val githubClient: GithubClient,
-    val clock: Clock = Clock.systemUTC(),
+    private val repoConnectionRepository: GithubRepositoryConnectionRepository,
+    private val repoSnapshotRepository: GithubRepositorySnapshotRepository,
+    private val fileSnapshotRepository: GithubFileSnapshotRepository,
+    private val applicationScope: CoroutineScope,
+    private val githubClient: GithubClient,
+    private val clock: Clock = Clock.systemUTC(),
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     fun connectRepository(owner: String, name: String) {
         // Save an initial snapshot of the repository
+        val transactionId = UUID.randomUUID()
         val repoConnection = GithubRepositoryConnection(
             owner = owner,
             name = name,
@@ -47,10 +53,10 @@ class GithubConnectorService(
 
         // Launch data collectors/processors
         applicationScope.launch {
-            launch { fetchAndIngestAllFiles(owner, name, repoConnection) }
-            launch { fetchAndIngestAllCommits(owner, name) }
-            launch { fetchAndIngestAllIssues(owner, name) }
-            launch { fetchAndIngestAllPullRequests(owner, name) }
+            launch { fetchAndIngestAllFiles(owner, name, repoConnection, transactionId) }
+            launch { fetchAndIngestAllCommits(owner, name, transactionId) }
+            launch { fetchAndIngestAllIssues(owner, name, transactionId) }
+            launch { fetchAndIngestAllPullRequests(owner, name, transactionId) }
             // TODO: Handle more resources
             // TODO: Start CRON job
         }
@@ -92,13 +98,17 @@ class GithubConnectorService(
 
     private suspend fun fetchAndIngestFileInc(owner: String, name: String, fileSnapshot: GithubFileSnapshot) {
         val fileResponse = fetchFile(owner, name, fileSnapshot.id.path)
+        if (fileResponse.sha == fileSnapshot.sha) {
+            return // File hasn't changed - no need to sync
+        }
+
         val decodedContent = DECODER.decode(fileResponse.content).toString(Charsets.UTF_8)
 
         fileSnapshot.lastIngestedAt = Instant.now(clock)
         fileSnapshot.sha = fileResponse.sha
         fileSnapshotRepository.save(fileSnapshot)
 
-        // TODO: Ingest with decoded content
+        ingestFile()
     }
 
     private suspend fun fetchAndIngestFile(
@@ -136,10 +146,26 @@ class GithubConnectorService(
         return file
     }
 
-    private suspend fun fetchAndIngestAllCommits(owner: String, name: String) {
-        val commits = githubClient.fetchAllCommits(owner, name)
+    private fun ingestFile() {
+        val event
+        eventPublisher.publishEvent(event)
+    }
 
-        // TODO: Ingest
+    private suspend fun fetchAndIngestAllCommits(owner: String, name: String, transactionId: UUID) {
+        val commits = githubClient.fetchAllCommits(owner, name)
+        val commitEvents = commits.map {
+            CommitFetchedEvent(
+                oid = it.oid,
+                headline = it.messageHeadline,
+                message = it.message,
+                committedDate = it.committedDate,
+                authorName = it.author?.name,
+                authorEmail = it.author?.email,
+                changedFilesIfAvailable = it.changedFilesIfAvailable,
+                url = it.url,
+            )
+        }
+        eventPublisher.publishEvent(CommitsFetchedEvent(transactionId, commitEvents))
     }
 
     private suspend fun fetchAndIngestAllIssues(owner: String, name: String) {
