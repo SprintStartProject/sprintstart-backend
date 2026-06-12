@@ -2,6 +2,7 @@ sprintstart:
   ai:
     base-url: "http://host.docker.internal:8000"
   github:
+    cache-path: ${REPO_CACHE_PATH:${java.io.tmpdir}/repos}
     base-url: "https://api.github.com/graphql"
     token: ${GITHUB_PAT}
     cron: "0 2 * * 1" # Every Monday night at 2:00 am

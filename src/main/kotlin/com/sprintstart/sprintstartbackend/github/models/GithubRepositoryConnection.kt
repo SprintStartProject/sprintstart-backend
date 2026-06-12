@@ -15,6 +15,8 @@ data class GithubRepositoryConnection(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: ConnectionStatus = ConnectionStatus.UP_TO_DATE,
+    @Column(name = "last_sha", nullable = false)
+    var lastSha: String = "",
     @OneToOne(mappedBy = "repository", fetch = FetchType.LAZY)
     var snapshot: GithubRepositorySnapshot? = null,
     @OneToMany(mappedBy = "repository", orphanRemoval = true)

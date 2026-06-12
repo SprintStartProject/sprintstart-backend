@@ -2,22 +2,28 @@ package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.*
-import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
-import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshotSharedId
-import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
-import com.sprintstart.sprintstartbackend.github.models.client.FileResponse
-import com.sprintstart.sprintstartbackend.github.models.client.TreeEntry
+import com.sprintstart.sprintstartbackend.github.models.*
+import com.sprintstart.sprintstartbackend.github.models.client.ChangedFile
+import com.sprintstart.sprintstartbackend.github.models.client.DeletedFile
+import com.sprintstart.sprintstartbackend.github.models.client.ModifiedFile
 import com.sprintstart.sprintstartbackend.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositorySnapshotRepository
+import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
+import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
 import jakarta.transaction.Transactional
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
-import java.time.Clock
-import java.time.Instant
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.*
+import kotlin.io.path.exists
+import kotlin.io.path.extension
+import kotlin.io.path.readText
 
 /**
  * Define a Base64 decoder.
@@ -27,18 +33,57 @@ import java.util.*
  */
 private val DECODER: Base64.Decoder = Base64.getMimeDecoder()
 
+private val binaryExtensions = setOf(
+    // images
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "bmp",
+    "ico",
+    "svg",
+    "webp",
+    // compiled
+    "class",
+    "jar",
+    "war",
+    "ear",
+    // archives
+    "zip",
+    "tar",
+    "gz",
+    "rar",
+    // binaries
+    "exe",
+    "dll",
+    "so",
+    "dylib",
+    // media
+    "mp3",
+    "mp4",
+    "wav",
+    "avi",
+    // documents
+    "pdf",
+    "doc",
+    "docx",
+    "xls",
+    "xlsx",
+)
+
 /**
  * Handles the business logic of connecting and managing GitHub repositories.
  */
 @Service
 class GithubConnectorService(
+    private val applicationScope: CoroutineScope,
+    private val eventPublisher: ApplicationEventPublisher,
     private val repoConnectionRepository: GithubRepositoryConnectionRepository,
     private val repoSnapshotRepository: GithubRepositorySnapshotRepository,
     private val fileSnapshotRepository: GithubFileSnapshotRepository,
-    private val applicationScope: CoroutineScope,
     private val githubClient: GithubClient,
-    private val clock: Clock,
-    private val eventPublisher: ApplicationEventPublisher,
+    private val customCache: CustomOnDiskCache,
+    private val onDiskOperations: OnDiskOperations,
 ) {
     /**
      * Connect a new repository.
@@ -84,202 +129,188 @@ class GithubConnectorService(
         applicationScope.launch { fetchAndIngestAllPullRequests(repoConnection, transactionId) }
     }
 
-    suspend fun checkAllRepositoriesForUpdates() {
-        val githubRepositories = repoConnectionRepository.findAll()
-        githubRepositories
-            .chunked(10)
-            .forEach { batch ->
-                coroutineScope {
-                    batch
-                        .map {
-                            async { checkGithubRepositoryForUpdates(it) }
-                        }.awaitAll()
-                }
-            }
-    }
+    /**
+     * The public entry-point for updating an entire repository.
+     *
+     * This function, given owner and name of a **connected** GitHub repository,
+     * updates all registries/resources to the newest state.
+     *
+     * @param owner The owner of the repository.
+     * @param name The name of the repository.
+     */
+    suspend fun updateRepository(owner: String, name: String) {
+        val transactionId = UUID.randomUUID()
+        val repository = repoConnectionRepository.findByOwnerAndName(owner, name)
+            ?: throw IllegalStateException("Github repository $owner/$name could not be updated - not connected!")
 
-    fun updateFiles() {}
-
-    fun updateCommits() {}
-
-    fun updateIssues() {}
-
-    fun updatePullRequests() {}
-
-    private fun checkGithubRepositoryForUpdates(githubRepository: GithubRepositoryConnection) {
-        // TODO: Check files for updates
-        // TODO: Check commits for updates
-        // TODO: Check issues for updates
-        // TODO: Check pull requests for updates
+        applicationScope.launch { fetchAndIngestFileUpdatesIfNecessary(repository, transactionId) }
     }
 
     /**
-     * Given the information of a GitHub repository, finds, fetches and ingests all file resources.
+     * Streams the initial connection and ingestion of a GitHub repository's files.
      *
-     * This function, given the information for identifying the GitHub repository,
-     * first fetches a lightweight file tree from GitHub, and then instructs fetch and ingest actions
-     * for each file resource in batches of 10 at a time, after applying pre-filters on filtered
-     * file types like binaries.
+     * This function handles initializing the local clone of the GitHub repository
+     * (if not already existing, at last the clone will be triggered here) by starting
+     * the fetch and ingest actions for this repository into the AI system.
      *
-     * @param githubRepository The GitHub repository (as handled internally) this file resource belongs to.
+     * @param githubRepository The GitHub repository to initialize.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
-     *
-     * @throws IllegalStateException If on one of the processed file resources, the GitHub api
-     * returns malformed responses.
      */
     private suspend fun fetchAndIngestAllFiles(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        val fileTree = githubClient.fetchFileTree(githubRepository.owner, githubRepository.name)
+        val path = customCache.getLocalRepositoryPath(githubRepository.owner, githubRepository.name)
+        try {
+            streamFilesFromDiskAndIngest(githubRepository, path, transactionId)
+            val latestSha = OnDiskOperations.exec(path, onDiskOperations.gitRevParse()).trim()
+            githubRepository.lastSha = latestSha
+        } catch (e: Exception) {
+            githubRepository.status = ConnectionStatus.FAILED
+            throw e
+        } finally {
+            repoConnectionRepository.save(githubRepository)
+        }
+    }
 
-        // Compute files in batches of 10, to improve performance while not overloading the connection pool.
-        // Fine-tune later if needed
-        fileTree
-            .tree
-            .filter { it.type == "blob" }
-            // TODO: Filter binaries etc...
-            .chunked(10)
-            .forEach { batch ->
-                coroutineScope {
-                    batch
-                        .map { file ->
-                            async { fetchAndIngestFilePreFilter(githubRepository, file, transactionId) }
-                        }.awaitAll()
+    /**
+     * Prepares the fetching and ingestion of file updates on the local copy of the GitHub repository.
+     *
+     * This function lays the ground for [fetchAndIngestFileUpdates], by updating the local copy of
+     * the GitHub repository, filtering out files that have not changed, and updating the state afterward.
+     *
+     * @param githubRepository The GitHub repository to fetch/ingest on.
+     * @param transactionId The UUID of the overall transaction, this action is a part of.
+     */
+    private suspend fun fetchAndIngestFileUpdatesIfNecessary(
+        githubRepository: GithubRepositoryConnection,
+        transactionId: UUID,
+    ) {
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.owner, githubRepository.name)
+        withContext(Dispatchers.IO) {
+            OnDiskOperations.exec(localFsPath, onDiskOperations.gitFetch())
+            OnDiskOperations.exec(localFsPath, onDiskOperations.gitMerge())
+        }
+        val latestSha = OnDiskOperations.exec(localFsPath, onDiskOperations.gitRevParse()).trim()
+        if (githubRepository.lastSha.isBlank()) {
+            throw IllegalStateException(
+                "Update of repository ${githubRepository.owner}/${githubRepository.name} failed - not initialized!",
+            )
+        }
+
+        if (githubRepository.lastSha == latestSha) {
+            return // Up to date, nothing to do
+        }
+
+        fetchAndIngestFileUpdates(localFsPath, githubRepository.lastSha, latestSha, transactionId)
+
+        // Update state
+        githubRepository.lastSha = latestSha
+        repoConnectionRepository.save(githubRepository)
+    }
+
+    /**
+     * Handles the fetching and ingestion of a local file into the AI system.
+     *
+     * This function, given information on the file and on the timespan of which's changes are
+     * supposed to be fetched, fetches the content of the changed file, and orchestrates
+     * what to do with that information, e.g. un-ingest file that were deleted in the code,
+     * or re-ingest the ones that changes.
+     *
+     * @param localFsPath The path to the local copy of the GitHub repository.
+     * @param lastSha The sha representing the last time the repository was updated.
+     * @param latestSha The newest sha representing the state to update to.
+     * @param transactionId The UUID of the overall transaction, this action is a part of.
+     */
+    private suspend fun fetchAndIngestFileUpdates(
+        localFsPath: Path,
+        lastSha: String,
+        latestSha: String,
+        transactionId: UUID,
+    ) {
+        val output = OnDiskOperations.exec(localFsPath, onDiskOperations.gitDiffCmp(lastSha, latestSha))
+        val changedFiles = output.lines().filter { it.isNotBlank() }
+
+        changedFiles.forEach { filePath ->
+            when (val changedFile = fetchFileUpdate(localFsPath, filePath)) {
+                is ModifiedFile -> {
+                    ingestFile(changedFile.relativePath, changedFile.content, transactionId)
+                }
+
+                is DeletedFile -> {
+                    unIngestFile(changedFile.relativePath, transactionId)
+                }
+
+                else -> {
+                    // Ignore - path was filtered out as binary
                 }
             }
+        }
     }
 
     /**
-     * Decides, whether an incremental fetch/ingest is needed, or a fetch/ingest
-     * completely from scratch.
+     * Fetches the update of a file from the local copy of a GitHub repository.
      *
-     * This function acts as a pre-filter for [fetchAndIngestFile] and [fetchAndIngestFileInc],
-     * deciding when to act as an update, and when to act from scratch.
+     * This function, given the path to a cloned GitHub repository, fetches a changed file
+     * from that repository from disk.
      *
-     * @param githubRepository The GitHub repository (as handled internally) this file resource belongs to.
-     * @param fileMeta Lightweight metadata to the file to be fetched/ingested.
-     * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
-     *
-     * @throws IllegalStateException If the fetched resource from GitHub does not pass validity checks.
+     * @param localFsPath The path to the local copy of the GitHub repository.
+     * @param relativeFilePath The repository-relative path to the file to fetch updates from.
      */
-    private suspend fun fetchAndIngestFilePreFilter(
+    private suspend fun fetchFileUpdate(localFsPath: Path, relativeFilePath: String): ChangedFile? {
+        val absolutePath = localFsPath.resolve(relativeFilePath)
+        return when {
+            absolutePath.isBinary() -> null
+            !absolutePath.exists() -> DeletedFile(relativeFilePath)
+            else -> ModifiedFile(relativeFilePath, absolutePath.readText())
+        }
+    }
+
+    /**
+     * Reads files from disk and directly streams the ingestion of each file.
+     *
+     * This function, given the path to a local GitHub repository, reads all files it can find from the disk
+     * and ingests them into the AI system.
+     *
+     * # Ignored
+     *
+     * * `.git`
+     * * All binary file extensions (see [binaryExtensions])
+     *
+     * @see binaryExtensions
+     *
+     * @param githubRepository The GitHub repository to ingest.
+     * @param repositoryPath The path to the GitHub repository, locally.
+     * @param transactionId The UUID of the overall transaction, this action is a part of.
+     */
+    private fun streamFilesFromDiskAndIngest(
         githubRepository: GithubRepositoryConnection,
-        fileMeta: TreeEntry,
+        repositoryPath: Path,
         transactionId: UUID,
     ) {
-        val fileSnapshot = fileSnapshotRepository.findByCombinedId(githubRepository.id, fileMeta.path)
-        if (fileSnapshot == null) {
-            fetchAndIngestFile(githubRepository, fileMeta, transactionId)
-        } else {
-            fetchAndIngestFileInc(githubRepository, fileSnapshot, transactionId)
+        Files.walk(repositoryPath).use { stream ->
+            stream
+                .filter { Files.isRegularFile(it) }
+                .filter { !it.startsWith(repositoryPath.resolve(".git")) }
+                .filter { !it.isBinary() }
+                .forEach { filePath ->
+                    val relativePath = repositoryPath.relativize(filePath).toString()
+                    val content = Files.readString(filePath)
+
+                    val fileSnapshotId = GithubFileSnapshotSharedId(
+                        repositoryId = githubRepository.id,
+                        path = filePath.toString(),
+                    )
+                    val fileSnapshot = GithubFileSnapshot(
+                        id = fileSnapshotId,
+                        sha = content.hashCode().toString(),
+                        repository = githubRepository,
+                    )
+                    fileSnapshotRepository.save(fileSnapshot)
+
+                    ingestFile(relativePath, content, transactionId)
+                }
         }
-    }
-
-    /**
-     * Fetches a file resource from the GitHub REST api and marks it for ingestion to AI system.
-     *
-     * _Intended for use on **old** file resources, therefore just **updates** an existing file resource._
-     *
-     * This function fetches a given file resource from the GitHub REST api,
-     * decodes the content, handles business logic with it (e.g. storing internal metadata),
-     * and afterward marks that file resource for ingestion by publishing an according event
-     * for the upload/ingestion module to pick up.
-     *
-     * @see GithubFileSnapshot
-     *
-     * @param githubRepository The GitHub repository (as handled internally) this file resource belongs to.
-     * @param fileSnapshot The old snapshot of the file resource to be updated.
-     * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
-     *
-     * @throws IllegalStateException if post-fetch validation fails.
-     */
-    private suspend fun fetchAndIngestFileInc(
-        githubRepository: GithubRepositoryConnection,
-        fileSnapshot: GithubFileSnapshot,
-        transactionId: UUID,
-    ) {
-        val fileResponse = fetchFile(githubRepository.owner, githubRepository.name, fileSnapshot.id.path)
-        if (fileResponse.sha == fileSnapshot.sha) {
-            return // File hasn't changed - no need to sync
-        }
-
-        val decodedContent = DECODER.decode(fileResponse.content).toString(Charsets.UTF_8)
-
-        fileSnapshotRepository.save(
-            fileSnapshot.copy(
-                lastIngestedAt = Instant.now(clock),
-                sha = fileResponse.sha,
-            ),
-        )
-
-        ingestFile(fileResponse.path, decodedContent, transactionId)
-    }
-
-    /**
-     * Fetches a file resource from the GitHub REST api and marks it for ingestion to AI system.
-     *
-     * _Intended for use on **new** file resources._
-     *
-     * This function fetches a given file resource from the GitHub REST api,
-     * decodes the content, handles business logic with it (e.g. storing internal metadata),
-     * and afterward marks that file resource for ingestion by publishing an according event
-     * for the upload/ingestion module to pick up.
-     *
-     * @see GithubRepositoryConnection
-     * @see TreeEntry
-     *
-     * @param githubRepository The GitHub repository (as handled internally) this file resource belongs to.
-     * @param fileMeta Lightweight metadata to the file to be fetched/ingested.
-     * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
-     *
-     * @throws IllegalStateException if post-fetch validation fails.
-     */
-    private suspend fun fetchAndIngestFile(
-        githubRepository: GithubRepositoryConnection,
-        fileMeta: TreeEntry,
-        transactionId: UUID,
-    ) {
-        val fileResponse = fetchFile(githubRepository.owner, githubRepository.name, fileMeta.path)
-        val decodedContent = DECODER.decode(fileResponse.content).toString(Charsets.UTF_8)
-
-        val fileSnapshotId = GithubFileSnapshotSharedId(
-            repositoryId = githubRepository.id,
-            path = fileResponse.path,
-        )
-        val fileSnapshot = GithubFileSnapshot(
-            id = fileSnapshotId,
-            sha = fileResponse.sha,
-        )
-        fileSnapshotRepository.save(fileSnapshot)
-
-        ingestFile(fileResponse.path, decodedContent, transactionId)
-    }
-
-    /**
-     * Fetches a file resource from the GitHub REST api.
-     *
-     * This function fetches a file resource from GitHub's REST api,
-     * and validates and provides the result.
-     *
-     * @param owner The GitHub user/org that owns the repository to fetch from.
-     * @param name The name of the repository to fetch from.
-     * @param path The relative path of the file resource to fetch.
-     *
-     * @throws [IllegalStateException] if the resource provided by the GitHub api
-     * does not correspond to the expected format regarding encoding and/or resource type.
-     */
-    private suspend fun fetchFile(owner: String, name: String, path: String): FileResponse {
-        val file = githubClient.fetchFile(owner, name, path)
-
-        check(file.type == "file") {
-            "Received resource with type ${file.type} but expected type 'file'"
-        }
-        check(file.encoding == "base64") {
-            "Received resource content encoded with ${file.encoding} but expected 'base64'"
-        }
-
-        return file
     }
 
     /**
@@ -304,6 +335,25 @@ class GithubConnectorService(
     }
 
     /**
+     * Publishes a spring event to un-ingest the resource under the given path from the AI system.
+     *
+     * This function publishes a [GithubFileDeletedEvent], that a handler in the upload/ingestion
+     * module waits for, picks up, and then handles the un-ingestion of.
+     *
+     * @see GithubFileDeletedEvent
+     *
+     * @param path The path to the deleted file.
+     * @param transactionId The UUID of the overall transaction, this action is a part of.
+     */
+    private fun unIngestFile(path: String, transactionId: UUID) {
+        val event = GithubFileDeletedEvent(
+            transactionId = transactionId,
+            path = path,
+        )
+        eventPublisher.publishEvent(event)
+    }
+
+    /**
      * Fetches and ingests **all** commits of a given GitHub repository.
      *
      * Given the `name` and `owner` of a GitHub repository, this function fetches all
@@ -315,22 +365,6 @@ class GithubConnectorService(
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
     private suspend fun fetchAndIngestAllCommits(githubRepository: GithubRepositoryConnection, transactionId: UUID) {
-        val commits = githubClient.fetchAllCommits(githubRepository.owner, githubRepository.name)
-
-        commits.forEach {
-            val event = GithubCommitFetchedEvent(
-                transactionId = transactionId,
-                oid = it.oid,
-                headline = it.messageHeadline,
-                message = it.message,
-                committedDate = it.committedDate,
-                authorName = it.author?.name,
-                authorEmail = it.author?.email,
-                changedFilesIfAvailable = it.changedFilesIfAvailable,
-                url = it.url,
-            )
-            eventPublisher.publishEvent(event)
-        }
     }
 
     /**
@@ -423,4 +457,9 @@ class GithubConnectorService(
             eventPublisher.publishEvent(event)
         }
     }
+
+    /**
+     * Attaches a custom binary check function to [Path].
+     */
+    private fun Path.isBinary() = extension.lowercase() in binaryExtensions
 }

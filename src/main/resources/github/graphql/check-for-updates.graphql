@@ -1,0 +1,23 @@
+query RepoContentCount($owner: String!, $name: String!, $since: GitTimestamp!) {
+    repository(owner: $owner, name: $name) {
+        commits: defaultBranchRef {
+            target {
+                ... on Commit {
+                    history(since: $since) {
+                        totalCount
+                    }
+                }
+            }
+        }
+        issues(orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes {
+                updatedAt
+            }
+        }
+        pullRequests(orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes {
+                updatedAt
+            }
+        }
+    }
+}

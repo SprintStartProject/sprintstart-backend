@@ -24,6 +24,7 @@ services:
       - "8080:8080"
     volumes:
       - ./uploads:/app/uploads
+      - github-cache:/repos
     depends_on:
       - database
     extra_hosts:
@@ -31,3 +32,4 @@ services:
 
 volumes:
   sprintstart-db-data:
+  github-cache:
