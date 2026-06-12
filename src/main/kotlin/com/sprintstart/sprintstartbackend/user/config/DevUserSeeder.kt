@@ -40,6 +40,7 @@ class DevUserSeeder(
                     id = defaultUserId,
                     authId = "dev-user-subject",
                     username = "Default-User",
+                    email = "dev.user@sprintstart.de",
                     firstname = "Default",
                     lastname = "User",
                     workingArea = WorkingArea.BACKEND_DEV,

@@ -68,3 +68,5 @@ class UserService(
         userRepository.findByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 }
+
+// TODO: add doc

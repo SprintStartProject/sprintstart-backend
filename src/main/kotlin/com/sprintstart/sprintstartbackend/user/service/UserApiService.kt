@@ -34,3 +34,5 @@ class UserApiService(
         return userRepository.existsByAuthId(authId)
     }
 }
+
+// TODO: add doc

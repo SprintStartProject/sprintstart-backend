@@ -1,4 +1,5 @@
 sprintstart:
+  internal-event-secret: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET}
   ai:
     base-url: ${SPRINTSTART_AI_BASE_URL:http://host.docker.internal:8000}
     
@@ -16,7 +17,7 @@ spring:
       max-request-size: 50MB
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update # create-drop
     show-sql: true
   security:
     oauth2:
