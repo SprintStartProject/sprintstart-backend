@@ -7,6 +7,7 @@ data class UpdateUserResponse(
     val id: UUID,
     val authId: String,
     val username: String,
+    val email: String? = null,
     val firstname: String,
     val lastname: String,
     val workingArea: WorkingArea,
