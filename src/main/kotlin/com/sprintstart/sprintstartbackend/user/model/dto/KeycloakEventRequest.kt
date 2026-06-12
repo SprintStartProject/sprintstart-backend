@@ -1,7 +1,14 @@
 package com.sprintstart.sprintstartbackend.user.model.dto
 
 data class KeycloakEventRequest(
-    val type: String,
-    val userId: String,
-    val details: Map<String, String> = emptyMap(),
+    val source: String,
+    val resourceType: String,
+    val eventType: String,
+    val realmId: String,
+    val authId: String,
+    val username: String?,
+    val email: String?,
+    val firstName: String?,
+    val lastName: String?,
+    val realmRoles: Set<String> = emptySet(),
 )
