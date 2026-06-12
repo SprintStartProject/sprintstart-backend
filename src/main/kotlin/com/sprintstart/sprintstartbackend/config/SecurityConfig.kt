@@ -13,6 +13,7 @@ import org.springframework.security.web.SecurityFilterChain
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 class SecurityConfig {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
@@ -33,7 +34,10 @@ class SecurityConfig {
                     ).permitAll()
                     .anyRequest()
                     .authenticated()
-            }.oauth2ResourceServer { it.jwt {} }
-            .build()
+            }.oauth2ResourceServer {
+                it.jwt { jwt ->
+                    jwt.jwtAuthenticationConverter(KeycloakJwtAuthenticationConverter())
+                }
+            }.build()
     }
 }
