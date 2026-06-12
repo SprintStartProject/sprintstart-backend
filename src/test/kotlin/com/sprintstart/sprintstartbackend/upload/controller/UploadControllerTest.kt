@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.upload.controller
 
+import com.sprintstart.sprintstartbackend.canonical.controller.UploadController
 import com.sprintstart.sprintstartbackend.upload.model.dto.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.service.UploadService
