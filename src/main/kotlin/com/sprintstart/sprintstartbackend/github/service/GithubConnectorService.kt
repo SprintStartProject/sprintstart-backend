@@ -3,9 +3,10 @@ package com.sprintstart.sprintstartbackend.github.service
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.*
 import com.sprintstart.sprintstartbackend.github.models.*
-import com.sprintstart.sprintstartbackend.github.models.client.ChangedFile
-import com.sprintstart.sprintstartbackend.github.models.client.DeletedFile
-import com.sprintstart.sprintstartbackend.github.models.client.ModifiedFile
+import com.sprintstart.sprintstartbackend.github.models.client.dto.ChangedFile
+import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
+import com.sprintstart.sprintstartbackend.github.models.client.dto.DeletedFile
+import com.sprintstart.sprintstartbackend.github.models.client.dto.ModifiedFile
 import com.sprintstart.sprintstartbackend.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositorySnapshotRepository
@@ -20,18 +21,11 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import java.util.*
 import kotlin.io.path.exists
 import kotlin.io.path.extension
 import kotlin.io.path.readText
-
-/**
- * Define a Base64 decoder.
- *
- * Used for decoding file contents from GitHub api, as these arrive
- * encoded.
- */
-private val DECODER: Base64.Decoder = Base64.getMimeDecoder()
 
 private val binaryExtensions = setOf(
     // images
@@ -124,7 +118,7 @@ class GithubConnectorService(
 
         // Launch data collectors/processors
         applicationScope.launch { fetchAndIngestAllFiles(repoConnection, transactionId) }
-        applicationScope.launch { fetchAndIngestAllCommits(repoConnection, transactionId) }
+        applicationScope.launch { fetchAndIngestLatestCommits(repoSnapshot, transactionId) }
         applicationScope.launch { fetchAndIngestAllIssues(repoConnection, transactionId) }
         applicationScope.launch { fetchAndIngestAllPullRequests(repoConnection, transactionId) }
     }
@@ -142,6 +136,10 @@ class GithubConnectorService(
         val transactionId = UUID.randomUUID()
         val repository = repoConnectionRepository.findByOwnerAndName(owner, name)
             ?: throw IllegalStateException("Github repository $owner/$name could not be updated - not connected!")
+        val latestSnapshot = repoSnapshotRepository.findLatestByRepository(repository.id)
+        val newSnapshot = GithubRepositorySnapshot(
+            repository = repository,
+        )
 
         applicationScope.launch { fetchAndIngestFileUpdatesIfNecessary(repository, transactionId) }
     }
@@ -364,7 +362,49 @@ class GithubConnectorService(
      * @param githubRepository The GitHub repository (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
-    private suspend fun fetchAndIngestAllCommits(githubRepository: GithubRepositoryConnection, transactionId: UUID) {
+    private suspend fun fetchAndIngestLatestCommits(
+        latestSnapshot: GithubRepositorySnapshot,
+        transactionId: UUID,
+        doSyncAll: Boolean = false
+    ) {
+        val localCopyPath =
+            customCache.getLocalRepositoryPath(latestSnapshot.repository.owner, latestSnapshot.repository.name)
+        val newCommits = if (doSyncAll) {
+            OnDiskOperations.exec(localCopyPath, onDiskOperations.gitCommits())
+        } else {
+            OnDiskOperations.exec(localCopyPath, onDiskOperations.gitCommitsAfter(latestSnapshot.lastCommitsSyncAt))
+        }
+
+        newCommits.lines()
+            .stream()
+            .parallel()
+            .forEach { rawCommit ->
+                val commit = parseCommit(rawCommit)
+                ingestCommit(commit, transactionId)
+            }
+    }
+
+    private fun parseCommit(raw: String): Commit {
+        val (dateStr, sha, author, msg) = raw.split(" - ")
+        val date = Instant.parse(dateStr)
+
+        return Commit(
+            date = date,
+            sha = sha,
+            author = author,
+            msg = msg,
+        )
+    }
+
+    private fun ingestCommit(commit: Commit, transactionId: UUID) {
+        val event = GithubCommitFetchedEvent(
+            transactionId = transactionId,
+            author = commit.author,
+            date = commit.date,
+            sha = commit.sha,
+            msg = commit.msg,
+        )
+        eventPublisher.publishEvent(event)
     }
 
     /**

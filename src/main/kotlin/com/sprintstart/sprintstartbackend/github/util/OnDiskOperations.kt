@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.github.util
 
 import org.springframework.stereotype.Service
 import java.nio.file.Path
+import java.time.Instant
 
 /**
  * Factory for Git CLI operations and a runner for executing them.
@@ -56,6 +57,17 @@ class OnDiskOperations {
      */
     fun gitDiffCmp(previousSha: String, currentSha: String) =
         ProcessBuilder("git", "diff", "$previousSha..$currentSha", "--name-only")
+
+    fun gitCommits() = ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s")
+
+    /**
+     * Constructs a `git log` command that retrieves commit hashes created after the specified timestamp.
+     *
+     * @param datetime The point in time after which commits should be retrieved. Accepts an [Instant] value.
+     * @return A [ProcessBuilder] configured to execute the `git log` command with the `--after` option.
+     */
+    fun gitCommitsAfter(datetime: Instant) =
+        ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s", "--after=${datetime.toString()}")
 
     companion object {
         /**

@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.models.client
+package com.sprintstart.sprintstartbackend.github.models.client.dto
 
 /**
  * Some file that changed in some way in the next update.

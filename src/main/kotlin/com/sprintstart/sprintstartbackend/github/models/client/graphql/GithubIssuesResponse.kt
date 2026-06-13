@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.models.client
+package com.sprintstart.sprintstartbackend.github.models.client.graphql
 
 import kotlinx.serialization.Serializable
 

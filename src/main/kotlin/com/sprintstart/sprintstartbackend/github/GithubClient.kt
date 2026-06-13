@@ -1,7 +1,9 @@
 package com.sprintstart.sprintstartbackend.github
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.github.models.client.*
+import com.sprintstart.sprintstartbackend.github.models.client.graphql.Issue
+import com.sprintstart.sprintstartbackend.github.models.client.graphql.PageableResponse
+import com.sprintstart.sprintstartbackend.github.models.client.graphql.PullRequest
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Component
@@ -19,7 +21,7 @@ class GithubClient(
             .inputStream
             .bufferedReader()
             .readText()
-        return doFetchAll<Issue, GithubIssuesResponse>(owner, name, query)
+        return doFetchAll<com.sprintstart.sprintstartbackend.github.models.client.graphql.Issue, com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubIssuesResponse>(owner, name, query)
     }
 
     suspend fun fetchAllPullRequests(owner: String, name: String): List<PullRequest> {
@@ -27,7 +29,7 @@ class GithubClient(
             .inputStream
             .bufferedReader()
             .readText()
-        return doFetchAll<PullRequest, GithubPullRequestsResponse>(owner, name, query)
+        return doFetchAll<com.sprintstart.sprintstartbackend.github.models.client.graphql.PullRequest, com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubPullRequestsResponse>(owner, name, query)
     }
 
     private suspend inline fun <S, reified T : PageableResponse<S>> doFetchAll(
