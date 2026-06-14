@@ -87,8 +87,8 @@ jobs:
       - name: Code quality check with detekt
         run: ./gradlew detekt
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Run tests with coverage
+        run: ./gradlew check
 
       - name: Build
         run: ./gradlew assemble
