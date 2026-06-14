@@ -24,8 +24,12 @@ import java.util.UUID
 class UploadController(
     private val uploadService: UploadService,
 ) {
-    @Operation(summary = "Upload markdown artifacts")
-    @ApiResponses(
+    @Operation(summary = "Upload markd" +
+            "" +
+            "" +
+            "own artifacts")
+    @ApiRespon
+    ses(
         value = [
             ApiResponse(
                 responseCode = "200",
