@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.ninjasquad.springmockk.MockkBean
+import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
@@ -12,10 +13,12 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
@@ -27,6 +30,7 @@ import java.time.Instant
 import java.util.UUID
 
 @WebMvcTest(OnboardingPathController::class)
+@Import(SecurityConfig::class)
 @AutoConfigureMockMvc
 class OnboardingPathControllerTest(
     @Autowired private val mockMvc: MockMvc,
@@ -37,9 +41,31 @@ class OnboardingPathControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
-    private val authId = "test-auth-id"
-    private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()
+    private val userId = UUID.randomUUID()
+
+    private val authId = "test-auth-id"
+    private val adminAuthId = "test-admin-auth-id"
+
+    private fun jwtWithSubject(
+        subject: String,
+        vararg roles: String,
+    ): JwtRequestPostProcessor {
+        return jwt()
+            .jwt { jwt ->
+                jwt.subject(subject)
+                jwt.claim(
+                    "realm_access",
+                    mapOf("roles" to roles.toList()),
+                )
+            }.authorities(
+                roles.map { role -> SimpleGrantedAuthority("ROLE_$role") },
+            )
+    }
+
+    private val userJwt = jwtWithSubject(authId, "USER")
+    private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
+    private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
 
     // ========================== /me endpoints ==========================
 
@@ -57,11 +83,13 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/me/path")
-                    .with(jwt().jwt { it.subject(authId) }.authorities(SimpleGrantedAuthority("ROLE_USER"))),
+                    .with(userJwt),
             ).andExpect(status().isOk)
-            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { onboardingPathService.getOnboardingPathForMe(authId) }
+        verify(exactly = 1) {
+            onboardingPathService.getOnboardingPathForMe(authId)
+        }
     }
 
     @Test
@@ -76,7 +104,7 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/me/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(noUserRoleJwt),
             ).andExpect(status().isForbidden)
     }
 
@@ -88,10 +116,12 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/me/path")
-                    .with(jwt().jwt { it.subject(authId) }.authorities(SimpleGrantedAuthority("ROLE_USER"))),
+                    .with(userJwt),
             ).andExpect(status().isNotFound)
 
-        verify(exactly = 1) { onboardingPathService.getOnboardingPathForMe(authId) }
+        verify(exactly = 1) {
+            onboardingPathService.getOnboardingPathForMe(authId)
+        }
     }
 
     @Test
@@ -101,10 +131,12 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/me/path")
-                    .with(jwt().jwt { it.subject(authId) }.authorities(SimpleGrantedAuthority("ROLE_USER"))),
+                    .with(userJwt),
             ).andExpect(status().isNoContent)
 
-        verify(exactly = 1) { onboardingPathService.deleteOnboardingPathForMe(authId) }
+        verify(exactly = 1) {
+            onboardingPathService.deleteOnboardingPathForMe(authId)
+        }
     }
 
     @Test
@@ -119,8 +151,24 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/me/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(noUserRoleJwt),
             ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteOnboardingPathForMe should return 404 when not found`() {
+        every { onboardingPathService.deleteOnboardingPathForMe(authId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/path")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
+
+        verify(exactly = 1) {
+            onboardingPathService.deleteOnboardingPathForMe(authId)
+        }
     }
 
     // ========================== Admin endpoints ==========================
@@ -139,11 +187,13 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(adminJwt),
             ).andExpect(status().isOk)
-            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { onboardingPathService.getOnboardingPathByUserId(userId) }
+        verify(exactly = 1) {
+            onboardingPathService.getOnboardingPathByUserId(userId)
+        }
     }
 
     @Test
@@ -158,7 +208,7 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_USER"))),
+                    .with(userJwt),
             ).andExpect(status().isForbidden)
     }
 
@@ -170,10 +220,12 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 get("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(adminJwt),
             ).andExpect(status().isNotFound)
 
-        verify(exactly = 1) { onboardingPathService.getOnboardingPathByUserId(userId) }
+        verify(exactly = 1) {
+            onboardingPathService.getOnboardingPathByUserId(userId)
+        }
     }
 
     @Test
@@ -183,10 +235,12 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(adminJwt),
             ).andExpect(status().isNoContent)
 
-        verify(exactly = 1) { onboardingPathService.deleteOnboardingPathByUserId(userId) }
+        verify(exactly = 1) {
+            onboardingPathService.deleteOnboardingPathByUserId(userId)
+        }
     }
 
     @Test
@@ -201,7 +255,7 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_USER"))),
+                    .with(userJwt),
             ).andExpect(status().isForbidden)
     }
 
@@ -213,9 +267,11 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/users/$userId/path")
-                    .with(jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))),
+                    .with(adminJwt),
             ).andExpect(status().isNotFound)
 
-        verify(exactly = 1) { onboardingPathService.deleteOnboardingPathByUserId(userId) }
+        verify(exactly = 1) {
+            onboardingPathService.deleteOnboardingPathByUserId(userId)
+        }
     }
 }

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
+import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.CreateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.CreateOnboardingTaskResponse
@@ -17,10 +18,12 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
@@ -33,6 +36,9 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 @WebMvcTest(OnboardingTaskController::class)
+@Import(
+    SecurityConfig::class,
+)
 @AutoConfigureMockMvc
 class OnboardingTaskControllerTest(
     @Autowired private val mockMvc: MockMvc,
@@ -45,14 +51,31 @@ class OnboardingTaskControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
-    private val authId = "test-auth-id"
     private val stepId = UUID.randomUUID()
     private val taskId = UUID.randomUUID()
 
-    private val userJwt = jwt().jwt { it.subject(authId) }.authorities(SimpleGrantedAuthority("ROLE_USER"))
-    private val adminJwt = jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
-    private val wrongRoleForMe = jwt().authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
-    private val wrongRoleForAdmin = jwt().authorities(SimpleGrantedAuthority("ROLE_USER"))
+    private val authId = "test-auth-id"
+    private val adminAuthId = "test-admin-auth-id"
+
+    private fun jwtWithSubject(
+        subject: String,
+        vararg roles: String,
+    ): JwtRequestPostProcessor {
+        return jwt()
+            .jwt { jwt ->
+                jwt.subject(subject)
+                jwt.claim(
+                    "realm_access",
+                    mapOf("roles" to roles.toList()),
+                )
+            }.authorities(
+                roles.map { role -> SimpleGrantedAuthority("ROLE_$role") },
+            )
+    }
+
+    private val userJwt = jwtWithSubject(authId, "USER")
+    private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
+    private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
 
     private fun buildCreateRequest() = CreateOnboardingTaskRequest(
         position = 1,
@@ -127,7 +150,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `getOnboardingTasksForMe should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/me/steps/$stepId/tasks").with(wrongRoleForMe))
+            .perform(get("/api/v1/onboarding/me/steps/$stepId/tasks").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -164,7 +187,7 @@ class OnboardingTaskControllerTest(
         mockMvc
             .perform(
                 post("/api/v1/onboarding/me/steps/$stepId/tasks")
-                    .with(wrongRoleForMe)
+                    .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(buildCreateRequest())),
             ).andExpect(status().isForbidden)
@@ -192,7 +215,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `getOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/me/tasks/$taskId").with(wrongRoleForMe))
+            .perform(get("/api/v1/onboarding/me/tasks/$taskId").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -241,7 +264,7 @@ class OnboardingTaskControllerTest(
         mockMvc
             .perform(
                 put("/api/v1/onboarding/me/tasks/$taskId")
-                    .with(wrongRoleForMe)
+                    .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(buildUpdateRequest())),
             ).andExpect(status().isForbidden)
@@ -268,7 +291,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `deleteOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(delete("/api/v1/onboarding/me/tasks/$taskId").with(wrongRoleForMe))
+            .perform(delete("/api/v1/onboarding/me/tasks/$taskId").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -296,7 +319,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `getOnboardingTasksByStepId should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/steps/$stepId/tasks").with(wrongRoleForAdmin))
+            .perform(get("/api/v1/onboarding/steps/$stepId/tasks").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -332,7 +355,7 @@ class OnboardingTaskControllerTest(
         mockMvc
             .perform(
                 post("/api/v1/onboarding/steps/$stepId/tasks")
-                    .with(wrongRoleForAdmin)
+                    .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(buildCreateRequest())),
             ).andExpect(status().isForbidden)
@@ -360,7 +383,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `getOnboardingTask should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/tasks/$taskId").with(wrongRoleForAdmin))
+            .perform(get("/api/v1/onboarding/tasks/$taskId").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -408,7 +431,7 @@ class OnboardingTaskControllerTest(
         mockMvc
             .perform(
                 put("/api/v1/onboarding/tasks/$taskId")
-                    .with(wrongRoleForAdmin)
+                    .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(buildUpdateRequest())),
             ).andExpect(status().isForbidden)
@@ -452,7 +475,7 @@ class OnboardingTaskControllerTest(
     @Test
     fun `deleteOnboardingTaskForStepId should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(delete("/api/v1/onboarding/tasks/$taskId").with(wrongRoleForAdmin))
+            .perform(delete("/api/v1/onboarding/tasks/$taskId").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
