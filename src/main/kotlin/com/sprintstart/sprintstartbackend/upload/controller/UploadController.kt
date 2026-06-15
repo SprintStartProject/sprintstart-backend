@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -31,11 +32,14 @@ class UploadController(
                 responseCode = "200",
                 description = "Upload processed",
             ),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @PostMapping(
         consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
     )
+    @PreAuthorize("hasRole('USER')")
     fun upload(
         @RequestPart("files")
         files: List<MultipartFile>,
@@ -50,7 +54,15 @@ class UploadController(
         return ResponseEntity.ok(response)
     }
 
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Upload processed"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+        ],
+    )
     @GetMapping
+    @PreAuthorize("hasRole('USER')")
     fun listUploads(
         @RequestParam uploaderId: UUID,
     ): ResponseEntity<List<UploadListItemResponse>> =
@@ -58,7 +70,15 @@ class UploadController(
             uploadService.listUploads(uploaderId),
         )
 
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Deleted Artifact"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+        ],
+    )
     @DeleteMapping("/{artifactId}")
+    @PreAuthorize("hasRole('USER')")
     fun deleteUpload(
         @PathVariable artifactId: UUID,
     ): ResponseEntity<Void> {

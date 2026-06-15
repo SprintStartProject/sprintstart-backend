@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.user.config
 
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
@@ -39,10 +38,11 @@ class DevUserSeeder(
             userRepository.save(
                 User(
                     id = defaultUserId,
+                    authId = "dev-user-subject",
                     username = "Default-User",
+                    email = "dev.user@sprintstart.de",
                     firstname = "Default",
                     lastname = "User",
-                    primaryRole = Role.EXISTING_MEMBER,
                     workingArea = WorkingArea.BACKEND_DEV,
                 ),
             )

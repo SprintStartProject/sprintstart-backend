@@ -2,14 +2,16 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
-import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingService
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -19,141 +21,148 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * REST controller for managing onboarding paths.
+ * Exposes onboarding path endpoints.
  *
- * Exposes endpoints under `/api/v1/onboarding` for retrieving and deleting onboarding paths.
- * Paths are the top-level entity in the onboarding hierarchy and can be looked up either
- * by their own UUID or by the UUID of the user they belong to.
- *
+ * The onboarding hierarchy starts at the path level. Nesting depth for the onboarding
+ * tree is `0 = path`, `1 = phases`, `2 = steps`, and `3 = tasks/resources`. Path
+ * endpoints therefore address the root object and may return nested descendants.
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Paths", description = "Retrieve and delete onboarding paths")
+@Tag(name = "Onboarding - Paths", description = "Retrieve and delete onboarding paths at hierarchy depth 0")
 class OnboardingPathController(
-    private val onboardingService: OnboardingService,
+    private val onboardingPathService: OnboardingPathService,
 ) {
-    /**
-     * Returns all onboarding paths across all users.
-     *
-     * This is a flat listing intended for administrative overviews. No phases, steps,
-     * tasks, or resources are included in the response.
-     *
-     * @return A flat list of all onboarding paths.
-     */
-    @Operation(
-        summary = "Get all onboarding paths",
-        description = "Returns a flat list of all onboarding paths across all users. No nested content is included.",
-    )
-    @ApiResponse(responseCode = "200", description = "Flat list of all onboarding paths")
-    @GetMapping("/paths")
-    fun getAllPaths(): List<GetOnboardingPathsResponse> {
-        return onboardingService.getAllOnboardingPaths()
-    }
+//  ========================== Endpoints for users (/me/...) ==========================
 
     /**
-     * Returns a single onboarding path by its ID, including its direct phases.
+     * Returns the authenticated user's onboarding path.
      *
-     * The response includes one level of nesting: the path and its phases are returned,
-     * but the phases do not include their steps.
+     * This endpoint returns the root of the onboarding tree at depth 0. The frontend
+     * can treat the returned path as the top-level container for descendants at depths
+     * 1 through 3: phases, steps, and then tasks/resources.
      *
-     * @param pathId The UUID of the onboarding path.
-     * @return The onboarding path with its phases.
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @return The authenticated user's onboarding path.
      */
     @Operation(
-        summary = "Get onboarding path by ID",
-        description = "Returns a single onboarding path by its UUID. Includes one level of nesting: " +
-            "the path's direct phases are included, but steps within those phases are not.",
+        summary = "Get current user's onboarding path",
+        description = "Returns the onboarding path at hierarchy depth 0 for the authenticated user. " +
+            "This is the root container above phases (depth 1), steps (depth 2), and tasks/resources (depth 3).",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Onboarding path with direct phases"),
-        ApiResponse(responseCode = "404", description = "No onboarding path found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "200", description = "Onboarding path returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding path"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding " +
+                    "path found for the authenticated user",
+            ),
+        ],
     )
-    @GetMapping("/paths/{pathId}")
-    fun getPath(
-        @Parameter(description = "UUID of the onboarding path") @PathVariable pathId: UUID,
-    ): GetOnboardingPathResponse {
-        return onboardingService.getOnboardingPath(pathId)
-    }
-
-    /**
-     * Returns the onboarding path for a specific user with deep nesting.
-     *
-     * This is the primary endpoint for rendering a user's full onboarding view. Unlike
-     * other get-by-ID endpoints that return only one level of nesting, this endpoint
-     * returns the full Path → Phases → Steps structure. Tasks and resources within steps
-     * are not included. Both the user and their path must exist, otherwise a 404 is returned.
-     *
-     * @param userId The UUID of the user.
-     * @return The user's onboarding path with nested phases and steps.
-     */
-    @Operation(
-        summary = "Get onboarding path for a user",
-        description = "Returns the onboarding path for the specified user with deep nesting: Path → Phases → Steps. " +
-            "This is the primary endpoint for rendering a user's onboarding view. " +
-            "Tasks and resources within steps are not included. " +
-            "Returns 404 if the user does not exist or has no onboarding path assigned.",
-    )
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Onboarding path with nested phases and steps"),
-        ApiResponse(responseCode = "404", description = "No user or onboarding path found for the given user ID"),
-    )
-    @GetMapping("/{userId}/path")
-    fun getPathForUser(
-        @Parameter(description = "UUID of the user") @PathVariable userId: UUID,
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/path")
+    @PreAuthorize("hasRole('USER')")
+    fun getPathForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
     ): GetOnboardingPathForUserResponse {
-        return onboardingService.getOnboardingPathByUserId(userId)
+        return onboardingPathService.getOnboardingPathForMe(jwt.subject)
     }
 
     /**
-     * Deletes an onboarding path by its ID.
+     * Deletes the authenticated user's onboarding path.
      *
-     * This is a hard delete. All associated phases, steps, tasks, and resources are
-     * removed via cascade. This operation is not reversible.
+     * This removes the hierarchy root at depth 0. Any nested descendants below that
+     * root are deleted according to the persistence rules of the underlying model.
      *
-     * @param pathId The UUID of the onboarding path to delete.
+     * @param jwt Authenticated JWT used to resolve the current user.
      */
     @Operation(
-        summary = "Delete onboarding path by ID",
-        description = "Permanently deletes the onboarding path with the given UUID. " +
-            "All associated phases, steps, tasks, and resources are removed via cascade." +
-            " This operation is not reversible.",
+        summary = "Delete current user's onboarding path",
+        description = "Deletes the onboarding path at hierarchy depth 0 for the authenticated user.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "204", description = "Onboarding path deleted"),
-        ApiResponse(responseCode = "404", description = "No onboarding path found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "204", description = "Onboarding path deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding path"),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/paths/{pathId}")
-    fun deletePath(
-        @Parameter(description = "UUID of the onboarding path to delete") @PathVariable pathId: UUID,
+    @DeleteMapping("/me/path")
+    @PreAuthorize("hasRole('USER')")
+    fun deletePathForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
     ) {
-        onboardingService.deleteOnboardingPathById(pathId)
+        onboardingPathService.deleteOnboardingPathForMe(jwt.subject)
+    }
+
+//  ========================== Endpoints for admins ==========================
+
+    /**
+     * Returns the onboarding path for a specific user.
+     *
+     * This endpoint returns the root object at depth 0 for the selected user. The
+     * returned path sits above phases (depth 1), steps (depth 2), and tasks/resources
+     * (depth 3).
+     *
+     * @param userId Identifier of the user whose path should be returned.
+     * @return The selected user's onboarding path.
+     */
+    @Operation(
+        summary = "Get onboarding path by user ID",
+        description = "Returns the onboarding path at hierarchy depth 0 for the specified user. " +
+            "The path is the root above phases (depth 1), steps (depth 2), and tasks/resources (depth 3).",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Onboarding path returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding path"),
+            ApiResponse(responseCode = "404", description = "No user or onboarding path found with the given ID"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/users/{userId}/path")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getOnboardingPathForUserId(
+        @Parameter(
+            description = "UUID of the user whose onboarding path should be returned",
+        ) @PathVariable userId: UUID,
+    ): GetOnboardingPathResponse {
+        return onboardingPathService.getOnboardingPathByUserId(userId)
     }
 
     /**
-     * Deletes the onboarding path associated with a specific user.
+     * Deletes the onboarding path for a specific user.
      *
-     * Behaves identically to deleting by path ID, but accepts a user ID instead.
-     * Useful when the path ID is unknown but the user ID is available. The user must
-     * exist in the system, otherwise a 404 is returned before any deletion is attempted.
+     * This removes the root object at depth 0 for the selected user.
      *
-     * @param userId The UUID of the user whose onboarding path should be deleted.
+     * @param userId Identifier of the user whose path should be deleted.
      */
     @Operation(
         summary = "Delete onboarding path by user ID",
-        description = "Permanently deletes the onboarding path belonging to the specified user. " +
-            "The user must exist in the system — a 404 is returned if the user is not found. " +
-            "All associated phases, steps, tasks, and resources are removed via cascade.",
+        description = "Deletes the onboarding path at hierarchy depth 0 for the specified user.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "204", description = "Onboarding path deleted"),
-        ApiResponse(responseCode = "404", description = "No user or onboarding path found for the given user ID"),
+        value = [
+            ApiResponse(responseCode = "204", description = "Onboarding path deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding path"),
+            ApiResponse(responseCode = "404", description = "No user found with the given ID"),
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/{userId}/path")
+    @DeleteMapping("/users/{userId}/path")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deletePathByUserId(
         @Parameter(description = "UUID of the user whose onboarding path should be deleted") @PathVariable userId: UUID,
     ) {
-        onboardingService.deleteOnboardingPathByUserId(userId)
+        onboardingPathService.deleteOnboardingPathByUserId(userId)
     }
 }

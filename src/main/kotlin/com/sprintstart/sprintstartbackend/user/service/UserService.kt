@@ -1,15 +1,12 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.CreateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.User
-import com.sprintstart.sprintstartbackend.user.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toPatchResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateResponse
@@ -21,163 +18,114 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
- * Service responsible for handling user-related business logic.
+ * Application service for user profile reads and updates.
  *
- * Provides operations for creating, retrieving, updating, partially updating,
- * and deleting users. The service acts as the application layer between the
- * REST controller and the user repository.
- *
- * @property userRepository Repository used to access and persist user entities.
+ * This service owns user-facing operations within the user module and maps persisted
+ * [User] entities to response DTOs for controllers.
  */
 @Service
 class UserService(
     private val userRepository: UserRepository,
 ) {
     /**
-     * Creates a new user from the provided request data.
+     * Returns all persisted users.
      *
-     * The new user is persisted in the database and then converted into a
-     * response object for the API layer.
+     * @return All users mapped to controller response DTOs.
+     */
+    @Transactional(readOnly = true)
+    fun getAllUsers(): List<GetUserResponse> =
+        userRepository.findAll().map { it.toGetResponse() }
+
+    /**
+     * Returns the user identified by the authentication subject.
      *
-     * @param request The data required to create the user.
-     * @return The response containing the created user's data.
+     * @param authId External authentication identifier from the JWT subject.
+     * @return The matching user.
+     * @throws ResponseStatusException When no user exists for the given auth ID.
+     */
+    @Transactional(readOnly = true)
+    fun getMe(authId: String): GetUserResponse =
+        findByAuthId(authId).toGetResponse()
+
+    /**
+     * Partially updates the authenticated user's editable fields.
+     *
+     * Omitted fields remain unchanged.
+     *
+     * @param authId External authentication identifier from the JWT subject.
+     * @param request Partial update payload.
+     * @return The updated user.
+     * @throws ResponseStatusException When no user exists for the given auth ID.
      */
     @Transactional
-    fun createUser(request: CreateUserRequest): CreateUserResponse {
-        val user: User =
-            User(
-                username = request.username,
-                firstname = request.firstname,
-                lastname = request.lastname,
-                workingArea = request.workingArea,
-            )
-
-        return userRepository.save(user).toCreateResponse()
+    fun patchMe(authId: String, request: PatchMeRequest): GetUserResponse {
+        val user = findByAuthId(authId)
+        request.workingArea?.let { user.workingArea = it }
+        return userRepository.save(user).toGetResponse()
     }
 
     /**
-     * Retrieves all existing users.
+     * Returns a single user by UUID.
      *
-     * @return A list containing the response data of all users.
+     * @param id Identifier of the user to load.
+     * @return The matching user.
+     * @throws ResponseStatusException When no user exists for the given ID.
      */
     @Transactional(readOnly = true)
-    fun getAllUsers(): List<GetUserResponse> {
-        return userRepository.findAll().map {
-            it.toGetResponse()
-        }
-    }
+    fun getUserById(id: UUID): GetUserResponse =
+        findById(id).toGetResponse()
 
     /**
-     * Retrieves a user by their unique identifier.
+     * Replaces the editable fields of a user.
      *
-     * @param id The unique identifier of the user to retrieve.
-     * @return The response data of the found user.
-     * @throws ResponseStatusException If no user with the given identifier exists.
-     */
-    @Transactional(readOnly = true)
-    fun getUserById(id: UUID): GetUserResponse {
-        return userRepository
-            .findById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
-            .toGetResponse()
-    }
-
-    /**
-     * Updates an existing user with the provided data.
-     *
-     * This method replaces all editable user fields with the values from the
-     * given update request. After applying the new values, the user's role
-     * configuration is validated before the updated user is persisted.
-     *
-     * @param id The unique identifier of the user to update.
-     * @param request The complete data used to update the user.
-     * @return The response data of the updated user.
-     * @throws ResponseStatusException If no user with the given identifier exists,
-     * or if the resulting role configuration is invalid.
+     * @param id Identifier of the user to update.
+     * @param request Full update payload.
+     * @return The updated user.
+     * @throws ResponseStatusException When no user exists for the given ID.
      */
     @Transactional
     fun updateUserById(id: UUID, request: UpdateUserRequest): UpdateUserResponse {
-        val user: User = userRepository
-            .findById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
-
-        user.username = request.username
-        user.firstname = request.firstname
-        user.lastname = request.lastname
-        user.primaryRole = request.primaryRole
-        user.secondaryRole = request.secondaryRole
+        val user = findById(id)
         user.workingArea = request.workingArea
-
-        validateUserRoles(user)
-
         return userRepository.save(user).toUpdateResponse()
     }
 
     /**
-     * Partially updates an existing user with the provided data.
+     * Partially updates a user's editable fields.
      *
-     * Only fields that are present in the patch request are applied to the
-     * existing user. Fields with `null` values are left unchanged. After applying
-     * the changes, the user's role configuration is validated before the patched
-     * user is persisted.
+     * Omitted fields remain unchanged.
      *
-     * @param id The unique identifier of the user to patch.
-     * @param request The partial data used to update the user.
-     * @return The response data of the patched user.
-     * @throws ResponseStatusException If no user with the given identifier exists,
-     * or if the resulting role configuration is invalid.
+     * @param id Identifier of the user to patch.
+     * @param request Partial update payload.
+     * @return The patched user.
+     * @throws ResponseStatusException When no user exists for the given ID.
      */
     @Transactional
     fun patchUserById(id: UUID, request: PatchUserRequest): PatchUserResponse {
-        val user: User = userRepository
-            .findById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
-
-        request.username?.let { user.username = it }
-        request.firstname?.let { user.firstname = it }
-        request.lastname?.let { user.lastname = it }
-        request.primaryRole?.let { user.primaryRole = it }
-        request.secondaryRole?.let { user.secondaryRole = it }
+        val user = findById(id)
         request.workingArea?.let { user.workingArea = it }
-
-        validateUserRoles(user)
-
         return userRepository.save(user).toPatchResponse()
     }
 
     /**
-     * Deletes a user by their unique identifier.
+     * Deletes a user by UUID.
      *
-     * @param id The unique identifier of the user to delete.
-     * @throws ResponseStatusException If no user with the given identifier exists.
+     * @param id Identifier of the user to delete.
+     * @throws ResponseStatusException When no user exists for the given ID.
      */
     @Transactional
     fun deleteUserById(id: UUID) {
-        val user: User = userRepository
-            .findById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
-
+        val user = findById(id)
         userRepository.delete(user)
     }
 
-    // Helper
+    private fun findById(id: UUID): User =
+        userRepository
+            .findById(id)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
 
-    /**
-     * Validates that the user's role configuration is consistent.
-     *
-     * A secondary role is only valid when a primary role has already been set.
-     * If the user has no primary role but has a secondary role, the configuration
-     * is rejected as an invalid request.
-     *
-     * @param user The user whose role configuration should be validated.
-     * @throws ResponseStatusException If a secondary role is set without a primary role.
-     */
-    private fun validateUserRoles(user: User) {
-        if (user.primaryRole == Role.NO_ROLE && user.secondaryRole != Role.NO_ROLE) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Secondary role cannot be set without a primary role",
-            )
-        }
-    }
+    private fun findByAuthId(authId: String): User =
+        userRepository
+            .findByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 }

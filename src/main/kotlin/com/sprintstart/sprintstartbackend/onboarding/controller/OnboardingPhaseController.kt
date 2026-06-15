@@ -6,13 +6,17 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.Create
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhasesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.UpdateOnboardingPhaseResponse
-import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingService
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPhaseService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -25,162 +29,347 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * REST controller for managing onboarding phases.
+ * Exposes onboarding phase endpoints.
  *
- * Exposes endpoints under `/api/v1/onboarding` for creating, retrieving, updating,
- * and deleting onboarding phases. Phases are the second level of the onboarding hierarchy,
- * sitting directly below a path and above steps.
- *
- * Phases are ordered within their parent path by a numeric position. Insertions, updates,
- * and deletions automatically shift sibling phases to maintain a contiguous, gap-free ordering.
- *
+ * Phases are the first nested level below the onboarding path. Nesting depth for the
+ * onboarding tree is `0 = path`, `1 = phases`, `2 = steps`, and `3 = tasks/resources`.
+ * Phase endpoints therefore operate at depth 1 and may return child steps beneath them.
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Phases", description = "Create, retrieve, update, and delete onboarding phases")
+@Tag(
+    name = "Onboarding - Phases",
+    description = "Create, retrieve, update, and delete " +
+        "onboarding phases at hierarchy depth 1",
+)
 class OnboardingPhaseController(
-    val onboardingService: OnboardingService,
+    val onboardingPhaseService: OnboardingPhaseService,
 ) {
+//  ========================== Endpoints for users (/me/path/...) ==========================
+
     /**
-     * Creates a new phase within the specified path at the given position.
+     * Returns all phases in the authenticated user's onboarding path.
      *
-     * Phases are ordered within a path by a numeric position. If the requested position
-     * is already occupied, all phases at or after that position are shifted one place
-     * forward to make room. This means position values are not stable identifiers and
-     * should not be stored externally.
+     * Each returned item is a depth-1 phase. The maximum descendant depth below each
+     * phase is 2 more levels: steps at depth 2 and tasks/resources at depth 3.
      *
-     * @param pathId The UUID of the path to add the phase to.
-     * @param request The phase creation request containing position, title, and description.
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @return All phases for the authenticated user.
+     */
+    @Operation(
+        summary = "Get current user's onboarding phases",
+        description = "Returns all onboarding phases at hierarchy depth 1 for the authenticated user. " +
+            "Below each phase, the hierarchy can continue to steps (depth 2) and tasks/resources (depth 3).",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Phases returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access onboarding phases"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding path found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/path/phases")
+    @PreAuthorize("hasRole('USER')")
+    fun getOnboardingPhasesForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): List<GetOnboardingPhasesResponse> {
+        return onboardingPhaseService.getOnboardingPhasesForMe(jwt.subject)
+    }
+
+    /**
+     * Creates a phase in the authenticated user's onboarding path.
+     *
+     * The created object lives at hierarchy depth 1 under the path root. Sibling phases
+     * are reordered by position when necessary.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param request Phase creation payload.
      * @return The created phase.
      */
     @Operation(
-        summary = "Create onboarding phase",
-        description = "Creates a new phase within the specified path at the given position. " +
-            "If the position is already occupied, all phases at or after that position are shifted forward by one. " +
-            "Position values are not stable and should not be used as external references.",
+        summary = "Create current user's onboarding phase",
+        description = "Creates an onboarding phase at hierarchy depth 1 for the authenticated user. " +
+            "Sibling phases are reordered as needed to keep positions contiguous.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "201", description = "Phase created successfully"),
-        ApiResponse(responseCode = "404", description = "No onboarding path found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "201", description = "Phase created successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid phase position"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding phases"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding path found for the authenticated user",
+            ),
+        ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PostMapping("/paths/{pathId}/phases")
-    fun createOnboardingPhase(
-        @Parameter(description = "UUID of the onboarding path") @PathVariable pathId: UUID,
-        @RequestBody request: CreateOnboardingPhaseRequest,
+    @PostMapping("/me/path/phases")
+    @PreAuthorize("hasRole('USER')")
+    fun createOnboardingPhaseForUser(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Valid @RequestBody request: CreateOnboardingPhaseRequest,
     ): CreateOnboardingPhaseResponse {
-        return onboardingService.createOnboardingPhaseForPathId(pathId, request)
+        return onboardingPhaseService.createOnboardingPhaseForMe(jwt.subject, request)
     }
 
     /**
-     * Returns all onboarding phases across all paths.
+     * Returns one phase from the authenticated user's onboarding path.
      *
-     * This is a flat listing with no nested content. Steps within each phase are not
-     * included. Intended for administrative use or bulk exports.
+     * The returned object is at depth 1. Any nested content below it can only continue
+     * to steps at depth 2 and tasks/resources at depth 3.
      *
-     * @return A flat list of all onboarding phases.
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param phaseId Identifier of the phase to return.
+     * @return The requested phase.
      */
     @Operation(
-        summary = "Get all onboarding phases",
-        description = "Returns a flat list of all onboarding phases across all paths. " +
-            "No nested content is included. Intended for administrative overviews.",
-    )
-    @ApiResponse(responseCode = "200", description = "Flat list of all onboarding phases")
-    @GetMapping("/phases")
-    fun getOnboardingPhases(): List<GetOnboardingPhasesResponse> {
-        return onboardingService.getOnboardingPhases()
-    }
-
-    /**
-     * Returns all phases belonging to a specific path, including their direct steps.
-     *
-     * Returns one level of nesting: each phase in the response includes its direct steps,
-     * but tasks and resources within those steps are not included. Phases are ordered
-     * by their position within the path.
-     *
-     * @param pathId The UUID of the onboarding path.
-     * @return An ordered list of phases with their direct steps.
-     */
-    @Operation(
-        summary = "Get phases by path ID",
-        description = "Returns all onboarding phases belonging to the specified path, ordered by position. " +
-            "Each phase includes its direct steps (one level of nesting). " +
-            "Tasks and resources within those steps are not included.",
+        summary = "Get current user's onboarding phase",
+        description = "Returns one onboarding phase at hierarchy depth 1 for the authenticated user. " +
+            "The maximum descendant depth below the phase is steps at depth 2 and tasks/resources at depth 3.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Ordered list of phases with direct steps"),
-        ApiResponse(responseCode = "404", description = "No onboarding path found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "200", description = "Phase returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding phase"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
+        ],
     )
-    @GetMapping("/paths/{pathId}/phases")
-    fun getAllOnboardingPhasesByPathId(
-        @Parameter(description = "UUID of the onboarding path") @PathVariable pathId: UUID,
-    ): List<GetOnboardingPhaseResponse> {
-        return onboardingService.getOnboardingPhasesByPathId(pathId)
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/path/phases/{phaseId}")
+    @PreAuthorize("hasRole('USER')")
+    fun getOnboardingPhaseForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the onboarding phase")
+        @PathVariable phaseId: UUID,
+    ): GetOnboardingPhaseResponse {
+        return onboardingPhaseService.getOnboardingPhaseForMe(jwt.subject, phaseId)
     }
 
     /**
-     * Returns a single onboarding phase by its ID, including its direct steps.
+     * Updates one phase in the authenticated user's onboarding path.
      *
-     * Returns one level of nesting: the phase and its direct steps are included,
-     * but tasks and resources within those steps are not.
+     * The target object is at depth 1. Changing its position reorders sibling phases.
      *
-     * @param phaseId The UUID of the onboarding phase.
-     * @return The onboarding phase with its direct steps.
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param phaseId Identifier of the phase to update.
+     * @param request Phase update payload.
+     * @return The updated phase.
+     */
+    @Operation(
+        summary = "Update current user's onboarding phase",
+        description = "Updates an onboarding phase at hierarchy depth 1 for the authenticated user. " +
+            "Changing the position reorders sibling phases within the same path.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Phase updated successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid phase position"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding phase"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/me/path/phases/{phaseId}")
+    @PreAuthorize("hasRole('USER')")
+    fun updateOnboardingPhaseForUser(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the onboarding phase to update")
+        @PathVariable phaseId: UUID,
+        @Valid @RequestBody request: UpdateOnboardingPhaseRequest,
+    ): UpdateOnboardingPhaseResponse {
+        return onboardingPhaseService.updateOnboardingPhaseForMe(jwt.subject, phaseId, request)
+    }
+
+    /**
+     * Deletes one phase from the authenticated user's onboarding path.
+     *
+     * The deleted object is at depth 1. Removing it also removes everything below it,
+     * with steps at depth 2 and tasks/resources at depth 3.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param phaseId Identifier of the phase to delete.
+     */
+    @Operation(
+        summary = "Delete current user's onboarding phase",
+        description = "Deletes an onboarding phase at hierarchy depth 1 for the authenticated user. " +
+            "Removing the phase also removes nested steps (depth 2) and tasks/resources (depth 3).",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Phase deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding phase"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/me/path/phases/{phaseId}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteOnboardingPhaseForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the onboarding phase to delete")
+        @PathVariable phaseId: UUID,
+    ) {
+        onboardingPhaseService.deleteOnboardingPhaseForMe(jwt.subject, phaseId)
+    }
+
+//  ========================== Endpoints for admins (/users/{userId}/path/phases/...) ==========================
+
+    /**
+     * Returns all phases for a specific user's onboarding path.
+     *
+     * The returned objects are at depth 1 in the hierarchy.
+     *
+     * @param userId Identifier of the user whose phases should be returned.
+     * @return All phases for the selected user.
+     */
+    @Operation(
+        summary = "Get onboarding phases by user ID",
+        description = "Returns all onboarding phases at hierarchy depth 1 for the specified user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Phases returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access onboarding phases"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/users/{userId}/path/phases")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getAllOnboardingPhasesForUser(
+        @Parameter(description = "UUID of the user whose phases should be returned")
+        @PathVariable userId: UUID,
+    ): List<GetOnboardingPhasesResponse> {
+        return onboardingPhaseService.getOnboardingPhasesForUser(userId)
+    }
+
+    /**
+     * Creates a phase for a specific user's onboarding path.
+     *
+     * The created object is at depth 1 below the user's path root.
+     *
+     * @param userId Identifier of the path owner.
+     * @param request Phase creation payload.
+     * @return The created phase.
+     */
+    @Operation(
+        summary = "Create onboarding phase by user ID",
+        description = "Creates an onboarding phase at hierarchy depth 1 for the specified user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "201", description = "Phase created successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid phase position"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding phases"),
+            ApiResponse(responseCode = "404", description = "No onboarding path found for the given user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/users/{userId}/path/phases")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun createOnboardingPhaseForUser(
+        @Parameter(description = "UUID of the user whose phase should be created")
+        @PathVariable userId: UUID,
+        @RequestBody request: CreateOnboardingPhaseRequest,
+    ): CreateOnboardingPhaseResponse {
+        return onboardingPhaseService.createOnboardingPhaseForUserId(userId, request)
+    }
+
+    /**
+     * Returns one onboarding phase by ID.
+     *
+     * The returned object is at depth 1. Any descendants below it can continue only
+     * to steps at depth 2 and tasks/resources at depth 3.
+     *
+     * @param phaseId Identifier of the phase to return.
+     * @return The requested phase.
      */
     @Operation(
         summary = "Get onboarding phase by ID",
-        description = "Returns a single onboarding phase by its UUID. " +
-            "Includes one level of nesting: the phase's direct steps are " +
-            "included, but tasks and resources within those steps are not.",
+        description = "Returns one onboarding phase at hierarchy depth 1. " +
+            "The maximum descendant depth below the phase is steps at depth 2 and tasks/resources at depth 3.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Onboarding phase with direct steps"),
-        ApiResponse(responseCode = "404", description = "No onboarding phase found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "200", description = "Phase returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding phase"),
+            ApiResponse(responseCode = "404", description = "No onboarding phase found with the given ID"),
+        ],
     )
+    @ResponseStatus(HttpStatus.OK)
     @GetMapping("/phases/{phaseId}")
-    fun getOnboardingPhase(
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getOnboardingPhaseForUser(
         @Parameter(description = "UUID of the onboarding phase") @PathVariable phaseId: UUID,
     ): GetOnboardingPhaseResponse {
-        return onboardingService.getOnboardingPhase(phaseId)
+        return onboardingPhaseService.getOnboardingPhaseById(phaseId)
     }
 
     /**
-     * Updates an existing onboarding phase, including its position within the path.
+     * Updates one onboarding phase by ID.
      *
-     * All fields are replaced with the values from the request. If the position changes,
-     * sibling phases between the old and new positions are automatically shifted to maintain
-     * a contiguous, gap-free ordering. Moving a phase forward (higher position) shifts
-     * intermediary phases back by one; moving it backward shifts them forward by one.
+     * The target object is at depth 1. Changing its position reorders sibling phases.
      *
-     * @param phaseId The UUID of the phase to update.
-     * @param request The phase update request containing the new position, title, and description.
+     * @param phaseId Identifier of the phase to update.
+     * @param request Phase update payload.
      * @return The updated phase.
      */
     @Operation(
         summary = "Update onboarding phase",
-        description = "Updates all fields of an existing onboarding phase, including its position. " +
-            "If the position changes, sibling phases between the old and new positions are shifted " +
-            "automatically to maintain contiguous ordering. Moving forward shifts intermediaries" +
-            " back; moving backward shifts them forward.",
+        description = "Updates an onboarding phase at hierarchy depth 1. " +
+            "Changing the position reorders sibling phases within the same path.",
     )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Phase updated successfully"),
-        ApiResponse(responseCode = "404", description = "No onboarding phase found with the given ID"),
+        value = [
+            ApiResponse(responseCode = "200", description = "Phase updated successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid phase position"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding phase"),
+            ApiResponse(responseCode = "404", description = "No onboarding phase found with the given ID"),
+        ],
     )
+    @ResponseStatus(HttpStatus.OK)
     @PutMapping("/phases/{phaseId}")
-    fun updateOnboardingPhase(
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun updateOnboardingPhaseForUser(
         @Parameter(description = "UUID of the onboarding phase to update") @PathVariable phaseId: UUID,
         @RequestBody request: UpdateOnboardingPhaseRequest,
     ): UpdateOnboardingPhaseResponse {
-        return onboardingService.updateOnboardingPhase(phaseId, request)
+        return onboardingPhaseService.updateOnboardingPhaseById(phaseId, request)
     }
 
     /**
      * Deletes an onboarding phase and reorders remaining siblings.
      *
      * After deletion, all phases in the same path with a position greater than the
-     * deleted phase's position are shifted back by one, keeping the ordering contiguous.
-     * All child steps, tasks, and resources are removed via cascade.
+     * deleted phase's position are shifted back by one. The deleted object is at depth 1,
+     * and all descendants below it are removed as well: steps at depth 2 and tasks/resources
+     * at depth 3.
      *
      * @param phaseId The UUID of the phase to delete.
      */
@@ -188,17 +377,21 @@ class OnboardingPhaseController(
         summary = "Delete onboarding phase",
         description = "Permanently deletes the specified onboarding phase. " +
             "Subsequent sibling phases are shifted back by one to keep ordering contiguous. " +
-            "All child steps, tasks, and resources are removed via cascade.",
+            "The deleted object is at depth 1, and all descendant steps (depth 2)" +
+            " and tasks/resources (depth 3) are removed via cascade.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Phase deleted successfully"),
+        ApiResponse(responseCode = "401", description = "Authentication required"),
+        ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding phase"),
         ApiResponse(responseCode = "404", description = "No onboarding phase found with the given ID"),
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/phases/{phaseId}")
-    fun deleteOnboardingPhaseForPathId(
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun deleteOnboardingPhaseForUser(
         @Parameter(description = "UUID of the onboarding phase to delete") @PathVariable phaseId: UUID,
     ) {
-        onboardingService.deleteOnboardingPhase(phaseId)
+        onboardingPhaseService.deleteOnboardingPhaseById(phaseId)
     }
 }

@@ -14,3 +14,7 @@ uploads/
 
 logs/
 *.log
+
+AGENTS.md
+
+docs/

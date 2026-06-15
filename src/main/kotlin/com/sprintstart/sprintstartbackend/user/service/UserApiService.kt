@@ -4,15 +4,14 @@ import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.Optional
 import java.util.UUID
 
 /**
  * Service implementation of the user API used by other modules.
  *
- * Provides a small, module-facing interface for checking user-related information
- * without exposing internal user module implementation details.
- *
- * @property userRepository Repository used to access persisted user data.
+ * Provides a small module-facing adapter over the user repository without exposing
+ * controller DTOs or internal user service workflows.
  */
 @Service
 class UserApiService(
@@ -27,5 +26,16 @@ class UserApiService(
     @Transactional(readOnly = true)
     override fun exists(id: UUID): Boolean {
         return userRepository.existsById(id)
+    }
+
+    /**
+     * Resolves the internal user ID for an external authentication identifier.
+     *
+     * @param authId External authentication identifier.
+     * @return The matching user ID when present.
+     */
+    @Transactional
+    override fun getUserIdByAuthId(authId: String): Optional<UUID> {
+        return userRepository.findIdByAuthId(authId)
     }
 }
