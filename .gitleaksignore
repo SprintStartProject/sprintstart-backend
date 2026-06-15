@@ -1,0 +1,9 @@
+#These leaks are obvious test-values from a ControllerTest, but they got flagged anyways
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:51
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:122
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:129
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:160
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:185
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:218
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:252
+cf911abdc30458fa06c0f6b18abc87c85a483d87:src/test/kotlin/com/sprintstart/sprintstartbackend/user/UserControllerTest.kt:generic-api-key:280
