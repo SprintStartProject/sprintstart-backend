@@ -1,6 +1,7 @@
 sprintstart:
+  internal-event-secret: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET:test-secret}
   ai:
-    base-url: "http://host.docker.internal:8000"
+    base-url: ${SPRINTSTART_AI_BASE_URL:http://host.docker.internal:8000}
     
 spring:
   config:
@@ -16,8 +17,14 @@ spring:
       max-request-size: 50MB
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update # create-drop
     show-sql: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/realms/sprintstart}
+          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/realms/sprintstart/protocol/openid-connect/certs}
 
 app:
   upload:

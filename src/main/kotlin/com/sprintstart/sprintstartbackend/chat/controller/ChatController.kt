@@ -19,6 +19,7 @@ import jakarta.validation.constraints.Min
 import kotlinx.coroutines.flow.Flow
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -47,10 +48,13 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "200", description = "Chats retrieved successfully"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping
+    @PreAuthorize("hasRole('USER')")
     fun getChats(@RequestParam @Min(1) limit: Int?): GetChatsResponse {
         val request = GetChatsRequest(limit = limit)
         return chatService.getChats(request)
@@ -64,10 +68,13 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "200", description = "Messages retrieved successfully"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('USER')")
     fun getChatMessages(
         @PathVariable id: UUID,
         @RequestParam(required = false) @Min(1) limit: Int?,
@@ -84,10 +91,13 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "201", description = "Chat successfully created"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
+    @PreAuthorize("hasRole('USER')")
     fun createChat(@Valid @RequestBody request: CreateChatRequest): CreateChatResponse {
         return chatService.createChat(request)
     }
@@ -118,10 +128,13 @@ internal class ChatController(
             ),
             ApiResponse(responseCode = "400", description = "Invalid request"),
             ApiResponse(responseCode = "500", description = "Internal server error"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/prompt", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PreAuthorize("hasRole('USER')")
     fun prompt(@Valid @RequestBody request: PromptRequest): Flow<String> {
         return chatService.prompt(request)
     }

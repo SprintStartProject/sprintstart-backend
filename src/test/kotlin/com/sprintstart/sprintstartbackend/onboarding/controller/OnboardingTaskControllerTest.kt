@@ -2,191 +2,492 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
+import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.CreateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.CreateOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.UpdateOnboardingTaskResponse
-import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingService
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingTaskService
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
-import org.springframework.test.web.servlet.delete
-import org.springframework.test.web.servlet.get
-import org.springframework.test.web.servlet.post
-import org.springframework.test.web.servlet.put
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 @WebMvcTest(OnboardingTaskController::class)
+@Import(
+    SecurityConfig::class,
+)
+@AutoConfigureMockMvc
 class OnboardingTaskControllerTest(
     @Autowired private val mockMvc: MockMvc,
 ) {
     private val objectMapper = jacksonObjectMapper()
 
     @MockkBean
-    private lateinit var onboardingService: OnboardingService
+    private lateinit var onboardingTaskService: OnboardingTaskService
 
-    private val stepId: UUID = UUID.fromString("44444444-4444-4444-4444-444444444444")
-    private val taskId: UUID = UUID.fromString("55555555-5555-5555-5555-555555555555")
+    @MockkBean
+    private lateinit var jwtDecoder: JwtDecoder
+
+    private val stepId = UUID.randomUUID()
+    private val taskId = UUID.randomUUID()
+
+    private val authId = "test-auth-id"
+    private val adminAuthId = "test-admin-auth-id"
+
+    private fun jwtWithSubject(
+        subject: String,
+        vararg roles: String,
+    ): JwtRequestPostProcessor {
+        return jwt()
+            .jwt { jwt ->
+                jwt.subject(subject)
+                jwt.claim(
+                    "realm_access",
+                    mapOf("roles" to roles.toList()),
+                )
+            }.authorities(
+                roles.map { role -> SimpleGrantedAuthority("ROLE_$role") },
+            )
+    }
+
+    private val userJwt = jwtWithSubject(authId, "USER")
+    private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
+    private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
+
+    private fun buildCreateRequest() = CreateOnboardingTaskRequest(
+        position = 1,
+        title = "Task 1",
+        description = "task desc",
+    )
+
+    private fun buildUpdateRequest() = UpdateOnboardingTaskRequest(
+        position = 1,
+        title = "Updated Task",
+        description = "updated desc",
+        finished = true,
+    )
+
+    private fun buildGetTaskResponse() = GetOnboardingTaskResponse(
+        id = taskId,
+        stepId = stepId,
+        position = 1,
+        title = "Task 1",
+        description = "task desc",
+        finished = false,
+    )
+
+    private fun buildGetTasksResponse() = GetOnboardingTasksResponse(
+        id = taskId,
+        stepId = stepId,
+        position = 1,
+        title = "Task 1",
+        description = "task desc",
+        finished = false,
+    )
+
+    private fun buildCreateTaskResponse() = CreateOnboardingTaskResponse(
+        id = taskId,
+        stepId = stepId,
+        position = 1,
+        title = "Task 1",
+        description = "task desc",
+        finished = false,
+    )
+
+    private fun buildUpdateTaskResponse() = UpdateOnboardingTaskResponse(
+        id = taskId,
+        stepId = stepId,
+        position = 1,
+        title = "Updated Task",
+        description = "updated desc",
+        finished = true,
+    )
+
+    // ========================== /me endpoints ==========================
+
+    @Test
+    fun `getOnboardingTasksForMe should return 200 and list of tasks`() {
+        every { onboardingTaskService.getOnboardingTasksForMe(authId, stepId) } returns listOf(buildGetTasksResponse())
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/steps/$stepId/tasks").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTasksForMe(authId, stepId) }
+    }
+
+    @Test
+    fun `getOnboardingTasksForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/steps/$stepId/tasks"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getOnboardingTasksForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/steps/$stepId/tasks").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `createOnboardingTaskForMe should return 201 and created task`() {
+        val request = buildCreateRequest()
+        every { onboardingTaskService.createOnboardingTaskForMe(authId, stepId, request) } returns
+            buildCreateTaskResponse()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/steps/$stepId/tasks")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isCreated)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingTaskService.createOnboardingTaskForMe(authId, stepId, request) }
+    }
+
+    @Test
+    fun `createOnboardingTaskForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/steps/$stepId/tasks")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildCreateRequest())),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `createOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/steps/$stepId/tasks")
+                    .with(noUserRoleJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildCreateRequest())),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `getOnboardingTaskForMe should return 200 and task`() {
+        every { onboardingTaskService.getOnboardingTaskForMe(authId, taskId) } returns buildGetTaskResponse()
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/tasks/$taskId").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTaskForMe(authId, taskId) }
+    }
+
+    @Test
+    fun `getOnboardingTaskForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/tasks/$taskId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/tasks/$taskId").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `getOnboardingTaskForMe should return 404 when not found`() {
+        every { onboardingTaskService.getOnboardingTaskForMe(authId, taskId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/tasks/$taskId").with(userJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTaskForMe(authId, taskId) }
+    }
+
+    @Test
+    fun `updateOnboardingTaskForMe should return 200 and updated task`() {
+        val request = buildUpdateRequest()
+        every { onboardingTaskService.updateOnboardingTaskForMe(authId, taskId, request) } returns
+            buildUpdateTaskResponse()
+
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/me/tasks/$taskId")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingTaskService.updateOnboardingTaskForMe(authId, taskId, request) }
+    }
+
+    @Test
+    fun `updateOnboardingTaskForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/me/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildUpdateRequest())),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `updateOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/me/tasks/$taskId")
+                    .with(noUserRoleJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildUpdateRequest())),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForMe should return 204`() {
+        every { onboardingTaskService.deleteOnboardingTaskForMe(authId, taskId) } just Runs
+
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/tasks/$taskId").with(userJwt))
+            .andExpect(status().isNoContent)
+
+        verify(exactly = 1) { onboardingTaskService.deleteOnboardingTaskForMe(authId, taskId) }
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/tasks/$taskId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/tasks/$taskId").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    // ========================== Admin endpoints ==========================
+
+    @Test
+    fun `getOnboardingTasksByStepId should return 200 and list of tasks`() {
+        every { onboardingTaskService.getOnboardingTasksByStepId(stepId) } returns listOf(buildGetTaskResponse())
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/steps/$stepId/tasks").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTasksByStepId(stepId) }
+    }
+
+    @Test
+    fun `getOnboardingTasksByStepId should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/steps/$stepId/tasks"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getOnboardingTasksByStepId should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/steps/$stepId/tasks").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
 
     @Test
     fun `createOnboardingTask should return 201 and created task`() {
-        val request = CreateOnboardingTaskRequest(
-            position = 1,
-            title = "Create account",
-            description = "Create an internal account",
-        )
-        val response = CreateOnboardingTaskResponse(
-            id = taskId,
-            stepId = stepId,
-            position = 1,
-            title = "Create account",
-            description = "Create an internal account",
-            finished = false,
-        )
-
-        every { onboardingService.createOnboardingTaskForStepId(stepId, request) } returns response
+        val request = buildCreateRequest()
+        every { onboardingTaskService.createOnboardingTaskForStepId(stepId, request) } returns buildCreateTaskResponse()
 
         mockMvc
-            .post("/api/v1/onboarding/steps/$stepId/tasks") {
-                contentType = MediaType.APPLICATION_JSON
-                content = objectMapper.writeValueAsString(request)
-            }.andExpect {
-                status { isCreated() }
-                jsonPath("$.id") { value(taskId.toString()) }
-                jsonPath("$.stepId") { value(stepId.toString()) }
-                jsonPath("$.finished") { value(false) }
-            }
+            .perform(
+                post("/api/v1/onboarding/steps/$stepId/tasks")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isCreated)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { onboardingService.createOnboardingTaskForStepId(stepId, request) }
+        verify(exactly = 1) { onboardingTaskService.createOnboardingTaskForStepId(stepId, request) }
     }
 
     @Test
-    fun `getOnboardingTasks should return 200 and all tasks`() {
-        val response = listOf(
-            GetOnboardingTasksResponse(
-                id = taskId,
-                stepId = stepId,
-                position = 1,
-                title = "Create account",
-                description = "Create an internal account",
-                finished = false,
-            ),
-        )
-
-        every { onboardingService.getOnboardingTasks() } returns response
-
+    fun `createOnboardingTask should return 401 when not authenticated`() {
         mockMvc
-            .get("/api/v1/onboarding/tasks")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$[0].id") { value(taskId.toString()) }
-                jsonPath("$[0].stepId") { value(stepId.toString()) }
-            }
-
-        verify(exactly = 1) { onboardingService.getOnboardingTasks() }
+            .perform(
+                post("/api/v1/onboarding/steps/$stepId/tasks")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildCreateRequest())),
+            ).andExpect(status().isUnauthorized)
     }
 
     @Test
-    fun `getOnboardingTasksByStepId should return 200 and tasks for step`() {
-        val response = listOf(
-            GetOnboardingTaskResponse(
-                id = taskId,
-                stepId = stepId,
-                position = 1,
-                title = "Create account",
-                description = "Create an internal account",
-                finished = false,
-            ),
-        )
-
-        every { onboardingService.getOnboardingTasksByStepId(stepId) } returns response
-
+    fun `createOnboardingTask should return 403 when authenticated with wrong role`() {
         mockMvc
-            .get("/api/v1/onboarding/steps/$stepId/tasks")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$[0].id") { value(taskId.toString()) }
-                jsonPath("$[0].stepId") { value(stepId.toString()) }
-            }
-
-        verify(exactly = 1) { onboardingService.getOnboardingTasksByStepId(stepId) }
+            .perform(
+                post("/api/v1/onboarding/steps/$stepId/tasks")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildCreateRequest())),
+            ).andExpect(status().isForbidden)
     }
 
     @Test
     fun `getOnboardingTask should return 200 and task`() {
-        val response = GetOnboardingTaskResponse(
-            id = taskId,
-            stepId = stepId,
-            position = 1,
-            title = "Create account",
-            description = "Create an internal account",
-            finished = false,
-        )
-
-        every { onboardingService.getOnboardingTask(taskId) } returns response
+        every { onboardingTaskService.getOnboardingTaskById(taskId) } returns buildGetTaskResponse()
 
         mockMvc
-            .get("/api/v1/onboarding/tasks/$taskId")
-            .andExpect {
-                status { isOk() }
-                jsonPath("$.id") { value(taskId.toString()) }
-                jsonPath("$.stepId") { value(stepId.toString()) }
-            }
+            .perform(get("/api/v1/onboarding/tasks/$taskId").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { onboardingService.getOnboardingTask(taskId) }
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTaskById(taskId) }
+    }
+
+    @Test
+    fun `getOnboardingTask should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/tasks/$taskId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getOnboardingTask should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/tasks/$taskId").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `getOnboardingTask should return 404 when not found`() {
+        every { onboardingTaskService.getOnboardingTaskById(taskId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/tasks/$taskId").with(adminJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingTaskService.getOnboardingTaskById(taskId) }
     }
 
     @Test
     fun `updateOnboardingTask should return 200 and updated task`() {
-        val request = UpdateOnboardingTaskRequest(
-            position = 2,
-            title = "Updated account task",
-            description = "Updated account task description",
-            finished = true,
-        )
-        val response = UpdateOnboardingTaskResponse(
-            id = taskId,
-            stepId = stepId,
-            position = 2,
-            title = "Updated account task",
-            description = "Updated account task description",
-            finished = true,
-        )
-
-        every { onboardingService.updateOnboardingTask(taskId, request) } returns response
+        val request = buildUpdateRequest()
+        every { onboardingTaskService.updateOnboardingTaskById(taskId, request) } returns buildUpdateTaskResponse()
 
         mockMvc
-            .put("/api/v1/onboarding/tasks/$taskId") {
-                contentType = MediaType.APPLICATION_JSON
-                content = objectMapper.writeValueAsString(request)
-            }.andExpect {
-                status { isOk() }
-                jsonPath("$.id") { value(taskId.toString()) }
-                jsonPath("$.position") { value(2) }
-                jsonPath("$.finished") { value(true) }
-            }
+            .perform(
+                put("/api/v1/onboarding/tasks/$taskId")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { onboardingService.updateOnboardingTask(taskId, request) }
+        verify(exactly = 1) { onboardingTaskService.updateOnboardingTaskById(taskId, request) }
     }
 
     @Test
-    fun `deleteOnboardingTask should return 204`() {
-        every { onboardingService.deleteOnboardingTask(taskId) } just Runs
+    fun `updateOnboardingTask should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildUpdateRequest())),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `updateOnboardingTask should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/tasks/$taskId")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(buildUpdateRequest())),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `updateOnboardingTask should return 404 when not found`() {
+        val request = buildUpdateRequest()
+        every { onboardingTaskService.updateOnboardingTaskById(taskId, request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
 
         mockMvc
-            .delete("/api/v1/onboarding/tasks/$taskId")
-            .andExpect {
-                status { isNoContent() }
-            }
+            .perform(
+                put("/api/v1/onboarding/tasks/$taskId")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
 
-        verify(exactly = 1) { onboardingService.deleteOnboardingTask(taskId) }
+        verify(exactly = 1) { onboardingTaskService.updateOnboardingTaskById(taskId, request) }
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForStepId should return 204`() {
+        every { onboardingTaskService.deleteOnboardingTaskById(taskId) } just Runs
+
+        mockMvc
+            .perform(delete("/api/v1/onboarding/tasks/$taskId").with(adminJwt))
+            .andExpect(status().isNoContent)
+
+        verify(exactly = 1) { onboardingTaskService.deleteOnboardingTaskById(taskId) }
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForStepId should return 401 when not authenticated`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/tasks/$taskId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForStepId should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/tasks/$taskId").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteOnboardingTaskForStepId should return 404 when not found`() {
+        every { onboardingTaskService.deleteOnboardingTaskById(taskId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(delete("/api/v1/onboarding/tasks/$taskId").with(adminJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingTaskService.deleteOnboardingTaskById(taskId) }
     }
 }
