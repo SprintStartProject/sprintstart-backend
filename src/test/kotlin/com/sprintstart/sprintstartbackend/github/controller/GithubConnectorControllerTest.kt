@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
@@ -25,6 +26,7 @@ import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.UUID
 
 @WebMvcTest(controllers = [GithubConnectorController::class])
+@AutoConfigureMockMvc(addFilters = false)
 @Import(ExceptionHandler::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GithubConnectorControllerTest {

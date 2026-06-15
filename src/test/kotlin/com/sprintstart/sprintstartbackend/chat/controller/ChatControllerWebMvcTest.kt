@@ -12,8 +12,8 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatRespon
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
-import io.mockk.coEvery
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import io.mockk.coEvery
 import io.mockk.every
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
@@ -33,7 +33,9 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -308,21 +310,29 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("done"),
             )
             coEvery { chatService.prompt(any()) } returns flowOf(*tokens.toTypedArray())
-            val mvcResult = mockMvc
+
+            val asyncResult = mockMvc
                 .perform(
                     post("/api/v1/chats/prompt")
                         .with(userJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""{"chatId": "$chatId", "msg": "Test msg"}"""),
-                ).andExpect(status().isOk)
+                ).andExpect(request().asyncStarted())
                 .andReturn()
-                .response
-                .contentAsString
 
-            val actual = mvcResult.replace("data:", "").replace("\n", "")
+            val mvcResult = mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andReturn()
+
+            val actual = mvcResult.response.contentAsString
+                .replace("data:", "")
+                .replace("\n", "")
+
             val expected = objectMapper.writeValueAsString(tokens[0]) +
                 objectMapper.writeValueAsString(tokens[1]) +
                 objectMapper.writeValueAsString(tokens[2]).replace(",\"content\":null", "")
+
             assertEquals(expected, actual)
         }
 
@@ -375,14 +385,19 @@ class ChatControllerWebMvcTest(
 
         @Test
         fun `returns 403 when authenticated with wrong role`() {
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/prompt")
+                        .with(noUserRoleJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            // 2. Dispatch and assert the 403 happens during async execution
             mockMvc
-                .post("/api/v1/chats/prompt") {
-                    with(noUserRoleJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = """{"chatId": "$chatId", "msg": "Hello"}"""
-                }.andExpect {
-                    status { isForbidden() }
-                }
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isForbidden)
         }
     }
 }
