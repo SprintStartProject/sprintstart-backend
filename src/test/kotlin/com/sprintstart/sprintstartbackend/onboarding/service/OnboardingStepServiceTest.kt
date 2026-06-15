@@ -175,7 +175,9 @@ class OnboardingStepServiceTest {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
             every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
-            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every {
+                onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any())
+            } returns mutableListOf()
 
             val result = service.updateOnboardingStepForMe(authId, stepId, request)
 
@@ -187,9 +189,12 @@ class OnboardingStepServiceTest {
             val step = makeStep(0, StepStatus.WAITING)
             val request = makeUpdateRequest(0, StepStatus.FINISHED)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+            every {
+                onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId)
+            } returns Optional.of(step)
             every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
-            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns
+                mutableListOf()
 
             val result = service.updateOnboardingStepForMe(authId, stepId, request)
 
@@ -200,11 +205,13 @@ class OnboardingStepServiceTest {
         @Test
         fun `sets skipReason when status changes to SKIPPED`() {
             val step = makeStep(0, StepStatus.WAITING)
-            val request = UpdateOnboardingStepRequest(0, "t", "d", StepType.VIDEO, 10, "o", StepStatus.SKIPPED, "Not relevant")
+            val request =
+                UpdateOnboardingStepRequest(0, "t", "d", StepType.VIDEO, 10, "o", StepStatus.SKIPPED, "Not relevant")
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
             every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
-            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns
+                mutableListOf()
 
             val result = service.updateOnboardingStepForMe(authId, stepId, request)
 

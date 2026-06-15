@@ -1,14 +1,9 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
-import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toCreateResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetAllResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CreateOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathsResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus

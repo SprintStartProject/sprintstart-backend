@@ -25,5 +25,6 @@ interface OnboardingPhaseRepository : JpaRepository<OnboardingPhase, UUID> {
     fun findAllByPathUserId(pathUserId: UUID): MutableList<OnboardingPhase>
 
     fun findAllByPathIdAndPositionGreaterThan(pathId: UUID, positionIsGreaterThan: Int): MutableList<OnboardingPhase>
+
     fun findAllByPathId(pathId: UUID): MutableList<OnboardingPhase>
 }

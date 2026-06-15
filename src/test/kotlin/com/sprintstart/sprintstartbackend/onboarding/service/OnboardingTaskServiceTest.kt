@@ -25,7 +25,6 @@ import java.util.UUID
 import kotlin.test.assertEquals
 
 class OnboardingTaskServiceTest {
-
     private val onboardingTaskRepository: OnboardingTaskRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
     private val userApi: UserApi = mockk()
@@ -155,12 +154,20 @@ class OnboardingTaskServiceTest {
         @Test
         fun `updates task fields`() {
             val task = makeTask()
-            val request = UpdateOnboardingTaskRequest(position = 0, title = "Updated", description = "Updated Desc", finished = true)
+            val request =
+                UpdateOnboardingTaskRequest(
+                    position = 0,
+                    title = "Updated",
+                    description = "Updated Desc",
+                    finished = true,
+                )
 
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingTaskRepository.findByIdAndStepPhasePathUserId(taskId, userId) } returns Optional.of(task)
             every { onboardingTaskRepository.countByStepId(task.step.id) } returns 1
-            every { onboardingTaskRepository.findByStepIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every {
+                onboardingTaskRepository.findByStepIdAndPositionBetween(any(), any(), any())
+            } returns mutableListOf()
 
             val result = service.updateOnboardingTaskForMe(authId, taskId, request)
 
@@ -274,11 +281,14 @@ class OnboardingTaskServiceTest {
         @Test
         fun `updates and saves task`() {
             val task = makeTask()
-            val request = UpdateOnboardingTaskRequest(position = 0, title = "New", description = "New Desc", finished = true)
+            val request =
+                UpdateOnboardingTaskRequest(position = 0, title = "New", description = "New Desc", finished = true)
 
             every { onboardingTaskRepository.findById(taskId) } returns Optional.of(task)
             every { onboardingTaskRepository.countByStepId(task.step.id) } returns 1
-            every { onboardingTaskRepository.findByStepIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every {
+                onboardingTaskRepository.findByStepIdAndPositionBetween(any(), any(), any())
+            } returns mutableListOf()
             every { onboardingTaskRepository.save(task) } returns task
 
             val result = service.updateOnboardingTaskById(taskId, request)

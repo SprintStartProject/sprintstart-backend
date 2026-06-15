@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
-import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.Optional

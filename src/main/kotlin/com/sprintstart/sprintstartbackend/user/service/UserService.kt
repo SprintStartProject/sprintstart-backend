@@ -61,11 +61,13 @@ class UserService(
     }
 
     private fun findById(id: UUID): User =
-        userRepository.findById(id)
+        userRepository
+            .findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
 
     private fun findByAuthId(authId: String): User =
-        userRepository.findByAuthId(authId)
+        userRepository
+            .findByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 }
 

@@ -25,7 +25,6 @@ import java.util.UUID
 import kotlin.test.assertEquals
 
 class OnboardingResourceServiceTest {
-
     private val onboardingResourceRepository: OnboardingResourceRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
     private val userApi: UserApi = mockk()
@@ -53,7 +52,13 @@ class OnboardingResourceServiceTest {
     }
 
     private fun makeResource(): OnboardingResource =
-        OnboardingResource(id = resourceId, step = makeStep(), title = "Resource", description = "Desc", url = "https://example.com")
+        OnboardingResource(
+            id = resourceId,
+            step = makeStep(),
+            title = "Resource",
+            description = "Desc",
+            url = "https://example.com",
+        )
 
     @Nested
     inner class GetOnboardingResourcesForMe {
@@ -85,7 +90,8 @@ class OnboardingResourceServiceTest {
         fun `creates resource`() {
             val step = makeStep()
             val resource = makeResource()
-            val request = CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
+            val request =
+                CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
 
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
@@ -98,7 +104,8 @@ class OnboardingResourceServiceTest {
 
         @Test
         fun `throws 404 when step not found for user`() {
-            val request = CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
+            val request =
+                CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.empty()
 
@@ -141,7 +148,12 @@ class OnboardingResourceServiceTest {
         @Test
         fun `updates and saves resource`() {
             val resource = makeResource()
-            val request = UpdateOnboardingResourceRequest(title = "Updated", description = "Updated Desc", url = "https://new.example.com")
+            val request =
+                UpdateOnboardingResourceRequest(
+                    title = "Updated",
+                    description = "Updated Desc",
+                    url = "https://new.example.com",
+                )
 
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every {
@@ -163,7 +175,11 @@ class OnboardingResourceServiceTest {
             } returns Optional.empty()
 
             assertThrows<ResponseStatusException> {
-                service.updateOnboardingResourceForMe(authId, resourceId, UpdateOnboardingResourceRequest("t", "d", "u"))
+                service.updateOnboardingResourceForMe(
+                    authId,
+                    resourceId,
+                    UpdateOnboardingResourceRequest("t", "d", "u"),
+                )
             }.also { assertEquals(404, it.statusCode.value()) }
         }
     }
@@ -203,7 +219,8 @@ class OnboardingResourceServiceTest {
         fun `creates resource for step by stepId`() {
             val step = makeStep()
             val resource = makeResource()
-            val request = CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
+            val request =
+                CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
 
             every { onboardingStepRepository.findById(stepId) } returns Optional.of(step)
             every { onboardingResourceRepository.save(any()) } returns resource
@@ -215,7 +232,8 @@ class OnboardingResourceServiceTest {
 
         @Test
         fun `throws 404 when step not found`() {
-            val request = CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
+            val request =
+                CreateOnboardingResourceRequest(title = "Resource", description = "Desc", url = "https://example.com")
             every { onboardingStepRepository.findById(stepId) } returns Optional.empty()
 
             assertThrows<ResponseStatusException> {
@@ -263,7 +281,12 @@ class OnboardingResourceServiceTest {
         @Test
         fun `updates and saves resource`() {
             val resource = makeResource()
-            val request = UpdateOnboardingResourceRequest(title = "Updated", description = "Updated Desc", url = "https://new.example.com")
+            val request =
+                UpdateOnboardingResourceRequest(
+                    title = "Updated",
+                    description = "Updated Desc",
+                    url = "https://new.example.com",
+                )
 
             every { onboardingResourceRepository.findById(resourceId) } returns Optional.of(resource)
             every { onboardingResourceRepository.save(resource) } returns resource

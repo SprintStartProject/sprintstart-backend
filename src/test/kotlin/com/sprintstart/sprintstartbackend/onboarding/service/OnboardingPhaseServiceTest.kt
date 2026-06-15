@@ -21,7 +21,6 @@ import java.util.UUID
 import kotlin.test.assertEquals
 
 class OnboardingPhaseServiceTest {
-
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
     private val onboardingPhaseRepository: OnboardingPhaseRepository = mockk()
     private val userApi: UserApi = mockk()
@@ -142,7 +141,8 @@ class OnboardingPhaseServiceTest {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingPhaseRepository.findByIdAndPathUserId(phaseId, userId) } returns Optional.of(phase)
             every { onboardingPhaseRepository.countByPathId(path.id) } returns 1
-            every { onboardingPhaseRepository.findByPathIdAndPositionBetween(any(), any(), any()) } returns mutableListOf()
+            every { onboardingPhaseRepository.findByPathIdAndPositionBetween(any(), any(), any()) } returns
+                mutableListOf()
 
             val result = service.updateOnboardingPhaseForMe(authId, phaseId, request)
 
