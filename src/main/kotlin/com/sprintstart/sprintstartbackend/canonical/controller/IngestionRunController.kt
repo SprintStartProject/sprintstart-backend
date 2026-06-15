@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.canonical.controller
 
-import com.sprintstart.sprintstartbackend.canonical.model.response.IngestionRunResponse
+import com.sprintstart.sprintstartbackend.canonical.model.dto.response.IngestionRunResponse
 import com.sprintstart.sprintstartbackend.canonical.service.IngestionRunService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
