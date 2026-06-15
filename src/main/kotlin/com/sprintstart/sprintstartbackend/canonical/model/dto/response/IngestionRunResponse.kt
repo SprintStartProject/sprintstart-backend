@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.canonical.model.response
+package com.sprintstart.sprintstartbackend.canonical.model.dto.response
 
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem

@@ -11,13 +11,16 @@ import java.util.*
 @Entity
 class IngestionRun(
     @Id
-    val id: UUID = UUID.randomUUID(),
+    val id: UUID,
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val sourceSystem : SourceSystem,
-    @Column(nullable = false)
-    val startedAt: Instant,
+    val startedAt: Instant = Instant.now(),
     var finishedAt: Instant? = null,
+    @Column(nullable = false)
+    val expectedCount : Int,
+    @Column(nullable = false)
+    val processedCount : Int = 0,
     @Column(nullable = false)
     var ingestedCount : Int = 0,
     @Column(nullable = false)
