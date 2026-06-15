@@ -46,7 +46,7 @@ class OnboardingTaskService(
      * @return Ordered tasks for the step.
      * @throws ResponseStatusException When the user does not exist.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     fun getOnboardingTasksForMe(authId: String, stepId: UUID): List<GetOnboardingTasksResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -102,7 +102,7 @@ class OnboardingTaskService(
      * @return The requested task.
      * @throws ResponseStatusException When the user or task does not exist.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     fun getOnboardingTaskForMe(authId: String, taskId: UUID): GetOnboardingTaskResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -280,6 +280,16 @@ class OnboardingTaskService(
 
 //  ========================== Helper Methods ==========================
 
+    /**
+     * Makes room for a new task at the requested position by shifting all existing
+     * tasks at that position or after it one position to the right.
+     *
+     * Valid positions are from `0` to `taskCount`, where `taskCount` means
+     * appending the new task at the end.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftTasksRight(
         step: OnboardingStep,
         request: CreateOnboardingTaskRequest,
@@ -302,6 +312,19 @@ class OnboardingTaskService(
         tasksToShift.forEach { it.position += 1 }
     }
 
+    /**
+     * Reorders tasks after an existing task is moved to a new position.
+     *
+     * When the task moves down, all tasks between the old and new position are
+     * shifted one position to the left. When the task moves up, all tasks between
+     * the new and old position are shifted one position to the right.
+     *
+     * Valid positions are from `0` to `taskCount - 1`, because the task already
+     * exists and can only be moved within the current list.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftTasksBetween(
         task: OnboardingTask,
         request: UpdateOnboardingTaskRequest,

@@ -32,6 +32,8 @@ class UploadController(
                 responseCode = "200",
                 description = "Upload processed",
             ),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @PostMapping(
@@ -52,6 +54,13 @@ class UploadController(
         return ResponseEntity.ok(response)
     }
 
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Upload processed"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+        ],
+    )
     @GetMapping
     @PreAuthorize("hasRole('USER')")
     fun listUploads(
@@ -61,6 +70,13 @@ class UploadController(
             uploadService.listUploads(uploaderId),
         )
 
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Deleted Artifact"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+        ],
+    )
     @DeleteMapping("/{artifactId}")
     @PreAuthorize("hasRole('USER')")
     fun deleteUpload(

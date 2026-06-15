@@ -48,6 +48,8 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "200", description = "Chats retrieved successfully"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -66,6 +68,8 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "200", description = "Messages retrieved successfully"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -87,6 +91,8 @@ internal class ChatController(
         value = [
             ApiResponse(responseCode = "201", description = "Chat successfully created"),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -122,6 +128,8 @@ internal class ChatController(
             ),
             ApiResponse(responseCode = "400", description = "Invalid request"),
             ApiResponse(responseCode = "500", description = "Internal server error"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)

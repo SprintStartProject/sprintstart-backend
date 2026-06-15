@@ -6,7 +6,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
 
-@Suppress("ReturnCount")
 class KeycloakJwtAuthenticationConverter : Converter<Jwt, AbstractAuthenticationToken> {
     override fun convert(jwt: Jwt): AbstractAuthenticationToken {
         val realmRoles = extractRealmRoles(jwt)
@@ -18,6 +17,7 @@ class KeycloakJwtAuthenticationConverter : Converter<Jwt, AbstractAuthentication
         return JwtAuthenticationToken(jwt, authorities, jwt.subject)
     }
 
+    @Suppress("ReturnCount")
     private fun extractRealmRoles(jwt: Jwt): Set<String> {
         val realmAccess = jwt.claims["realm_access"] as? Map<*, *>
             ?: return emptySet()

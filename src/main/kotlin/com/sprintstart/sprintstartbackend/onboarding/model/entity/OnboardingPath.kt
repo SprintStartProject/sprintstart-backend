@@ -15,7 +15,7 @@ import java.util.UUID
 class OnboardingPath(
     @Id
     val id: UUID = UUID.randomUUID(),
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     val userId: UUID,
     @Column(nullable = false)
     val createdAt: Instant = Instant.now(),

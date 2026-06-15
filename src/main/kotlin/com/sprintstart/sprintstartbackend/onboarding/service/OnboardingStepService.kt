@@ -311,6 +311,16 @@ class OnboardingStepService(
 
 //  ========================== Helper Methods ==========================
 
+    /**
+     * Makes room for a new step at the requested position by shifting all existing
+     * steps at that position or after it one position to the right.
+     *
+     * Valid positions are from `0` to `stepCount`, where `stepCount` means
+     * appending the new step at the end.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftStepsRight(
         phase: OnboardingPhase,
         request: CreateOnboardingStepRequest,
@@ -333,6 +343,19 @@ class OnboardingStepService(
         stepsToShift.forEach { it.position += 1 }
     }
 
+    /**
+     * Reorders steps after an existing step is moved to a new position.
+     *
+     * When the step moves down, all steps between the old and new position are
+     * shifted one position to the left. When the step moves up, all steps between
+     * the new and old position are shifted one position to the right.
+     *
+     * Valid positions are from `0` to `stepCount - 1`, because the step already
+     * exists and can only be moved within the current list.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftStepsBetween(
         step: OnboardingStep,
         request: UpdateOnboardingStepRequest,
@@ -369,6 +392,14 @@ class OnboardingStepService(
         }
     }
 
+    /**
+     * Updates completion metadata when the step status changes.
+     *
+     * Finished and skipped steps receive the current timestamp as their completion
+     * time. Skipped steps also store the provided skip reason, or a default reason
+     * if none was provided. Waiting steps are treated as incomplete and therefore
+     * have their completion metadata cleared.
+     */
     private fun updateStatus(
         step: OnboardingStep,
         request: UpdateOnboardingStepRequest,

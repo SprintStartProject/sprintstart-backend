@@ -44,7 +44,7 @@ class OnboardingPhaseService(
      * @return Ordered phases for the current user.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     fun getOnboardingPhasesForMe(authId: String): List<GetOnboardingPhasesResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -67,7 +67,7 @@ class OnboardingPhaseService(
      * @return The requested phase.
      * @throws ResponseStatusException When the user or phase does not exist.
      */
-    @Transactional
+    @Transactional(readOnly = true)
     fun getOnboardingPhaseForMe(authId: String, phaseId: UUID): GetOnboardingPhaseResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -295,6 +295,16 @@ class OnboardingPhaseService(
 
 //  ========================== Helper Methods ==========================
 
+    /**
+     * Makes room for a new phase at the requested position by shifting all existing
+     * phases at that position or after the position one position to the right.
+     *
+     * Valid positions are from `0` to `phaseCount`, where `phaseCount` means
+     * appending the new phase at the end.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftPhasesRight(
         path: OnboardingPath,
         request: CreateOnboardingPhaseRequest,
@@ -317,6 +327,19 @@ class OnboardingPhaseService(
         phasesToShift.forEach { it.position += 1 }
     }
 
+    /**
+     * Reorders phases after an existing phase is moved to a new position.
+     *
+     * When the phase moves down, all phases between the old and new position are
+     * shifted one position to the left. When the phase moves up, all phases between
+     * the new and old position are shifted one position to the right.
+     *
+     * Valid positions are from `0` to `phaseCount - 1`, because the phase already
+     * exists and can only be moved within the current list.
+     *
+     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
+     * position is outside the valid range.
+     */
     private fun shiftPhasesBetween(
         phase: OnboardingPhase,
         request: UpdateOnboardingPhaseRequest,
