@@ -89,6 +89,7 @@ Start database and backend:
 ```bash
 docker compose up -d
 ```
+
 Remove -d if you want to have the outputs of docker in the terminal you are using
 
 To stop the database and backend:
@@ -96,6 +97,7 @@ To stop the database and backend:
 ```bash
 docker compose down -v
 ```
+
 Warning: `docker compose down -v` deletes the local PostgreSQL data.
 Remove -v if you **don't** want the database volume to persist
 

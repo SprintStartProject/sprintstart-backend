@@ -46,6 +46,8 @@ data class AiConfig(
 data class GithubConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
+    @get:JsonProperty("repo-base-url")
+    val repoBaseUrl: String,
     @get:JsonProperty("token")
     val token: String,
     @get:JsonProperty("cron")

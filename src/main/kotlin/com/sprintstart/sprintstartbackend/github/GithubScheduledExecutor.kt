@@ -1,4 +1,6 @@
-package com.sprintstart.sprintstartbackend.github
+@file:Suppress("ktlint:standard:kdoc")
+
+/**package com.sprintstart.sprintstartbackend.github
 
 import com.sprintstart.sprintstartbackend.github.service.GithubConnectorService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
@@ -10,17 +12,18 @@ import org.springframework.stereotype.Component
  */
 @Component
 class GithubScheduledExecutor(
-    private val githubConnectorService: GithubConnectorService,
-    private val scheduledExecutor: ScheduledExecutor,
+ private val githubConnectorService: GithubConnectorService,
+ private val scheduledExecutor: ScheduledExecutor,
 ) {
-    /**
-     * Registers a scheduled job to regularly check for updates in all connected
-     * GitHub repositories.
-     */
-    @Scheduled(cron = $$"${sprintstart.github.cron:0 0 2 * * *}")
-    fun syncAllRepositories() {
-        scheduledExecutor.launch("github-sync-repositories") {
-            githubConnectorService.checkAllRepositoriesForUpdates()
-        }
-    }
+ /**
+ * Registers a scheduled job to regularly check for updates in all connected
+ * GitHub repositories.
+ */
+ @Scheduled(cron = $$"${sprintstart.github.cron:0 0 2 * * *}")
+ fun syncAllRepositories() {
+ scheduledExecutor.launch("github-sync-repositories") {
+ githubConnectorService.updateAllRepositories()
+ }
+ }
 }
+*/

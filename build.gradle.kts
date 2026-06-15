@@ -22,6 +22,11 @@ repositories {
     mavenCentral()
 }
 
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/detekt.yml"))
+}
+
 extra["springModulithVersion"] = "2.0.6"
 
 dependencies {

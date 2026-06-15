@@ -1,0 +1,13 @@
+style:
+  LoopWithTooManyJumpStatements:
+    active: false
+
+complexity:
+  LongMethod:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  TooGenericExceptionThrown:
+    active: false

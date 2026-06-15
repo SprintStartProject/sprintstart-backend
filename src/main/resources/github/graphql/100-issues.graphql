@@ -16,12 +16,12 @@ query RepoIssues($owner: String!, $name: String!, $cursor: String) {
                 author {
                     login
                 }
-                labels(first: 100) {
+                labels(first: 20) {
                     nodes {
                         name
                     }
                 }
-                assignees(first: 100) {
+                assignees(first: 10) {
                     nodes {
                         login
                     }

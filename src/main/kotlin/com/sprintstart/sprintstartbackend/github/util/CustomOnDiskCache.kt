@@ -11,6 +11,22 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 
 /**
+ * Interface for running Git CLI commands. Used for mocking in tests.
+ */
+interface GitOperationRunner {
+    fun exec(path: Path, op: ProcessBuilder): String
+}
+
+/**
+ * Default implementation of [GitOperationRunner] that uses [OnDiskOperations].
+ */
+@Service
+class DefaultGitOperationRunner : GitOperationRunner {
+    override fun exec(path: Path, op: ProcessBuilder): String =
+        OnDiskOperations.exec(path, op)
+}
+
+/**
  * On-disk cache for GitHub repositories.
  *
  * Maintains a local clone of each repository under [cacheBasePath], keyed by owner and name
@@ -33,6 +49,7 @@ class CustomOnDiskCache(
     private val cacheBasePath: String,
     private val applicationConfig: ApplicationConfig,
     private val onDiskOperations: OnDiskOperations,
+    private val gitRunner: GitOperationRunner,
 ) {
     private val logger = LoggerFactory.getLogger(CustomOnDiskCache::class.java)
 
@@ -86,9 +103,9 @@ class CustomOnDiskCache(
         if (!path.exists()) return false
         return withContext(Dispatchers.IO) {
             try {
-                OnDiskOperations.exec(path, onDiskOperations.gitStatus())
+                gitRunner.exec(path, onDiskOperations.gitStatus())
                 true
-            } catch (e: RuntimeException) {
+            } catch (@Suppress("SwallowedException") e: RuntimeException) {
                 false
             }
         }
@@ -111,7 +128,7 @@ class CustomOnDiskCache(
             localFsPath.toFile().deleteRecursively()
             localFsPath.toFile().mkdirs()
 
-            OnDiskOperations.exec(localFsPath, onDiskOperations.gitClone(remoteUri, localFsPath.absolutePathString()))
+            gitRunner.exec(localFsPath, onDiskOperations.gitClone(remoteUri, localFsPath.absolutePathString()))
         }
     }
 }

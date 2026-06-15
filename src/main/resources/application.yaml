@@ -4,9 +4,10 @@ sprintstart:
   github:
     cache-path: ${REPO_CACHE_PATH:${java.io.tmpdir}/repos}
     base-url: "https://api.github.com/graphql"
+    repo-base-url: "https://api.github.com/repos"
     token: ${GITHUB_PAT}
     cron: "0 2 * * 1" # Every Monday night at 2:00 am
-    
+
 spring:
   config:
     import: optional:file:./run.local.env[.properties]

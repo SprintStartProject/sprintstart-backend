@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.github.util
 
+import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations.Companion.exec
 import org.springframework.stereotype.Service
 import java.nio.file.Path
 import java.time.Instant
@@ -12,6 +13,7 @@ import java.time.Instant
  * target repository path to run the command.
  *
  * Example usage:
+ *
  * ```kotlin
  * val ops = OnDiskOperations()
  * OnDiskOperations.exec(repoPath, ops.gitStatus())
@@ -58,6 +60,9 @@ class OnDiskOperations {
     fun gitDiffCmp(previousSha: String, currentSha: String) =
         ProcessBuilder("git", "diff", "$previousSha..$currentSha", "--name-only")
 
+    /**
+     * Constructs a `git log` command that retrieves all commits with a custom format.
+     */
     fun gitCommits() = ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s")
 
     /**
@@ -67,7 +72,7 @@ class OnDiskOperations {
      * @return A [ProcessBuilder] configured to execute the `git log` command with the `--after` option.
      */
     fun gitCommitsAfter(datetime: Instant) =
-        ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s", "--after=${datetime.toString()}")
+        ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s", "--after=$datetime")
 
     companion object {
         /**

@@ -1,57 +1,14 @@
-query RepoPrs($owner: String!, $name: String!, $cursor: String) {
+query GetPRList($owner: String!, $name: String!, $cursor: String) {
     repository(owner: $owner, name: $name) {
-        pullRequests(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: ASC}) {
+        pullRequests(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
             pageInfo {
                 hasNextPage
                 endCursor
             }
             nodes {
                 number
+                id
                 title
-                body
-                state
-                createdAt
-                mergedAt
-                url
-                author {
-                    login
-                }
-                labels(first: 100) {
-                    nodes {
-                        name
-                    }
-                }
-                reviews(first: 100) {
-                    nodes {
-                        body
-                        state
-                        author {
-                            login
-                        }
-                    }
-                }
-                comments(first: 100) {
-                    nodes {
-                        body
-                        author {
-                            login
-                        }
-                        createdAt
-                    }
-                }
-                reviewThreads(first: 100) {
-                    nodes {
-                        comments(first: 100) {
-                            nodes {
-                                body
-                                author {
-                                    login
-                                }
-                                path
-                            }
-                        }
-                    }
-                }
             }
         }
     }
