@@ -47,7 +47,11 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Steps", description = "Create, retrieve, update, and delete onboarding steps at hierarchy depth 2")
+@Tag(
+    name = "Onboarding - Steps",
+    description = "Create, retrieve, update, " +
+        "and delete onboarding steps at hierarchy depth 2",
+)
 class OnboardingStepController(
     val onboardingStepService: OnboardingStepService,
 ) {
@@ -100,7 +104,8 @@ class OnboardingStepController(
      */
     @Operation(
         summary = "Create current user's onboarding step",
-        description = "Creates an onboarding step at hierarchy depth 2 for the authenticated user under the specified phase at depth 1.",
+        description = "Creates an onboarding step at hierarchy depth 2 " +
+            "for the authenticated user under the specified phase at depth 1.",
     )
     @ApiResponses(
         value = [
@@ -108,7 +113,10 @@ class OnboardingStepController(
             ApiResponse(responseCode = "400", description = "Invalid step position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding steps"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding phase found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -144,7 +152,10 @@ class OnboardingStepController(
             ApiResponse(responseCode = "200", description = "Step returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding step"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding step found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -181,7 +192,10 @@ class OnboardingStepController(
             ApiResponse(responseCode = "400", description = "Invalid step position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding step"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding step found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -216,7 +230,10 @@ class OnboardingStepController(
             ApiResponse(responseCode = "204", description = "Step deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding step"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding step found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -246,7 +263,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Get steps by phase ID",
         description = "Returns all onboarding steps belonging to the specified phase, ordered by position. " +
-            "Each returned step is at hierarchy depth 2 and includes direct children at depth 3: tasks and resources. No deeper nesting exists.",
+            "Each returned step is at hierarchy depth 2 and includes direct children at depth 3: " +
+            "tasks and resources. No deeper nesting exists.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Ordered list of steps with direct tasks and resources"),
@@ -309,7 +327,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Get onboarding step by ID",
         description = "Returns a single onboarding step by its UUID. " +
-            "The step is at hierarchy depth 2 and includes direct children at depth 3: tasks and resources. No deeper nesting exists.",
+            "The step is at hierarchy depth 2 and includes direct children at depth 3: " +
+            "tasks and resources. No deeper nesting exists.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding step with direct tasks and resources"),
@@ -378,7 +397,8 @@ class OnboardingStepController(
         summary = "Delete onboarding step",
         description = "Permanently deletes the specified onboarding step. " +
             "Subsequent sibling steps are shifted back by one to keep ordering contiguous. " +
-            "The deleted object is at hierarchy depth 2, and any descendants below it are limited to depth 3: tasks and resources.",
+            "The deleted object is at hierarchy depth 2, and any descendants below it are " +
+            "limited to depth 3: tasks and resources.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Step deleted successfully"),

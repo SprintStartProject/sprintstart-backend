@@ -55,7 +55,11 @@ class OnboardingPathController(
             ApiResponse(responseCode = "200", description = "Onboarding path returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding path"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding path found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding " +
+                    "path found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -127,7 +131,9 @@ class OnboardingPathController(
     @GetMapping("/users/{userId}/path")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun getOnboardingPathForUserId(
-        @Parameter(description = "UUID of the user whose onboarding path should be returned") @PathVariable userId: UUID,
+        @Parameter(
+            description = "UUID of the user whose onboarding path should be returned",
+        ) @PathVariable userId: UUID,
     ): GetOnboardingPathResponse {
         return onboardingPathService.getOnboardingPathByUserId(userId)
     }

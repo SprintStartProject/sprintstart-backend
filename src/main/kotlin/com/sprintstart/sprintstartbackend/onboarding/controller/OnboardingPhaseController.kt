@@ -37,7 +37,11 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Phases", description = "Create, retrieve, update, and delete onboarding phases at hierarchy depth 1")
+@Tag(
+    name = "Onboarding - Phases",
+    description = "Create, retrieve, update, and delete " +
+        "onboarding phases at hierarchy depth 1",
+)
 class OnboardingPhaseController(
     val onboardingPhaseService: OnboardingPhaseService,
 ) {
@@ -62,7 +66,10 @@ class OnboardingPhaseController(
             ApiResponse(responseCode = "200", description = "Phases returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access onboarding phases"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding path found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding path found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -96,7 +103,10 @@ class OnboardingPhaseController(
             ApiResponse(responseCode = "400", description = "Invalid phase position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding phases"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding path found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding path found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -130,7 +140,10 @@ class OnboardingPhaseController(
             ApiResponse(responseCode = "200", description = "Phase returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding phase"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding phase found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -166,7 +179,10 @@ class OnboardingPhaseController(
             ApiResponse(responseCode = "400", description = "Invalid phase position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding phase"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding phase found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -201,7 +217,10 @@ class OnboardingPhaseController(
             ApiResponse(responseCode = "204", description = "Phase deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding phase"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding phase found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding phase found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -358,7 +377,8 @@ class OnboardingPhaseController(
         summary = "Delete onboarding phase",
         description = "Permanently deletes the specified onboarding phase. " +
             "Subsequent sibling phases are shifted back by one to keep ordering contiguous. " +
-            "The deleted object is at depth 1, and all descendant steps (depth 2) and tasks/resources (depth 3) are removed via cascade.",
+            "The deleted object is at depth 1, and all descendant steps (depth 2)" +
+            " and tasks/resources (depth 3) are removed via cascade.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "204", description = "Phase deleted successfully"),

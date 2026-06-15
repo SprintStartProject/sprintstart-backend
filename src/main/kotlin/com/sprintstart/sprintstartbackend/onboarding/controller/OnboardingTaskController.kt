@@ -42,7 +42,11 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Tasks", description = "Create, retrieve, update, and delete onboarding tasks at hierarchy depth 3")
+@Tag(
+    name = "Onboarding - Tasks",
+    description = "Create, retrieve, update, and delete " +
+        "onboarding tasks at hierarchy depth 3",
+)
 class OnboardingTaskController(
     val onboardingTaskService: OnboardingTaskService,
 ) {
@@ -94,7 +98,8 @@ class OnboardingTaskController(
      */
     @Operation(
         summary = "Create current user's onboarding task",
-        description = "Creates an onboarding task at hierarchy depth 3 for the authenticated user under the specified step at depth 2.",
+        description = "Creates an onboarding task at hierarchy depth 3 for the " +
+            "authenticated user under the specified step at depth 2.",
     )
     @ApiResponses(
         value = [
@@ -102,7 +107,10 @@ class OnboardingTaskController(
             ApiResponse(responseCode = "400", description = "Invalid task position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding tasks"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding step found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -137,7 +145,10 @@ class OnboardingTaskController(
             ApiResponse(responseCode = "200", description = "Task returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding task"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding task found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding task found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -173,7 +184,10 @@ class OnboardingTaskController(
             ApiResponse(responseCode = "400", description = "Invalid task position"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding task"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding task found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding task found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -207,7 +221,10 @@ class OnboardingTaskController(
             ApiResponse(responseCode = "204", description = "Task deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding task"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding task found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding task found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -297,7 +314,8 @@ class OnboardingTaskController(
      */
     @Operation(
         summary = "Get onboarding task by ID",
-        description = "Returns a single onboarding task by its UUID. The task is a leaf node at hierarchy depth 3, so no nested content exists.",
+        description = "Returns a single onboarding task by its UUID. The task is a leaf " +
+            "node at hierarchy depth 3, so no nested content exists.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Onboarding task found"),

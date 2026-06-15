@@ -37,7 +37,11 @@ import java.util.UUID
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
-@Tag(name = "Onboarding - Resources", description = "Create, retrieve, update, and delete onboarding resources at hierarchy depth 3")
+@Tag(
+    name = "Onboarding - Resources",
+    description = "Create, retrieve, update, " +
+        "and delete onboarding resources at hierarchy depth 3",
+)
 class OnboardingResourceController(
     val onboardingResourceService: OnboardingResourceService,
 ) {
@@ -89,14 +93,18 @@ class OnboardingResourceController(
      */
     @Operation(
         summary = "Create current user's onboarding resource",
-        description = "Creates an onboarding resource at hierarchy depth 3 for the authenticated user under the specified step at depth 2.",
+        description = "Creates an onboarding resource at hierarchy depth 3 " +
+            "for the authenticated user under the specified step at depth 2.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "201", description = "Resource created successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to create onboarding resources"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding step found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -131,7 +139,10 @@ class OnboardingResourceController(
             ApiResponse(responseCode = "200", description = "Resource returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this onboarding resource"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding resource found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding resource found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -166,7 +177,10 @@ class OnboardingResourceController(
             ApiResponse(responseCode = "200", description = "Resource updated successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to update this onboarding resource"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding resource found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding resource found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -200,7 +214,10 @@ class OnboardingResourceController(
             ApiResponse(responseCode = "204", description = "Resource deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding resource"),
-            ApiResponse(responseCode = "404", description = "No user or onboarding resource found for the authenticated user"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding resource found for the authenticated user",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -229,7 +246,8 @@ class OnboardingResourceController(
     @Operation(
         summary = "Get resources by step ID",
         description = "Returns all onboarding resources attached to the specified step. " +
-            "Each returned resource is a leaf node at hierarchy depth 3. No nested content exists and result order is not guaranteed.",
+            "Each returned resource is a leaf node at hierarchy depth 3. " +
+            "No nested content exists and result order is not guaranteed.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "List of resources for the step"),

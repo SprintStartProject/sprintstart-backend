@@ -75,26 +75,5 @@
         }
       ]
     }
-  ],
-
-  "users": [
-    {
-      "username": "dev-user",
-      "enabled": true,
-      "emailVerified": true,
-      "firstName": "Dev",
-      "lastName": "User",
-      "email": "dev-user@sprintstart.local",
-      "realmRoles": [
-        "user"
-      ],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "dev-password",
-          "temporary": false
-        }
-      ]
-    }
   ]
 }

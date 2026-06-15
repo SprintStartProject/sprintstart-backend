@@ -1,31 +1,31 @@
 paths:
   - userId: "00000000-0000-0000-0000-000000000003"
     phases:
-      - position: 1
+      - position: 0
         title: "Orientation"
         description: "Get familiar with the company"
         steps:
-          - position: 1
+          - position: 0
             title: "Read the handbook"
             description: "Go through the employee handbook"
             type: TASK
             estimatedMinutes: 30
             expectedOutcome: "Understand company policies"
             tasks:
+              - position: 0
+                title: "Read section 0"
+                description: "Company values"
               - position: 1
                 title: "Read section 1"
-                description: "Company values"
+                description: "Code of conduct"
               - position: 2
                 title: "Read section 2"
-                description: "Code of conduct"
-              - position: 3
-                title: "Read section 3"
                 description: "Benefits and perks"
             resources:
               - title: "Employee Handbook"
                 description: "The full handbook"
                 url: "https://internal.example.com/handbook"
-          - position: 2
+          - position: 1
             title: "Watch company intro video"
             description: "A short video introduction from the CEO"
             type: VIDEO
@@ -36,17 +36,17 @@ paths:
               - title: "CEO Intro Video"
                 description: "Welcome message from the CEO"
                 url: "https://internal.example.com/videos/ceo-intro"
-          - position: 3
+          - position: 2
             title: "Review org chart"
             description: "Familiarize yourself with the team structure"
             type: DOCUMENT
             estimatedMinutes: 20
             expectedOutcome: "Know who is who across departments"
             tasks:
-              - position: 1
+              - position: 0
                 title: "Identify your direct team"
                 description: "Find your team in the org chart"
-              - position: 2
+              - position: 1
                 title: "Identify key stakeholders"
                 description: "Note down relevant leads and managers"
             resources:
@@ -56,31 +56,31 @@ paths:
               - title: "Team Directory"
                 description: "Full list of employees with roles"
                 url: "https://internal.example.com/directory"
-      - position: 2
+      - position: 1
         title: "Tool Setup"
         description: "Get your development environment ready"
         steps:
-          - position: 1
+          - position: 0
             title: "Set up your laptop"
             description: "Install required software and configure your machine"
             type: TASK
             estimatedMinutes: 60
             expectedOutcome: "Fully configured development environment"
             tasks:
-              - position: 1
+              - position: 0
                 title: "Install IDE"
                 description: "Install IntelliJ IDEA or preferred IDE"
-              - position: 2
+              - position: 1
                 title: "Install Docker"
                 description: "Set up Docker Desktop"
-              - position: 3
+              - position: 2
                 title: "Clone main repositories"
                 description: "Clone and build the core repos"
             resources:
               - title: "Setup Guide"
                 description: "Step-by-step environment setup instructions"
                 url: "https://internal.example.com/setup-guide"
-          - position: 2
+          - position: 1
             title: "Watch tooling overview"
             description: "Video walkthrough of the tools we use day to day"
             type: VIDEO
@@ -91,17 +91,17 @@ paths:
               - title: "Tooling Overview Video"
                 description: "Walkthrough of Jira, Confluence, Slack and CI/CD"
                 url: "https://internal.example.com/videos/tooling"
-          - position: 3
+          - position: 2
             title: "Read the engineering guidelines"
             description: "Go through our coding standards and PR process"
             type: DOCUMENT
             estimatedMinutes: 40
             expectedOutcome: "Understand how we write and review code"
             tasks:
-              - position: 1
+              - position: 0
                 title: "Read coding standards"
                 description: "Style guides and naming conventions"
-              - position: 2
+              - position: 1
                 title: "Read the PR process"
                 description: "How to open, review and merge pull requests"
             resources:
@@ -111,11 +111,11 @@ paths:
               - title: "PR Template"
                 description: "The pull request template we use"
                 url: "https://internal.example.com/pr-template"
-      - position: 3
+      - position: 2
         title: "First Contribution"
         description: "Make your first real contribution to the codebase"
         steps:
-          - position: 1
+          - position: 0
             title: "Watch the architecture overview"
             description: "High-level video of our system architecture"
             type: VIDEO
@@ -126,37 +126,37 @@ paths:
               - title: "Architecture Overview Video"
                 description: "System design and service boundaries explained"
                 url: "https://internal.example.com/videos/architecture"
-          - position: 2
+          - position: 1
             title: "Read the contribution guide"
             description: "Understand how to pick up and deliver your first ticket"
             type: DOCUMENT
             estimatedMinutes: 20
             expectedOutcome: "Ready to pick up a starter ticket"
             tasks:
-              - position: 1
+              - position: 0
                 title: "Find a good first issue"
                 description: "Look for tickets tagged 'good-first-issue' in Jira"
             resources:
               - title: "Contribution Guide"
                 description: "How to get started contributing"
                 url: "https://internal.example.com/contribution-guide"
-          - position: 3
+          - position: 2
             title: "Complete your first ticket"
             description: "Pick up, implement and merge a starter ticket"
             type: TASK
             estimatedMinutes: 120
             expectedOutcome: "First PR merged to main"
             tasks:
-              - position: 1
+              - position: 0
                 title: "Pick up a ticket"
                 description: "Assign yourself a good-first-issue"
-              - position: 2
+              - position: 1
                 title: "Implement the change"
                 description: "Write the code and tests"
-              - position: 3
+              - position: 2
                 title: "Open a PR"
                 description: "Submit for review following the PR process"
-              - position: 4
+              - position: 3
                 title: "Address review feedback"
                 description: "Respond to and resolve review comments"
             resources:
