@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user
 
+import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
@@ -9,10 +10,13 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.runs
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -21,7 +25,8 @@ import java.util.UUID
 
 class UserServiceTest {
     private val userRepository: UserRepository = mockk()
-    private val userService: UserService = UserService(userRepository)
+    private val eventPublisher: ApplicationEventPublisher = mockk()
+    private val userService: UserService = UserService(userRepository, eventPublisher)
 
     // --- getAllUsers ---
 
@@ -67,12 +72,18 @@ class UserServiceTest {
         val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.NO_WORKING_AREA)
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
         every { userRepository.save(user) } returns user
+        every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
 
         val result = userService.patchMe("auth-1", PatchMeRequest(workingArea = WorkingArea.BACKEND_DEV))
 
         assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
         assertThat(user.username).isEqualTo("alice") // identity field unchanged
         assertUserMatchesResponse(user, result)
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                UserWorkingAreaUpdatedEvent(user.id, WorkingArea.NO_WORKING_AREA, WorkingArea.BACKEND_DEV),
+            )
+        }
     }
 
     @Test
@@ -84,6 +95,18 @@ class UserServiceTest {
         userService.patchMe("auth-1", PatchMeRequest(workingArea = null))
 
         assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
+        verify(exactly = 0) { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) }
+    }
+
+    @Test
+    fun `patchMe should not publish event when working area stays the same`() {
+        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+        every { userRepository.save(user) } returns user
+
+        userService.patchMe("auth-1", PatchMeRequest(workingArea = WorkingArea.BACKEND_DEV))
+
+        verify(exactly = 0) { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) }
     }
 
     @Test
@@ -126,12 +149,29 @@ class UserServiceTest {
         val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.NO_WORKING_AREA)
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every { userRepository.save(user) } returns user
+        every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
 
         val result = userService.updateUserById(user.id, UpdateUserRequest(workingArea = WorkingArea.BACKEND_DEV))
 
         assertThat(user.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
         assertThat(user.username).isEqualTo("alice") // identity field untouched
         assertThat(result.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                UserWorkingAreaUpdatedEvent(user.id, WorkingArea.NO_WORKING_AREA, WorkingArea.BACKEND_DEV),
+            )
+        }
+    }
+
+    @Test
+    fun `updateUserById should not publish event when working area stays the same`() {
+        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        every { userRepository.findById(user.id) } returns Optional.of(user)
+        every { userRepository.save(user) } returns user
+
+        userService.updateUserById(user.id, UpdateUserRequest(workingArea = WorkingArea.BACKEND_DEV))
+
+        verify(exactly = 0) { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) }
     }
 
     @Test
@@ -153,10 +193,27 @@ class UserServiceTest {
         val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.NO_WORKING_AREA)
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every { userRepository.save(user) } returns user
+        every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
 
         userService.patchUserById(user.id, PatchUserRequest(workingArea = WorkingArea.FRONTEND_DEV))
 
         assertThat(user.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                UserWorkingAreaUpdatedEvent(user.id, WorkingArea.NO_WORKING_AREA, WorkingArea.FRONTEND_DEV),
+            )
+        }
+    }
+
+    @Test
+    fun `patchUserById should not publish event when working area stays the same`() {
+        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.FRONTEND_DEV)
+        every { userRepository.findById(user.id) } returns Optional.of(user)
+        every { userRepository.save(user) } returns user
+
+        userService.patchUserById(user.id, PatchUserRequest(workingArea = WorkingArea.FRONTEND_DEV))
+
+        verify(exactly = 0) { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) }
     }
 
     @Test

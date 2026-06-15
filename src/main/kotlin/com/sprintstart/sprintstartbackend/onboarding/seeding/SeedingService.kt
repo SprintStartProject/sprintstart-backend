@@ -11,6 +11,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import org.springframework.core.io.ResourceLoader
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -39,6 +41,14 @@ class SeedingService(
     private val userApi: UserApi,
     private val resourceLoader: ResourceLoader,
 ) {
+    @Transactional
+    fun handle(event: UserWorkingAreaUpdatedEvent) {
+        reset(event.userId)
+        if (event.newWorkingArea != WorkingArea.NO_WORKING_AREA) {
+            seed(event.userId, event.newWorkingArea)
+        }
+    }
+
     /**
      * Seeds onboarding data for the given user.
      *
@@ -58,16 +68,40 @@ class SeedingService(
      */
     @Suppress("LongMethod")
     @Transactional
-    fun seed(userId: UUID) {
-        if (!userApi.exists(userId)) return
-        if (onboardingPathRepository.existsByUserId(userId)) return
+    fun seed(userId: UUID, workingArea: WorkingArea) {
+        if (workingArea == WorkingArea.NO_WORKING_AREA ||
+            !userApi.exists(userId) ||
+            onboardingPathRepository.existsByUserId(userId)
+        ) {
+            return
+        }
 
-        val resources = listOf(
-            resourceLoader.getResource("classpath:generic-seed-data.yml"),
-            resourceLoader.getResource("classpath:frontend-seed-data.yml"),
-            resourceLoader.getResource("classpath:backend-seed-data.yml"),
-        )
-        val resource = resources.random()
+        val resource = when (workingArea) {
+            WorkingArea.BACKEND_DEV -> {
+                resourceLoader.getResource("classpath:backend-seed-data.yml")
+            }
+
+            WorkingArea.FRONTEND_DEV -> {
+                resourceLoader.getResource("classpath:frontend-seed-data.yml")
+            }
+
+            WorkingArea.DEV_OPS -> {
+                resourceLoader.getResource("classpath:dev-ops-seed-data.yml")
+            }
+
+            WorkingArea.HR -> {
+                resourceLoader.getResource("classpath:hr-seed-data.yml")
+            }
+
+            WorkingArea.QA -> {
+                resourceLoader.getResource("classpath:qa-seed-data.yml")
+            }
+
+            else -> {
+                throw IllegalStateException("Working Area without default path: $workingArea")
+            }
+        }
+
         if (!resource.exists()) return
 
         val filename = resource.filename ?: return

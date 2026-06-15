@@ -5,6 +5,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -37,7 +39,7 @@ class SeedingServiceTest {
             userApi.exists(userId)
         } returns false
 
-        seedingService.seed(userId)
+        seedingService.seed(userId, WorkingArea.BACKEND_DEV)
 
         verify(exactly = 1) {
             userApi.exists(userId)
@@ -62,7 +64,7 @@ class SeedingServiceTest {
             onboardingPathRepository.existsByUserId(userId)
         } returns true
 
-        seedingService.seed(userId)
+        seedingService.seed(userId, WorkingArea.BACKEND_DEV)
 
         verify(exactly = 1) {
             userApi.exists(userId)
@@ -91,15 +93,15 @@ class SeedingServiceTest {
             resourceLoader.getResource(any())
         } returns nonExistingResource()
 
-        seedingService.seed(userId)
+        seedingService.seed(userId, WorkingArea.BACKEND_DEV)
 
         verify(exactly = 1) {
             userApi.exists(userId)
             onboardingPathRepository.existsByUserId(userId)
         }
 
-        verify(exactly = 3) {
-            resourceLoader.getResource(any())
+        verify(exactly = 1) {
+            resourceLoader.getResource("classpath:backend-seed-data.yml")
         }
 
         verify(exactly = 0) {
@@ -130,7 +132,7 @@ class SeedingServiceTest {
             savedPath.captured
         }
 
-        seedingService.seed(userId)
+        seedingService.seed(userId, WorkingArea.BACKEND_DEV)
 
         verify(exactly = 1) {
             onboardingPathRepository.save(any())
@@ -193,6 +195,57 @@ class SeedingServiceTest {
         }
     }
 
+    @Test
+    fun `handle should reset and reseed when new working area is assigned`() {
+        val userId = UUID.randomUUID()
+        val event = UserWorkingAreaUpdatedEvent(
+            userId = userId,
+            oldWorkingArea = WorkingArea.NO_WORKING_AREA,
+            newWorkingArea = WorkingArea.BACKEND_DEV,
+        )
+
+        every { onboardingPathRepository.deleteByUserId(userId) } just runs
+        every { onboardingPathRepository.flush() } just runs
+        every { userApi.exists(userId) } returns true
+        every { onboardingPathRepository.existsByUserId(userId) } returns false
+        every { resourceLoader.getResource("classpath:backend-seed-data.yml") } returns existingYamlResource()
+        every { onboardingPathRepository.save(any()) } answers { firstArg() }
+
+        seedingService.handle(event)
+
+        verify(exactly = 1) {
+            onboardingPathRepository.deleteByUserId(userId)
+            onboardingPathRepository.flush()
+            resourceLoader.getResource("classpath:backend-seed-data.yml")
+            onboardingPathRepository.save(any())
+        }
+    }
+
+    @Test
+    fun `handle should only reset when new working area is no working area`() {
+        val userId = UUID.randomUUID()
+        val event = UserWorkingAreaUpdatedEvent(
+            userId = userId,
+            oldWorkingArea = WorkingArea.BACKEND_DEV,
+            newWorkingArea = WorkingArea.NO_WORKING_AREA,
+        )
+
+        every { onboardingPathRepository.deleteByUserId(userId) } just runs
+        every { onboardingPathRepository.flush() } just runs
+
+        seedingService.handle(event)
+
+        verify(exactly = 1) {
+            onboardingPathRepository.deleteByUserId(userId)
+            onboardingPathRepository.flush()
+        }
+        verify(exactly = 0) {
+            userApi.exists(any())
+            resourceLoader.getResource(any())
+            onboardingPathRepository.save(any())
+        }
+    }
+
     private fun existingYamlResource(): Resource {
         return object : ByteArrayResource(seedYaml().toByteArray()) {
             override fun getFilename(): String {
@@ -220,8 +273,7 @@ class SeedingServiceTest {
     private fun seedYaml(): String {
         return """
             paths:
-              - userId: ignored-by-service
-                phases:
+              - phases:
                   - position: 1
                     title: Setup
                     description: Setup phase

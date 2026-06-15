@@ -7,7 +7,6 @@ data class SeedData(
 )
 
 data class OnboardingPathSeed(
-    val userId: String,
     val phases: List<OnboardingPhaseSeed> = emptyList(),
 )
 
