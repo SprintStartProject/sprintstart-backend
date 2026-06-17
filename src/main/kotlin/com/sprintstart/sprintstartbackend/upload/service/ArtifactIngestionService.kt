@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
 import com.sprintstart.sprintstartbackend.upload.IngestionAiClient
-import com.sprintstart.sprintstartbackend.upload.external.UploadIngestionApi
 import com.sprintstart.sprintstartbackend.upload.events.ArtifactUploadedEvent
+import com.sprintstart.sprintstartbackend.upload.external.UploadIngestionApi
 import com.sprintstart.sprintstartbackend.upload.external.events.AiIngestRequest
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets

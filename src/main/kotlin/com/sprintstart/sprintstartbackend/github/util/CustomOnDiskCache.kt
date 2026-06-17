@@ -2,9 +2,9 @@ package com.sprintstart.sprintstartbackend.github.util
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -164,7 +164,8 @@ class CustomOnDiskCache(
     }
 
     private fun findFirstRemoteBranch(localFsPath: Path): String? {
-        val branches = gitRunner.exec(localFsPath, onDiskOperations.gitRemoteBranches())
+        val branches = gitRunner
+            .exec(localFsPath, onDiskOperations.gitRemoteBranches())
             .lineSequence()
             .map(String::trim)
             .filter { it.isNotBlank() }

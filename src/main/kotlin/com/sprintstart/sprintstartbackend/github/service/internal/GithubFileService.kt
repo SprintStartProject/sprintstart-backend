@@ -20,14 +20,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
-import java.nio.file.Files
 import java.nio.charset.MalformedInputException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.UUID
 import kotlin.io.path.exists
 import kotlin.io.path.extension
-import kotlin.io.path.readText
 import kotlin.sequences.asSequence
 
 private val binaryExtensions = setOf(
@@ -107,7 +106,9 @@ class GithubFileService(
             githubRepository.status = ConnectionStatus.FAILED
             throw e
         } finally {
-            repoConnectionRepository.save(githubRepository)
+            withContext(Dispatchers.IO) {
+                repoConnectionRepository.save(githubRepository)
+            }
         }
     }
 
@@ -149,7 +150,9 @@ class GithubFileService(
         fetchAndIngestFileUpdates(localFsPath, githubRepository.lastSha, latestSha, ghUrl, transactionId)
 
         githubRepository.lastSha = latestSha
-        repoConnectionRepository.save(githubRepository)
+        withContext(Dispatchers.IO) {
+            repoConnectionRepository.save(githubRepository)
+        }
     }
 
     /**
@@ -240,7 +243,9 @@ class GithubFileService(
     ) {
         val filesToIngest: List<GithubFilePayload> = withContext(Dispatchers.IO) {
             Files.walk(repositoryPath).use { stream ->
-                stream.iterator().asSequence()
+                stream
+                    .iterator()
+                    .asSequence()
                     .filter { Files.isRegularFile(it) }
                     .filter { !it.startsWith(repositoryPath.resolve(".git")) }
                     .filter { !it.isBinary() }

@@ -166,7 +166,10 @@ class CustomOnDiskCacheTest {
             every {
                 gitRunner.exec(
                     repoDir,
-                    match { it.command() == listOf("git", "for-each-ref", "refs/remotes/origin", "--format=%(refname:short)") },
+                    match {
+                        it.command() ==
+                            listOf("git", "for-each-ref", "refs/remotes/origin", "--format=%(refname:short)")
+                    },
                 )
             } returns "origin/trunk\n"
             every {
