@@ -88,6 +88,7 @@ class GithubFileService(
      * @param githubRepositoryId The GitHub repository id to initialize.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Suppress("UnusedParameter")
     suspend fun fetchAndIngestAllFiles(
         githubRepositoryId: UUID,
         transactionId: UUID,
