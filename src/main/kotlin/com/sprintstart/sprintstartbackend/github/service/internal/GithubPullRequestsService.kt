@@ -95,8 +95,8 @@ class GithubPullRequestsService(
 
             githubClient.ingest(
                 AiIngestRequest(
-                    id = pullRequest.number.toString(),
-                    name = pullRequest.title,
+                    artifactId = "pr-${pullRequest.number}",
+                    filename = "pr-${pullRequest.number}.txt",
                     content = pullRequest.body ?: "",
                 ),
             )

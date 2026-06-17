@@ -75,8 +75,8 @@ class GithubIssuesService(
 
             githubClient.ingest(
                 AiIngestRequest(
-                    id = issue.number.toString(),
-                    name = issue.title,
+                    artifactId = "issue-${issue.number}",
+                    filename = "issue-${issue.number}.txt",
                     content = issue.body,
                 ),
             )

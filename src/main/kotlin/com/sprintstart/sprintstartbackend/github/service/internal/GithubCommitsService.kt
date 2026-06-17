@@ -107,8 +107,8 @@ class GithubCommitsService(
 
         githubClient.ingest(
             AiIngestRequest(
-                id = commit.sha,
-                name = "${commit.author} - ${commit.date}",
+                artifactId = commit.sha,
+                filename = "commit-${commit.sha.take(7)}.txt",
                 content = commit.msg,
             ),
         )

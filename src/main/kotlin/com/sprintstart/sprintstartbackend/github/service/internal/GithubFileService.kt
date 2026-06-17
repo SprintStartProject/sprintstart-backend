@@ -289,8 +289,8 @@ class GithubFileService(
 
         githubClient.ingest(
             AiIngestRequest(
-                id = path,
-                name = sourceUrl,
+                artifactId = path,
+                filename = path.substringAfterLast("/"),
                 content = content,
             ),
         )
