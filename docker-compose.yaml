@@ -59,6 +59,7 @@ services:
       dockerfile: Dockerfile
     container_name: sprintstart-backend
     environment:
+      SPRINTSTART_UPLOAD_DIR: /app/uploads
       SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
@@ -66,11 +67,17 @@ services:
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI}
 
+      GITHUB_PAT: ${GITHUB_PAT}
+
       SPRINTSTART_KEYCLOAK_SHARED_SECRET: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET}
+      SPRINTSTART_AI_BASE_URL: ${SPRINTSTART_AI_BASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     volumes:
-      - ./uploads:/app/uploads
+      - sprintstart-uploads:/app/uploads
+      - github-cache:/tmp/repos
     depends_on:
       database:
         condition: service_started
@@ -82,3 +89,4 @@ volumes:
   sprintstart-db-data:
   sprintstart-keycloak-db-data:
   github-cache:
+  sprintstart-uploads:

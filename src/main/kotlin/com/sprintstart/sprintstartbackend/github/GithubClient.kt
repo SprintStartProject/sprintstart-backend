@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.github
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestRequest
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestResponse
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubIssuesResponse
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubPrSearchResponse
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubSinglePrResponse
@@ -10,7 +8,6 @@ import com.sprintstart.sprintstartbackend.github.models.client.graphql.Issue
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.PageableResponse
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.PrNode
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.PullRequest
-import com.sprintstart.sprintstartbackend.github.models.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
@@ -43,28 +40,6 @@ class GithubClient(
     private val queryLoader: GithubQueryLoader,
 ) {
     private val objectMapper = jacksonObjectMapper()
-
-    /**
-     * TEMP: Patches AI ingestion directly into the GitHub module, for time sake.
-     *
-     * ABSOLUTELY NOT GOOD PRACTICE.
-     *
-     * NEEDS TO BE REFACTORED INTO A CLEAN INGESTION MODULE.
-     */
-    suspend fun ingest(
-        body: AiIngestRequest,
-    ): AiIngestResponse =
-        try {
-            val baseUrl = applicationConfig.github.repoBaseUrl
-            webClient
-                .post()
-                .uri("$baseUrl/api/v1/ingest")
-                .body(body)
-                .sync()
-                .perform<AiIngestResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw IngestionResponseException("Failed to ingest github resource (HTTP ${e.statusCode}): ${e.body}")
-        }
 
     /**
      * Checks if a repository exists on GitHub.

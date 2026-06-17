@@ -4,7 +4,6 @@ import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueComment
 import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestResponse
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.AssigneesCollection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentsConnection
@@ -75,7 +74,6 @@ class GithubIssuesServiceTest {
     inner class EventPublishing {
         @Test
         fun `publishes one event per issue plus summary`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(number = 1),
@@ -105,7 +103,6 @@ class GithubIssuesServiceTest {
     inner class EventFieldMapping {
         @Test
         fun `maps issue fields to event correctly`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(
@@ -140,7 +137,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps null author to null in event`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(authorLogin = null),
@@ -156,7 +152,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps labels to list of name strings`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(labels = listOf("bug", "help wanted")),
@@ -172,7 +167,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps null labels to empty list`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(labels = null),
@@ -188,7 +182,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps assignees to list of login strings`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(assignees = listOf("alice", "bob")),
@@ -204,7 +197,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps null assignees to empty list`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue(assignees = null),
@@ -231,7 +223,6 @@ class GithubIssuesServiceTest {
                     ),
                 ),
             )
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(issueWithComments)
 
@@ -251,7 +242,6 @@ class GithubIssuesServiceTest {
 
         @Test
         fun `maps null comments to empty list`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(
                 issue().copy(comments = null),
@@ -274,7 +264,6 @@ class GithubIssuesServiceTest {
                     ),
                 ),
             )
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(issueWithAnonymousComment)
 

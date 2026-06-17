@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import com.sprintstart.sprintstartbackend.upload.IngestionAiClient
 import com.sprintstart.sprintstartbackend.upload.events.ArtifactUploadedEvent
-import com.sprintstart.sprintstartbackend.upload.external.events.AiIngestRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.springframework.context.event.EventListener
@@ -12,7 +10,7 @@ import java.nio.file.Paths
 
 @Component
 internal class UploadEventListener(
-    private val ingestionAiClient: IngestionAiClient,
+    private val artifactIngestionService: ArtifactIngestionService,
     private val applicationScope: CoroutineScope,
 ) {
     @EventListener
@@ -24,13 +22,7 @@ internal class UploadEventListener(
         )
 
         applicationScope.launch {
-            ingestionAiClient.ingest(
-                AiIngestRequest(
-                    artifactId = event.artifactId.toString(),
-                    filename = event.filename,
-                    content = content,
-                ),
-            )
+            artifactIngestionService.ingestUploadedArtifact(event, content)
         }
     }
 }

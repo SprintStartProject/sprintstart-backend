@@ -1,10 +1,8 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestResponse
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
@@ -30,7 +28,6 @@ class GithubCommitsServiceTest {
     private val customCache = mockk<CustomOnDiskCache>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val gitRunner = mockk<GitOperationRunner>()
-    private val githubClient = mockk<GithubClient>()
 
     private lateinit var service: GithubCommitsService
 
@@ -45,7 +42,6 @@ class GithubCommitsServiceTest {
             customCache = customCache,
             eventPublisher = eventPublisher,
             gitRunner = gitRunner,
-            githubClient = githubClient,
         )
         coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoPath
     }
@@ -123,7 +119,6 @@ class GithubCommitsServiceTest {
     inner class EventPublishing {
         @Test
         fun `publishes one event per commit line plus summary`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             every {
                 gitRunner.exec(repoPath, any())
             } returns
@@ -163,7 +158,6 @@ class GithubCommitsServiceTest {
     inner class EventFieldMapping {
         @Test
         fun `maps commit fields to event correctly`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             every { gitRunner.exec(repoPath, any()) } returns
                 "2024-01-15T10:30:00Z - abc123def456 - alice - fix authentication bug"
 
@@ -183,7 +177,6 @@ class GithubCommitsServiceTest {
 
         @Test
         fun `passes same transactionId to all commit events`() = runTest {
-            coEvery { githubClient.ingest(any()) } returns AiIngestResponse("", 0)
             every {
                 gitRunner.exec(repoPath, any())
             } returns

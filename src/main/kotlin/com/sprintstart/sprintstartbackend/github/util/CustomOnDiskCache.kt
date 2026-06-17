@@ -2,11 +2,15 @@ package com.sprintstart.sprintstartbackend.github.util
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 
@@ -52,6 +56,7 @@ class CustomOnDiskCache(
     private val gitRunner: GitOperationRunner,
 ) {
     private val logger = LoggerFactory.getLogger(CustomOnDiskCache::class.java)
+    private val repositoryLocks = ConcurrentHashMap<Path, Mutex>()
 
     /**
      * Returns the local filesystem path for the given repository, cloning it first if not cached.
@@ -61,10 +66,9 @@ class CustomOnDiskCache(
      * @return Absolute path to the local clone, ready for filesystem operations
      */
     suspend fun getLocalRepositoryPath(owner: String, name: String): Path {
-        val token = applicationConfig.github.token
         val localFsPath = Path.of(cacheBasePath, owner, name)
-        val remoteUri = "https://$token@github.com/$owner/$name.git"
-        val safeUri = "https://***@github.com/$owner/$name.git"
+        val remoteUri = buildRemoteUri(owner, name, applicationConfig.github.token)
+        val safeUri = buildRemoteUri(owner, name, "***")
 
         return getLocalRepositoryPath(localFsPath, remoteUri, safeUri)
     }
@@ -80,11 +84,15 @@ class CustomOnDiskCache(
      * @param safeUri The remote uri, but safe for printing, e.g. without credentials.
      */
     private suspend fun getLocalRepositoryPath(localFsPath: Path, remoteUri: String, safeUri: String): Path {
-        if (!isCached(localFsPath)) {
-            logger.info("Cache miss for $safeUri — cloning")
-            cloneRepository(localFsPath, remoteUri)
-        } else {
-            logger.info("Cache hit for $safeUri")
+        val repositoryLock = repositoryLocks.computeIfAbsent(localFsPath.normalize()) { Mutex() }
+
+        repositoryLock.withLock {
+            if (!isCached(localFsPath)) {
+                logger.info("Cache miss for $safeUri — cloning")
+                cloneRepository(localFsPath, remoteUri)
+            } else {
+                logger.info("Cache hit for $safeUri")
+            }
         }
 
         return localFsPath
@@ -104,6 +112,7 @@ class CustomOnDiskCache(
         return withContext(Dispatchers.IO) {
             try {
                 gitRunner.exec(path, onDiskOperations.gitStatus())
+                ensureRepositoryCheckout(path)
                 true
             } catch (@Suppress("SwallowedException") e: RuntimeException) {
                 false
@@ -129,6 +138,52 @@ class CustomOnDiskCache(
             localFsPath.toFile().mkdirs()
 
             gitRunner.exec(localFsPath, onDiskOperations.gitClone(remoteUri, localFsPath.absolutePathString()))
+            ensureRepositoryCheckout(localFsPath)
         }
     }
+
+    /**
+     * Repairs clones whose remote default branch is invalid by checking out the first available remote branch.
+     *
+     * Some repositories are non-empty but advertise a stale remote `HEAD`, which leaves the clone
+     * without a resolvable local `HEAD`. In that state `git status` still succeeds, so cache validation
+     * must do a stronger check than repository presence alone.
+     *
+     * Empty repositories are treated as valid even though `HEAD` cannot be resolved yet.
+     */
+    private fun ensureRepositoryCheckout(localFsPath: Path) {
+        try {
+            gitRunner.exec(localFsPath, onDiskOperations.gitRevParse())
+            return
+        } catch (@Suppress("SwallowedException") e: RuntimeException) {
+            val remoteBranch = findFirstRemoteBranch(localFsPath) ?: return
+            logger.info("Repairing cached clone by checking out origin/{}", remoteBranch)
+            gitRunner.exec(localFsPath, onDiskOperations.gitCheckoutRemoteBranch(remoteBranch))
+            gitRunner.exec(localFsPath, onDiskOperations.gitRevParse())
+        }
+    }
+
+    private fun findFirstRemoteBranch(localFsPath: Path): String? {
+        val branches = gitRunner
+            .exec(localFsPath, onDiskOperations.gitRemoteBranches())
+            .lineSequence()
+            .map(String::trim)
+            .filter { it.isNotBlank() }
+            .filter { it != "origin/HEAD" }
+            .map { it.removePrefix("origin/") }
+            .toList()
+
+        return branches.firstOrNull()
+    }
+
+    private fun buildRemoteUri(owner: String, name: String, token: String): String =
+        URI(
+            "https",
+            "x-access-token:$token",
+            "github.com",
+            -1,
+            "/$owner/$name.git",
+            null,
+            null,
+        ).toASCIIString()
 }

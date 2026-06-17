@@ -39,7 +39,7 @@ class IngestionAiClient(
                 .sync()
                 .perform<AiIngestResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw IngestionResponseException("Failed to generate chat title (HTTP ${e.statusCode}): ${e.body}")
+            throw IngestionResponseException("Failed to ingest artifact (HTTP ${e.statusCode}): ${e.body}")
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

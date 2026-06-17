@@ -54,6 +54,31 @@ class OnDiskOperationsTest {
         }
 
         @Test
+        fun `exec includes process output in exception message`() {
+            assertThatThrownBy {
+                OnDiskOperations.exec(
+                    tempDir,
+                    ProcessBuilder("bash", "-lc", "printf 'fatal: auth failed'; exit 128"),
+                )
+            }.hasMessageContaining("fatal: auth failed")
+        }
+
+        @Test
+        fun `exec redacts credentials from command in exception message`() {
+            assertThatThrownBy {
+                OnDiskOperations.exec(
+                    tempDir,
+                    ProcessBuilder(
+                        "git",
+                        "clone",
+                        "https://x-access-token:secret-token@github.com/owner/repo.git",
+                    ),
+                )
+            }.hasMessageContaining("x-access-token:***@github.com/owner/repo.git")
+                .doesNotHaveToString("secret-token")
+        }
+
+        @Test
         fun `exec runs command in the provided directory`() {
             // Create a subdirectory and verify exec resolves relative to it
             val subDir = Files.createTempDirectory(tempDir, "subdir")

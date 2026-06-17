@@ -1,10 +1,8 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.CommitsSyncStartedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestRequest
 import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
@@ -20,7 +18,6 @@ class GithubCommitsService(
     private val customCache: CustomOnDiskCache,
     private val eventPublisher: ApplicationEventPublisher,
     private val gitRunner: GitOperationRunner,
-    private val githubClient: GithubClient,
 ) {
     /**
      * Fetches and processes the latest commits from a GitHub repository based on the given snapshot.
@@ -95,7 +92,7 @@ class GithubCommitsService(
      * @param commit The commit object containing details such as author, date, commit SHA, and message.
      * @param transactionId The unique transaction identifier associated with the synchronization process.
      */
-    private suspend fun ingestCommit(commit: Commit, transactionId: UUID) {
+    private fun ingestCommit(commit: Commit, transactionId: UUID) {
         val event = GithubCommitFetchedEvent(
             transactionId = transactionId,
             author = commit.author,
@@ -104,13 +101,5 @@ class GithubCommitsService(
             msg = commit.msg,
         )
         eventPublisher.publishEvent(event)
-
-        githubClient.ingest(
-            AiIngestRequest(
-                id = commit.sha,
-                name = "${commit.author} - ${commit.date}",
-                content = commit.msg,
-            ),
-        )
     }
 }

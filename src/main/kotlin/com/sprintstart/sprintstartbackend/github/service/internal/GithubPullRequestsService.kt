@@ -7,7 +7,6 @@ import com.sprintstart.sprintstartbackend.github.external.events.GithubPullReque
 import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThread
 import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThreadComment
 import com.sprintstart.sprintstartbackend.github.external.events.PullRequestsSyncStartedEvent
-import com.sprintstart.sprintstartbackend.github.models.client.AiIngestRequest
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -92,14 +91,6 @@ class GithubPullRequestsService(
             )
 
             eventPublisher.publishEvent(event)
-
-            githubClient.ingest(
-                AiIngestRequest(
-                    id = pullRequest.number.toString(),
-                    name = pullRequest.title,
-                    content = pullRequest.body ?: "",
-                ),
-            )
         }
     }
 }
