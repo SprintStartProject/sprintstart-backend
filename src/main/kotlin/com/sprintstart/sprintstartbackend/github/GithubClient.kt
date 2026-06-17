@@ -55,7 +55,7 @@ class GithubClient(
         body: AiIngestRequest,
     ): AiIngestResponse =
         try {
-            val baseUrl = applicationConfig.github.repoBaseUrl
+            val baseUrl = applicationConfig.ai.baseUrl
             webClient
                 .post()
                 .uri("$baseUrl/api/v1/ingest")
