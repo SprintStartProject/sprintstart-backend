@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
 
+private const val SHORT_SHA_LENGTH = 7
+
 @Service
 class GithubCommitsService(
     private val onDiskOperations: OnDiskOperations,
@@ -108,7 +110,7 @@ class GithubCommitsService(
         githubClient.ingest(
             AiIngestRequest(
                 artifactId = commit.sha,
-                filename = "commit-${commit.sha.take(7)}.txt",
+                filename = "commit-${commit.sha.take(SHORT_SHA_LENGTH)}.txt",
                 content = commit.msg,
             ),
         )
