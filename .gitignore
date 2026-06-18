@@ -1,6 +1,7 @@
 .idea/
 .gradle/
 build/
+bin/
 
 .env
 *.env
@@ -13,3 +14,7 @@ uploads/
 
 logs/
 *.log
+
+AGENTS.md
+
+docs/

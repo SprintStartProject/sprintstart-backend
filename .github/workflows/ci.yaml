@@ -41,32 +41,32 @@ jobs:
     permissions:
       contents: read
 
-# This block is for when we decide to stop using h2 in our ci pipeline and want to start testing with
-# a real postgres db.
-#
-#    env:
-#      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-#      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-#      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-#
-#      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB }}
-#      SPRING_DATASOURCE_USERNAME: ${{ secrets.POSTGRES_USER }}
-#      SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-#
-#    services:
-#      postgres:
-#        image: postgres:16
-#        env:
-#          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-#          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-#          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-#        ports:
-#          - 5432:5432
-#        options: >-
-#          --health-cmd="pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
-#          --health-interval=10s
-#          --health-timeout=5s
-#          --health-retries=5
+    # This block is for when we decide to stop using h2 in our ci pipeline and want to start testing with
+    # a real postgres db.
+    #
+    #    env:
+    #      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+    #      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+    #      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+    #
+    #      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB }}
+    #      SPRING_DATASOURCE_USERNAME: ${{ secrets.POSTGRES_USER }}
+    #      SPRING_DATASOURCE_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+    #
+    #    services:
+    #      postgres:
+    #        image: postgres:16
+    #        env:
+    #          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+    #          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+    #          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+    #        ports:
+    #          - 5432:5432
+    #        options: >-
+    #          --health-cmd="pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"
+    #          --health-interval=10s
+    #          --health-timeout=5s
+    #          --health-retries=5
 
     steps:
       - uses: actions/checkout@v4
@@ -87,8 +87,8 @@ jobs:
       - name: Code quality check with detekt
         run: ./gradlew detekt
 
-      - name: Run tests
-        run: ./gradlew test
+      - name: Run tests with coverage
+        run: ./gradlew check
 
       - name: Build
         run: ./gradlew assemble

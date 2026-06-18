@@ -5,12 +5,15 @@ import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
+import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatMessageResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -123,16 +126,16 @@ class ChatControllerUnitTest {
         fun `delegates to service and returns flow unchanged`() = runTest {
             val request = PromptRequest(chatId = chatId, msg = "What is the sprint goal?")
             val tokens = listOf(
-                """{"type":"token","content":"The"}""",
-                """{"type":"token","content":" goal"}""",
-                """{"type":"done"}""",
+                AiStreamMessage("token", "The"),
+                AiStreamMessage("token", " goal"),
+                AiStreamMessage("done"),
             )
-            every { chatService.prompt(request) } returns flowOf(*tokens.toTypedArray())
+            coEvery { chatService.prompt(request) } returns flowOf(*tokens.toTypedArray())
 
             val result = controller.prompt(request).toList()
 
             assertEquals(tokens, result)
-            verify(exactly = 1) { chatService.prompt(request) }
+            coVerify(exactly = 1) { chatService.prompt(request) }
         }
     }
 }

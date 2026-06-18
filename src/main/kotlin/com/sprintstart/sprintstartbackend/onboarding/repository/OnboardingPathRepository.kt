@@ -11,4 +11,6 @@ interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
     fun deleteByUserId(userId: UUID)
 
     fun existsByUserId(userId: UUID): Boolean
+
+    fun findByUserId(userId: UUID): Optional<OnboardingPath>
 }

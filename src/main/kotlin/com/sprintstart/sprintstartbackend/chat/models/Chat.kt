@@ -10,8 +10,11 @@ import java.util.UUID
 @Entity
 @Table(name = "chats")
 internal data class Chat(
-    @Column @Id val id: UUID = UUID.randomUUID(),
-    @Column var title: String = "",
-    @Column("user_id", nullable = false) val userId: UUID,
-    @Column("created_at") val createdAt: OffsetDateTime,
+    @Id
+    var id: UUID = UUID.randomUUID(),
+    var title: String = "",
+    @Column("user_id", nullable = false)
+    var userId: UUID,
+    @Column("created_at")
+    var createdAt: OffsetDateTime,
 )

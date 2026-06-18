@@ -11,23 +11,82 @@ services:
     volumes:
       - sprintstart-db-data:/var/lib/postgresql/data
 
+  keycloak-database:
+    image: postgres:16
+    container_name: sprintstart-keycloak-db
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_POSTGRES_DB}
+      POSTGRES_USER: ${KEYCLOAK_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD}
+    volumes:
+      - sprintstart-keycloak-db-data:/var/lib/postgresql/data
+      - github-cache:/repos
+
+  keycloak:
+    build:
+      context: ./infra/keycloak
+      dockerfile: Dockerfile
+    container_name: sprintstart-keycloak
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=http://localhost:8081/
+      - --hostname-backchannel-dynamic=true
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-database:5432/${KEYCLOAK_POSTGRES_DB}
+      KC_DB_USERNAME: ${KEYCLOAK_POSTGRES_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_POSTGRES_PASSWORD}
+
+      SPRINTSTART_BACKEND_EVENT_URL: ${SPRINTSTART_BACKEND_EVENT_URL}
+      SPRINTSTART_KEYCLOAK_SHARED_SECRET: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET}
+    ports:
+      - "8081:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./infra/keycloak/realm-import:/opt/keycloak/data/import
+    depends_on:
+      keycloak-database:
+        condition: service_started
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: sprintstart-backend
     environment:
+      SPRINTSTART_UPLOAD_DIR: /app/uploads
       SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/${POSTGRES_DB}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI}
+
+      GITHUB_PAT: ${GITHUB_PAT}
+
+      SPRINTSTART_KEYCLOAK_SHARED_SECRET: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET}
+      SPRINTSTART_AI_BASE_URL: ${SPRINTSTART_AI_BASE_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     volumes:
-      - ./uploads:/app/uploads
+      - sprintstart-uploads:/app/uploads
+      - github-cache:/tmp/repos
     depends_on:
-      - database
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      database:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    restart: on-failure
 
 volumes:
   sprintstart-db-data:
+  sprintstart-keycloak-db-data:
+  github-cache:
+  sprintstart-uploads:

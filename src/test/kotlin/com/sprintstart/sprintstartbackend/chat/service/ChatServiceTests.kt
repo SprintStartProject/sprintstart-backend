@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.AiWebClientImpl
+import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -11,11 +11,14 @@ import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRe
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiGenerateChatTitleResponse
+import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -24,7 +27,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -40,13 +42,12 @@ class ChatServiceTests {
     private val applicationConfig: ApplicationConfig = mockk()
     private val chatRepository: ChatRepository = mockk()
     private val chatMessageRepository: ChatMessageRepository = mockk()
-    private val webRequestClient: AiWebClientImpl = mockk()
+    private val chatAiClient: ChatAiClient = mockk()
     private val userApi: UserApi = mockk()
     private val chatService = ChatService(
-        applicationConfig,
         chatRepository,
         chatMessageRepository,
-        webRequestClient,
+        chatAiClient,
         userApi,
     )
 
@@ -243,14 +244,14 @@ class ChatServiceTests {
             val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
             val aiPromptRequest = AiPromptRequest("Hello", listOf())
             val tokens = listOf(
-                """{"type":"token","content":"Hello"}""",
-                """{"type":"token","content":" world"}""",
-                """{"type":"done"}""",
+                AiStreamMessage("token", "Hello"),
+                AiStreamMessage("token", " world"),
+                AiStreamMessage("done"),
             )
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
-            every { webRequestClient.streamPrompt(any(), aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
+            coEvery { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
             val result = chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
@@ -263,16 +264,15 @@ class ChatServiceTests {
             val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
             val aiPromptRequest = AiPromptRequest("Hello", listOf())
             val tokens = listOf(
-                """{"type":"token","content":"Hello"}""",
-                """{"type":"token","content":" world"}""",
+                AiStreamMessage("token", "Hello"),
+                AiStreamMessage("token", " world"),
             )
             val savedMessages = mutableListOf<ChatMessage>()
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
-            every { webRequestClient.streamPrompt(any(), aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
+            every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
-            every { webRequestClient.jsonParser } returns Json { ignoreUnknownKeys = true }
 
             chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList() // collect to trigger completion
 
@@ -290,8 +290,8 @@ class ChatServiceTests {
             every { chatRepository.save(any()) } answers { firstArg() }
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
-            every { webRequestClient.getChatTitle(any(), any()) } returns AiGenerateChatTitleResponse("Sprint planning")
-            every { webRequestClient.streamPrompt(any(), aiPromptRequest) } returns flowOf()
+            coEvery { chatAiClient.getChatTitle(any()) } returns AiGenerateChatTitleResponse("Sprint planning")
+            every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
             chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
@@ -306,17 +306,17 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
-            every { webRequestClient.streamPrompt(any(), any()) } returns flowOf()
+            every { chatAiClient.streamPrompt(any()) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
             chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
 
-            verify(exactly = 0) { webRequestClient.getChatTitle(any(), any()) }
+            coVerify(exactly = 0) { chatAiClient.getChatTitle(any()) }
             verify(exactly = 0) { chatRepository.save(any()) }
         }
 
         @Test
-        fun `throws when chat is not found`() {
+        fun `throws when chat is not found`() = runTest {
             every { chatRepository.findById(chatId) } returns Optional.empty()
 
             assertThrows<HttpClientErrorException> {
@@ -330,8 +330,8 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
-            every { webRequestClient.streamPrompt(any(), any()) } returns flow {
-                emit("""{"type":"token","content":"Hello"}""")
+            every { chatAiClient.streamPrompt(any()) } returns flow {
+                emit(AiStreamMessage("token", "Hello"))
                 @Suppress("TooGenericExceptionThrown")
                 throw RuntimeException("AI backend unreachable")
             }

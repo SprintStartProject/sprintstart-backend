@@ -1,0 +1,45 @@
+query GetPRDetails($owner: String!, $name: String!, $prNumber: Int!, $commentsCursor: String, $reviewsCursor: String, $threadsCursor: String) {
+    repository(owner: $owner, name: $name) {
+        pullRequest(number: $prNumber) {
+            number
+            title
+            body
+            state
+            createdAt
+            mergedAt
+            url
+            author { login }
+            labels(first: 100) {
+                nodes { name }
+            }
+            reviews(first: 100, after: $reviewsCursor) {
+                pageInfo { hasNextPage, endCursor }
+                nodes {
+                    body
+                    state
+                    author { login }
+                }
+            }
+            comments(first: 100, after: $commentsCursor) {
+                pageInfo { hasNextPage, endCursor }
+                nodes {
+                    body
+                    createdAt
+                    author { login }
+                }
+            }
+            reviewThreads(first: 100, after: $threadsCursor) {
+                pageInfo { hasNextPage, endCursor }
+                nodes {
+                    comments(first: 100) {
+                        nodes {
+                            body
+                            path
+                            author { login }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,79 @@
+{
+  "realm": "sprintstart",
+  "enabled": true,
+  "displayName": "SprintStart",
+  "registrationAllowed": true,
+  "rememberMe": true,
+  "resetPasswordAllowed": true,
+
+  "eventsListeners": [
+    "jboss-logging",
+    "sprintstart-event-listener"
+  ],
+
+  "roles": {
+    "realm": [
+      {
+        "name": "user",
+        "description": "Default application user role"
+      },
+      {
+        "name": "project-manager",
+        "description": "Role for a project manager"
+      },
+      {
+        "name": "human-resources",
+        "description": "Role for a person working in HR"
+      },
+      {
+        "name": "admin",
+        "description": "Administrative application role"
+      }
+    ]
+  },
+
+  "defaultRoles": [
+    "user"
+  ],
+
+  "clients": [
+    {
+      "clientId": "sprintstart-frontend",
+      "name": "SprintStart Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173"
+      ],
+      "defaultClientScopes": [
+        "profile",
+        "email",
+        "roles"
+      ],
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+query GetPRListSince($searchQuery: String!, $cursor: String) {
+    search(query: $searchQuery, type: ISSUE, first: 100, after: $cursor) {
+        pageInfo {
+            hasNextPage
+            endCursor
+        }
+        nodes {
+            ... on PullRequest {
+                number
+                id
+                title
+            }
+        }
+    }
+}
