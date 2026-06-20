@@ -26,11 +26,12 @@ class Artifact(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val artifactType: ArtifactType,
-    val title: String?,
-    val bodyText: String?,
+    var title: String?,
+    var bodyText: String?,
 
     val mime : String?,
     val language : String?,
+
     val createdAtSource : Instant?,
     val updatedAtSource : Instant?,
 
@@ -40,7 +41,7 @@ class Artifact(
     @JoinColumn(name = "ingestion_run_id")
     val ingestionRun : IngestionRun,
     @Column(name = "content_hash", length = 64)
-    val hash: String?,
+    var hash: String?,
     @Column(nullable = false)
     val version : String,
 )

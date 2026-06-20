@@ -73,10 +73,10 @@ class GithubArtifactMapper() {
         return ArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
-            sourceId = event.number.toString(),
+            sourceId = event.url,
             sourceUrl = event.url,
             artifactType = ArtifactType.ISSUE,
-            title = event.title,
+            title = "PR #${event.title}",
             bodyText = event.body,
             mime = null,
             language = null,

@@ -18,9 +18,8 @@ class IngestionRun(
     val startedAt: Instant = Instant.now(),
     var finishedAt: Instant? = null,
     @Column(nullable = false)
-    val expectedCount : Int,
-    @Column(nullable = false)
-    val processedCount : Int = 0,
+    val expectedArtifacts : List<String>,
+    var processedArtifacts : List<String> = emptyList(),
     @Column(nullable = false)
     var ingestedCount : Int = 0,
     @Column(nullable = false)

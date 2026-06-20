@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.canonical.listener
 
+import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubArtifactMapper
 import com.sprintstart.sprintstartbackend.canonical.service.ArtifactIngestionService
 import com.sprintstart.sprintstartbackend.github.external.events.CommitsSyncStartedEvent
@@ -52,7 +53,8 @@ internal class ArtifactIngestionListener(
     ) {
         artifactIngestionService.startRun(
             transactionId = event.transactionId,
-            expectedArtifacts = event.paths.size,
+            expectedArtifacts = event.paths,
+            sourceSystem = SourceSystem.GITHUB
         )
     }
 
@@ -62,7 +64,8 @@ internal class ArtifactIngestionListener(
     ) {
         artifactIngestionService.startRun(
             transactionId = event.transactionId,
-            expectedArtifacts = event.shas.size,
+            expectedArtifacts = event.shas,
+            sourceSystem = SourceSystem.GITHUB,
         )
     }
 
@@ -72,7 +75,8 @@ internal class ArtifactIngestionListener(
     ) {
         artifactIngestionService.startRun(
             transactionId = event.transactionId,
-            expectedArtifacts = event.numbers.size,
+            expectedArtifacts = event.issueNumbers.map {it.toString()},
+            sourceSystem = SourceSystem.GITHUB,
         )
     }
 
@@ -82,7 +86,8 @@ internal class ArtifactIngestionListener(
     ) {
         artifactIngestionService.startRun(
             transactionId = event.transactionId,
-            expectedArtifacts = event.numbers.size,
+            expectedArtifacts = event.prNumbers.map { it.toString() },
+            sourceSystem = SourceSystem.GITHUB,
         )
     }
 
