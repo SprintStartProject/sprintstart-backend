@@ -57,4 +57,10 @@ class OnboardingStep(
     var completedAt: Instant? = null,
     @Column(nullable = true)
     var skipReason: String? = null,
+    @OneToMany(
+        mappedBy = "step",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val skips: MutableList<OnboardingResource> = mutableListOf(),
 )
