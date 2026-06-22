@@ -7,11 +7,13 @@ import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdatePatNa
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdatePatRequest
 import com.sprintstart.sprintstartbackend.github.service.GithubUserService
 import io.swagger.v3.oas.annotations.Parameter
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -25,26 +27,38 @@ class GithubUserController(
 ) {
     @GetMapping
     @PreAuthorize("hasRole('USER')")
+    fun getAllPats(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal
+        jwt: Jwt,
+    ): ResponseEntity<List<String>> {
+        val pats = githubUserService.getAllPATs(jwt.subject)
+        return ResponseEntity.ok(pats)
+    }
+
+    @GetMapping("/{name}")
+    @PreAuthorize("hasRole('USER')")
     fun getPat(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
         jwt: Jwt,
-        @RequestBody
-        request: GetPatRequest,
+        @PathVariable
+        name: String,
     ): ResponseEntity<String> {
-        val pat = githubUserService.getPat(jwt.subject, request)
+        val pat = githubUserService.getPAT(jwt.subject, GetPatRequest(name))
         return ResponseEntity.ok(pat)
     }
 
-    @PostMapping("/new")
+    @PostMapping()
     fun addPat(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
         jwt: Jwt,
+        @Valid
         @RequestBody
         request: AddPatRequest,
     ): ResponseEntity<Unit> {
-        githubUserService.addPat(jwt.subject, request)
+        githubUserService.addPAT(jwt.subject, request)
         return ResponseEntity.ok().build()
     }
 
@@ -54,10 +68,11 @@ class GithubUserController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
         jwt: Jwt,
+        @Valid
         @RequestBody
         request: UpdatePatRequest,
     ): ResponseEntity<Unit> {
-        githubUserService.updatePat(jwt.subject, request)
+        githubUserService.updatePAT(jwt.subject, request)
         return ResponseEntity.ok().build()
     }
 
@@ -67,10 +82,11 @@ class GithubUserController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
         jwt: Jwt,
+        @Valid
         @RequestBody
         request: UpdatePatNameRequest,
     ): ResponseEntity<Unit> {
-        githubUserService.updatePatName(jwt.subject, request)
+        githubUserService.updatePATName(jwt.subject, request)
         return ResponseEntity.ok().build()
     }
 
@@ -80,10 +96,11 @@ class GithubUserController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
         jwt: Jwt,
+        @Valid
         @RequestBody
         request: RemovePatRequest,
     ): ResponseEntity<Unit> {
-        githubUserService.removePat(jwt.subject, request)
+        githubUserService.removePAT(jwt.subject, request)
         return ResponseEntity.ok().build()
     }
 }

@@ -7,9 +7,10 @@ import com.sprintstart.sprintstartbackend.github.models.api.requests.GetPatReque
 import com.sprintstart.sprintstartbackend.github.models.api.requests.RemovePatRequest
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdatePatNameRequest
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdatePatRequest
+import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubUserPatNameAlreadyExistsException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubUserPatNotFoundException
 import com.sprintstart.sprintstartbackend.github.repository.GithubUserRepository
-import com.sprintstart.sprintstartbackend.shared.annotations.Timed
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -18,6 +19,17 @@ class GithubUserService(
     private val githubUserRepository: GithubUserRepository,
 ) {
     /**
+     * Retrieves all personal access tokens (PATs) associated with the given authentication ID.
+     *
+     * @param authId The authentication ID of the user whose PATs are to be retrieved.
+     * @return A list of personal access tokens (PATs) associated with the specified authentication ID.
+     */
+    @Tracked("Retrieving all GitHub PATs")
+    @Transactional(readOnly = true)
+    fun getAllPATs(authId: String): List<String> =
+        githubUserRepository.findAllByAuthId(authId)
+
+    /**
      * Retrieves the personal access token (PAT) associated with the given GitHub user credentials.
      *
      * @param authId The authentication ID of the user whose PAT is being requested.
@@ -25,11 +37,14 @@ class GithubUserService(
      * @return The personal access token (PAT) if found.
      * @throws GithubUserPatNotFoundException If no PAT is found for the given user and name.
      */
-    @Timed("Retrieving GitHub PAT")
+    @Tracked("Retrieving GitHub PAT")
     @Transactional(readOnly = true)
-    fun getPat(authId: String, request: GetPatRequest): String {
-        return githubUserRepository.findByAuthIdAndName(authId, request.name)?.token
-            ?: throw GithubUserPatNotFoundException(request.name, authId)
+    fun getPAT(authId: String, request: GetPatRequest): String {
+        return githubUserRepository
+            .findById(GithubUserPat(authId, request.name))
+            .orElseThrow {
+                GithubUserPatNotFoundException(request.name, authId)
+            }.token
     }
 
     /**
@@ -38,8 +53,12 @@ class GithubUserService(
      * @param authId The identifier of the authenticated user.
      * @param request The request object containing the details of the personal access token to be added.
      */
-    @Timed("Adding new GitHub PAT")
-    fun addPat(authId: String, request: AddPatRequest) {
+    @Tracked("Adding new GitHub PAT")
+    fun addPAT(authId: String, request: AddPatRequest) {
+        if (githubUserRepository.findById(GithubUserPat(authId, request.name)).isPresent) {
+            throw GithubUserPatNameAlreadyExistsException(request.name)
+        }
+
         val userPat = GithubUserPat(authId, request.name)
         val entity = GithubUser(userPat, request.token)
         githubUserRepository.save(entity)
@@ -52,13 +71,14 @@ class GithubUserService(
      * @param authId The authentication ID of the requesting user.
      * @param request The request containing the name of the GitHub user and the new PAT to be updated.
      */
-    @Timed("Updating GitHub PAT")
-    fun updatePat(authId: String, request: UpdatePatRequest) {
-        val userPatEntity =
-            githubUserRepository.findByAuthIdAndName(authId, request.name) ?: throw GithubUserPatNotFoundException(
+    @Tracked("Updating GitHub PAT")
+    fun updatePAT(authId: String, request: UpdatePatRequest) {
+        val userPatEntity = githubUserRepository.findById(GithubUserPat(authId, request.name)).orElseThrow {
+            GithubUserPatNotFoundException(
                 request.name,
                 authId,
             )
+        }
         userPatEntity.token = request.newToken
         githubUserRepository.save(userPatEntity)
     }
@@ -70,15 +90,14 @@ class GithubUserService(
      * @param request The request object containing the old name and the new name for the PAT.
      * @throws GithubUserPatNotFoundException If no PAT is found with the specified name for the given user.
      */
-    @Timed("Updating GitHub PAT name")
-    fun updatePatName(authId: String, request: UpdatePatNameRequest) {
-        val userPatEntity =
-            githubUserRepository.findByAuthIdAndName(authId, request.oldName) ?: throw GithubUserPatNotFoundException(
+    @Transactional
+    @Tracked("Updating GitHub PAT name")
+    fun updatePATName(authId: String, request: UpdatePatNameRequest) {
+        githubUserRepository.updatePatName(authId, request.oldName, request.newName).takeIf { it == 1 }
+            ?: throw GithubUserPatNotFoundException(
                 request.oldName,
                 authId,
             )
-        userPatEntity.id.name = request.newName
-        githubUserRepository.save(userPatEntity)
     }
 
     /**
@@ -88,13 +107,14 @@ class GithubUserService(
      * @param request The request object containing the details of the PAT to be removed, including the name of the PAT.
      * @throws GithubUserPatNotFoundException If no PAT is found with the specified name for the given user.
      */
-    @Timed("Deleting GitHub PAT")
-    fun removePat(authId: String, request: RemovePatRequest) {
-        val userPat =
-            githubUserRepository.findByAuthIdAndName(authId, request.name) ?: throw GithubUserPatNotFoundException(
+    @Tracked("Deleting GitHub PAT")
+    fun removePAT(authId: String, request: RemovePatRequest) {
+        val userPat = githubUserRepository.findById(GithubUserPat(authId, request.name)).orElseThrow {
+            GithubUserPatNotFoundException(
                 request.name,
                 authId,
             )
+        }
         githubUserRepository.delete(userPat)
     }
 }

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.github.controller
 
+import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubUserPatNameAlreadyExistsException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubUserPatNotFoundException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotFoundException
@@ -74,6 +75,14 @@ class ExceptionHandler {
     fun handleGithubUserPatNotFound(ex: GithubUserPatNotFoundException): ResponseEntity<ErrorResponse> =
         ResponseEntity
             .status(HttpStatus.NOT_FOUND)
+            .body(ErrorResponse(ex.message))
+
+    @ExceptionHandler(GithubUserPatNameAlreadyExistsException::class)
+    fun handleGithubUserPatNameAlreadyExists(
+        ex: GithubUserPatNameAlreadyExistsException,
+    ): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(ex.message))
 }
 
