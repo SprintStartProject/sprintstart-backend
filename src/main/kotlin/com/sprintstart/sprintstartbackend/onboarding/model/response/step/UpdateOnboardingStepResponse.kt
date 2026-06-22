@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.response.step
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingSkip
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingSkipResponse
 import java.time.Instant
 import java.util.UUID

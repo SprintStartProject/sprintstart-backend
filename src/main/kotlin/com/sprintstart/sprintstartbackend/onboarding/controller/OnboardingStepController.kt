@@ -210,15 +210,40 @@ class OnboardingStepController(
     }
 
     /**
-     * TODO: Add doc
+     * Marks one step in the authenticated user's onboarding path as completed.
+     *
+     * The target object is at depth 2. Only steps in [StepStatus.WAITING] can be
+     * completed through this endpoint. Completing a step records its completion
+     * timestamp and returns the updated step response.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param stepId Identifier of the step to complete.
+     * @return The updated step after it has been marked as completed.
      */
+    @Operation(
+        summary = "Complete current user's onboarding step",
+        description = "Marks an onboarding step at hierarchy depth 2 as completed for the authenticated user. " +
+            "Only steps in WAITING status can be completed. Completing a step records its completion timestamp " +
+            "and returns the updated step.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Step completed successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Step cannot be completed in its current status"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PutMapping("/me/steps/{stepId}/complete")
     @PreAuthorize("hasRole('USER')")
     fun completeOnboardingStepForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @Parameter(description = "UUID of the onboarding step to update")
+        @Parameter(description = "UUID of the onboarding step to complete")
         @PathVariable stepId: UUID,
     ): UpdateOnboardingStepResponse {
         return onboardingStepService.completeOnboardingStepForMe(jwt.subject, stepId)

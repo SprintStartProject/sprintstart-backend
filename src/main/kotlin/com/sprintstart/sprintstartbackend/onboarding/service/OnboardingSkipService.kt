@@ -41,6 +41,7 @@ import java.util.UUID
  * delete call.
  */
 @Service
+@Suppress("TooManyFunctions")
 class OnboardingSkipService(
     private val onboardingSkipRepository: OnboardingSkipRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
@@ -111,7 +112,8 @@ class OnboardingSkipService(
      * @param request Skip creation payload.
      * @return The created skip request.
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or step does not exist.
-     * @throws ResponseStatusException with [HttpStatus.BAD_REQUEST] if the step is not waiting or already has a pending skip.
+     * @throws ResponseStatusException with [HttpStatus.BAD_REQUEST] if the step is not waiting or
+     * already has a pending skip.
      */
     @Transactional
     fun createOnboardingSkipForMe(

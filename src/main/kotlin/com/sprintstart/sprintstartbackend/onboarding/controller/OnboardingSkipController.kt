@@ -44,6 +44,7 @@ import java.util.UUID
     name = "Onboarding - Skips",
     description = "Create, retrieve, review, and delete onboarding skip requests",
 )
+@Suppress("TooManyFunctions")
 class OnboardingSkipController(
     private val onboardingSkipService: OnboardingSkipService,
 ) {

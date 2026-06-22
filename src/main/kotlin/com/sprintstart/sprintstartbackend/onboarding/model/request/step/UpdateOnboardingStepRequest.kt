@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.request.step
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 
 data class UpdateOnboardingStepRequest(
