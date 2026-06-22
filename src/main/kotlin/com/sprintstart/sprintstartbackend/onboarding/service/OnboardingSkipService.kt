@@ -164,8 +164,9 @@ class OnboardingSkipService(
     /**
      * Deletes one skip request belonging to the authenticated user.
      *
-     * The skip is removed from the owning step's collection and is expected to be
-     * deleted by JPA orphan removal when the transaction is flushed.
+     * Only pending skip requests may be deleted. The skip is removed from the owning
+     * step's collection and is expected to be deleted by JPA orphan removal when the
+     * transaction is flushed.
      *
      * @param authId External authentication identifier.
      * @param skipId Identifier of the skip to delete.
@@ -178,6 +179,7 @@ class OnboardingSkipService(
             .findByIdAndStepPhasePathUserId(skipId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
 
+        ensurePending(skip, "deleted")
         deleteSkip(skip)
     }
 
@@ -266,7 +268,7 @@ class OnboardingSkipService(
 
         val reviewedAt = Instant.now()
         skip.status = SkipStatus.ACCEPTED
-        skip.reviewComment = request.reviewCommend
+        skip.reviewComment = request.reviewComment
         skip.resolvedAt = reviewedAt
         skip.step.status = StepStatus.SKIPPED
         skip.step.completedAt = reviewedAt
@@ -297,7 +299,7 @@ class OnboardingSkipService(
 
         val reviewedAt = Instant.now()
         skip.status = SkipStatus.DENIED
-        skip.reviewComment = request.reviewCommend
+        skip.reviewComment = request.reviewComment
         skip.resolvedAt = reviewedAt
         skip.step.status = StepStatus.WAITING
         skip.step.completedAt = null
@@ -308,8 +310,9 @@ class OnboardingSkipService(
     /**
      * Deletes one skip request by ID.
      *
-     * The skip is removed from the owning step's collection and is expected to be
-     * deleted by JPA orphan removal when the transaction is flushed.
+     * Only pending skip requests may be deleted. The skip is removed from the owning
+     * step's collection and is expected to be deleted by JPA orphan removal when the
+     * transaction is flushed.
      *
      * @param skipId Identifier of the skip to delete.
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the skip does not exist.
@@ -320,6 +323,7 @@ class OnboardingSkipService(
             .findById(skipId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
 
+        ensurePending(skip, "deleted")
         deleteSkip(skip)
     }
 
@@ -353,11 +357,11 @@ class OnboardingSkipService(
         }
     }
 
-    private fun ensurePending(skip: OnboardingSkip) {
+    private fun ensurePending(skip: OnboardingSkip, action: String = "modified") {
         if (skip.status != SkipStatus.PENDING) {
             throw ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
-                "Only pending skips can be modified",
+                "Only pending skips can be $action",
             )
         }
     }

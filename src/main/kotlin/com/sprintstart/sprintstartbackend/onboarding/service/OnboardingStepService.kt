@@ -124,7 +124,8 @@ class OnboardingStepService(
     /**
      * Updates a step in the authenticated user's onboarding path.
      *
-     * Position changes reorder sibling steps.
+     * This endpoint only updates step metadata. Position changes reorder sibling
+     * steps. Status transitions are handled by dedicated endpoints.
      *
      * @param authId External authentication identifier.
      * @param stepId Identifier of the step to update.
@@ -285,7 +286,8 @@ class OnboardingStepService(
     /**
      * Updates a step by ID.
      *
-     * Position changes reorder sibling steps.
+     * This endpoint only updates step metadata. Position changes reorder sibling
+     * steps. Status transitions are handled by dedicated endpoints.
      *
      * @param stepId Identifier of the step to update.
      * @param request Step update payload.

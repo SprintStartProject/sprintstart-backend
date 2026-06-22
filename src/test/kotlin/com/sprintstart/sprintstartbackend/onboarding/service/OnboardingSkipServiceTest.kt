@@ -223,19 +223,19 @@ class OnboardingSkipServiceTest {
     @Nested
     inner class DeleteSkip {
         @Test
-        fun `deleting skip removes it from the step collection`() {
-            val step = makeStep(StepStatus.SKIPPED)
-            val skip = makeSkip(step, SkipStatus.ACCEPTED, Instant.now())
+        fun `deleting pending skip removes it from the step collection`() {
+            val step = makeStep()
+            val skip = makeSkip(step)
             every { onboardingSkipRepository.findById(skipId) } returns Optional.of(skip)
 
             service.deleteSkipById(skipId)
 
             assertEquals(0, step.skips.size)
-            assertEquals(StepStatus.SKIPPED, step.status)
+            assertEquals(StepStatus.WAITING, step.status)
         }
 
         @Test
-        fun `deleting owned skip removes it from the step collection`() {
+        fun `deleting owned pending skip removes it from the step collection`() {
             val step = makeStep()
             val skip = makeSkip(step)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
@@ -244,6 +244,29 @@ class OnboardingSkipServiceTest {
             service.deleteSkipByIdForMe(authId, skipId)
 
             assertEquals(0, step.skips.size)
+        }
+
+        @Test
+        fun `deleting accepted skip throws 400`() {
+            val step = makeStep(StepStatus.SKIPPED)
+            val skip = makeSkip(step, SkipStatus.ACCEPTED, Instant.now())
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.of(skip)
+
+            assertThrows<ResponseStatusException> {
+                service.deleteSkipById(skipId)
+            }.also { assertEquals(400, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `deleting owned denied skip throws 400`() {
+            val step = makeStep()
+            val skip = makeSkip(step, SkipStatus.DENIED, Instant.now())
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingSkipRepository.findByIdAndStepPhasePathUserId(skipId, userId) } returns Optional.of(skip)
+
+            assertThrows<ResponseStatusException> {
+                service.deleteSkipByIdForMe(authId, skipId)
+            }.also { assertEquals(400, it.statusCode.value()) }
         }
     }
 

@@ -225,6 +225,8 @@ class OnboardingSkipController(
     /**
      * Deletes one skip request belonging to the authenticated user.
      *
+     * Only pending skip requests can be deleted.
+     *
      * @param jwt Authenticated JWT used to resolve the current user.
      * @param skipId Identifier of the skip to delete.
      */
@@ -235,6 +237,7 @@ class OnboardingSkipController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Skip deleted successfully"),
+            ApiResponse(responseCode = "400", description = "Only pending skips can be deleted"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete onboarding skips"),
             ApiResponse(
@@ -433,6 +436,8 @@ class OnboardingSkipController(
     /**
      * Deletes one onboarding skip request by ID.
      *
+     * Only pending skip requests can be deleted.
+     *
      * @param skipId Identifier of the skip to delete.
      */
     @Operation(
@@ -442,6 +447,7 @@ class OnboardingSkipController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Skip deleted successfully"),
+            ApiResponse(responseCode = "400", description = "Only pending skips can be deleted"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to delete onboarding skips"),
             ApiResponse(responseCode = "404", description = "No onboarding skip found with the given ID"),

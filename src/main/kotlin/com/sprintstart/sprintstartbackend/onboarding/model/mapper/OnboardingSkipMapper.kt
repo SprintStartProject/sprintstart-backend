@@ -36,7 +36,7 @@ fun OnboardingSkip.toCreateResponse(): CreateOnboardingSkipResponse {
         stepId = this.step.id,
         status = this.status,
         reason = this.reason,
-        reviewCommend = this.reviewComment,
+        reviewComment = this.reviewComment,
         createdAt = this.createdAt,
         reviewedAt = this.resolvedAt,
     )

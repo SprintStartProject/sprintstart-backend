@@ -9,7 +9,7 @@ data class CreateOnboardingSkipResponse(
     val stepId: UUID,
     val status: SkipStatus,
     val reason: String,
-    val reviewCommend: String? = null,
+    val reviewComment: String? = null,
     val createdAt: Instant,
     val reviewedAt: Instant? = null,
 )

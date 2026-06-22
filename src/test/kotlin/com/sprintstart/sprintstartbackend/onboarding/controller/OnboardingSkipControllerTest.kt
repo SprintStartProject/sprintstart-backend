@@ -92,7 +92,7 @@ class OnboardingSkipControllerTest(
     )
 
     private fun buildReviewRequest() = ReviewOnboardingSkipRequest(
-        reviewCommend = "Approved by admin",
+        reviewComment = "Approved by admin",
     )
 
     private fun buildGetSkipResponse() = GetOnboardingSkipResponse(
@@ -120,7 +120,7 @@ class OnboardingSkipControllerTest(
         stepId = stepId,
         status = SkipStatus.PENDING,
         reason = "Need to skip this step",
-        reviewCommend = null,
+        reviewComment = null,
         createdAt = timestamp,
         reviewedAt = null,
     )
@@ -268,6 +268,18 @@ class OnboardingSkipControllerTest(
     }
 
     @Test
+    fun `deleteSkipByIdForMe should return 400 when skip is not pending`() {
+        every { onboardingSkipService.deleteSkipByIdForMe(authId, skipId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST)
+
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/skips/$skipId").with(userJwt))
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 1) { onboardingSkipService.deleteSkipByIdForMe(authId, skipId) }
+    }
+
+    @Test
     fun `getAllSkips should return 200 and list of skips`() {
         every { onboardingSkipService.getAllSkips() } returns listOf(buildGetAllSkipResponse())
 
@@ -370,6 +382,18 @@ class OnboardingSkipControllerTest(
         mockMvc
             .perform(delete("/api/v1/admin/onboarding/skips/$skipId").with(adminJwt))
             .andExpect(status().isNoContent)
+
+        verify(exactly = 1) { onboardingSkipService.deleteSkipById(skipId) }
+    }
+
+    @Test
+    fun `deleteSkipById should return 400 when skip is not pending`() {
+        every { onboardingSkipService.deleteSkipById(skipId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST)
+
+        mockMvc
+            .perform(delete("/api/v1/admin/onboarding/skips/$skipId").with(adminJwt))
+            .andExpect(status().isBadRequest)
 
         verify(exactly = 1) { onboardingSkipService.deleteSkipById(skipId) }
     }

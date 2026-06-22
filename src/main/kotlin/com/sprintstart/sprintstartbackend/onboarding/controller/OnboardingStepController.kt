@@ -169,8 +169,9 @@ class OnboardingStepController(
     /**
      * Updates one step in the authenticated user's onboarding path.
      *
-     * The target object is at depth 2. Status and position changes behave the same as
-     * the admin variant.
+     * The target object is at depth 2. This endpoint only updates step metadata.
+     * Position changes behave the same as the admin variant. Status changes are
+     * handled by separate endpoints.
      *
      * @param jwt Authenticated JWT used to resolve the current user.
      * @param stepId Identifier of the step to update.
@@ -180,7 +181,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Update current user's onboarding step",
         description = "Updates an onboarding step at hierarchy depth 2 for the authenticated user. " +
-            "Changing the position reorders sibling steps, and status changes update completion metadata.",
+            "This endpoint updates step metadata only. Changing the position reorders sibling steps. " +
+            "Status changes are handled by separate endpoints.",
     )
     @ApiResponses(
         value = [
@@ -356,10 +358,11 @@ class OnboardingStepController(
     }
 
     /**
-     * Updates an existing onboarding step, including its status and position.
+     * Updates an existing onboarding step's metadata.
      *
      * All fields are replaced with the values from the request. If the position changes,
-     * sibling steps are shifted automatically to maintain contiguous ordering.
+     * sibling steps are shifted automatically to maintain contiguous ordering. Status
+     * changes are handled by separate endpoints.
      *
      * @param stepId The UUID of the step to update.
      * @param request The step update request.
@@ -367,12 +370,9 @@ class OnboardingStepController(
      */
     @Operation(
         summary = "Update onboarding step",
-        description = "Updates all fields of an existing onboarding step, including its status and position. " +
+        description = "Updates an existing onboarding step's metadata. " +
             "If the position changes, sibling steps are shifted automatically. " +
-            "Status transitions carry side-effects: " +
-            "FINISHED records a completion timestamp; " +
-            "SKIPPED records a completion timestamp and a skip reason (defaults to 'No reason given' if omitted); " +
-            "WAITING clears both the completion timestamp and skip reason.",
+            "Status transitions are handled by separate endpoints.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Step updated successfully"),
