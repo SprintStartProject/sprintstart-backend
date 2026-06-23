@@ -3,6 +3,8 @@ package com.sprintstart.sprintstartbackend.github.service
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdateRepositoryRequest
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotConnectedException
@@ -10,6 +12,7 @@ import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNot
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositorySnapshotRepository
+import com.sprintstart.sprintstartbackend.github.repository.GithubUserRepository
 import com.sprintstart.sprintstartbackend.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.github.service.internal.GithubIssuesService
@@ -37,6 +40,7 @@ class GithubConnectorServiceTest {
 
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val repoSnapshotRepository = mockk<GithubRepositorySnapshotRepository>()
+    private val githubUserRepository = mockk<GithubUserRepository>()
     private val fileService = mockk<GithubFileService>()
     private val commitsService = mockk<GithubCommitsService>()
     private val issuesService = mockk<GithubIssuesService>()
@@ -51,6 +55,7 @@ class GithubConnectorServiceTest {
             applicationScope = testScope,
             repoConnectionRepository = repoConnectionRepository,
             repoSnapshotRepository = repoSnapshotRepository,
+            githubUserRepository = githubUserRepository,
             fileService = fileService,
             commitsService = commitsService,
             issuesService = issuesService,
@@ -64,19 +69,29 @@ class GithubConnectorServiceTest {
         @Test
         fun `connectRepositoryIfExists throws RepositoryNotFoundException when repo does not exist on GitHub`() =
             runTest {
-                coEvery { githubClient.repositoryExists("owner", "repo") } returns false
+                val repository = GithubRepositoryConnection(
+                    owner = "owner",
+                    name = "repo",
+                    user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+                )
+                coEvery { githubClient.repositoryExists(repository) } returns false
 
                 assertFailsWith<RepositoryNotFoundException> {
-                    service.connectRepositoryIfExists(connectRequest())
+                    service.connectRepositoryIfExists("mock-id", connectRequest())
                 }
             }
 
         @Test
         fun `connectRepositoryIfExists returns a transactionId when repo exists`() = testScope.runTest {
-            coEvery { githubClient.repositoryExists("owner", "repo") } returns true
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
+            coEvery { githubClient.repositoryExists(repository) } returns true
             stubSuccessfulConnect()
 
-            val transactionId = service.connectRepositoryIfExists(connectRequest())
+            val transactionId = service.connectRepositoryIfExists("auth-id", connectRequest())
 
             assertThat(transactionId).isNotNull()
             assertThat(transactionId).isInstanceOf(UUID::class.java)
@@ -84,20 +99,30 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `connectRepositoryIfExists saves repository connection`() = testScope.runTest {
-            coEvery { githubClient.repositoryExists("owner", "repo") } returns true
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
+            coEvery { githubClient.repositoryExists(repository) } returns true
             stubSuccessfulConnect()
 
-            service.connectRepositoryIfExists(connectRequest())
+            service.connectRepositoryIfExists("auth-id", connectRequest())
 
             coVerify { repoConnectionRepository.save(match { it.owner == "owner" && it.name == "repo" }) }
         }
 
         @Test
         fun `connectRepositoryIfExists launches all background ingestion jobs`() = testScope.runTest {
-            coEvery { githubClient.repositoryExists("owner", "repo") } returns true
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
+            coEvery { githubClient.repositoryExists(repository) } returns true
             stubSuccessfulConnect()
 
-            service.connectRepositoryIfExists(connectRequest())
+            service.connectRepositoryIfExists("auth-id", connectRequest())
             advanceUntilIdle() // wait for all launched coroutines
 
             coVerify { fileService.fetchAndIngestAllFiles(any(), any()) }
@@ -108,10 +133,15 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `connectRepositoryIfExists passes same transactionId to all background jobs`() = testScope.runTest {
-            coEvery { githubClient.repositoryExists("owner", "repo") } returns true
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
+            coEvery { githubClient.repositoryExists(repository) } returns true
             stubSuccessfulConnect()
 
-            service.connectRepositoryIfExists(connectRequest())
+            service.connectRepositoryIfExists("auth-id", connectRequest())
             advanceUntilIdle()
 
             val fileTransactionId = slot<UUID>()
@@ -136,8 +166,9 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `updateAllRepositories triggers update for each connected repository`() = testScope.runTest {
-            val repo1 = repoConnection("owner", "repo1")
-            val repo2 = repoConnection("owner", "repo2")
+            val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+            val repo1 = repoConnection("owner", "repo1", user)
+            val repo2 = repoConnection("owner", "repo2", user)
 
             every { repoConnectionRepository.findAll() } returns listOf(repo1, repo2)
             stubSuccessfulUpdate(repo1)
@@ -174,7 +205,8 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `updateRepository returns a transactionId when repo is connected`() = testScope.runTest {
-            val repo = repoConnection("owner", "repo")
+            val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+            val repo = repoConnection("owner", "repo", user)
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             stubSuccessfulUpdate(repo)
 
@@ -185,7 +217,8 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `updateRepository launches all background ingestion jobs`() = testScope.runTest {
-            val repo = repoConnection("owner", "repo")
+            val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+            val repo = repoConnection("owner", "repo", user)
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             stubSuccessfulUpdate(repo)
 
@@ -200,7 +233,8 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `updateRepository saves a new snapshot`() = testScope.runTest {
-            val repo = repoConnection("owner", "repo")
+            val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+            val repo = repoConnection("owner", "repo", user)
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             stubSuccessfulUpdate(repo)
 
@@ -212,7 +246,8 @@ class GithubConnectorServiceTest {
         @Test
         fun `updateRepository throws RepositoryNotInitializedException when no snapshot exists`() =
             runTest {
-                val repo = repoConnection("owner", "repo")
+                val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+                val repo = repoConnection("owner", "repo", user)
                 every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
                 every { repoSnapshotRepository.findLatestByRepository(repo.id) } returns null
 
@@ -224,13 +259,18 @@ class GithubConnectorServiceTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private fun connectRequest() = ConnectRepositoryRequest(owner = "owner", name = "repo")
+    private fun connectRequest() = ConnectRepositoryRequest(
+        owner = "owner",
+        name = "repo",
+        tokenName = "test-token",
+    )
 
     private fun updateRequest() = UpdateRepositoryRequest(owner = "owner", name = "repo")
 
-    private fun repoConnection(owner: String, name: String) = GithubRepositoryConnection(
+    private fun repoConnection(owner: String, name: String, user: GithubUser) = GithubRepositoryConnection(
         owner = owner,
         name = name,
+        user = user,
     )
 
     private fun repoSnapshot(repo: GithubRepositoryConnection) = GithubRepositorySnapshot(

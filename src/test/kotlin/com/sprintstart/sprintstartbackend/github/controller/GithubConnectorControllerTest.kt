@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.github.controller
 
 import com.ninjasquad.springmockk.MockkBean
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdateRepositoryRequest
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
+import com.sprintstart.sprintstartbackend.github.repository.GithubUserRepository
 import com.sprintstart.sprintstartbackend.github.service.GithubConnectorService
 import io.mockk.coEvery
 import org.junit.jupiter.api.Nested
@@ -23,6 +26,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.util.Optional
 import java.util.UUID
 
 @WebMvcTest(controllers = [GithubConnectorController::class])
@@ -36,16 +40,28 @@ class GithubConnectorControllerTest {
     @MockkBean
     private lateinit var githubConnectorService: GithubConnectorService
 
+    @MockkBean
+    private lateinit var githubUserRepository: GithubUserRepository
+
     private val objectMapper = jacksonObjectMapper()
 
     @Nested
     inner class ConnectRepository {
         @Test
         fun `should return 202 Accepted and transactionId when valid request is provided`() {
-            val request = ConnectRepositoryRequest(owner = "spring-projects", name = "spring-modulith")
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = "test-token",
+            )
             val expectedTransactionId = UUID.randomUUID()
 
-            coEvery { githubConnectorService.connectRepositoryIfExists(request) } returns expectedTransactionId
+            coEvery {
+                githubConnectorService.connectRepositoryIfExists(
+                    "mockId",
+                    request,
+                )
+            } returns expectedTransactionId
 
             val asyncResult = mockMvc
                 .perform(
@@ -65,30 +81,36 @@ class GithubConnectorControllerTest {
         fun `should return 404 Not Found when repository does not exist`() {
             val owner = "unknown-owner"
             val name = "unknown-repo"
-            val request = ConnectRepositoryRequest(owner = owner, name = name)
+            val request = ConnectRepositoryRequest(owner = owner, name = name, tokenName = "test-token")
 
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(any())
+                githubUserRepository.findById(any())
+            } returns Optional.of(
+                GithubUser(
+                    GithubUserPat(
+                        "auth-id",
+                        "token-name",
+                    ),
+                    "test-token",
+                ),
+            )
+            coEvery {
+                githubConnectorService.connectRepositoryIfExists(any(), any())
             } throws RepositoryNotFoundException(owner, name)
 
-            val asyncResult = mockMvc
+            mockMvc
                 .perform(
                     post("/api/v1/github/connect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)),
-                ).andExpect(request().asyncStarted())
-                .andReturn()
-
-            mockMvc
-                .perform(asyncDispatch(asyncResult))
-                .andExpect(status().isNotFound)
+                ).andExpect(status().isNotFound)
                 .andExpect(jsonPath("$.message").value("Repository $owner/$name not found"))
         }
 
         // Validation failures are NOT async - they fail before the coroutine starts
         @Test
         fun `should return 400 Bad Request when owner is blank`() {
-            val request = ConnectRepositoryRequest(owner = "", name = "spring-modulith")
+            val request = ConnectRepositoryRequest(owner = "", name = "spring-modulith", tokenName = "test-token")
 
             mockMvc
                 .perform(
@@ -100,7 +122,7 @@ class GithubConnectorControllerTest {
 
         @Test
         fun `should return 400 Bad Request when name is blank`() {
-            val request = ConnectRepositoryRequest(owner = "spring-projects", name = "")
+            val request = ConnectRepositoryRequest(owner = "spring-projects", name = "", tokenName = "test-token")
 
             mockMvc
                 .perform(

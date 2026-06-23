@@ -97,7 +97,7 @@ class GithubFileService(
             repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
         }
         try {
-            val path = customCache.getLocalRepositoryPath(githubRepository.owner, githubRepository.name)
+            val path = customCache.getLocalRepositoryPath(githubRepository)
             val currentRevision = resolveCurrentRevision(path)
             streamFilesFromDiskAndIngest(githubRepository, path, currentRevision)
             if (currentRevision != null) {
@@ -329,7 +329,7 @@ class GithubFileService(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.owner, githubRepository.name)
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository)
         val latestSha = updateLocalRepository(localFsPath)
 
         if (githubRepository.lastSha == latestSha) {

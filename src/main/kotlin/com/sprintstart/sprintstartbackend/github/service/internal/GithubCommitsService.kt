@@ -34,7 +34,7 @@ class GithubCommitsService(
         doSyncAll: Boolean = false,
     ) {
         val localCopyPath =
-            customCache.getLocalRepositoryPath(latestSnapshot.repository.owner, latestSnapshot.repository.name)
+            customCache.getLocalRepositoryPath(latestSnapshot.repository)
         val newCommits = if (doSyncAll) {
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommits())
         } else {

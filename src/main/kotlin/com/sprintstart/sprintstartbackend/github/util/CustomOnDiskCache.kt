@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.github.util
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -61,14 +62,13 @@ class CustomOnDiskCache(
     /**
      * Returns the local filesystem path for the given repository, cloning it first if not cached.
      *
-     * @param owner GitHub organization or user (e.g. `"acme"`)
-     * @param name  Repository name (e.g. `"my-repo"`)
+     * @param repository The repository to get the path for.
      * @return Absolute path to the local clone, ready for filesystem operations
      */
-    suspend fun getLocalRepositoryPath(owner: String, name: String): Path {
-        val localFsPath = Path.of(cacheBasePath, owner, name)
-        val remoteUri = buildRemoteUri(owner, name, applicationConfig.github.token)
-        val safeUri = buildRemoteUri(owner, name, "***")
+    suspend fun getLocalRepositoryPath(repository: GithubRepositoryConnection): Path {
+        val localFsPath = Path.of(cacheBasePath, repository.owner, repository.name)
+        val remoteUri = buildRemoteUri(repository.owner, repository.name, repository.user.token)
+        val safeUri = buildRemoteUri(repository.owner, repository.name, "***")
 
         return getLocalRepositoryPath(localFsPath, remoteUri, safeUri)
     }
