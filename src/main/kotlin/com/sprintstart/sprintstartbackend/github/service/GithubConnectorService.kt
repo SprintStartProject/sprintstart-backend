@@ -65,8 +65,8 @@ class GithubConnectorService(
      */
     @Tracked("Connecting GitHub repository")
     suspend fun connectRepositoryIfExists(authId: String, request: ConnectRepositoryRequest): UUID {
-        val user = githubUserRepository.findById(GithubUserPat(authId, request.name)).orElseThrow {
-            GithubUserPatNotFoundException(request.name, authId)
+        val user = githubUserRepository.findById(GithubUserPat(authId = authId, name = request.tokenName)).orElseThrow {
+            GithubUserPatNotFoundException(request.tokenName, authId)
         }
         val repoConnection = GithubRepositoryConnection(
             owner = request.owner,
@@ -77,7 +77,7 @@ class GithubConnectorService(
         if (!githubClient.repositoryExists(repoConnection)) {
             throw RepositoryNotFoundException(request.owner, request.name)
         }
-        return connectRepository(authId, repoConnection)
+        return connectRepository(repoConnection)
     }
 
     /**
@@ -155,11 +155,10 @@ class GithubConnectorService(
     /**
      * Establishes a connection to a GitHub repository and initiates data collection processes.
      *
-     * @param authId The authentication identifier used for connecting to the repository.
      * @param repoConnection The GitHub repository connection object containing connection details.
      * @return A unique identifier (UUID) representing the transaction associated with this operation.
      */
-    private suspend fun connectRepository(authId: String, repoConnection: GithubRepositoryConnection): UUID {
+    private suspend fun connectRepository(repoConnection: GithubRepositoryConnection): UUID {
         val transactionId = UUID.randomUUID()
         val repoSnapshot = GithubRepositorySnapshot(
             repository = repoConnection,

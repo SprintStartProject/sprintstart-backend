@@ -33,4 +33,8 @@ data class GithubUserPat(
     var authId: String = "",
     @Column(nullable = false, unique = true)
     var name: String,
-) : Serializable
+) : Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}

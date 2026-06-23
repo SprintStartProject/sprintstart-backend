@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueComm
 import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.IssuesSyncJobStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -29,6 +30,7 @@ class GithubIssuesService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all issues from repository")
     suspend fun fetchAndIngestAllIssues(
         githubRepositoryId: UUID,
         transactionId: UUID,

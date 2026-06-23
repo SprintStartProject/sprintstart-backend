@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.GithubPullReque
 import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThreadComment
 import com.sprintstart.sprintstartbackend.github.external.events.PullRequestsSyncStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -32,6 +33,7 @@ class GithubPullRequestsService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all pull requests from repository")
     suspend fun fetchAndIngestAllPullRequests(
         githubRepositoryId: UUID,
         transactionId: UUID,

@@ -53,7 +53,7 @@ class GithubUserService(
     @Transactional(readOnly = true)
     fun getPAT(authId: String, request: GetPatRequest): String {
         return githubUserRepository
-            .findById(GithubUserPat(authId, request.name))
+            .findById(GithubUserPat(authId = authId, name = request.name))
             .orElseThrow {
                 GithubUserPatNotFoundException(request.name, authId)
             }.token
@@ -67,11 +67,11 @@ class GithubUserService(
      */
     @Tracked("Adding new GitHub PAT")
     fun addPAT(authId: String, request: AddPatRequest) {
-        if (githubUserRepository.findById(GithubUserPat(authId, request.name)).isPresent) {
+        if (githubUserRepository.findById(GithubUserPat(authId = authId, name = request.name)).isPresent) {
             throw GithubUserPatNameAlreadyExistsException(request.name)
         }
 
-        val userPat = GithubUserPat(authId, request.name)
+        val userPat = GithubUserPat(authId = authId, name = request.name)
         val entity = GithubUser(userPat, request.token)
         githubUserRepository.save(entity)
     }
@@ -85,12 +85,13 @@ class GithubUserService(
      */
     @Tracked("Updating GitHub PAT")
     fun updatePAT(authId: String, request: UpdatePatRequest) {
-        val userPatEntity = githubUserRepository.findById(GithubUserPat(authId, request.name)).orElseThrow {
-            GithubUserPatNotFoundException(
-                request.name,
-                authId,
-            )
-        }
+        val userPatEntity =
+            githubUserRepository.findById(GithubUserPat(authId = authId, name = request.name)).orElseThrow {
+                GithubUserPatNotFoundException(
+                    request.name,
+                    authId,
+                )
+            }
         userPatEntity.token = request.newToken
         githubUserRepository.save(userPatEntity)
     }
@@ -121,7 +122,7 @@ class GithubUserService(
      */
     @Tracked("Deleting GitHub PAT")
     fun removePAT(authId: String, request: RemovePatRequest) {
-        val userPat = githubUserRepository.findById(GithubUserPat(authId, request.name)).orElseThrow {
+        val userPat = githubUserRepository.findById(GithubUserPat(authId = authId, name = request.name)).orElseThrow {
             GithubUserPatNotFoundException(
                 request.name,
                 authId,

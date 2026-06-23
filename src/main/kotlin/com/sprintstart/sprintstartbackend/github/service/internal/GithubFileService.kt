@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConn
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.external.UploadIngestionApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,6 +89,7 @@ class GithubFileService(
      * @param githubRepositoryId The GitHub repository id to initialize.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all files from repository")
     @Suppress("UnusedParameter")
     suspend fun fetchAndIngestAllFiles(
         githubRepositoryId: UUID,
@@ -122,6 +124,7 @@ class GithubFileService(
      * @param githubRepository The GitHub repository to fetch/ingest on.
      * @param transactionId The UUID of the overall transaction, this action is a part of.
      */
+    @Tracked("Fetching file updates from repository")
     suspend fun fetchAndIngestFileUpdatesIncremental(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,

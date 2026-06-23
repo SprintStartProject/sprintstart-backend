@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -28,6 +29,7 @@ class GithubCommitsService(
      * @param doSyncAll Indicates whether to fetch all commits from the repository (`true`) or only those
      * after the last synchronization timestamp (`false`).
      */
+    @Tracked("Fetching latest commits from repository")
     suspend fun fetchAndIngestLatestCommits(
         latestSnapshot: GithubRepositorySnapshot,
         transactionId: UUID,

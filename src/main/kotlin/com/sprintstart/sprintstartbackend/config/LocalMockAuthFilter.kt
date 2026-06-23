@@ -10,6 +10,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.web.filter.OncePerRequestFilter
 import java.time.Instant
 
+private const val EXPIRATION_TIMEOUT = 3600L
+
 class LocalMockAuthFilter : OncePerRequestFilter() {
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -23,7 +25,7 @@ class LocalMockAuthFilter : OncePerRequestFilter() {
             .claim("preferred_username", "local-dev-user")
             .claim("email", "dev@example.com")
             .issuedAt(Instant.now())
-            .expiresAt(Instant.now().plusSeconds(3600))
+            .expiresAt(Instant.now().plusSeconds(EXPIRATION_TIMEOUT))
             .build()
 
         val authorities = listOf(

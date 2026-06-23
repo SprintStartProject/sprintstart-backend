@@ -52,7 +52,8 @@ class GithubConnectorControllerTest {
 
     private val objectMapper = jacksonObjectMapper()
 
-    private val userJwt = jwt().jwt { it.subject("mockId") }
+    private val userJwt = jwt()
+        .jwt { it.subject("mockId") }
         .authorities(SimpleGrantedAuthority("ROLE_USER"))
 
     private val validTokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
