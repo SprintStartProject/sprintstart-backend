@@ -28,7 +28,7 @@ class GithubCommitsService(
      * @param doSyncAll Indicates whether to fetch all commits from the repository (`true`) or only those
      * after the last synchronization timestamp (`false`).
      */
-    suspend fun fetchAndIngestLatestCommits(
+    internal suspend fun fetchAndIngestLatestCommits(
         latestSnapshot: GithubRepositorySnapshot,
         transactionId: UUID,
         doSyncAll: Boolean = false,

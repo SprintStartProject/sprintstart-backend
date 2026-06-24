@@ -32,7 +32,7 @@ class GithubPullRequestsService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
-    suspend fun fetchAndIngestAllPullRequests(
+    internal suspend fun fetchAndIngestAllPullRequests(
         githubRepositoryId: UUID,
         transactionId: UUID,
         since: Instant? = null,
