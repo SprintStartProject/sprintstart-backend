@@ -15,6 +15,11 @@ import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -26,6 +31,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlin.io.path.exists
 import kotlin.io.path.extension
+import kotlin.streams.asSequence
 
 private val binaryExtensions = setOf(
     // images
@@ -243,84 +249,132 @@ class GithubFileService(
     }
 
     /**
-     * Reads files from disk and directly streams the ingestion of each file.
+     * Streams files from disk, processes them, and ingests their data into the specified GitHub repository.
      *
-     * This function, given the path to a local GitHub repository, reads all files it can find from the disk
-     * and ingests them into the AI system.
+     * This method performs concurrent file processing, publishes events for success and failure cases,
+     * and handles batching of file snapshots for ingestion.
      *
-     * # Ignored
-     *
-     * * `.git`
-     * * All binary file extensions (see [binaryExtensions])
-     *
-     * @see binaryExtensions
-     *
-     * @param githubRepository The GitHub repository to ingest.
-     * @param repositoryPath The path to the GitHub repository, locally.
+     * @param transactionId A unique identifier for the transaction associated with this file processing operation.
+     * @param githubRepository The connection details for the target GitHub repository where file data will be ingested.
+     * @param repositoryPath The local path to the repository where the files are stored on disk.
+     * @param revision The specific revision or branch of the repository being processed.
+     * @throws GithubFilesStreamFromDiskFailedPartialException If there are any failures during file processing.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun streamFilesFromDiskAndIngest(
         transactionId: UUID,
         githubRepository: GithubRepositoryConnection,
         repositoryPath: Path,
         revision: String,
     ) {
+        val concurrency = Runtime.getRuntime().availableProcessors()
         val failures = mutableListOf<String>()
-        withContext(Dispatchers.IO) {
-            Files.walk(repositoryPath).use { stream ->
-                stream
-                    .iterator()
-                    .asSequence()
-                    .filter { Files.isRegularFile(it) }
-                    .filter { !it.startsWith(repositoryPath.resolve(".git")) }
-                    .filter { !it.isBinary() }
-                    .map { filePath ->
-                        val relativePath = repositoryPath.relativize(filePath).toString()
-                        val content: String = try {
-                            Files.readString(filePath)
-                        } catch (@Suppress("SwallowedException", "TooGenericException") e: RuntimeException) {
-                            failures.add("Reading text content of $filePath failed: ${e.message}")
-                            eventPublisher.publishGithubFileFetchFailedEvent(
-                                transactionId,
-                                filePath.toString(),
-                                "Could not read file content: ${e.message}",
-                            )
+        val snapshotBuffer = mutableListOf<GithubFileSnapshot>()
 
-                            // Just pass empty content
-                            ""
-                        }
+        discoverFilePaths(repositoryPath)
+            .asFlow()
+            .flatMapMerge(concurrency = concurrency) { path ->
+                // Concurrently process discovered files
+                flow {
+                    emit(
+                        processSingleFile(path, repositoryPath, githubRepository, revision),
+                    )
+                }.flowOn(Dispatchers.IO)
+            }.collect { result ->
+                when (result) {
+                    is FileProcessingResult.Success -> {
+                        // Batch snapshots and flush them in batches of 32
+                        snapshotBuffer += result.snapshot
+                        if (snapshotBuffer.size >= 32) flushSnapshots(snapshotBuffer)
 
-                        val fileSnapshotId = GithubFileSnapshotSharedId(
-                            repositoryId = githubRepository.id,
-                            path = filePath.toString(),
-                        )
-                        val fileSnapshot = GithubFileSnapshot(
-                            id = fileSnapshotId,
-                            sha = content.sha256(),
-                            repository = githubRepository,
-                        )
-                        fileSnapshotRepository.save(fileSnapshot)
-
-                        val sourceUrl =
-                            "https://github.com/${githubRepository.owner}/${githubRepository.name}/blob/$revision/$relativePath"
-
-                        GithubFilePayload(
-                            path = relativePath,
-                            content = content,
-                            sourceUrl = sourceUrl,
-                        )
-                    }.forEach {
                         eventPublisher.publishGithubFileFetchedEvent(
                             transactionId,
-                            it.path,
-                            it.content,
-                            it.sourceUrl,
+                            result.payload.path,
+                            result.payload.content,
+                            result.payload.sourceUrl,
                         )
                     }
+
+                    is FileProcessingResult.Failure -> {
+                        eventPublisher.publishGithubFileFetchFailedEvent(transactionId, result.path, result.reason)
+                        failures += "${result.path}: ${result.reason}"
+                    }
+                }
             }
-        }
+
+        // Flush any remaining snapshots
+        flushSnapshots(snapshotBuffer)
 
         if (failures.isNotEmpty()) {
             throw GithubFilesStreamFromDiskFailedPartialException(failures.joinToString("\n"))
+        }
+    }
+
+    /**
+     * Discovers all regular file paths within a given repository path, excluding files in the ".git" directory
+     * and binary files.
+     *
+     * @param repositoryPath the root path of the repository to be scanned for file paths
+     * @return a list of paths representing all discovered files that are not binary and not within the ".git" directory
+     */
+    private fun discoverFilePaths(repositoryPath: Path): List<Path> =
+        Files.walk(repositoryPath).use { stream ->
+            stream
+                .asSequence()
+                .filter { Files.isRegularFile(it) }
+                .filter { !it.startsWith(repositoryPath.resolve(".git")) }
+                .filter { !it.isBinary() }
+                .toList()
+        }
+
+    /**
+     * Processes a single file by reading its content, computing its hash, generating a source URL,
+     * and creating a file snapshot for the specified GitHub repository.
+     *
+     * @param filePath The path to the file being processed.
+     * @param repositoryPath The root path of the repository, used to compute the relative path of the file.
+     * @param githubRepository The connection details for the GitHub repository.
+     * @param revision The revision identifier (e.g., branch, tag, or commit hash) to construct the source URL.
+     * @return A [FileProcessingResult] that represents either the successful processing result with file payload and snapshot
+     * or a failure result with a reason for the failure.
+     */
+    private suspend fun processSingleFile(
+        filePath: Path,
+        repositoryPath: Path,
+        githubRepository: GithubRepositoryConnection,
+        revision: String,
+    ): FileProcessingResult = runCatching {
+        val (content, sha256) = readFileWithHash(filePath)
+        val relativePath = repositoryPath.relativize(filePath).toString()
+        val sourceUrl =
+            "https://github.com/${githubRepository.owner}/${githubRepository.name}/blob/$revision/$relativePath"
+        val snapshotId = GithubFileSnapshotSharedId(
+            repositoryId = githubRepository.id,
+            path = filePath.toString(),
+        )
+        val snapshot = GithubFileSnapshot(id = snapshotId, sha = sha256, repository = githubRepository)
+
+        FileProcessingResult.Success(
+            payload = GithubFilePayload(path = relativePath, content = content, sourceUrl = sourceUrl),
+            snapshot = snapshot,
+        )
+    }.getOrElse { e ->
+        FileProcessingResult.Failure(
+            path = filePath.toString(),
+            reason = "Could not read file content: ${e.message}",
+        )
+    }
+
+    /**
+     * Persists the provided list of file snapshots and clears the buffer.
+     *
+     * @param buffer A mutable list of `GithubFileSnapshot` objects to be saved. The buffer is cleared after the snapshots are saved.
+     */
+    private suspend fun flushSnapshots(buffer: MutableList<GithubFileSnapshot>) {
+        if (buffer.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            fileSnapshotRepository.saveAll(buffer.toList())
+            buffer.clear()
         }
     }
 
@@ -367,6 +421,32 @@ class GithubFileService(
      */
     private fun Path.isBinary() = extension.lowercase() in binaryExtensions
 
+    /**
+     * Reads the content of a file located at the specified path and computes its SHA-256 hash.
+     *
+     * It's basically a collection function. Instead of reading the file content first, then hashing it,
+     * this function does both in one go to half the work.
+     *
+     * @param filePath The path of the file to be read.
+     * @return A pair where the first element is the file's content as a string, and the second element is the SHA-256 hash of the file's content as a hexadecimal string.
+     */
+    private suspend fun readFileWithHash(filePath: Path): Pair<String, String> {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val bytes = withContext(Dispatchers.IO) {
+            Files.readAllBytes(filePath)
+        }
+        digest.update(bytes)
+        val hash = digest.digest().joinToString("") { "%02x".format(it) }
+        return String(bytes, Charsets.UTF_8) to hash
+    }
+
+    /**
+     * Reads the content of a file at the given path as a string, handling any malformed input exceptions.
+     * If the file's content cannot be read due to a `MalformedInputException`, null is returned.
+     *
+     * @param path the path to the file to be read
+     * @return the content of the file as a string, or null if a malformed input exception occurs
+     */
     private fun readTextSafely(path: Path): String? {
         return try {
             Files.readString(path)
@@ -376,16 +456,28 @@ class GithubFileService(
     }
 
     /**
-     * Calculates the SHA-256 hash of a string.
+     * Represents the result of processing a file within the system.
+     * This sealed interface distinguishes between successful and failed processing outcomes.
      */
-    private fun String.sha256(): String =
-        MessageDigest
-            .getInstance("SHA-256")
-            .digest(toByteArray())
-            .joinToString("") {
-                "%02x".format(it)
-            }
+    private sealed interface FileProcessingResult {
+        data class Success(
+            val payload: GithubFilePayload,
+            val snapshot: GithubFileSnapshot,
+        ) : FileProcessingResult
 
+        data class Failure(
+            val path: String,
+            val reason: String,
+        ) : FileProcessingResult
+    }
+
+    /**
+     * Represents the payload of a file in a GitHub repository.
+     *
+     * @property path The file path within the repository.
+     * @property content The content of the file, typically as a string.
+     * @property sourceUrl The source URL of the file in the repository.
+     */
     private data class GithubFilePayload(
         val path: String,
         val content: String,
