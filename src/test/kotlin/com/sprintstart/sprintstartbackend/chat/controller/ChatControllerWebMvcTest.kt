@@ -17,6 +17,8 @@ import io.mockk.coEvery
 import io.mockk.every
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -304,12 +306,12 @@ class ChatControllerWebMvcTest(
     inner class Prompt {
         @Test
         fun `returns 200 when valid msg`() {
-            val tokens = listOf(
+            val messages = listOf(
                 AiStreamMessage("token", "The"),
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.prompt(any()) } returns flowOf(*tokens.toTypedArray())
+            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -329,11 +331,53 @@ class ChatControllerWebMvcTest(
                 .replace("data:", "")
                 .replace("\n", "")
 
-            val expected = objectMapper.writeValueAsString(tokens[0]) +
-                objectMapper.writeValueAsString(tokens[1]) +
-                objectMapper.writeValueAsString(tokens[2]).replace(",\"content\":null", "")
+            // The server (de)serializes via kotlinx serialization, which omits null
+            // defaults — so we build the expected stream the same way.
+            val expected = messages.joinToString("") { Json.encodeToString(it) }
 
             assertEquals(expected, actual)
+        }
+
+        @Test
+        fun `forwards tool_use citation and error events untouched`() {
+            val messages = listOf(
+                AiStreamMessage(type = "tool_use", name = "retrieve", kind = "tool"),
+                AiStreamMessage("token", "The main blocker"),
+                AiStreamMessage(
+                    type = "citation",
+                    chunkId = "chunk-1",
+                    filename = "retro.md",
+                    sectionPath = "Retro > Blockers",
+                ),
+                AiStreamMessage("done"),
+            )
+            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""{"chatId": "$chatId", "msg": "Test msg"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            val mvcResult = mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andReturn()
+
+            val actual = mvcResult.response.contentAsString
+                .replace("data:", "")
+                .replace("\n", "")
+
+            val expected = messages.joinToString("") { Json.encodeToString(it) }
+
+            assertEquals(expected, actual)
+            // Wire field names must mirror the AI service contract for the frontend.
+            assert(actual.contains("""{"type":"tool_use","name":"retrieve","kind":"tool"}"""))
+            assert(actual.contains(""""chunk_id":"chunk-1""""))
+            assert(actual.contains(""""section_path":"Retro > Blockers""""))
         }
 
         @Test
