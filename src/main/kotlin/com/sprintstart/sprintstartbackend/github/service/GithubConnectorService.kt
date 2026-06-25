@@ -1,7 +1,9 @@
 package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
-import com.sprintstart.sprintstartbackend.github.GithubEventPublisher
+import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
@@ -18,6 +20,7 @@ import com.sprintstart.sprintstartbackend.github.service.internal.GithubPullRequ
 import jakarta.transaction.Transactional
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.util.UUID
 
@@ -37,7 +40,7 @@ class GithubConnectorService(
     private val issuesService: GithubIssuesService,
     private val pullRequestsService: GithubPullRequestsService,
     private val githubClient: GithubClient,
-    private val eventPublisher: GithubEventPublisher,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Connect a new repository.
@@ -64,11 +67,11 @@ class GithubConnectorService(
     @Transactional
     suspend fun connectRepositoryIfExists(request: ConnectRepositoryRequest): UUID {
         val transactionId = UUID.randomUUID()
-        eventPublisher.publishRepositoryConnectionInitiatedEvent(transactionId)
+        eventPublisher.publishEvent(GithubRepositoryConnectionInitiatedEvent(transactionId))
 
         if (!githubClient.repositoryExists(request.owner, request.name)) {
             val ex = RepositoryNotFoundException(request.owner, request.name)
-            eventPublisher.publishRepositoryConnectionInitiationFailedEvent(transactionId, ex.message)
+            eventPublisher.publishEvent(GithubRepositoryConnectionInitiationFailedEvent(transactionId, ex.message))
             throw ex
         }
 
@@ -172,7 +175,7 @@ class GithubConnectorService(
         repoConnection.snapshot = repoSnapshot
         repoConnectionRepository.save(repoConnection)
 
-        eventPublisher.publishRepositoryResourceFetchingStartedEvent(transactionId)
+        eventPublisher.publishEvent(GithubRepositoryResourcesFetchingStartedEvent(transactionId))
 
         // Launch data collectors/processors
         applicationScope.launch {

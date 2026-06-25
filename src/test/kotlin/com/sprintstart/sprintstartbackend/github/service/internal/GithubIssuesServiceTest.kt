@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
-import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueComment
-import com.sprintstart.sprintstartbackend.github.external.events.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueComment
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.AssigneesCollection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode

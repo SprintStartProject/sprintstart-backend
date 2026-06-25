@@ -1,12 +1,14 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestComment
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReview
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThread
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThreadComment
-import com.sprintstart.sprintstartbackend.github.external.events.PullRequestsSyncStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReview
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThread
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingInitiatedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,20 +39,22 @@ class GithubPullRequestsService(
         transactionId: UUID,
         since: Instant? = null,
     ) {
-        val githubRepository = withContext(Dispatchers.IO) {
-            repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
-        }
-        val pullRequests = if (since == null) {
-            githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name)
-        } else {
-            githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name, since.toString())
-        }
+        eventPublisher.publishEvent(GithubPullRequestsFetchingInitiatedEvent(transactionId))
 
-        val jobStartedEvent = PullRequestsSyncStartedEvent(
-            transactionId = transactionId,
-            prNumbers = pullRequests.map { it.number },
-        )
-        eventPublisher.publishEvent(jobStartedEvent)
+        val pullRequests = runCatching {
+            val githubRepository = withContext(Dispatchers.IO) {
+                repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
+            }
+
+            if (since == null) {
+                githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name)
+            } else {
+                githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name, since.toString())
+            }
+        }.onFailure {
+            eventPublisher.publishEvent(GithubPullRequestsInitiationFailedEvent(transactionId))
+            throw it
+        }.getOrNull() ?: return
 
         pullRequests.forEach { pullRequest ->
             val event = GithubPullRequestFetchedEvent(
@@ -92,5 +96,7 @@ class GithubPullRequestsService(
 
             eventPublisher.publishEvent(event)
         }
+
+        eventPublisher.publishEvent(GithubPullRequestsFetchingCompletedEvent(transactionId))
     }
 }

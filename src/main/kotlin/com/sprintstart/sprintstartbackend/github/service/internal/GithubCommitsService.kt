@@ -1,12 +1,16 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.GithubEventPublisher
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -15,7 +19,7 @@ import java.util.UUID
 class GithubCommitsService(
     private val onDiskOperations: OnDiskOperations,
     private val customCache: CustomOnDiskCache,
-    private val eventPublisher: GithubEventPublisher,
+    private val eventPublisher: ApplicationEventPublisher,
     private val gitRunner: GitOperationRunner,
 ) {
     /**
@@ -36,7 +40,7 @@ class GithubCommitsService(
         transactionId: UUID,
         doSyncAll: Boolean = false,
     ) {
-        eventPublisher.publishCommitsFetchingStartedEvent(transactionId)
+        eventPublisher.publishEvent(GithubCommitsFetchingStartedEvent(transactionId))
 
         val rawOutput = fetchCommits(latestSnapshot, doSyncAll, transactionId)
         val failures = mutableListOf<String>()
@@ -50,7 +54,7 @@ class GithubCommitsService(
             throw GithubCommitsFetchFailedPartiallyException(failures.joinToString("\n"))
         }
 
-        eventPublisher.publishCommitsFetchingCompletedEvent(transactionId)
+        eventPublisher.publishEvent(GithubCommitsFetchingCompletedEvent(transactionId))
     }
 
     /**
@@ -84,7 +88,7 @@ class GithubCommitsService(
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommitsAfter(latestSnapshot.lastCommitsSyncAt))
         }
     }.getOrElse { e ->
-        eventPublisher.publishCommitsFetchFailedEvent(transactionId, e.message)
+        eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
         throw e
     }
 
@@ -106,13 +110,13 @@ class GithubCommitsService(
     ) {
         val commit = runCatching { parseCommit(line) }
             .onFailure { e ->
-                eventPublisher.publishCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error")
+                eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
                 failures.add("Parsing $line failed: ${e.message}")
             }.getOrNull() ?: return
 
         runCatching { ingestCommit(commit, transactionId) }
             .onFailure { e ->
-                eventPublisher.publishCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error")
+                eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
                 failures.add("Ingesting ${commit.sha} failed: ${e.message}")
             }
     }
@@ -155,12 +159,14 @@ class GithubCommitsService(
      * @param transactionId The unique transaction identifier associated with the synchronization process.
      */
     private fun ingestCommit(commit: Commit, transactionId: UUID) {
-        eventPublisher.publishCommitFetchedEvent(
-            transactionId,
-            commit.author,
-            commit.date,
-            commit.sha,
-            commit.msg,
+        eventPublisher.publishEvent(
+            GithubCommitFetchedEvent(
+                transactionId,
+                commit.author,
+                commit.date,
+                commit.sha,
+                commit.msg,
+            ),
         )
     }
 }

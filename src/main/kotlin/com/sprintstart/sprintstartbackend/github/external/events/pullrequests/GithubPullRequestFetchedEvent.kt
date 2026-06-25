@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.external.events
+package com.sprintstart.sprintstartbackend.github.external.events.pullrequests
 
 import java.util.UUID
 
