@@ -2,7 +2,7 @@ package com.sprintstart.sprintstartbackend.github.external.events.commits
 
 import java.util.UUID
 
-data class GithubRepositoryCommitsFetchFailedEvent(
+data class GithubCommitFetchFailedEvent(
     val transactionId: UUID,
-    val reason: String = "Internal server error",
+    val reason: String,
 )

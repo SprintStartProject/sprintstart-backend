@@ -1,13 +1,12 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.external.events.CommitsSyncStartedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.GithubEventPublisher
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
+import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
@@ -16,42 +15,105 @@ import java.util.UUID
 class GithubCommitsService(
     private val onDiskOperations: OnDiskOperations,
     private val customCache: CustomOnDiskCache,
-    private val eventPublisher: ApplicationEventPublisher,
+    private val eventPublisher: GithubEventPublisher,
     private val gitRunner: GitOperationRunner,
 ) {
     /**
-     * Fetches and processes the latest commits from a GitHub repository based on the given snapshot.
-     * Commits are retrieved from the local repository cache and ingested into the system.
+     * Fetches and processes the latest commits from a GitHub repository snapshot.
+     * The method handles fetching commit data, parsing each commit line, and publishing events for
+     * the start and completion of the operation. If errors occur during commit processing, an exception is thrown.
      *
-     * @param latestSnapshot The snapshot of the GitHub repository, which includes synchronization metadata.
-     * @param transactionId The unique identifier for the transaction associated with this synchronization.
-     * @param doSyncAll Indicates whether to fetch all commits from the repository (`true`) or only those
-     * after the last synchronization timestamp (`false`).
+     * @param latestSnapshot A snapshot of the GitHub repository containing metadata such as the repository's
+     * owner, name, and the timestamp of the last synchronization.
+     * @param transactionId A unique identifier for the transaction corresponding to this synchronization process.
+     * @param doSyncAll A flag indicating whether to synchronize all commits (`true`) or only new commits
+     * since the last synchronization (`false`). Defaults to `false`.
+     * @throws GithubCommitsFetchFailedPartiallyException If one or more commits fail to process during the
+     * operation, this exception is thrown with details of the failures.
      */
     internal suspend fun fetchAndIngestLatestCommits(
         latestSnapshot: GithubRepositorySnapshot,
         transactionId: UUID,
         doSyncAll: Boolean = false,
     ) {
-        val localCopyPath =
-            customCache.getLocalRepositoryPath(latestSnapshot.repository.owner, latestSnapshot.repository.name)
-        val newCommits = if (doSyncAll) {
+        eventPublisher.publishCommitsFetchingStartedEvent(transactionId)
+
+        val rawOutput = fetchCommits(latestSnapshot, doSyncAll, transactionId)
+        val failures = mutableListOf<String>()
+
+        rawOutput
+            .lines()
+            .filter { it.isNotBlank() }
+            .forEach { line -> processCommitLine(line, transactionId, failures) }
+
+        if (failures.isNotEmpty()) {
+            throw GithubCommitsFetchFailedPartiallyException(failures.joinToString("\n"))
+        }
+
+        eventPublisher.publishCommitsFetchingCompletedEvent(transactionId)
+    }
+
+    /**
+     * Fetches commit data from a GitHub repository using the local repository cache and returns the raw output.
+     * The method utilizes `gitRunner` for fetching either all commits or commits after a specific timestamp,
+     * based on the value of `doSyncAll`.
+     * If an error occurs during the fetching process, appropriate failure events are published, and the
+     * error is rethrown.
+     *
+     * @param latestSnapshot The snapshot of the repository containing metadata for the latest synchronization,
+     * including the last synchronization timestamp.
+     * @param doSyncAll A boolean flag indicating whether to fetch all commits from the repository (`true`)
+     * or only those after the last synchronization timestamp (`false`).
+     * @param transactionId A unique identifier for the transaction associated with this fetch operation.
+     * @return A raw string containing the fetched commit data in a line-separated format.
+     * @throws Exception If the commit fetching process fails due to any reason, the exception is rethrown after
+     * publishing a failure event.
+     */
+    private suspend fun fetchCommits(
+        latestSnapshot: GithubRepositorySnapshot,
+        doSyncAll: Boolean,
+        transactionId: UUID,
+    ): String = runCatching {
+        val localCopyPath = customCache.getLocalRepositoryPath(
+            latestSnapshot.repository.owner,
+            latestSnapshot.repository.name,
+        )
+        if (doSyncAll) {
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommits())
         } else {
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommitsAfter(latestSnapshot.lastCommitsSyncAt))
         }
+    }.getOrElse { e ->
+        eventPublisher.publishCommitsFetchFailedEvent(transactionId, e.message)
+        throw e
+    }
 
-        val commits = newCommits.lines().filter { it.isNotBlank() }.map { parseCommit(it) }
+    /**
+     * Processes a single line of commit data, parsing it into a structured commit object
+     * and ingesting it as part of a synchronization process. If an error occurs during parsing
+     * or ingestion, appropriate failure events are published and the error messages
+     * are added to the provided failure list.
+     *
+     * @param line The raw string representing the commit data.
+     * @param transactionId A unique identifier for the transaction associated with the commit process.
+     * @param failures A mutable list to record error messages for any failures encountered during
+     * parsing or ingestion of the commit.
+     */
+    private fun processCommitLine(
+        line: String,
+        transactionId: UUID,
+        failures: MutableList<String>,
+    ) {
+        val commit = runCatching { parseCommit(line) }
+            .onFailure { e ->
+                eventPublisher.publishCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error")
+                failures.add("Parsing $line failed: ${e.message}")
+            }.getOrNull() ?: return
 
-        val startJobEvent = CommitsSyncStartedEvent(
-            transactionId = transactionId,
-            shas = commits.map { it.sha },
-        )
-        eventPublisher.publishEvent(startJobEvent)
-
-        commits
-            .forEach { commit ->
-                ingestCommit(commit, transactionId)
+        runCatching { ingestCommit(commit, transactionId) }
+            .onFailure { e ->
+                eventPublisher.publishCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error")
+                failures.add("Ingesting ${commit.sha} failed: ${e.message}")
             }
     }
 
@@ -93,13 +155,12 @@ class GithubCommitsService(
      * @param transactionId The unique transaction identifier associated with the synchronization process.
      */
     private fun ingestCommit(commit: Commit, transactionId: UUID) {
-        val event = GithubCommitFetchedEvent(
-            transactionId = transactionId,
-            author = commit.author,
-            date = commit.date,
-            sha = commit.sha,
-            msg = commit.msg,
+        eventPublisher.publishCommitFetchedEvent(
+            transactionId,
+            commit.author,
+            commit.date,
+            commit.sha,
+            commit.msg,
         )
-        eventPublisher.publishEvent(event)
     }
 }
