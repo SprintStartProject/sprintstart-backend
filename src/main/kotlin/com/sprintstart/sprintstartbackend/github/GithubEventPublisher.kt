@@ -1,8 +1,10 @@
 package com.sprintstart.sprintstartbackend.github
 
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubRepositoryCommitsFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubRepositoryCommitsFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubRepositoryCommitsFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
@@ -14,6 +16,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubR
 import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryResourcesFetchingStartedEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.UUID
 
 @Component
@@ -57,17 +60,29 @@ class GithubEventPublisher(
 
     // Commits
 
-    fun publishRepositoryCommitsFetchingStartedEvent(transactionId: UUID) =
-        publish(GithubRepositoryCommitsFetchingStartedEvent(transactionId))
+    fun publishCommitsFetchingStartedEvent(transactionId: UUID) =
+        publish(GithubCommitsFetchingStartedEvent(transactionId))
 
-    fun publishRepositoryCommitsFetchingCompletedEvent(transactionId: UUID) =
-        publish(GithubRepositoryCommitsFetchingCompletedEvent(transactionId))
+    fun publishCommitFetchFailedEvent(transactionId: UUID, reason: String) =
+        publish(GithubCommitFetchFailedEvent(transactionId, reason))
 
-    fun publishRepositoryCommitsFetchFailedEvent(transactionId: UUID, reason: String?) =
+    fun publishCommitFetchedEvent(
+        transactionId: UUID,
+        author: String,
+        date: Instant,
+        sha: String,
+        msg: String,
+    ) =
+        publish(GithubCommitFetchedEvent(transactionId, author, date, sha, msg))
+
+    fun publishCommitsFetchingCompletedEvent(transactionId: UUID) =
+        publish(GithubCommitsFetchingCompletedEvent(transactionId))
+
+    fun publishCommitsFetchFailedEvent(transactionId: UUID, reason: String?) =
         if (reason == null) {
-            publish(GithubRepositoryCommitsFetchFailedEvent(transactionId))
+            publish(GithubCommitsFetchFailedEvent(transactionId))
         } else {
-            publish(GithubRepositoryCommitsFetchFailedEvent(transactionId, reason))
+            publish(GithubCommitsFetchFailedEvent(transactionId, reason))
         }
 
     // Internal

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.external.events.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache

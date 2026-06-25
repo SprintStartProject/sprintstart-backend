@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.external.events
+package com.sprintstart.sprintstartbackend.github.external.events.commits
 
 import java.time.Instant
 import java.util.UUID
