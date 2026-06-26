@@ -5,6 +5,9 @@ import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.Gi
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReview
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentsConnection
@@ -27,6 +30,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import java.time.Instant
 import java.util.Optional
@@ -91,17 +95,52 @@ class GithubPullRequestsServiceTest {
             service.fetchAndIngestAllPullRequests(repo.id, transactionId)
 
             val events = mutableListOf<Any>()
-            io.mockk.verify(exactly = 4) { eventPublisher.publishEvent(capture(events)) }
+            io.mockk.verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
         }
 
         @Test
-        fun `publishes no events when there are no pull requests`() = runTest {
+        fun `publishes lifecycle events when there are no pull requests`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, transactionId)
 
-            io.mockk.verify(exactly = 0) { eventPublisher.publishEvent(any()) }
+            val events = mutableListOf<Any>()
+            io.mockk.verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
+            assertThat(events).anyMatch { it is GithubPullRequestsFetchingStartedEvent }
+            assertThat(events).anyMatch { it is GithubPullRequestsFetchingCompletedEvent }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingStartedEvent on start`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+
+            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+
+            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchingStartedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingCompletedEvent on completion`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+
+            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+
+            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchingCompletedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingFailedEvent when API fails`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } throws RuntimeException("API error")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+            }
+
+            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchingFailedEvent>()) }
         }
     }
 

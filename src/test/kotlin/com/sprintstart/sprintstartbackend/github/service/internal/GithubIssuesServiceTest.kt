@@ -3,6 +3,9 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueComment
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.AssigneesCollection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
@@ -22,6 +25,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import java.time.Instant
 import java.util.Optional
@@ -83,19 +87,54 @@ class GithubIssuesServiceTest {
 
             service.fetchAndIngestAllIssues(repo.id, transactionId)
 
-            verify(exactly = 4) {
+            verify(exactly = 5) {
                 eventPublisher.publishEvent(any<GithubIssueFetchedEvent>())
             }
         }
 
         @Test
-        fun `publishes no events when there are no issues`() = runTest {
+        fun `publishes lifecycle events when there are no issues`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
 
             service.fetchAndIngestAllIssues(repo.id, transactionId)
 
-            verify(exactly = 0) { eventPublisher.publishEvent(any()) }
+            val events = mutableListOf<Any>()
+            verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
+            assertThat(events).anyMatch { it is GithubIssuesFetchingStartedEvent }
+            assertThat(events).anyMatch { it is GithubIssuesFetchingCompletedEvent }
+        }
+
+        @Test
+        fun `publishes GithubIssuesFetchingStartedEvent on start`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
+
+            service.fetchAndIngestAllIssues(repo.id, transactionId)
+
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingStartedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubIssuesFetchingCompletedEvent on completion`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
+
+            service.fetchAndIngestAllIssues(repo.id, transactionId)
+
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingCompletedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubIssuesFetchingFailedEvent when API fails`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchIssues("owner", "repo", null) } throws RuntimeException("API error")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllIssues(repo.id, transactionId)
+            }
+
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingFailedEvent>()) }
         }
     }
 

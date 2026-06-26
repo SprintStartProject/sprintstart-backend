@@ -138,7 +138,7 @@ class GithubCommitsService(
         val dateStr = parts[0]
         val sha = parts[1]
         val author = parts[2]
-        val msg = parts.drop(3).joinToString("")
+        val msg = parts.drop(3).joinToString(" - ")
         val date = Instant.parse(dateStr)
 
         return Commit(

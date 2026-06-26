@@ -1,7 +1,11 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.github.models.ConnectionStatus
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.github.repository.GithubFileSnapshotRepository
@@ -9,9 +13,7 @@ import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConn
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
-import com.sprintstart.sprintstartbackend.upload.external.UploadIngestionApi
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -21,6 +23,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import org.springframework.context.ApplicationEventPublisher
 import java.nio.charset.StandardCharsets
@@ -37,8 +40,6 @@ class GithubFileServiceTest {
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val customCache = mockk<CustomOnDiskCache>()
     private val gitRunner = mockk<GitOperationRunner>()
-    private val uploadIngestionApi = mockk<UploadIngestionApi>(relaxed = true)
-
     private lateinit var service: GithubFileService
 
     private val transactionId = UUID.randomUUID()
@@ -53,7 +54,6 @@ class GithubFileServiceTest {
             eventPublisher = eventPublisher,
             customCache = customCache,
             gitRunner = gitRunner,
-            uploadIngestionApi = uploadIngestionApi,
         )
         every { repoConnectionRepository.save(any()) } answers { firstArg() }
         every { fileSnapshotRepository.save(any()) } answers { firstArg() }
@@ -93,14 +93,8 @@ class GithubFileServiceTest {
         }
 
         @Test
-        fun `ingests modified file through upload module api`() = runTest {
+        fun `publishes GithubFileFetchedEvent for modified file`() = runTest {
             val repo = repoConnection(lastSha = "old-sha")
-
-            coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(repoPath, match { it.command().contains("diff") }) } returns "src/Main.kt\n"
 
             // Create a real temp file so fetchFileUpdate can read it
             val tempFile = Files.createTempFile("Main", ".kt")
@@ -116,12 +110,11 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
 
-            coVerify {
-                uploadIngestionApi.ingestGithubFile(
-                    fileName,
-                    "fun main() {}",
-                    "https://github.com/owner/repo/blob/new-sha/$fileName",
-                )
+            val eventSlot = slot<GithubFileFetchedEvent>()
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            with(eventSlot.captured) {
+                assertThat(path).isEqualTo(fileName)
+                assertThat(content).isEqualTo("fun main() {}")
             }
 
             Files.delete(tempFile)
@@ -160,8 +153,10 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
 
-            coVerify(exactly = 0) { uploadIngestionApi.ingestGithubFile(any(), any(), any()) }
-            verify(exactly = 0) { eventPublisher.publishEvent(any()) }
+            val allEvents = mutableListOf<Any>()
+            verify(exactly = 2) { eventPublisher.publishEvent(capture(allEvents)) }
+            assertThat(allEvents).anyMatch { it is GithubFilesFetchingStartedEvent }
+            assertThat(allEvents).anyMatch { it is GithubFilesFetchingCompletedEvent }
         }
 
         @Test
@@ -183,40 +178,6 @@ class GithubFileServiceTest {
     @Nested
     inner class FetchAndIngestAllFiles {
         @Test
-        fun `sets status to FAILED when exception is thrown`() = runTest {
-            val repo = repoConnection()
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery {
-                customCache.getLocalRepositoryPath("owner", "repo")
-            } throws RuntimeException("disk error")
-
-            try {
-                service.fetchAndIngestAllFiles(repo.id, transactionId)
-            } catch (@Suppress("SwallowedException") e: RuntimeException) {
-                // expected
-            }
-
-            assertThat(repo.status).isEqualTo(ConnectionStatus.FAILED)
-        }
-
-        @Test
-        fun `always saves repository in finally block even on exception`() = runTest {
-            val repo = repoConnection()
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repoConnection())
-            coEvery {
-                customCache.getLocalRepositoryPath("owner", "repo")
-            } throws RuntimeException("disk error")
-
-            try {
-                service.fetchAndIngestAllFiles(repo.id, transactionId)
-            } catch (@Suppress("SwallowedException") e: RuntimeException) {
-                // expected
-            }
-
-            verify { repoConnectionRepository.save(any()) }
-        }
-
-        @Test
         fun `updates lastSha after successful ingestion`() = runTest {
             val repo = repoConnection()
 
@@ -233,21 +194,28 @@ class GithubFileServiceTest {
         }
 
         @Test
-        fun `does not fail when repository has no resolvable HEAD yet`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            val emptyDir = Files.createTempDirectory("empty-repo-no-head")
+        fun `publishes lifecycle events on successful ingestion`() = runTest {
+            val repo = repoConnection()
 
+            val emptyDir = Files.createTempDirectory("empty-repo")
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns emptyDir
-            every {
-                gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") })
-            } throws RuntimeException("git rev-parse HEAD failed (exit 128)")
+            every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
 
             service.fetchAndIngestAllFiles(repo.id, transactionId)
 
-            assertThat(repo.status).isNotEqualTo(ConnectionStatus.FAILED)
-            assertThat(repo.lastSha).isBlank()
+            verify { eventPublisher.publishEvent(any<GithubFilesFetchingStartedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubFilesFetchingCompletedEvent>()) }
             Files.delete(emptyDir)
+        }
+
+        @Test
+        fun `throws ResponseStatusException when repository is not found`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.empty()
+
+            assertThrows<Exception> {
+                service.fetchAndIngestAllFiles(UUID.randomUUID(), transactionId)
+            }
         }
     }
 
@@ -257,7 +225,7 @@ class GithubFileServiceTest {
         lateinit var repoDir: Path
 
         @Test
-        fun `ingests one file per text file`() = runTest {
+        fun `publishes one GithubFileFetchedEvent per text file`() = runTest {
             repoDir.resolve("file1.kt").writeText("content 1")
             repoDir.resolve("file2.kt").writeText("content 2")
 
@@ -267,7 +235,9 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify(exactly = 2) { uploadIngestionApi.ingestGithubFile(any(), any(), any()) }
+            val allEvents = mutableListOf<Any>()
+            verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }
+            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(2)
         }
 
         @Test
@@ -281,7 +251,9 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify(exactly = 1) { uploadIngestionApi.ingestGithubFile(any(), any(), any()) }
+            val allEvents = mutableListOf<Any>()
+            verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
+            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(1)
         }
 
         @Test
@@ -296,13 +268,9 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify(exactly = 1) {
-                uploadIngestionApi.ingestGithubFile(
-                    match { !it.contains(".git") },
-                    any(),
-                    any(),
-                )
-            }
+            val allEvents = mutableListOf<Any>()
+            verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
+            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(1)
         }
 
         @Test
@@ -316,13 +284,10 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify {
-                uploadIngestionApi.ingestGithubFile(
-                    "src/Main.kt",
-                    "content",
-                    "https://github.com/owner/repo/blob/sha/src/Main.kt",
-                )
-            }
+            val eventSlot = slot<GithubFileFetchedEvent>()
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            assertThat(eventSlot.captured.sourceUrl)
+                .isEqualTo("https://github.com/owner/repo/blob/sha/src/Main.kt")
         }
 
         @Test
@@ -335,13 +300,9 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify {
-                uploadIngestionApi.ingestGithubFile(
-                    "code.kt",
-                    "fun main() {}",
-                    "https://github.com/owner/repo/blob/sha/code.kt",
-                )
-            }
+            val eventSlot = slot<GithubFileFetchedEvent>()
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            assertThat(eventSlot.captured.content).isEqualTo("fun main() {}")
         }
 
         @Test
@@ -354,7 +315,7 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            verify { fileSnapshotRepository.save(any()) }
+            verify { fileSnapshotRepository.saveAll(any<Iterable<GithubFileSnapshot>>()) }
         }
 
         @Test
@@ -368,7 +329,10 @@ class GithubFileServiceTest {
 
             service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
 
-            coVerify(exactly = 1) { uploadIngestionApi.ingestGithubFile(any(), any(), any()) }
+            val allEvents = mutableListOf<Any>()
+            verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }
+            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(2)
+            assertThat(allEvents.filterIsInstance<GithubFileFetchFailedEvent>()).isEmpty()
         }
     }
 

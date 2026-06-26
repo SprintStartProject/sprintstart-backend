@@ -1,6 +1,11 @@
 package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
+import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubAllRepositoriesUpdateStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
@@ -20,6 +25,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -28,6 +34,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import java.util.UUID
 import kotlin.test.assertFailsWith
 
@@ -42,6 +49,7 @@ class GithubConnectorServiceTest {
     private val issuesService = mockk<GithubIssuesService>()
     private val pullRequestsService = mockk<GithubPullRequestsService>()
     private val githubClient = mockk<GithubClient>()
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
     private lateinit var service: GithubConnectorService
 
@@ -56,6 +64,7 @@ class GithubConnectorServiceTest {
             issuesService = issuesService,
             pullRequestsService = pullRequestsService,
             githubClient = githubClient,
+            eventPublisher = eventPublisher,
         )
     }
 
@@ -129,9 +138,9 @@ class GithubConnectorServiceTest {
         fun `updateAllRepositories returns a transactionId`() = testScope.runTest {
             every { repoConnectionRepository.findAll() } returns emptyList()
 
-            val transactionId = service.updateAllRepositories()
+            val response = service.updateAllRepositories()
 
-            assertThat(transactionId).isNotNull()
+            assertThat(response.transactionId).isNotNull()
         }
 
         @Test
@@ -153,9 +162,9 @@ class GithubConnectorServiceTest {
         fun `updateAllRepositories returns immediately when no repositories are connected`() = testScope.runTest {
             every { repoConnectionRepository.findAll() } returns emptyList()
 
-            val transactionId = service.updateAllRepositories()
+            val response = service.updateAllRepositories()
 
-            assertThat(transactionId).isNotNull()
+            assertThat(response.transactionId).isNotNull()
             coVerify(exactly = 0) { repoSnapshotRepository.findLatestByRepository(any()) }
         }
     }
@@ -178,9 +187,9 @@ class GithubConnectorServiceTest {
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             stubSuccessfulUpdate(repo)
 
-            val transactionId = service.updateRepository(updateRequest())
+            val response = service.updateRepository(updateRequest())
 
-            assertThat(transactionId).isNotNull()
+            assertThat(response.transactionId).isNotNull()
         }
 
         @Test
@@ -220,6 +229,63 @@ class GithubConnectorServiceTest {
                     service.updateRepository(updateRequest())
                 }
             }
+    }
+
+    // ── event publishing ──────────────────────────────────────────────────────
+
+    @Nested
+    inner class EventPublishing {
+        @Test
+        fun `publishes GithubRepositoryConnectionInitiatedEvent on connect`() = testScope.runTest {
+            coEvery { githubClient.repositoryExists("owner", "repo") } returns true
+            stubSuccessfulConnect()
+
+            service.connectRepositoryIfExists(connectRequest())
+
+            verify { eventPublisher.publishEvent(any<GithubRepositoryConnectionInitiatedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubRepositoryConnectionInitiationFailedEvent when repo not found`() = testScope.runTest {
+            coEvery { githubClient.repositoryExists("owner", "repo") } returns false
+
+            assertFailsWith<RepositoryNotFoundException> {
+                service.connectRepositoryIfExists(connectRequest())
+            }
+
+            verify { eventPublisher.publishEvent(any<GithubRepositoryConnectionInitiationFailedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubAllRepositoriesUpdateStartedEvent on updateAll`() = testScope.runTest {
+            every { repoConnectionRepository.findAll() } returns emptyList()
+
+            service.updateAllRepositories()
+
+            verify { eventPublisher.publishEvent(any<GithubAllRepositoriesUpdateStartedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubRepositoryUpdateStartedEvent on single update`() = testScope.runTest {
+            val repo = repoConnection("owner", "repo")
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
+            stubSuccessfulUpdate(repo)
+
+            service.updateRepository(updateRequest())
+
+            verify { eventPublisher.publishEvent(any<GithubRepositoryUpdateStartedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubRepositoryUpdateFailedEvent when repo not found on update`() = testScope.runTest {
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns null
+
+            assertFailsWith<RepositoryNotConnectedException> {
+                service.updateRepository(updateRequest())
+            }
+
+            verify { eventPublisher.publishEvent(any<GithubRepositoryUpdateFailedEvent>()) }
+        }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
