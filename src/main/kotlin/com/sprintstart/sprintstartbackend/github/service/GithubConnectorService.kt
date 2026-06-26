@@ -1,13 +1,18 @@
 package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
+import com.sprintstart.sprintstartbackend.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryResourcesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubAllRepositoriesUpdateStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdateRepositoryRequest
+import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateAllRepositoriesResponse
+import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateRepositoryResponse
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
@@ -87,15 +92,17 @@ class GithubConnectorService(
      *
      * @return A UUID representing the transaction ID assigned to this update operation.
      */
-    suspend fun updateAllRepositories(): UUID {
+    suspend fun updateAllRepositories(): UpdateAllRepositoriesResponse {
         val transactionId = UUID.randomUUID()
         val allRepositories = repoConnectionRepository.findAll()
+
+        eventPublisher.publishEvent(GithubAllRepositoriesUpdateStartedEvent(transactionId))
 
         allRepositories.forEach { repo ->
             updateRepository(repo, transactionId)
         }
 
-        return transactionId
+        return UpdateAllRepositoriesResponse(transactionId)
     }
 
     /**
@@ -109,14 +116,22 @@ class GithubConnectorService(
      * @return A UUID representing the transaction ID assigned to this update operation.
      * @throws RepositoryNotConnectedException If the repository specified in the request is not connected.
      */
-    suspend fun updateRepository(request: UpdateRepositoryRequest): UUID {
+    suspend fun updateRepository(request: UpdateRepositoryRequest): UpdateRepositoryResponse {
         val transactionId = UUID.randomUUID()
-        val repository = repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
-            ?: throw RepositoryNotConnectedException(request.owner, request.name)
+
+        eventPublisher.publishEvent(GithubRepositoryUpdateStartedEvent(transactionId))
+
+        val repository = runCatching {
+            repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
+                ?: throw RepositoryNotConnectedException(request.owner, request.name)
+        }.onFailure { e ->
+            eventPublisher.publishEvent(GithubRepositoryUpdateFailedEvent(transactionId))
+            throw e
+        }.getOrNull() ?: return UpdateRepositoryResponse(transactionId)
 
         updateRepository(repository, transactionId)
 
-        return transactionId
+        return UpdateRepositoryResponse(transactionId)
     }
 
     /**
@@ -127,12 +142,21 @@ class GithubConnectorService(
      * @param transactionId The unique identifier for the transaction to track the update process.
      */
     private suspend fun updateRepository(githubRepository: GithubRepositoryConnection, transactionId: UUID) {
-        val latestSnapshot = repoSnapshotRepository.findLatestByRepository(githubRepository.id)
-            ?: throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
+        eventPublisher.publishEvent(GithubRepositoryUpdateStartedEvent(transactionId))
+
+        val latestSnapshot = runCatching {
+            repoSnapshotRepository.findLatestByRepository(githubRepository.id)
+                ?: throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
+        }.onFailure { e ->
+            eventPublisher.publishEvent(GithubRepositoryUpdateFailedEvent(transactionId))
+            throw e
+        }.getOrNull() ?: return
 
         val newSnapshot = GithubRepositorySnapshot(
             repository = githubRepository,
         )
+
+        eventPublisher.publishEvent(GithubRepositoryResourcesFetchingStartedEvent(UUID.randomUUID()))
 
         applicationScope.launch {
             fileService.fetchAndIngestFileUpdatesIncremental(githubRepository, transactionId)

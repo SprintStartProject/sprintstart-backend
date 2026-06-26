@@ -5,7 +5,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIs
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingInitiatedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,7 +36,7 @@ class GithubIssuesService(
         transactionId: UUID,
         since: Instant? = null,
     ) {
-        eventPublisher.publishEvent(GithubIssuesFetchingInitiatedEvent(transactionId))
+        eventPublisher.publishEvent(GithubIssuesFetchingStartedEvent(transactionId))
 
         val issues = runCatching {
             val githubRepository = withContext(Dispatchers.IO) {

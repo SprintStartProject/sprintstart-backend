@@ -2,6 +2,6 @@ package com.sprintstart.sprintstartbackend.github.external.events.issues
 
 import java.util.UUID
 
-data class GithubIssuesFetchingInitiatedEvent(
+data class GithubIssuesFetchingStartedEvent(
     val transactionId: UUID,
 )
