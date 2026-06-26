@@ -30,7 +30,8 @@ class OnboardingStepServiceTest {
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
     private val userApi: UserApi = mockk()
     private val eventPublisher: org.springframework.context.ApplicationEventPublisher = mockk(relaxed = true)
-    private val service = OnboardingStepService(onboardingPhaseRepository, onboardingStepRepository, userApi, eventPublisher)
+    private val service =
+        OnboardingStepService(onboardingPhaseRepository, onboardingStepRepository, userApi, eventPublisher)
 
     private val userId = UUID.randomUUID()
     private val phaseId = UUID.randomUUID()

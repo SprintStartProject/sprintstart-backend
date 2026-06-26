@@ -83,6 +83,16 @@ class OnboardingStepController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/team-overview")
+    @PreAuthorize("hasRole('USER')")
+    fun getMyTeamOverview(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+        return onboardingPathService.getTeamOverviewForMe(jwt.subject)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
     @GetMapping("/me/phases/{phaseId}/steps")
     @PreAuthorize("hasRole('USER')")
     fun getOnboardingStepsForMe(
@@ -447,7 +457,10 @@ class OnboardingStepController(
         @org.springframework.web.bind.annotation.RequestParam(required = false) search: String?,
         @org.springframework.web.bind.annotation.RequestParam(required = false) roleIds: List<UUID>?,
         @org.springframework.web.bind.annotation.RequestParam(required = false) projectIds: List<UUID>?,
-        @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "LONGEST_STEP") sortBy: String,
+        @org.springframework.web.bind.annotation.RequestParam(
+            required = false,
+            defaultValue = "LONGEST_STEP",
+        ) sortBy: String,
         pageable: org.springframework.data.domain.Pageable,
     ): org.springframework.data.domain.Page<
         com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto,

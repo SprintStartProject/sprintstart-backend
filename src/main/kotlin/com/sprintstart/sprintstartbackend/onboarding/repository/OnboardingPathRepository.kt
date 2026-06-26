@@ -14,8 +14,9 @@ interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
 
     fun findByUserId(userId: UUID): Optional<OnboardingPath>
 
-    @org.springframework.data.jpa.repository.Query(value = """
-        SELECT CAST(u.id AS VARCHAR)
+    @org.springframework.data.jpa.repository.Query(
+        value = """
+        SELECT CAST(u.id AS uuid)
         FROM sprintstart_users u
         LEFT JOIN onboarding_paths p ON p.user_id = u.id
         WHERE (:search IS NULL OR LOWER(u.firstname) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.lastname) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')))
@@ -43,18 +44,21 @@ interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
             )
           END ASC,
           u.lastname ASC, u.firstname ASC
-    """, countQuery = """
+    """,
+        countQuery = """
         SELECT count(u.id)
         FROM sprintstart_users u
         WHERE (:search IS NULL OR LOWER(u.firstname) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.lastname) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')))
           AND (COALESCE(:projectIds) IS NULL OR u.project_id IN (:projectIds))
           AND (COALESCE(:roleIds) IS NULL OR EXISTS (SELECT 1 FROM user_project_roles ur WHERE ur.user_id = u.id AND ur.role_id IN (:roleIds)))
-    """, nativeQuery = true)
+    """,
+        nativeQuery = true,
+    )
     fun findUserIdsForOverview(
         @org.springframework.data.repository.query.Param("search") search: String?,
         @org.springframework.data.repository.query.Param("roleIds") roleIds: List<UUID>?,
         @org.springframework.data.repository.query.Param("projectIds") projectIds: List<UUID>?,
         @org.springframework.data.repository.query.Param("sortBy") sortBy: String,
-        pageable: org.springframework.data.domain.Pageable
+        pageable: org.springframework.data.domain.Pageable,
     ): org.springframework.data.domain.Page<UUID>
 }

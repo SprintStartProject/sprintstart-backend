@@ -51,7 +51,8 @@ class OnboardingStepControllerTest(
     private lateinit var onboardingStepService: OnboardingStepService
 
     @MockkBean
-    private lateinit var onboardingPathService: com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
+    private lateinit var onboardingPathService:
+        com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder

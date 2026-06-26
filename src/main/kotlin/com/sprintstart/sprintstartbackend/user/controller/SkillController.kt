@@ -40,7 +40,7 @@ class SkillController(
 ) {
     @GetMapping("/skills")
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR', 'USER')")
     fun getAllSkills(): List<Skill> {
         return skillRepository.findAll()
     }
@@ -66,14 +66,14 @@ class SkillController(
 
     @GetMapping("/users/{userId}/skill-assessments/completed")
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR', 'USER')")
     fun getUserSkillAssessments(@PathVariable userId: UUID): List<UserSkillAssessment> {
         return userSkillAssessmentRepository.findByUserId(userId)
     }
 
     @PostMapping("/skill-assessments")
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR', 'USER')")
     fun assessSkill(@RequestBody request: CreateSkillAssessmentRequest): UserSkillAssessment {
         val user = userRepository.findById(request.userId).orElseThrow()
         val skill = skillRepository.findById(request.skillId).orElseThrow()

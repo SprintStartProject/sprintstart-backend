@@ -109,82 +109,103 @@ class OnboardingPathService(
         val userDtos = userApi.getUsersByIds(userIdPage.content).associateBy { it.id }
 
         return userIdPage.map { userId ->
-            val userDto = userDtos[userId] ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found")
+            val userDto =
+                userDtos[userId] ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found")
             val path = onboardingPathRepository.findOnboardingPathByUserId(userDto.id).orElse(null)
 
-            var progressPercentage = 0.0
-            var currentPhase: String? = null
-            var currentStepDto: com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto? = null
+            buildTeamOverviewUserDto(userDto, path)
+        }
+    }
 
-            if (path != null) {
-                val totalSteps = path.phases.sumOf { it.steps.size }
-                val completedSteps = path.phases.sumOf { phase ->
-                    phase.steps.count {
-                        it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.FINISHED ||
-                            it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.SKIPPED
-                    }
+    @Transactional(readOnly = true)
+    fun getTeamOverviewForMe(authId: String):
+        com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+        val userId = userApi
+            .getUserIdByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
+        val userDto = userApi.getUsersByIds(listOf(userId)).firstOrNull()
+            ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found")
+        val path = onboardingPathRepository.findOnboardingPathByUserId(userDto.id).orElse(null)
+
+        return buildTeamOverviewUserDto(userDto, path)
+    }
+
+    private fun buildTeamOverviewUserDto(
+        userDto: com.sprintstart.sprintstartbackend.user.external.dto.UserDto,
+        path: com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath?,
+    ): com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+        var progressPercentage = 0.0
+        var currentPhase: String? = null
+        var currentStepDto: com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto? = null
+
+        if (path != null) {
+            val totalSteps = path.phases.sumOf { it.steps.size }
+            val completedSteps = path.phases.sumOf { phase ->
+                phase.steps.count {
+                    it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.FINISHED ||
+                        it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.SKIPPED
                 }
-                if (totalSteps > 0) {
-                    progressPercentage = completedSteps.toDouble() / totalSteps.toDouble()
+            }
+            if (totalSteps > 0) {
+                progressPercentage = completedSteps.toDouble() / totalSteps.toDouble()
+            }
+
+            val sortedPhases = path.phases.sortedBy { it.position }
+            for (phase in sortedPhases) {
+                val sortedSteps = phase.steps.sortedBy { it.position }
+                val waitingStep = sortedSteps.firstOrNull {
+                    it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.WAITING
                 }
+                if (waitingStep != null) {
+                    currentPhase = phase.title
 
-                val sortedPhases = path.phases.sortedBy { it.position }
-                for (phase in sortedPhases) {
-                    val sortedSteps = phase.steps.sortedBy { it.position }
-                    val waitingStep = sortedSteps.firstOrNull {
-                        it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.WAITING
-                    }
-                    if (waitingStep != null) {
-                        currentPhase = phase.title
-                        
-                        val skipReq = waitingStep.skipRequest?.let { req ->
-                            com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto(
-                                id = req.id.toString(),
-                                stepId = req.stepId.toString(),
-                                reason = req.reason,
-                                status = req.status.name,
-                                reviewComment = req.reviewComment,
-                                reviewedAt = req.reviewedAt,
-                            )
-                        }
-
-                        currentStepDto = com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto(
-                            id = waitingStep.id.toString(),
-                            title = waitingStep.title,
-                            startedAt = waitingStep.startedAt,
-                            skip = skipReq
+                    val skipReq = waitingStep.skipRequest?.let { req ->
+                        com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto(
+                            id = req.id.toString(),
+                            stepId = req.stepId.toString(),
+                            reason = req.reason,
+                            status = req.status.name,
+                            reviewComment = req.reviewComment,
+                            reviewedAt = req.reviewedAt,
                         )
-                        break
                     }
+
+                    currentStepDto = com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto(
+                        id = waitingStep.id.toString(),
+                        title = waitingStep.title,
+                        startedAt = waitingStep.startedAt,
+                        skip = skipReq,
+                    )
+                    break
                 }
             }
+        }
 
-            val currentPhaseDto = currentPhase?.let {
-                com.sprintstart.sprintstartbackend.onboarding.model.response.path
-                    .CurrentPhaseDto(title = it)
-            }
+        val currentPhaseDto = currentPhase?.let {
+            com.sprintstart.sprintstartbackend.onboarding.model.response.path
+                .CurrentPhaseDto(title = it)
+        }
 
-            val userSkills = userDto.skills.map { skill ->
-                com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto(
-                    id = skill.skillId.toString(),
-                    name = skill.name,
-                    roleId = null,
-                    level = skill.level,
-                )
-            }
-
-            com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto(
-                userId = userDto.id.toString(),
-                firstname = userDto.firstname,
-                lastname = userDto.lastname,
-                project = userDto.project,
-                roles = userDto.projectRoles,
-                skills = userSkills,
-                progressPercentage = progressPercentage,
-                currentPhase = currentPhaseDto,
-                currentStep = currentStepDto,
-                hasFeedback = false,
+        val userSkills = userDto.skills.map { skill ->
+            com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto(
+                id = skill.skillId.toString(),
+                name = skill.name,
+                roleId = null,
+                level = skill.level,
             )
         }
+
+        return com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto(
+            userId = userDto.id.toString(),
+            firstname = userDto.firstname,
+            lastname = userDto.lastname,
+            project = userDto.project,
+            roles = userDto.projectRoles,
+            skills = userSkills,
+            progressPercentage = progressPercentage,
+            currentPhase = currentPhaseDto,
+            currentStep = currentStepDto,
+            hasFeedback = false,
+        )
     }
 }
