@@ -29,7 +29,7 @@ class OnboardingStep(
     var position: Int,
     @Column(nullable = false)
     var title: String,
-    @Column(nullable = true)
+    @Column(nullable = true, columnDefinition = "TEXT")
     var description: String,
     @Column(nullable = true)
     var type: StepType,
@@ -48,7 +48,7 @@ class OnboardingStep(
         orphanRemoval = true,
     )
     val resources: MutableList<OnboardingResource> = mutableListOf(),
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var expectedOutcome: String,
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

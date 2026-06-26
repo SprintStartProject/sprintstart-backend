@@ -25,6 +25,10 @@ spring:
     hibernate:
       ddl-auto: update # create-drop
     show-sql: true
+  mvc:
+    async:
+      request-timeout: 600000
+
   security:
     oauth2:
       resourceserver:

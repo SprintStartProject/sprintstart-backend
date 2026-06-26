@@ -11,4 +11,5 @@ data class GetUserResponse(
     val firstname: String,
     val lastname: String,
     val workingArea: WorkingArea,
+    val experience: String? = null,
 )
