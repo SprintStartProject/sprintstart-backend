@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingSkip
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.UpdateOnboardingStepRequest
@@ -63,7 +65,7 @@ class OnboardingStepServiceTest {
         expectedOutcome = "Outcome",
     )
 
-    private fun makeUpdateRequest(position: Int = 0, status: StepStatus = StepStatus.WAITING) =
+    private fun makeUpdateRequest(position: Int = 0) =
         UpdateOnboardingStepRequest(
             position = position,
             title = "Updated Step",
@@ -71,9 +73,14 @@ class OnboardingStepServiceTest {
             type = StepType.VIDEO,
             estimatedMinutes = 15,
             expectedOutcome = "New Outcome",
-            status = status,
-            skipReason = null,
         )
+
+    private fun makeSkip(step: OnboardingStep, status: SkipStatus = SkipStatus.PENDING) = OnboardingSkip(
+        step = step,
+        status = status,
+        reason = "Not relevant",
+        resolvedAt = java.time.Instant.now(),
+    )
 
     @Nested
     inner class GetOnboardingStepsForMe {
@@ -171,7 +178,7 @@ class OnboardingStepServiceTest {
         @Test
         fun `updates step fields`() {
             val step = makeStep(0, StepStatus.WAITING)
-            val request = makeUpdateRequest(0, StepStatus.WAITING)
+            val request = makeUpdateRequest(0)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
             every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
@@ -182,40 +189,49 @@ class OnboardingStepServiceTest {
             val result = service.updateOnboardingStepForMe(authId, stepId, request)
 
             assertEquals("Updated Step", result.title)
+            assertEquals(StepStatus.WAITING, result.status)
+            assertNull(result.completedAt)
+            assertNull(result.skip)
         }
+    }
 
+    @Nested
+    inner class CompleteOnboardingStepForMe {
         @Test
-        fun `sets completedAt when status changes to FINISHED`() {
+        fun `completes waiting step`() {
             val step = makeStep(0, StepStatus.WAITING)
-            val request = makeUpdateRequest(0, StepStatus.FINISHED)
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every {
-                onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId)
-            } returns Optional.of(step)
-            every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
-            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns
-                mutableListOf()
-
-            val result = service.updateOnboardingStepForMe(authId, stepId, request)
-
-            assertNotNull(result.completedAt)
-            assertNull(result.skipReason)
-        }
-
-        @Test
-        fun `sets skipReason when status changes to SKIPPED`() {
-            val step = makeStep(0, StepStatus.WAITING)
-            val request =
-                UpdateOnboardingStepRequest(0, "t", "d", StepType.VIDEO, 10, "o", StepStatus.SKIPPED, "Not relevant")
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
-            every { onboardingStepRepository.countByPhaseId(step.phase.id) } returns 1
-            every { onboardingStepRepository.findByPhaseIdAndPositionBetween(any(), any(), any()) } returns
-                mutableListOf()
 
-            val result = service.updateOnboardingStepForMe(authId, stepId, request)
+            val result = service.completeOnboardingStepForMe(authId, stepId)
 
-            assertEquals("Not relevant", result.skipReason)
+            assertEquals(StepStatus.FINISHED, result.status)
+            assertNotNull(result.completedAt)
+            assertNull(result.skip)
+        }
+
+        @Test
+        fun `removes pending skip when completing step`() {
+            val step = makeStep(0, StepStatus.WAITING)
+            step.skips += makeSkip(step, SkipStatus.PENDING)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            val result = service.completeOnboardingStepForMe(authId, stepId)
+
+            assertEquals(0, step.skips.size)
+            assertNull(result.skip)
+        }
+
+        @Test
+        fun `throws 403 when step is not waiting`() {
+            val step = makeStep(0, StepStatus.FINISHED)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            assertThrows<ResponseStatusException> {
+                service.completeOnboardingStepForMe(authId, stepId)
+            }.also { assertEquals(400, it.statusCode.value()) }
         }
     }
 
