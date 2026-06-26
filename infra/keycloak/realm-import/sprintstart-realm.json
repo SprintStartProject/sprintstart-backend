@@ -1,6 +1,7 @@
 {
   "realm": "sprintstart",
   "enabled": true,
+  "loginTheme": "sprintstart-frontend",
   "displayName": "SprintStart",
   "registrationAllowed": true,
   "rememberMe": true,
