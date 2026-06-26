@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.canonical.model.dto.response
 
+import com.sprintstart.sprintstartbackend.canonical.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
 import java.time.Instant
@@ -13,5 +14,5 @@ data class IngestionRunResponse(
     val ingestedCount : Int = 0,
     val updatedCount : Int = 0,
     val failedCount : Int = 0,
-    val status: IngestionRunStatus = IngestionRunStatus.RUNNING,
+    val failedItems : List<Artifact>
 )

@@ -43,5 +43,5 @@ class Artifact(
     @Column(name = "content_hash", length = 64)
     var hash: String?,
     @Column(nullable = false)
-    val version : String,
+    var version : Int,
 )
