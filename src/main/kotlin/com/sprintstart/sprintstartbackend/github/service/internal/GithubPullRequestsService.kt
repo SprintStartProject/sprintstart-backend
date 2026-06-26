@@ -7,8 +7,8 @@ import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.Gi
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThread
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingInitiatedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -39,7 +39,7 @@ class GithubPullRequestsService(
         transactionId: UUID,
         since: Instant? = null,
     ) {
-        eventPublisher.publishEvent(GithubPullRequestsFetchingInitiatedEvent(transactionId))
+        eventPublisher.publishEvent(GithubPullRequestsFetchingStartedEvent(transactionId))
 
         val pullRequests = runCatching {
             val githubRepository = withContext(Dispatchers.IO) {
@@ -52,7 +52,12 @@ class GithubPullRequestsService(
                 githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name, since.toString())
             }
         }.onFailure {
-            eventPublisher.publishEvent(GithubPullRequestsInitiationFailedEvent(transactionId))
+            eventPublisher.publishEvent(
+                GithubPullRequestsFetchingFailedEvent(
+                    transactionId,
+                    it.message ?: "Unknown error",
+                ),
+            )
             throw it
         }.getOrNull() ?: return
 

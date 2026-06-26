@@ -39,6 +39,8 @@ import kotlin.io.path.exists
 import kotlin.io.path.extension
 import kotlin.streams.asSequence
 
+private const val BUFFER_SIZE = 32
+
 private val binaryExtensions = setOf(
     // images
     "png",
@@ -109,8 +111,14 @@ class GithubFileService(
         }
 
         if (githubRepository.isEmpty) {
-            eventPublisher.publishEvent(GithubFilesFetchingFailedEvent(transactionId, "Internal server error"))
-            // Internal server error as this function is only used internally, so we expect the repository id to be valid.
+            eventPublisher.publishEvent(
+                GithubFilesFetchingFailedEvent(
+                    transactionId,
+                    "Internal server error",
+                ),
+            )
+            // Internal server error as this function is only used internally,
+            // so we expect the repository id to be valid.
             throw ResponseStatusException(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "Repository with id $githubRepositoryId not found",
@@ -145,12 +153,13 @@ class GithubFileService(
     ) {
         eventPublisher.publishEvent(GithubFilesFetchingStartedEvent(transactionId))
 
-        try {
+        runCatching {
             if (githubRepository.lastSha.isBlank()) {
+                eventPublisher.publishEvent(GithubFilesFetchingFailedEvent(transactionId))
                 throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
             }
             fetchAndIngestFileUpdatesIfNecessary(githubRepository, transactionId)
-        } catch (@Suppress("TooGenericException") e: Exception) {
+        }.onFailure { e ->
             eventPublisher.publishEvent(GithubFilesFetchingFailedEvent(transactionId, e.message ?: "Unknown error"))
             throw e
         }
@@ -299,7 +308,7 @@ class GithubFileService(
                     is FileProcessingResult.Success -> {
                         // Batch snapshots and flush them in batches of 32
                         snapshotBuffer += result.snapshot
-                        if (snapshotBuffer.size >= 32) flushSnapshots(snapshotBuffer)
+                        if (snapshotBuffer.size >= BUFFER_SIZE) flushSnapshots(snapshotBuffer)
 
                         eventPublisher.publishEvent(
                             GithubFileFetchedEvent(
@@ -350,10 +359,13 @@ class GithubFileService(
      * and creating a file snapshot for the specified GitHub repository.
      *
      * @param filePath The path to the file being processed.
-     * @param repositoryPath The root path of the repository, used to compute the relative path of the file.
+     * @param repositoryPath The root path of the repository,
+     * used to compute the relative path of the file.
      * @param githubRepository The connection details for the GitHub repository.
-     * @param revision The revision identifier (e.g., branch, tag, or commit hash) to construct the source URL.
-     * @return A [FileProcessingResult] that represents either the successful processing result with file payload and snapshot
+     * @param revision The revision identifier (e.g., branch, tag, or commit hash)
+     * to construct the source URL.
+     * @return A [FileProcessingResult] that represents either the successful processing
+     * result with file payload and snapshot
      * or a failure result with a reason for the failure.
      */
     private suspend fun processSingleFile(
@@ -386,7 +398,8 @@ class GithubFileService(
     /**
      * Persists the provided list of file snapshots and clears the buffer.
      *
-     * @param buffer A mutable list of `GithubFileSnapshot` objects to be saved. The buffer is cleared after the snapshots are saved.
+     * @param buffer A mutable list of `GithubFileSnapshot` objects to be saved.
+     * The buffer is cleared after the snapshots are saved.
      */
     private suspend fun flushSnapshots(buffer: MutableList<GithubFileSnapshot>) {
         if (buffer.isEmpty()) return
@@ -442,11 +455,13 @@ class GithubFileService(
     /**
      * Reads the content of a file located at the specified path and computes its SHA-256 hash.
      *
-     * It's basically a collection function. Instead of reading the file content first, then hashing it,
+     * It's basically a collection function. Instead of reading the file content first,
+     * then hashing it,
      * this function does both in one go to half the work.
      *
      * @param filePath The path of the file to be read.
-     * @return A pair where the first element is the file's content as a string, and the second element is the SHA-256 hash of the file's content as a hexadecimal string.
+     * @return A pair where the first element is the file's content as a string,
+     * and the second element is the SHA-256 hash of the file's content as a hexadecimal string.
      */
     private suspend fun readFileWithHash(filePath: Path): Pair<String, String> {
         val digest = MessageDigest.getInstance("SHA-256")
