@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.canonical.model.entity
 
+import com.sprintstart.sprintstartbackend.canonical.model.dto.response.FailedArtifactResponse
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -26,6 +27,8 @@ class IngestionRun(
     var updatedCount : Int = 0,
     @Column(nullable = false)
     var failedCount : Int = 0,
+    @Column(nullable = false)
+    val failedItems : List<FailedArtifactResponse> = emptyList(),
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: IngestionRunStatus = IngestionRunStatus.RUNNING,
