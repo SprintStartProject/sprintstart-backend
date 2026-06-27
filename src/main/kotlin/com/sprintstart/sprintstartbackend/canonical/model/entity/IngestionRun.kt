@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.canonical.model.entity
 
-import com.sprintstart.sprintstartbackend.canonical.model.dto.response.FailedArtifactResponse
 import jakarta.persistence.Column
+import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
@@ -24,8 +24,9 @@ class IngestionRun(
     var updatedCount : Int = 0,
     @Column(nullable = false)
     var failedCount : Int = 0,
+    @ElementCollection
     @Column(nullable = false)
-    val failedItems : MutableList<FailedArtifactResponse> = mutableListOf(),
+    val failedItems : MutableList<FailedArtifact> = mutableListOf(),
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     val finishedTypes: MutableSet<FinishedTypes> = mutableSetOf(),

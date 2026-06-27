@@ -2,14 +2,16 @@ package com.sprintstart.sprintstartbackend.canonical.service
 
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactCommand
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactFailedCommand
-import com.sprintstart.sprintstartbackend.canonical.model.dto.response.FailedArtifactResponse
+import com.sprintstart.sprintstartbackend.canonical.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.canonical.model.mapper.SourceIdFactory.buildSourceId
 import com.sprintstart.sprintstartbackend.canonical.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.canonical.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import jakarta.transaction.Transactional
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -27,10 +29,9 @@ class ArtifactIngestionService(
             .findByIdOrNull(command.ingestionRunId)
             ?:throw IllegalArgumentException("Run with id ${command.ingestionRunId} not found")
         when(command.artifactType){
-            ArtifactType.COMMIT //TODO updating artifact
+            ArtifactType.COMMIT
                 -> { artifact = artifactRepository.findBySourceId(command.sourceId)
                     if(artifact != null){
-                        ingestionRun.ingestedCount++
                         return
                     }
                 }
@@ -43,8 +44,6 @@ class ArtifactIngestionService(
                         artifact.hash = command.hash
                         return
                     }
-                    ingestionRun.ingestedCount++
-
                 }
             }
             ArtifactType.ISSUE
@@ -108,12 +107,27 @@ class ArtifactIngestionService(
         val run = ingestionRunRepository
             .findByIdOrNull(command.transactionId)
             ?:throw IllegalArgumentException("Run with id ${command.transactionId} not found")
-        run.failedItems.add(FailedArtifactResponse(
+        run.failedItems.add(
+            FailedArtifact(
             sourceId = command.sourceId,
             reason = command.reason,
             artifactType = command.artifactType,
             sourceUrl = command.sourceUrl
         ))
+        run.failedCount++
+    }
+
+    @Transactional
+    fun unIngestFileArtifact(event: GithubFileDeletedEvent) {
+        artifactRepository.deleteBySourceId(
+            buildSourceId(
+                repositoryOwner = event.repositoryOwner,
+                repositoryName = event.repositoryName,
+                type = ArtifactType.FILE,
+                unique = event.path
+            )
+        )
+
     }
 
 

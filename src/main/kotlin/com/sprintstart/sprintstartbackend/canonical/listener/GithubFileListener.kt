@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.canonical.service.ArtifactIngestionSer
 import com.sprintstart.sprintstartbackend.canonical.service.GithubFetchingCompletionTracker
 
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
@@ -63,6 +64,14 @@ internal class GithubFileListener(
             finishedType = FinishedTypes.FILES,
         )
     }
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubFileDeletedEvent,
+    ) {
+        artifactIngestionService.unIngestFileArtifact(event)
+    }
+
 
 
 

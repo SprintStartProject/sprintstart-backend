@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.canonical.model.dto.response
 
+import com.sprintstart.sprintstartbackend.canonical.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
@@ -11,5 +12,5 @@ data class SourceIngestionStatusResponse(
     val ingestedCount : Int = 0,
     val updatedCount : Int = 0,
     val failedCount : Int = 0,
-    val failedItems : List<FailedArtifactResponse> = emptyList(),
+    val failedItems : List<FailedArtifact> = emptyList(),
 )
