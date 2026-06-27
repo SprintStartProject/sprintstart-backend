@@ -130,9 +130,13 @@ class UserService(
      */
     @Transactional
     fun deleteUserById(id: UUID) {
-        val authId = findAuthIdById(id)
+        val authId = userRepository
+            .findAuthIdById(id)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
+
         keycloakAdminClient.deleteUser(authId)
-        deleteLocalProjectionById(id)
+        userRepository.deleteRolesByUserId(id)
+        userRepository.deleteProjectionById(id)
     }
 
     @Transactional
@@ -161,14 +165,4 @@ class UserService(
         userRepository
             .findByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
-
-    private fun findAuthIdById(id: UUID): String =
-        userRepository
-            .findAuthIdById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
-
-    private fun deleteLocalProjectionById(id: UUID) {
-        userRepository.deleteRolesByUserId(id)
-        userRepository.deleteProjectionById(id)
-    }
 }

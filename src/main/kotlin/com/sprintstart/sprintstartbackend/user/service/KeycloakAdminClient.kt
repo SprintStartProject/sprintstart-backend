@@ -1,10 +1,12 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.KeycloakAdminConfig
 import com.sprintstart.sprintstartbackend.config.KeycloakRoleMapper
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
 import tools.jackson.databind.JsonNode
@@ -35,19 +37,12 @@ interface KeycloakAdminClient {
 
 @Service
 class HttpKeycloakAdminClient(
-    private val httpClient: HttpClient,
-    private val applicationConfig: ApplicationConfig,
-    @Value("\${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
-    private val jwtJwkSetUri: String = "",
-    @Value("\${spring.security.oauth2.resourceserver.jwt.issuer-uri:}")
-    private val jwtIssuerUri: String = "",
-    @Value("\${KEYCLOAK_ADMIN:}")
-    private val keycloakAdminUsername: String = "",
-    @Value("\${KEYCLOAK_ADMIN_PASSWORD:}")
-    private val keycloakAdminPassword: String = "",
+    private val tokenProvider: KeycloakAdminTokenProvider,
+    private val roleClient: KeycloakRealmRoleClient,
+    private val transport: KeycloakAdminTransport,
+    private val uris: KeycloakAdminUris,
 ) : KeycloakAdminClient {
     private val objectMapper = jacksonObjectMapper()
-    private val adminConfig get() = applicationConfig.keycloak.admin
 
     override fun updateUserProfile(authId: String, email: String?, firstName: String?, lastName: String?) {
         val payload = mutableMapOf<String, Any>()
@@ -65,38 +60,38 @@ class HttpKeycloakAdminClient(
     }
 
     override fun setPermissionGroup(authId: String, permissionGroup: Role) {
-        val token = accessToken()
-        val currentRoles = getRealmRoleMappings(authId, token)
+        val token = tokenProvider.accessToken()
+        val currentRoles = roleClient.getRealmRoleMappings(authId, token)
         val managedCurrentRoles = currentRoles.filter { it["name"]?.asText() in KeycloakRoleMapper.managedRealmRoles() }
 
         if (managedCurrentRoles.isNotEmpty()) {
-            send(
+            transport.send(
                 method = "DELETE",
-                uri = adminUri("/users/$authId/role-mappings/realm"),
+                uri = uris.adminUri("/users/$authId/role-mappings/realm"),
                 token = token,
                 body = objectMapper.writeValueAsString(managedCurrentRoles),
             )
         }
 
-        val targetRole = getRealmRole(KeycloakRoleMapper.toRealmRole(permissionGroup), token)
-        send(
+        val targetRole = roleClient.getRealmRole(KeycloakRoleMapper.toRealmRole(permissionGroup), token)
+        transport.send(
             method = "POST",
-            uri = adminUri("/users/$authId/role-mappings/realm"),
+            uri = uris.adminUri("/users/$authId/role-mappings/realm"),
             token = token,
             body = objectMapper.writeValueAsString(listOf(targetRole)),
         )
     }
 
     override fun getPermissionGroups(authId: String): Set<Role> {
-        val token = accessToken()
+        val token = tokenProvider.accessToken()
         val roleMappings = try {
-            getCompositeRealmRoleMappings(authId, token)
+            roleClient.getCompositeRealmRoleMappings(authId, token)
         } catch (error: ResponseStatusException) {
             if (error.statusCode != HttpStatus.NOT_FOUND) {
                 throw error
             }
 
-            getRealmRoleMappings(authId, token)
+            roleClient.getRealmRoleMappings(authId, token)
         }
 
         return KeycloakRoleMapper.mapRealmRoles(
@@ -105,60 +100,82 @@ class HttpKeycloakAdminClient(
     }
 
     override fun deleteUser(authId: String) {
-        send(
+        transport.send(
             method = "DELETE",
-            uri = adminUri("/users/$authId"),
-            token = accessToken(),
+            uri = uris.adminUri("/users/$authId"),
+            token = tokenProvider.accessToken(),
         )
     }
 
     private fun putUser(authId: String, payload: Map<String, Any>) {
-        send(
+        transport.send(
             method = "PUT",
-            uri = adminUri("/users/$authId"),
-            token = accessToken(),
+            uri = uris.adminUri("/users/$authId"),
+            token = tokenProvider.accessToken(),
             body = objectMapper.writeValueAsString(payload),
         )
     }
+}
 
-    private fun getRealmRole(roleName: String, token: String): JsonNode {
-        val body = send(
+@Component
+class KeycloakRealmRoleClient(
+    private val transport: KeycloakAdminTransport,
+    private val uris: KeycloakAdminUris,
+) {
+    private val objectMapper = jacksonObjectMapper()
+
+    fun getRealmRole(roleName: String, token: String): JsonNode {
+        val body = transport.send(
             method = "GET",
-            uri = adminUri("/roles/${encodePath(roleName)}"),
+            uri = uris.adminUri("/roles/${uris.encodePath(roleName)}"),
             token = token,
         )
         return objectMapper.readTree(body)
     }
 
-    private fun getRealmRoleMappings(authId: String, token: String): List<JsonNode> {
-        val body = send(
+    fun getRealmRoleMappings(authId: String, token: String): List<JsonNode> {
+        val body = transport.send(
             method = "GET",
-            uri = adminUri("/users/$authId/role-mappings/realm"),
+            uri = uris.adminUri("/users/$authId/role-mappings/realm"),
             token = token,
         )
         return objectMapper.readTree(body).toList()
     }
 
-    private fun getCompositeRealmRoleMappings(authId: String, token: String): List<JsonNode> {
-        val body = send(
+    fun getCompositeRealmRoleMappings(authId: String, token: String): List<JsonNode> {
+        val body = transport.send(
             method = "GET",
-            uri = adminUri("/users/$authId/role-mappings/realm/composite"),
+            uri = uris.adminUri("/users/$authId/role-mappings/realm/composite"),
             token = token,
         )
         return objectMapper.readTree(body).toList()
     }
+}
 
-    private fun accessToken(): String {
+@Component
+class KeycloakAdminTokenProvider(
+    private val httpClient: HttpClient,
+    private val applicationConfig: ApplicationConfig,
+    private val uris: KeycloakAdminUris,
+    @Value("\${KEYCLOAK_ADMIN:}")
+    private val keycloakAdminUsername: String = "",
+    @Value("\${KEYCLOAK_ADMIN_PASSWORD:}")
+    private val keycloakAdminPassword: String = "",
+) {
+    private val objectMapper = jacksonObjectMapper()
+    private val adminConfig get() = applicationConfig.keycloak.admin
+
+    fun accessToken(): String {
         val form = tokenFormBody()
         val request = HttpRequest
             .newBuilder()
-            .uri(tokenRealmUri("/protocol/openid-connect/token"))
+            .uri(uris.tokenRealmUri("/protocol/openid-connect/token"))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .POST(HttpRequest.BodyPublishers.ofString(form))
             .build()
 
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) {
+        if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) {
             throw ResponseStatusException(
                 HttpStatus.BAD_GATEWAY,
                 "Keycloak admin token request failed with status ${response.statusCode()}: " +
@@ -174,31 +191,39 @@ class HttpKeycloakAdminClient(
     }
 
     private fun tokenFormBody(): String {
-        val clientSecret = adminConfig.clientSecret
-        val username = adminConfig.username.takeUnlessBlank() ?: keycloakAdminUsername.takeUnlessBlank()
-        val password = adminConfig.password.takeUnlessBlank() ?: keycloakAdminPassword.takeUnlessBlank()
+        val pairs = tokenFormPairs(adminConfig)
+        return pairs.joinToString("&") { (key, value) -> "${uris.urlEncode(key)}=${uris.urlEncode(value)}" }
+    }
 
-        val pairs = if (!clientSecret.isNullOrBlank()) {
+    private fun tokenFormPairs(config: KeycloakAdminConfig): List<Pair<String, String>> {
+        val clientSecret = config.clientSecret
+        val username = config.username.takeUnlessBlank() ?: keycloakAdminUsername.takeUnlessBlank()
+        val password = config.password.takeUnlessBlank() ?: keycloakAdminPassword.takeUnlessBlank()
+
+        return if (!clientSecret.isNullOrBlank()) {
             listOf(
                 "grant_type" to "client_credentials",
-                "client_id" to adminConfig.clientId,
+                "client_id" to config.clientId,
                 "client_secret" to clientSecret,
             )
         } else if (!username.isNullOrBlank() && !password.isNullOrBlank()) {
             listOf(
                 "grant_type" to "password",
-                "client_id" to adminConfig.clientId,
+                "client_id" to config.clientId,
                 "username" to username,
                 "password" to password,
             )
         } else {
             throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Keycloak admin credentials are not configured")
         }
-
-        return pairs.joinToString("&") { (key, value) -> "${urlEncode(key)}=${urlEncode(value)}" }
     }
+}
 
-    private fun send(method: String, uri: URI, token: String, body: String? = null): String {
+@Component
+class KeycloakAdminTransport(
+    private val httpClient: HttpClient,
+) {
+    fun send(method: String, uri: URI, token: String, body: String? = null): String {
         val request = HttpRequest
             .newBuilder()
             .uri(uri)
@@ -213,8 +238,8 @@ class HttpKeycloakAdminClient(
             }.build()
 
         val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() !in 200..299) {
-            val status = if (response.statusCode() == 404) HttpStatus.NOT_FOUND else HttpStatus.BAD_GATEWAY
+        if (response.statusCode() !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) {
+            val status = if (response.statusCode() == HTTP_NOT_FOUND) HttpStatus.NOT_FOUND else HttpStatus.BAD_GATEWAY
             throw ResponseStatusException(
                 status,
                 "Keycloak admin request to $uri failed with status ${response.statusCode()}: " +
@@ -224,12 +249,29 @@ class HttpKeycloakAdminClient(
 
         return response.body()
     }
+}
 
-    private fun tokenRealmUri(path: String): URI =
+@Component
+class KeycloakAdminUris(
+    private val applicationConfig: ApplicationConfig,
+    @Value("\${spring.security.oauth2.resourceserver.jwt.jwk-set-uri:}")
+    private val jwtJwkSetUri: String = "",
+    @Value("\${spring.security.oauth2.resourceserver.jwt.issuer-uri:}")
+    private val jwtIssuerUri: String = "",
+) {
+    private val adminConfig get() = applicationConfig.keycloak.admin
+
+    fun tokenRealmUri(path: String): URI =
         URI.create("${keycloakBaseUrl()}/realms/${encodePath(adminConfig.tokenRealm)}$path")
 
-    private fun adminUri(path: String): URI =
+    fun adminUri(path: String): URI =
         URI.create("${keycloakBaseUrl()}/admin/realms/${encodePath(adminConfig.realm)}$path")
+
+    fun encodePath(value: String): String =
+        urlEncode(value).replace("+", "%20")
+
+    fun urlEncode(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8)
 
     private fun keycloakBaseUrl(): String =
         adminConfig.baseUrl.takeUnlessBlank()?.trimEnd('/')
@@ -250,20 +292,15 @@ class HttpKeycloakAdminClient(
             null
         }
     }
-
-    private fun urlEncode(value: String): String =
-        URLEncoder.encode(value, StandardCharsets.UTF_8)
-
-    private fun encodePath(value: String): String =
-        urlEncode(value).replace("+", "%20")
-
-    private fun String.safeErrorBody(): String =
-        take(MAX_ERROR_BODY_LENGTH).ifBlank { "empty response body" }
-
-    private fun String?.takeUnlessBlank(): String? =
-        this?.trim()?.takeIf { it.isNotBlank() }
-
-    private companion object {
-        const val MAX_ERROR_BODY_LENGTH = 500
-    }
 }
+
+private fun String.safeErrorBody(): String =
+    take(MAX_ERROR_BODY_LENGTH).ifBlank { "empty response body" }
+
+private fun String?.takeUnlessBlank(): String? =
+    this?.trim()?.takeIf { it.isNotBlank() }
+
+private const val HTTP_SUCCESS_MIN = 200
+private const val HTTP_SUCCESS_MAX = 299
+private const val HTTP_NOT_FOUND = 404
+private const val MAX_ERROR_BODY_LENGTH = 500
