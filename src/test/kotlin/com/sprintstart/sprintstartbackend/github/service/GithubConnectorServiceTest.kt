@@ -109,10 +109,10 @@ class GithubConnectorServiceTest {
             service.connectRepositoryIfExists(connectRequest())
             advanceUntilIdle() // wait for all launched coroutines
 
-            coVerify { fileService.fetchAndIngestAllFiles(any(), any()) }
+            coVerify { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
             coVerify { commitsService.fetchAndIngestLatestCommits(any(), any(), true) }
-            coVerify { issuesService.fetchAndIngestAllIssues(any(), any()) }
-            coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any()) }
+            coVerify { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any()) }
+            coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any()) }
         }
 
         @Test
@@ -125,7 +125,7 @@ class GithubConnectorServiceTest {
 
             val fileTransactionId = slot<UUID>()
             val commitsTransactionId = slot<UUID>()
-            coVerify { fileService.fetchAndIngestAllFiles(any(), capture(fileTransactionId)) }
+            coVerify { fileService.fetchAndIngestAllFiles(any(), any(), any(), capture(fileTransactionId)) }
             coVerify { commitsService.fetchAndIngestLatestCommits(any(), capture(commitsTransactionId), any()) }
 
             assertThat(fileTransactionId.captured).isEqualTo(commitsTransactionId.captured)
@@ -203,8 +203,8 @@ class GithubConnectorServiceTest {
 
             coVerify { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
             coVerify { commitsService.fetchAndIngestLatestCommits(any(), any(), false) }
-            coVerify { issuesService.fetchAndIngestAllIssues(any(), any(), any()) }
-            coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any()) }
+            coVerify { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
+            coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
         }
 
         @Test
@@ -305,10 +305,10 @@ class GithubConnectorServiceTest {
 
     private fun stubSuccessfulConnect() {
         every { repoConnectionRepository.save(any()) } answers { firstArg() }
-        coJustRun { fileService.fetchAndIngestAllFiles(any(), any()) }
+        coJustRun { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
         coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any(), any()) }
-        coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any()) }
-        coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any()) }
+        coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
+        coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
     }
 
     private fun stubSuccessfulUpdate(repo: GithubRepositoryConnection) {
@@ -316,7 +316,7 @@ class GithubConnectorServiceTest {
         every { repoSnapshotRepository.save(any()) } answers { firstArg() }
         coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
         coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any(), any()) }
-        coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any()) }
-        coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any()) }
+        coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
+        coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
     }
 }

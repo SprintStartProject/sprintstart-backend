@@ -2,8 +2,8 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
@@ -144,8 +144,8 @@ class GithubCommitsServiceTest {
 
             val events = mutableListOf<Any>()
             verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
-            assertThat(events).anyMatch { it is GithubCommitsFetchingStartedEvent }
-            assertThat(events).anyMatch { it is GithubCommitsFetchingCompletedEvent }
+            assertThat(events).anyMatch { it is GithubCommitsFetchStartedEvent }
+            assertThat(events).anyMatch { it is GithubCommitsFetchCompletedEvent }
         }
 
         @Test
@@ -156,8 +156,8 @@ class GithubCommitsServiceTest {
 
             val events = mutableListOf<Any>()
             verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
-            assertThat(events).anyMatch { it is GithubCommitsFetchingStartedEvent }
-            assertThat(events).anyMatch { it is GithubCommitsFetchingCompletedEvent }
+            assertThat(events).anyMatch { it is GithubCommitsFetchStartedEvent }
+            assertThat(events).anyMatch { it is GithubCommitsFetchCompletedEvent }
         }
 
         @Test
@@ -166,7 +166,7 @@ class GithubCommitsServiceTest {
 
             service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
 
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchingStartedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubCommitsFetchStartedEvent>()) }
         }
 
         @Test
@@ -175,7 +175,7 @@ class GithubCommitsServiceTest {
 
             service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
 
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchingCompletedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubCommitsFetchCompletedEvent>()) }
         }
 
         @Test

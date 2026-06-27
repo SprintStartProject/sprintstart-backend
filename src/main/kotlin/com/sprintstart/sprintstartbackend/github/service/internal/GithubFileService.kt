@@ -3,9 +3,9 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshotSharedId
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
@@ -99,12 +99,13 @@ class GithubFileService(
      * @param githubRepositoryId The GitHub repository id to initialize.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
-    @Suppress("UnusedParameter")
     internal suspend fun fetchAndIngestAllFiles(
         githubRepositoryId: UUID,
+        repositoryOwner: String,
+        repositoryName: String,
         transactionId: UUID,
     ) {
-        eventPublisher.publishEvent(GithubFilesFetchingStartedEvent(transactionId))
+        eventPublisher.publishEvent(GithubFilesFetchStartedEvent(transactionId, repositoryOwner, repositoryName))
 
         val githubRepository = withContext(Dispatchers.IO) {
             repoConnectionRepository.findById(githubRepositoryId)
@@ -112,8 +113,10 @@ class GithubFileService(
 
         if (githubRepository.isEmpty) {
             eventPublisher.publishEvent(
-                GithubFilesFetchingFailedEvent(
+                GithubFilesFetchFailedEvent(
                     transactionId,
+                    repositoryOwner,
+                    repositoryName,
                     "Internal server error",
                 ),
             )
@@ -135,7 +138,7 @@ class GithubFileService(
             repoConnectionRepository.save(githubRepository.get())
         }
 
-        eventPublisher.publishEvent(GithubFilesFetchingCompletedEvent(transactionId))
+        eventPublisher.publishEvent(GithubFilesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))
     }
 
     /**
@@ -151,20 +154,41 @@ class GithubFileService(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        eventPublisher.publishEvent(GithubFilesFetchingStartedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubFilesFetchStartedEvent(
+                transactionId,
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
 
         runCatching {
             if (githubRepository.lastSha.isBlank()) {
-                eventPublisher.publishEvent(GithubFilesFetchingFailedEvent(transactionId))
+                eventPublisher.publishEvent(
+                    GithubFilesFetchFailedEvent(transactionId, githubRepository.owner, githubRepository.name),
+                )
                 throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
             }
             fetchAndIngestFileUpdatesIfNecessary(githubRepository, transactionId)
         }.onFailure { e ->
-            eventPublisher.publishEvent(GithubFilesFetchingFailedEvent(transactionId, e.message ?: "Unknown error"))
+            eventPublisher.publishEvent(
+                GithubFilesFetchFailedEvent(
+                    transactionId,
+                    githubRepository.owner,
+                    githubRepository.name,
+                    e.message ?: "Unknown error",
+                ),
+            )
             throw e
         }
 
-        eventPublisher.publishEvent(GithubFilesFetchingCompletedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubFilesFetchCompletedEvent(
+                transactionId,
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
     }
 
     /**
@@ -183,7 +207,7 @@ class GithubFileService(
         transactionId: UUID,
     ) {
         val ghUrl = "https://github.com/${githubRepository.owner}/${githubRepository.name}"
-        fetchAndIngestFileUpdates(localFsPath, githubRepository.lastSha, latestSha, ghUrl, transactionId)
+        fetchAndIngestFileUpdates(localFsPath, githubRepository, latestSha, ghUrl, transactionId)
 
         githubRepository.lastSha = latestSha
         withContext(Dispatchers.IO) {
@@ -200,18 +224,18 @@ class GithubFileService(
      * or re-ingest ones that changed.
      *
      * @param localFsPath The path to the local copy of the GitHub repository.
-     * @param lastSha The sha representing the last time the repository was updated.
+     * @param repo The sha representing the last time the repository was updated.
      * @param latestSha The newest sha representing the state to update to.
      * @param transactionId The UUID of the overall transaction, this action is a part of.
      */
     private suspend fun fetchAndIngestFileUpdates(
         localFsPath: Path,
-        lastSha: String,
+        repo: GithubRepositoryConnection,
         latestSha: String,
         ghUrl: String,
         transactionId: UUID,
     ) {
-        val output = gitRunner.exec(localFsPath, onDiskOperations.gitDiffCmp(lastSha, latestSha))
+        val output = gitRunner.exec(localFsPath, onDiskOperations.gitDiffCmp(repo.lastSha, latestSha))
         val changedFiles = output.lines().filter { it.isNotBlank() }
         val failures = mutableListOf<String>()
 
@@ -223,6 +247,8 @@ class GithubFileService(
                         eventPublisher.publishEvent(
                             GithubFileFetchedEvent(
                                 transactionId,
+                                repo.owner,
+                                repo.name,
                                 changedFile.relativePath,
                                 changedFile.content,
                                 sourceUrl,
@@ -231,7 +257,14 @@ class GithubFileService(
                     }
 
                     is DeletedFile -> {
-                        eventPublisher.publishEvent(GithubFileDeletedEvent(transactionId, changedFile.relativePath))
+                        eventPublisher.publishEvent(
+                            GithubFileDeletedEvent(
+                                transactionId,
+                                repo.owner,
+                                repo.name,
+                                changedFile.relativePath,
+                            ),
+                        )
                     }
 
                     else -> {} // binary — skip
@@ -240,6 +273,8 @@ class GithubFileService(
                 eventPublisher.publishEvent(
                     GithubFileFetchFailedEvent(
                         transactionId,
+                        repo.owner,
+                        repo.name,
                         filePath,
                         e.message ?: "Unknown error",
                     ),
@@ -313,6 +348,8 @@ class GithubFileService(
                         eventPublisher.publishEvent(
                             GithubFileFetchedEvent(
                                 transactionId,
+                                githubRepository.owner,
+                                githubRepository.name,
                                 result.payload.path,
                                 result.payload.content,
                                 result.payload.sourceUrl,
@@ -322,7 +359,13 @@ class GithubFileService(
 
                     is FileProcessingResult.Failure -> {
                         eventPublisher.publishEvent(
-                            GithubFileFetchFailedEvent(transactionId, result.path, result.reason),
+                            GithubFileFetchFailedEvent(
+                                transactionId,
+                                githubRepository.owner,
+                                githubRepository.name,
+                                result.path,
+                                result.reason,
+                            ),
                         )
                         failures += "${result.path}: ${result.reason}"
                     }

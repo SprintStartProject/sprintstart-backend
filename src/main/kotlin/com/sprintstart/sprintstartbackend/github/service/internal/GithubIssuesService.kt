@@ -3,9 +3,9 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueComment
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,10 +33,12 @@ class GithubIssuesService(
      */
     internal suspend fun fetchAndIngestAllIssues(
         githubRepositoryId: UUID,
+        repositoryOwner: String,
+        repositoryName: String,
         transactionId: UUID,
         since: Instant? = null,
     ) {
-        eventPublisher.publishEvent(GithubIssuesFetchingStartedEvent(transactionId))
+        eventPublisher.publishEvent(GithubIssuesFetchStartedEvent(transactionId, repositoryOwner, repositoryName))
 
         val issues = runCatching {
             val githubRepository = withContext(Dispatchers.IO) {
@@ -49,13 +51,22 @@ class GithubIssuesService(
                 githubClient.fetchIssues(githubRepository.owner, githubRepository.name, since.toString())
             }
         }.onFailure {
-            eventPublisher.publishEvent(GithubIssuesFetchingFailedEvent(transactionId, it.message ?: "Unknown error"))
+            eventPublisher.publishEvent(
+                GithubIssuesFetchFailedEvent(
+                    transactionId,
+                    repositoryOwner,
+                    repositoryName,
+                    it.message ?: "Unknown error",
+                ),
+            )
             throw it
         }.getOrNull() ?: return
 
         issues.forEach { issue ->
             val event = GithubIssueFetchedEvent(
                 transactionId = transactionId,
+                repositoryOwner = repositoryOwner,
+                repositoryName = repositoryName,
                 number = issue.number,
                 title = issue.title,
                 body = issue.body,
@@ -77,6 +88,6 @@ class GithubIssuesService(
             eventPublisher.publishEvent(event)
         }
 
-        eventPublisher.publishEvent(GithubIssuesFetchingCompletedEvent(transactionId))
+        eventPublisher.publishEvent(GithubIssuesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))
     }
 }

@@ -3,9 +3,9 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 import com.sprintstart.sprintstartbackend.github.GithubClient
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueComment
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.AssigneesCollection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
@@ -57,7 +57,7 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId, since = null)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId, since = null)
 
             coVerify { githubClient.fetchIssues("owner", "repo", null) }
         }
@@ -68,7 +68,7 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", since.toString()) } returns emptyList()
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId, since = since)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId, since = since)
 
             coVerify { githubClient.fetchIssues("owner", "repo", since.toString()) }
         }
@@ -85,7 +85,7 @@ class GithubIssuesServiceTest {
                 issue(number = 3),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             verify(exactly = 5) {
                 eventPublisher.publishEvent(any<GithubIssueFetchedEvent>())
@@ -97,12 +97,12 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val events = mutableListOf<Any>()
             verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
-            assertThat(events).anyMatch { it is GithubIssuesFetchingStartedEvent }
-            assertThat(events).anyMatch { it is GithubIssuesFetchingCompletedEvent }
+            assertThat(events).anyMatch { it is GithubIssuesFetchStartedEvent }
+            assertThat(events).anyMatch { it is GithubIssuesFetchCompletedEvent }
         }
 
         @Test
@@ -110,9 +110,9 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
-            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingStartedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchStartedEvent>()) }
         }
 
         @Test
@@ -120,9 +120,9 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns emptyList()
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
-            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingCompletedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchCompletedEvent>()) }
         }
 
         @Test
@@ -131,10 +131,10 @@ class GithubIssuesServiceTest {
             coEvery { githubClient.fetchIssues("owner", "repo", null) } throws RuntimeException("API error")
 
             assertThrows<RuntimeException> {
-                service.fetchAndIngestAllIssues(repo.id, transactionId)
+                service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
             }
 
-            verify { eventPublisher.publishEvent(any<GithubIssuesFetchingFailedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubIssuesFetchFailedEvent>()) }
         }
     }
 
@@ -156,7 +156,7 @@ class GithubIssuesServiceTest {
                 ),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -181,7 +181,7 @@ class GithubIssuesServiceTest {
                 issue(authorLogin = null),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -196,7 +196,7 @@ class GithubIssuesServiceTest {
                 issue(labels = listOf("bug", "help wanted")),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -211,7 +211,7 @@ class GithubIssuesServiceTest {
                 issue(labels = null),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -226,7 +226,7 @@ class GithubIssuesServiceTest {
                 issue(assignees = listOf("alice", "bob")),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -241,7 +241,7 @@ class GithubIssuesServiceTest {
                 issue(assignees = null),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -265,7 +265,7 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(issueWithComments)
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -286,7 +286,7 @@ class GithubIssuesServiceTest {
                 issue().copy(comments = null),
             )
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -306,7 +306,7 @@ class GithubIssuesServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery { githubClient.fetchIssues("owner", "repo", null) } returns listOf(issueWithAnonymousComment)
 
-            service.fetchAndIngestAllIssues(repo.id, transactionId)
+            service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubIssueFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }

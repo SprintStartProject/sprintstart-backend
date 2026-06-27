@@ -2,8 +2,10 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
@@ -40,7 +42,13 @@ class GithubCommitsService(
         transactionId: UUID,
         doSyncAll: Boolean = false,
     ) {
-        eventPublisher.publishEvent(GithubCommitsFetchingStartedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubCommitsFetchStartedEvent(
+                transactionId,
+                latestSnapshot.repository.owner,
+                latestSnapshot.repository.name,
+            ),
+        )
 
         val rawOutput = fetchCommits(latestSnapshot, doSyncAll, transactionId)
         val failures = mutableListOf<String>()
@@ -48,13 +56,19 @@ class GithubCommitsService(
         rawOutput
             .lines()
             .filter { it.isNotBlank() }
-            .forEach { line -> processCommitLine(line, transactionId, failures) }
+            .forEach { line -> processCommitLine(latestSnapshot.repository, line, transactionId, failures) }
 
         if (failures.isNotEmpty()) {
             throw GithubCommitsFetchFailedPartiallyException(failures.joinToString("\n"))
         }
 
-        eventPublisher.publishEvent(GithubCommitsFetchingCompletedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubCommitsFetchCompletedEvent(
+                transactionId,
+                latestSnapshot.repository.owner,
+                latestSnapshot.repository.name,
+            ),
+        )
     }
 
     /**
@@ -88,7 +102,14 @@ class GithubCommitsService(
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommitsAfter(latestSnapshot.lastCommitsSyncAt))
         }
     }.getOrElse { e ->
-        eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
+        eventPublisher.publishEvent(
+            GithubCommitsFetchFailedEvent(
+                transactionId,
+                latestSnapshot.repository.owner,
+                latestSnapshot.repository.name,
+                e.message ?: "Unknown error",
+            ),
+        )
         throw e
     }
 
@@ -98,25 +119,43 @@ class GithubCommitsService(
      * or ingestion, appropriate failure events are published and the error messages
      * are added to the provided failure list.
      *
+     * @param repository The repository connection the commit belongs to.
      * @param line The raw string representing the commit data.
      * @param transactionId A unique identifier for the transaction associated with the commit process.
      * @param failures A mutable list to record error messages for any failures encountered during
      * parsing or ingestion of the commit.
      */
     private fun processCommitLine(
+        repository: GithubRepositoryConnection,
         line: String,
         transactionId: UUID,
         failures: MutableList<String>,
     ) {
         val commit = runCatching { parseCommit(line) }
             .onFailure { e ->
-                eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
+                eventPublisher.publishEvent(
+                    GithubCommitFetchFailedEvent(
+                        transactionId,
+                        repository.owner,
+                        repository.name,
+                        null,
+                        e.message ?: "Unknown error",
+                    ),
+                )
                 failures.add("Parsing $line failed: ${e.message}")
             }.getOrNull() ?: return
 
-        runCatching { ingestCommit(commit, transactionId) }
+        runCatching { ingestCommit(repository, commit, transactionId) }
             .onFailure { e ->
-                eventPublisher.publishEvent(GithubCommitFetchFailedEvent(transactionId, e.message ?: "Unknown error"))
+                eventPublisher.publishEvent(
+                    GithubCommitFetchFailedEvent(
+                        transactionId,
+                        repository.owner,
+                        repository.name,
+                        commit.sha,
+                        e.message ?: "Unknown error",
+                    ),
+                )
                 failures.add("Ingesting ${commit.sha} failed: ${e.message}")
             }
     }
@@ -155,13 +194,16 @@ class GithubCommitsService(
      * This method generates a `GithubCommitFetchedEvent` containing detailed metadata about the commit
      * and publishes it to propagate the commit's information within the system.
      *
+     * @param repository The repository connection the commit belongs to.
      * @param commit The commit object containing details such as author, date, commit SHA, and message.
      * @param transactionId The unique transaction identifier associated with the synchronization process.
      */
-    private fun ingestCommit(commit: Commit, transactionId: UUID) {
+    private fun ingestCommit(repository: GithubRepositoryConnection, commit: Commit, transactionId: UUID) {
         eventPublisher.publishEvent(
             GithubCommitFetchedEvent(
                 transactionId,
+                repository.owner,
+                repository.name,
                 commit.author,
                 commit.date,
                 commit.sha,

@@ -12,12 +12,16 @@ import java.util.UUID
  * synchronization or processing workflows.
  *
  * @property transactionId A unique identifier for the transaction associated with this fetching event.
+ * @property repositoryOwner The owner of the repository where the file was fetched.
+ * @property repostioryName The name of the repository where the file was fetched.
  * @property path The file path of the retrieved file within the repository.
  * @property content The content of the fetched file.
  * @property sourceUrl The URL pointing to the location of the fetched file in the repository.
  */
 data class GithubFileFetchedEvent(
     val transactionId: UUID,
+    val repositoryOwner: String,
+    val repostioryName: String,
     val path: String,
     val content: String,
     val sourceUrl: String,

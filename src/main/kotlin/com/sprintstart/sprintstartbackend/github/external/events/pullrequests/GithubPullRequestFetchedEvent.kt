@@ -12,6 +12,8 @@ import java.util.UUID
  * the system in workflows and processing pipelines.
  *
  * @property transactionId Unique identifier for the transaction associated with this event.
+ * @property repositoryOwner The owner of the GitHub repository where the pull request was fetched.
+ * @property repositoryName The name of the GitHub repository where the pull request was fetched.
  * @property number The number of the GitHub pull request within the repository.
  * @property body The optional body or description of the GitHub pull request.
  * @property state The current state of the GitHub pull request (e.g., open, closed, merged).
@@ -26,6 +28,8 @@ import java.util.UUID
  */
 data class GithubPullRequestFetchedEvent(
     val transactionId: UUID,
+    val repositoryOwner: String,
+    val repositoryName: String,
     val number: Int,
     val body: String?,
     val state: String,

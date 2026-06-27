@@ -3,8 +3,8 @@ package com.sprintstart.sprintstartbackend.github.service.internal
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
@@ -155,8 +155,8 @@ class GithubFileServiceTest {
 
             val allEvents = mutableListOf<Any>()
             verify(exactly = 2) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents).anyMatch { it is GithubFilesFetchingStartedEvent }
-            assertThat(allEvents).anyMatch { it is GithubFilesFetchingCompletedEvent }
+            assertThat(allEvents).anyMatch { it is GithubFilesFetchStartedEvent }
+            assertThat(allEvents).anyMatch { it is GithubFilesFetchCompletedEvent }
         }
 
         @Test
@@ -187,7 +187,7 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns emptyDir
             every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
 
-            service.fetchAndIngestAllFiles(repo.id, transactionId)
+            service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
 
             assertThat(repo.lastSha).isEqualTo("abc123")
             Files.delete(emptyDir)
@@ -202,10 +202,10 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns emptyDir
             every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
 
-            service.fetchAndIngestAllFiles(repo.id, transactionId)
+            service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
 
-            verify { eventPublisher.publishEvent(any<GithubFilesFetchingStartedEvent>()) }
-            verify { eventPublisher.publishEvent(any<GithubFilesFetchingCompletedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubFilesFetchStartedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubFilesFetchCompletedEvent>()) }
             Files.delete(emptyDir)
         }
 
@@ -214,7 +214,7 @@ class GithubFileServiceTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.empty()
 
             assertThrows<Exception> {
-                service.fetchAndIngestAllFiles(UUID.randomUUID(), transactionId)
+                service.fetchAndIngestAllFiles(UUID.randomUUID(), "", "", transactionId)
             }
         }
     }
@@ -233,7 +233,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val allEvents = mutableListOf<Any>()
             verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }
@@ -249,7 +254,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val allEvents = mutableListOf<Any>()
             verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
@@ -266,7 +276,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val allEvents = mutableListOf<Any>()
             verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
@@ -282,7 +297,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val eventSlot = slot<GithubFileFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -298,7 +318,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val eventSlot = slot<GithubFileFetchedEvent>()
             verify { eventPublisher.publishEvent(capture(eventSlot)) }
@@ -313,7 +338,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             verify { fileSnapshotRepository.saveAll(any<Iterable<GithubFileSnapshot>>()) }
         }
@@ -327,7 +357,12 @@ class GithubFileServiceTest {
             coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
-            service.fetchAndIngestAllFiles(repoConnection().id, transactionId)
+            service.fetchAndIngestAllFiles(
+                repoConnection().id,
+                repoConnection().owner,
+                repoConnection().name,
+                transactionId,
+            )
 
             val allEvents = mutableListOf<Any>()
             verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }

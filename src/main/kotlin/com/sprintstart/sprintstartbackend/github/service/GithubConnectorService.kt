@@ -72,11 +72,20 @@ class GithubConnectorService(
     @Transactional
     suspend fun connectRepositoryIfExists(request: ConnectRepositoryRequest): UUID {
         val transactionId = UUID.randomUUID()
-        eventPublisher.publishEvent(GithubRepositoryConnectionInitiatedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubRepositoryConnectionInitiatedEvent(transactionId, request.owner, request.name),
+        )
 
         if (!githubClient.repositoryExists(request.owner, request.name)) {
             val ex = RepositoryNotFoundException(request.owner, request.name)
-            eventPublisher.publishEvent(GithubRepositoryConnectionInitiationFailedEvent(transactionId, ex.message))
+            eventPublisher.publishEvent(
+                GithubRepositoryConnectionInitiationFailedEvent(
+                    transactionId,
+                    request.owner,
+                    request.name,
+                    ex.message,
+                ),
+            )
             throw ex
         }
 
@@ -119,13 +128,13 @@ class GithubConnectorService(
     suspend fun updateRepository(request: UpdateRepositoryRequest): UpdateRepositoryResponse {
         val transactionId = UUID.randomUUID()
 
-        eventPublisher.publishEvent(GithubRepositoryUpdateStartedEvent(transactionId))
+        eventPublisher.publishEvent(GithubRepositoryUpdateStartedEvent(transactionId, request.owner, request.name))
 
         val repository = runCatching {
             repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
                 ?: throw RepositoryNotConnectedException(request.owner, request.name)
         }.onFailure { e ->
-            eventPublisher.publishEvent(GithubRepositoryUpdateFailedEvent(transactionId))
+            eventPublisher.publishEvent(GithubRepositoryUpdateFailedEvent(transactionId, request.owner, request.name))
             throw e
         }.getOrNull() ?: return UpdateRepositoryResponse(transactionId)
 
@@ -142,13 +151,25 @@ class GithubConnectorService(
      * @param transactionId The unique identifier for the transaction to track the update process.
      */
     private suspend fun updateRepository(githubRepository: GithubRepositoryConnection, transactionId: UUID) {
-        eventPublisher.publishEvent(GithubRepositoryUpdateStartedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubRepositoryUpdateStartedEvent(
+                transactionId,
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
 
         val latestSnapshot = runCatching {
             repoSnapshotRepository.findLatestByRepository(githubRepository.id)
                 ?: throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
         }.onFailure { e ->
-            eventPublisher.publishEvent(GithubRepositoryUpdateFailedEvent(transactionId))
+            eventPublisher.publishEvent(
+                GithubRepositoryUpdateFailedEvent(
+                    transactionId,
+                    githubRepository.owner,
+                    githubRepository.name,
+                ),
+            )
             throw e
         }.getOrNull() ?: return
 
@@ -156,7 +177,13 @@ class GithubConnectorService(
             repository = githubRepository,
         )
 
-        eventPublisher.publishEvent(GithubRepositoryResourcesFetchingStartedEvent(UUID.randomUUID()))
+        eventPublisher.publishEvent(
+            GithubRepositoryResourcesFetchingStartedEvent(
+                UUID.randomUUID(),
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
 
         applicationScope.launch {
             fileService.fetchAndIngestFileUpdatesIncremental(githubRepository, transactionId)
@@ -165,11 +192,18 @@ class GithubConnectorService(
             commitsService.fetchAndIngestLatestCommits(latestSnapshot, transactionId)
         }
         applicationScope.launch {
-            issuesService.fetchAndIngestAllIssues(githubRepository.id, transactionId)
+            issuesService.fetchAndIngestAllIssues(
+                githubRepository.id,
+                githubRepository.owner,
+                githubRepository.name,
+                transactionId,
+            )
         }
         applicationScope.launch {
             pullRequestsService.fetchAndIngestAllPullRequests(
                 githubRepository.id,
+                githubRepository.owner,
+                githubRepository.name,
                 transactionId,
                 latestSnapshot.lastPullRequestsSyncAt,
             )
@@ -199,20 +233,41 @@ class GithubConnectorService(
         repoConnection.snapshot = repoSnapshot
         repoConnectionRepository.save(repoConnection)
 
-        eventPublisher.publishEvent(GithubRepositoryResourcesFetchingStartedEvent(transactionId))
+        eventPublisher.publishEvent(
+            GithubRepositoryResourcesFetchingStartedEvent(
+                transactionId,
+                request.owner,
+                request.name,
+            ),
+        )
 
         // Launch data collectors/processors
         applicationScope.launch {
-            fileService.fetchAndIngestAllFiles(repoConnection.id, transactionId)
+            fileService.fetchAndIngestAllFiles(
+                repoConnection.id,
+                repoConnection.owner,
+                repoConnection.name,
+                transactionId,
+            )
         }
         applicationScope.launch {
             commitsService.fetchAndIngestLatestCommits(repoSnapshot, transactionId, true)
         }
         applicationScope.launch {
-            issuesService.fetchAndIngestAllIssues(repoConnection.id, transactionId)
+            issuesService.fetchAndIngestAllIssues(
+                repoConnection.id,
+                repoConnection.owner,
+                repoConnection.name,
+                transactionId,
+            )
         }
         applicationScope.launch {
-            pullRequestsService.fetchAndIngestAllPullRequests(repoConnection.id, transactionId)
+            pullRequestsService.fetchAndIngestAllPullRequests(
+                repoConnection.id,
+                repoConnection.owner,
+                repoConnection.name,
+                transactionId,
+            )
         }
 
         return transactionId
