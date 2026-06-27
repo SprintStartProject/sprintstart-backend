@@ -39,10 +39,6 @@ import java.util.UUID
  * Steps are ordered within their parent phase by a numeric position. Insertions, updates,
  * and deletions automatically shift sibling steps to maintain a contiguous, gap-free ordering.
  *
- * Steps carry a status field with the following transition side effects:
- * - `FINISHED` — records a completion timestamp
- * - `SKIPPED` — records a completion timestamp and a skip reason
- * - `WAITING` — clears both the completion timestamp and the skip reason
  *
  */
 @Suppress("TooManyFunctions")
@@ -185,8 +181,9 @@ class OnboardingStepController(
     /**
      * Updates one step in the authenticated user's onboarding path.
      *
-     * The target object is at depth 2. Status and position changes behave the same as
-     * the admin variant.
+     * The target object is at depth 2. This endpoint only updates step metadata.
+     * Position changes behave the same as the admin variant. Status changes are
+     * handled by separate endpoints.
      *
      * @param jwt Authenticated JWT used to resolve the current user.
      * @param stepId Identifier of the step to update.
@@ -196,7 +193,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Update current user's onboarding step",
         description = "Updates an onboarding step at hierarchy depth 2 for the authenticated user. " +
-            "Changing the position reorders sibling steps, and status changes update completion metadata.",
+            "This endpoint updates step metadata only. Changing the position reorders sibling steps. " +
+            "Status changes are handled by separate endpoints.",
     )
     @ApiResponses(
         value = [
@@ -221,6 +219,46 @@ class OnboardingStepController(
         @RequestBody request: UpdateOnboardingStepRequest,
     ): UpdateOnboardingStepResponse {
         return onboardingStepService.updateOnboardingStepForMe(jwt.subject, stepId, request)
+    }
+
+    /**
+     * Marks one step in the authenticated user's onboarding path as completed.
+     *
+     * The target object is at depth 2. Only steps in [StepStatus.WAITING] can be
+     * completed through this endpoint. Completing a step records its completion
+     * timestamp and returns the updated step response.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param stepId Identifier of the step to complete.
+     * @return The updated step after it has been marked as completed.
+     */
+    @Operation(
+        summary = "Complete current user's onboarding step",
+        description = "Marks an onboarding step at hierarchy depth 2 as completed for the authenticated user. " +
+            "Only steps in WAITING status can be completed. Completing a step records its completion timestamp " +
+            "and returns the updated step.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Step completed successfully"),
+            ApiResponse(responseCode = "400", description = "Step cannot be completed in its current status"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/me/steps/{stepId}/complete")
+    @PreAuthorize("hasRole('USER')")
+    fun completeOnboardingStepForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the onboarding step to complete")
+        @PathVariable stepId: UUID,
+    ): UpdateOnboardingStepResponse {
+        return onboardingStepService.completeOnboardingStepForMe(jwt.subject, stepId)
     }
 
     /**
@@ -298,8 +336,7 @@ class OnboardingStepController(
      *
      * Steps are ordered within a phase by a numeric position. If the requested position
      * is already occupied, all steps at or after that position are shifted forward by one.
-     * The new step is always initialized with status [StepStatus.WAITING] regardless of
-     * what is passed in the request.
+     * The new step is always initialized with status [StepStatus.WAITING].
      *
      * @param phaseId The UUID of the phase to add the step to.
      * @param request The step creation request.
@@ -309,7 +346,7 @@ class OnboardingStepController(
         summary = "Create onboarding step",
         description = "Creates a new step within the specified phase at the given position. " +
             "Existing steps at or after the requested position are shifted forward by one. " +
-            "The new step is always initialized with status WAITING regardless of request content.",
+            "The new step is always initialized with status WAITING.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "201", description = "Step created successfully"),
@@ -358,14 +395,11 @@ class OnboardingStepController(
     }
 
     /**
-     * Updates an existing onboarding step, including its status and position.
+     * Updates an existing onboarding step's metadata.
      *
      * All fields are replaced with the values from the request. If the position changes,
      * sibling steps are shifted automatically to maintain contiguous ordering. Status
-     * transitions carry side effects: transitioning to FINISHED records a completion
-     * timestamp; transitioning to SKIPPED records a completion timestamp and stores the
-     * skip reason (defaults to "No reason given" if omitted); transitioning back to
-     * WAITING clears both the completion timestamp and the skip reason.
+     * changes are handled by separate endpoints.
      *
      * @param stepId The UUID of the step to update.
      * @param request The step update request.
@@ -373,12 +407,9 @@ class OnboardingStepController(
      */
     @Operation(
         summary = "Update onboarding step",
-        description = "Updates all fields of an existing onboarding step, including its status and position. " +
+        description = "Updates an existing onboarding step's metadata. " +
             "If the position changes, sibling steps are shifted automatically. " +
-            "Status transitions carry side-effects: " +
-            "FINISHED records a completion timestamp; " +
-            "SKIPPED records a completion timestamp and a skip reason (defaults to 'No reason given' if omitted); " +
-            "WAITING clears both the completion timestamp and skip reason.",
+            "Status transitions are handled by separate endpoints.",
     )
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Step updated successfully"),
@@ -425,23 +456,6 @@ class OnboardingStepController(
         @Parameter(description = "UUID of the onboarding step to delete") @PathVariable stepId: UUID,
     ) {
         onboardingStepService.deleteOnboardingStepById(stepId)
-    }
-
-    @Operation(summary = "Review skip request")
-    @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Skip request reviewed"),
-        ApiResponse(responseCode = "401", description = "Authentication required"),
-        ApiResponse(responseCode = "403", description = "Insufficient role"),
-        ApiResponse(responseCode = "404", description = "Step or skip request not found"),
-    )
-    @ResponseStatus(HttpStatus.OK)
-    @PutMapping("/steps/{stepId}/review-skip")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    fun reviewSkipRequest(
-        @PathVariable stepId: UUID,
-        @RequestBody request: com.sprintstart.sprintstartbackend.onboarding.model.request.step.ReviewSkipRequest,
-    ) {
-        onboardingStepService.reviewSkipRequest(stepId, request.approved, request.reviewComment)
     }
 
     @Operation(summary = "Get team overview")

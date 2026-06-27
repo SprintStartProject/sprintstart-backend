@@ -159,21 +159,21 @@ class OnboardingPathService(
                 if (waitingStep != null) {
                     currentPhase = phase.title
 
-                    val skipReq = waitingStep.skipRequest?.let { req ->
+                    val skipReq = waitingStep.skips.lastOrNull()?.let { req ->
                         com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto(
                             id = req.id.toString(),
-                            stepId = req.stepId.toString(),
+                            stepId = req.step.id.toString(),
                             reason = req.reason,
                             status = req.status.name,
                             reviewComment = req.reviewComment,
-                            reviewedAt = req.reviewedAt,
+                            reviewedAt = req.resolvedAt,
                         )
                     }
 
                     currentStepDto = com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto(
                         id = waitingStep.id.toString(),
                         title = waitingStep.title,
-                        startedAt = waitingStep.startedAt,
+                        startedAt = null,
                         skip = skipReq,
                     )
                     break

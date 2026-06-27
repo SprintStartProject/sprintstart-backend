@@ -17,7 +17,7 @@ fun OnboardingStep.toGetAllResponse(): GetOnboardingStepsResponse {
         estimatedMinutes = this.estimatedMinutes,
         status = this.status,
         completedAt = this.completedAt,
-        skipReason = this.skipReason,
+        skip = this.skips.lastOrNull()?.toGetResponse(),
     )
 }
 
@@ -34,7 +34,7 @@ fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
         resources = this.resources.map { resource -> resource.toGetAllResponse() },
         status = this.status,
         completedAt = this.completedAt,
-        skipReason = this.skipReason,
+        skip = this.skips.lastOrNull()?.toGetResponse(),
     )
 }
 
@@ -63,6 +63,6 @@ fun OnboardingStep.toUpdateResponse(): UpdateOnboardingStepResponse {
         expectedOutcome = this.expectedOutcome,
         status = this.status,
         completedAt = this.completedAt,
-        skipReason = this.skipReason,
+        skip = this.skips.lastOrNull()?.toGetResponse(),
     )
 }

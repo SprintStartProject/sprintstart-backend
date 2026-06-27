@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.external.events
+package com.sprintstart.sprintstartbackend.github.external.events.files
 
 import java.util.UUID
 
@@ -10,9 +10,13 @@ import java.util.UUID
  * the path of the file that was deleted.
  *
  * @property transactionId A unique identifier for the transaction associated with this deletion event.
+ * @property repositoryOwner The owner of the repository where the file was deleted.
+ * @property repositoryName The name of the repository where the file was deleted.
  * @property path The file path of the deleted file within the repository.
  */
 data class GithubFileDeletedEvent(
     val transactionId: UUID,
+    val repositoryOwner: String,
+    val repositoryName: String,
     val path: String,
 )

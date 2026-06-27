@@ -24,10 +24,10 @@ interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
           AND (COALESCE(:roleIds) IS NULL OR EXISTS (SELECT 1 FROM user_project_roles ur WHERE ur.user_id = u.id AND ur.role_id IN (:roleIds)))
         ORDER BY 
           CASE WHEN :sortBy = 'LONGEST_STEP' THEN 
-            (SELECT s.started_at FROM onboarding_phases ph JOIN onboarding_steps s ON s.phase_id = ph.id WHERE ph.path_id = p.id AND s.status = 'WAITING' ORDER BY ph.position ASC, s.position ASC LIMIT 1)
+            (SELECT CAST(NULL AS timestamp) FROM onboarding_phases ph JOIN onboarding_steps s ON s.phase_id = ph.id WHERE ph.path_id = p.id AND s.status = 'WAITING' ORDER BY ph.position ASC, s.position ASC LIMIT 1)
           END ASC NULLS LAST,
           CASE WHEN :sortBy = 'SHORTEST_STEP' THEN 
-            (SELECT s.started_at FROM onboarding_phases ph JOIN onboarding_steps s ON s.phase_id = ph.id WHERE ph.path_id = p.id AND s.status = 'WAITING' ORDER BY ph.position ASC, s.position ASC LIMIT 1)
+            (SELECT CAST(NULL AS timestamp) FROM onboarding_phases ph JOIN onboarding_steps s ON s.phase_id = ph.id WHERE ph.path_id = p.id AND s.status = 'WAITING' ORDER BY ph.position ASC, s.position ASC LIMIT 1)
           END DESC NULLS LAST,
           CASE WHEN :sortBy = 'HIGHEST_PROGRESS' THEN 
             COALESCE(
