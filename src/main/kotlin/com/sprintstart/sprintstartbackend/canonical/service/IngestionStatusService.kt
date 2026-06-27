@@ -10,7 +10,7 @@ class IngestionStatusService(private val ingestionRunRepository: IngestionRunRep
     fun getIngestionStatusPerSource()
     : List<SourceIngestionStatusResponse>{
         val lastRun = ingestionRunRepository.findFirstByOrderByStartedAt()
-        SourceIngestionStatusResponse(
+        val github = SourceIngestionStatusResponse(
             sourceSystem = SourceSystem.GITHUB,
             lastRunTime = lastRun.startedAt,
             ingestedCount = lastRun.ingestedCount,
@@ -18,5 +18,6 @@ class IngestionStatusService(private val ingestionRunRepository: IngestionRunRep
             failedCount = lastRun.failedCount,
             failedItems = lastRun.failedItems
         )
+        return listOf(github)
     }
   }

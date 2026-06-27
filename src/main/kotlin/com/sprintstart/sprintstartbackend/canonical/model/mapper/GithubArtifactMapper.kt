@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.canonical.model.FileMetaDataResolver
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactCommand
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubSourceUrlFactory.buildCommitUrl
 import com.sprintstart.sprintstartbackend.canonical.model.mapper.SourceIdFactory.buildSourceId
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
@@ -26,7 +27,11 @@ class GithubArtifactMapper() {
                type = ArtifactType.COMMIT,
                unique = event.sha
            ),
-           sourceUrl = "https://github.com/${event.repositoryOwner}/${event.repositoryName}/commit/${event.sha}",
+           sourceUrl = buildCommitUrl(
+               repositoryOwner = event.repositoryOwner,
+               repositoryName = event.repositoryName,
+               sha = event.sha
+           ),
            artifactType = ArtifactType.COMMIT,
            title = event.msg.take(72),
            bodyText = event.msg,

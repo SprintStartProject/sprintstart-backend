@@ -25,11 +25,7 @@ internal class GithubPullRequestListener(
     fun on(
         event: GithubPullRequestsFetchStartedEvent,
     ) {
-        artifactIngestionService.startRun(
-            transactionId = event.transactionId,
-            sourceSystem = SourceSystem.GITHUB,
-            status = TODO(),
-        )
+
     }
 
     @ApplicationModuleListener

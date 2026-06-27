@@ -12,14 +12,14 @@ import org.junit.jupiter.api.Test
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
-class ArtifactIngestionServiceTest {
+class UploadIngestionServiceTest {
     private val ingestionAiClient = mockk<IngestionAiClient>(relaxed = true)
 
-    private lateinit var service: ArtifactIngestionService
+    private lateinit var service: UploadIngestionService
 
     @BeforeEach
     fun setUp() {
-        service = ArtifactIngestionService(ingestionAiClient)
+        service = UploadIngestionService(ingestionAiClient)
     }
 
     @Test

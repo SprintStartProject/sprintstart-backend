@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.canonical.model.mapper
 
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactFailedCommand
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubSourceUrlFactory.buildCommitUrl
 import com.sprintstart.sprintstartbackend.canonical.model.mapper.SourceIdFactory.buildSourceId
 
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
@@ -25,7 +26,11 @@ class GithubArtifactFailedMapper() {
                 type = ArtifactType.COMMIT,
                 unique = event.sha
             ),
-            sourceUrl = "https://github.com/${event.repositoryOwner}/${event.repositoryName}/commit/${event.sha}",
+            sourceUrl = buildCommitUrl(
+                repositoryOwner = event.repositoryOwner,
+                repositoryName = event.repositoryName,
+                sha = event.sha
+            ),
             reason = event.reason,
             artifactType = ArtifactType.COMMIT
         )
@@ -45,7 +50,7 @@ class GithubArtifactFailedMapper() {
             ),
             reason = event.reason,
             artifactType = ArtifactType.FILE,
-            sourceUrl = TODO()
+            sourceUrl = null
         )
     }
 

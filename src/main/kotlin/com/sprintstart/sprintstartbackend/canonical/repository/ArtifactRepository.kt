@@ -6,4 +6,5 @@ import java.util.UUID
 
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String) : Artifact?
+    fun deleteBySourceId(sourceId: String)
 }

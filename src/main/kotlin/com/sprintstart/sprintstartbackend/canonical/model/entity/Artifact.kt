@@ -4,6 +4,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
@@ -37,7 +38,7 @@ class Artifact(
 
     @Column(nullable = false)
     val ingestedAt: Instant = Instant.now(),
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
     val ingestionRun : IngestionRun,
     @Column(name = "content_hash", length = 64)
