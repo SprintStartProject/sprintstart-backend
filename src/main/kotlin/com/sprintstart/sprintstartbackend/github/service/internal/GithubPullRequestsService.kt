@@ -77,6 +77,7 @@ class GithubPullRequestsService(
                 repositoryOwner = repositoryOwner,
                 repositoryName = repositoryName,
                 number = pullRequest.number,
+                title = pullRequest.title,
                 body = pullRequest.body,
                 state = pullRequest.state,
                 createdAt = pullRequest.createdAt,

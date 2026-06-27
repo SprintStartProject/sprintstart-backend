@@ -25,6 +25,7 @@ import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConn
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -95,7 +96,7 @@ class GithubPullRequestsServiceTest {
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
             val events = mutableListOf<Any>()
-            io.mockk.verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
+            verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
         }
 
         @Test
@@ -106,7 +107,7 @@ class GithubPullRequestsServiceTest {
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
             val events = mutableListOf<Any>()
-            io.mockk.verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
+            verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
             assertThat(events).anyMatch { it is GithubPullRequestsFetchStartedEvent }
             assertThat(events).anyMatch { it is GithubPullRequestsFetchCompletedEvent }
         }
@@ -118,7 +119,7 @@ class GithubPullRequestsServiceTest {
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
-            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchStartedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchStartedEvent>()) }
         }
 
         @Test
@@ -128,7 +129,7 @@ class GithubPullRequestsServiceTest {
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
-            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchCompletedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchCompletedEvent>()) }
         }
 
         @Test
@@ -140,7 +141,7 @@ class GithubPullRequestsServiceTest {
                 service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
             }
 
-            io.mockk.verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchFailedEvent>()) }
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchFailedEvent>()) }
         }
     }
 
@@ -152,6 +153,7 @@ class GithubPullRequestsServiceTest {
             coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
                 pullRequest(
                     number = 42,
+                    title = "PR Title",
                     body = "PR body",
                     state = "MERGED",
                     createdAt = "2024-01-01T00:00:00Z",
@@ -167,11 +169,12 @@ class GithubPullRequestsServiceTest {
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
             with(eventSlot.captured) {
                 assertThat(number).isEqualTo(42)
+                assertThat(title).isEqualTo("PR Title")
                 assertThat(body).isEqualTo("PR body")
                 assertThat(state).isEqualTo("MERGED")
                 assertThat(createdAt).isEqualTo("2024-01-01T00:00:00Z")
@@ -191,7 +194,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.author).isNull()
         }
@@ -205,7 +208,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.labels).containsExactly("bug", "enhancement")
         }
@@ -219,7 +222,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.labels).isNull()
         }
@@ -238,7 +241,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.reviews).containsExactly(
                 GithubPullRequestReview(body = "LGTM", state = "APPROVED", author = "reviewer"),
@@ -263,7 +266,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.comments).containsExactly(
                 GithubPullRequestComment(body = "Nice work", author = "commenter", createdAt = "2024-01-01T00:00:00Z"),
@@ -294,7 +297,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             val thread = eventSlot.captured.reviewThreads!!.first()
             assertThat(thread.comments).containsExactly(
@@ -314,7 +317,7 @@ class GithubPullRequestsServiceTest {
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(
                 eventSlot.captured.reviewThreads!!
@@ -328,6 +331,7 @@ class GithubPullRequestsServiceTest {
 
     private fun pullRequest(
         number: Int = 1,
+        title: String = "TITLE",
         body: String? = "body",
         state: String = "OPEN",
         createdAt: String = "2024-01-01T00:00:00Z",
@@ -337,7 +341,7 @@ class GithubPullRequestsServiceTest {
         labels: List<String>? = emptyList(),
     ) = PullRequest(
         number = number,
-        title = "PR $number",
+        title = title,
         body = body,
         state = state,
         createdAt = createdAt,

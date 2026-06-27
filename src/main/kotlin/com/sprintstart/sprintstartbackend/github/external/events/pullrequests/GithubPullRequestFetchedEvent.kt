@@ -15,6 +15,7 @@ import java.util.UUID
  * @property repositoryOwner The owner of the GitHub repository where the pull request was fetched.
  * @property repositoryName The name of the GitHub repository where the pull request was fetched.
  * @property number The number of the GitHub pull request within the repository.
+ * @property title The title of the GitHub pull request.
  * @property body The optional body or description of the GitHub pull request.
  * @property state The current state of the GitHub pull request (e.g., open, closed, merged).
  * @property createdAt The timestamp indicating when the GitHub pull request was created.
@@ -31,6 +32,7 @@ data class GithubPullRequestFetchedEvent(
     val repositoryOwner: String,
     val repositoryName: String,
     val number: Int,
+    val title: String,
     val body: String?,
     val state: String,
     val createdAt: String,
