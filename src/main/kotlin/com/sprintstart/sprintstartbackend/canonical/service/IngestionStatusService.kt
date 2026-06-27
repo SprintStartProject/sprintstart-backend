@@ -13,12 +13,13 @@ class IngestionStatusService(
         val lastRun = ingestionRunRepository.findFirstByOrderByStartedAt()
         val github = SourceIngestionStatusResponse(
             sourceSystem = SourceSystem.GITHUB,
-            lastRunTime = lastRun.startedAt,
-            ingestedCount = lastRun.ingestedCount,
-            updatedCount = lastRun.updatedCount,
-            failedCount = lastRun.failedCount,
-            failedItems = lastRun.failedItems,
+            lastRunTime = lastRun?.startedAt,
+            ingestedCount = lastRun?.ingestedCount ?: 0,
+            updatedCount = lastRun?.updatedCount ?: 0,
+            failedCount = lastRun?.failedCount ?: 0,
+            failedItems = lastRun?.failedItems ?: mutableListOf(),
         )
-        return listOf(github)
+
+        return listOf(github) // TODO add jira etc. later
     }
 }
