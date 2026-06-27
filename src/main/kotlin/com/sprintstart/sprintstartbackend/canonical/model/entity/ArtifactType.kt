@@ -4,5 +4,5 @@ enum class ArtifactType {
     COMMIT,
     FILE,
     ISSUE,
-    PULL_REQUEST
+    PULL_REQUEST,
 }

@@ -7,7 +7,7 @@ object SourceIdFactory {
         repositoryOwner: String,
         repositoryName: String,
         type: ArtifactType,
-        unique: String?
-    )
-            :String = "github:$repositoryOwner/$repositoryName:$type:$unique"
+        unique: String?,
+    ): String =
+        "github:$repositoryOwner/$repositoryName:$type:$unique"
 }

@@ -2,9 +2,9 @@ package com.sprintstart.sprintstartbackend.canonical.service
 
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactCommand
 import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactFailedCommand
-import com.sprintstart.sprintstartbackend.canonical.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.canonical.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
@@ -19,26 +19,28 @@ import java.util.UUID
 
 @Service
 class ArtifactIngestionService(
-    private val ingestionRunRepository : IngestionRunRepository,
-    private val artifactRepository : ArtifactRepository,
+    private val ingestionRunRepository: IngestionRunRepository,
+    private val artifactRepository: ArtifactRepository,
 ) {
     @Transactional
-    fun ingest(command : ArtifactCommand){
-        var artifact : Artifact?
+    fun ingest(command: ArtifactCommand) {
+        var artifact: Artifact?
         val ingestionRun = ingestionRunRepository
             .findByIdOrNull(command.ingestionRunId)
-            ?:throw IllegalArgumentException("Run with id ${command.ingestionRunId} not found")
-        when(command.artifactType){
-            ArtifactType.COMMIT
-                -> { artifact = artifactRepository.findBySourceId(command.sourceId)
-                    if(artifact != null){
-                        return
-                    }
+            ?: throw IllegalArgumentException("Run with id ${command.ingestionRunId} not found")
+        when (command.artifactType) {
+            ArtifactType.COMMIT,
+            -> {
+                artifact = artifactRepository.findBySourceId(command.sourceId)
+                if (artifact != null) {
+                    return
                 }
-            ArtifactType.FILE
-                -> { artifact = artifactRepository.findBySourceId(command.sourceId)
-                if(artifact != null){
-                    if(!artifact.hash.equals(command.hash)){
+            }
+            ArtifactType.FILE,
+            -> {
+                artifact = artifactRepository.findBySourceId(command.sourceId)
+                if (artifact != null) {
+                    if (!artifact.hash.equals(command.hash)) {
                         ingestionRun.updatedCount++
                         artifact.bodyText = command.bodyText
                         artifact.hash = command.hash
@@ -46,18 +48,20 @@ class ArtifactIngestionService(
                     }
                 }
             }
-            ArtifactType.ISSUE
-                -> { artifact = artifactRepository.findBySourceId(command.sourceId)
-                if(artifact != null){
+            ArtifactType.ISSUE,
+            -> {
+                artifact = artifactRepository.findBySourceId(command.sourceId)
+                if (artifact != null) {
                     artifact.title = command.title
                     artifact.bodyText = command.bodyText
                     ingestionRun.updatedCount++
                     return
                 }
             }
-            ArtifactType.PULL_REQUEST
-                -> { artifact = artifactRepository.findBySourceId(command.sourceId)
-                if(artifact != null){
+            ArtifactType.PULL_REQUEST,
+            -> {
+                artifact = artifactRepository.findBySourceId(command.sourceId)
+                if (artifact != null) {
                     artifact.title = command.title
                     artifact.bodyText = command.bodyText
                     ingestionRun.updatedCount++
@@ -78,7 +82,7 @@ class ArtifactIngestionService(
             ingestionRun = ingestionRun,
             hash = command.hash,
             createdAtSource = null,
-            updatedAtSource = null
+            updatedAtSource = null,
         )
         artifactRepository.save(artifact)
 
@@ -87,33 +91,33 @@ class ArtifactIngestionService(
 
     @Transactional
     fun startRun(transactionId: UUID, sourceSystem: SourceSystem, status: IngestionRunStatus) {
-            val ingestionRun = IngestionRun(
-                id = transactionId,
-                sourceSystem = sourceSystem,
-                status = status,
-            )
+        val ingestionRun = IngestionRun(
+            id = transactionId,
+            sourceSystem = sourceSystem,
+            status = status,
+        )
         ingestionRunRepository.save(ingestionRun)
     }
 
-    fun updateRunStatus(transactionId: UUID, status : IngestionRunStatus) {
+    fun updateRunStatus(transactionId: UUID, status: IngestionRunStatus) {
         val run = ingestionRunRepository
             .findByIdOrNull(transactionId)
-            ?:throw IllegalArgumentException("Run with id $transactionId not found")
+            ?: throw IllegalArgumentException("Run with id $transactionId not found")
         run.status = status
     }
 
     fun addFailedArtifact(command: ArtifactFailedCommand) {
-
         val run = ingestionRunRepository
             .findByIdOrNull(command.transactionId)
-            ?:throw IllegalArgumentException("Run with id ${command.transactionId} not found")
+            ?: throw IllegalArgumentException("Run with id ${command.transactionId} not found")
         run.failedItems.add(
             FailedArtifact(
-            sourceId = command.sourceId,
-            reason = command.reason,
-            artifactType = command.artifactType,
-            sourceUrl = command.sourceUrl
-        ))
+                sourceId = command.sourceId,
+                reason = command.reason,
+                artifactType = command.artifactType,
+                sourceUrl = command.sourceUrl,
+            ),
+        )
         run.failedCount++
     }
 
@@ -124,11 +128,8 @@ class ArtifactIngestionService(
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
                 type = ArtifactType.FILE,
-                unique = event.path
-            )
+                unique = event.path,
+            ),
         )
-
     }
-
-
 }

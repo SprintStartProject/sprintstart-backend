@@ -13,40 +13,39 @@ import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.Gi
 import org.springframework.stereotype.Component
 import java.time.Instant
 
-@Component
-class GithubArtifactMapper() {
+private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 
-    fun toCommand(event : GithubCommitFetchedEvent) : ArtifactCommand
-    {
-       return ArtifactCommand(
-           ingestionRunId = event.transactionId,
-           sourceSystem = SourceSystem.GITHUB,
-           sourceId = buildSourceId(
-               repositoryOwner = event.repositoryOwner,
-               repositoryName = event.repositoryName,
-               type = ArtifactType.COMMIT,
-               unique = event.sha
-           ),
-           sourceUrl = buildCommitUrl(
-               repositoryOwner = event.repositoryOwner,
-               repositoryName = event.repositoryName,
-               sha = event.sha
-           ),
-           artifactType = ArtifactType.COMMIT,
-           title = event.msg.take(72),
-           bodyText = event.msg,
-           mime = null,
-           language = null,
-           createdAtSource = event.date,
-           updatedAtSource = null,
-           hash = null,
-       )
+@Component
+class GithubArtifactMapper {
+    fun toCommand(event: GithubCommitFetchedEvent): ArtifactCommand {
+        return ArtifactCommand(
+            ingestionRunId = event.transactionId,
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = buildSourceId(
+                repositoryOwner = event.repositoryOwner,
+                repositoryName = event.repositoryName,
+                type = ArtifactType.COMMIT,
+                unique = event.sha,
+            ),
+            sourceUrl = buildCommitUrl(
+                repositoryOwner = event.repositoryOwner,
+                repositoryName = event.repositoryName,
+                sha = event.sha,
+            ),
+            artifactType = ArtifactType.COMMIT,
+            title = event.msg.take(GITHUB_COMMIT_MESSAGE_LENGTH),
+            bodyText = event.msg,
+            mime = null,
+            language = null,
+            createdAtSource = event.date,
+            updatedAtSource = null,
+            hash = null,
+        )
     }
 
-    fun toCommand(event : GithubFileFetchedEvent) : ArtifactCommand
-    {
+    fun toCommand(event: GithubFileFetchedEvent): ArtifactCommand {
         val title = event.path.split("/").last()
-        val extension = when (title.lowercase()){
+        val extension = when (title.lowercase()) {
             "dockerfile" -> "dockerfile"
             else -> title.substringAfterLast(".", "").lowercase()
         }
@@ -62,7 +61,7 @@ class GithubArtifactMapper() {
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
                 type = ArtifactType.FILE,
-                unique = event.path
+                unique = event.path,
             ),
             sourceUrl = event.sourceUrl,
             artifactType = ArtifactType.FILE,
@@ -76,13 +75,12 @@ class GithubArtifactMapper() {
         )
     }
 
-    fun toCommand(event : GithubIssueFetchedEvent) : ArtifactCommand
-    {
+    fun toCommand(event: GithubIssueFetchedEvent): ArtifactCommand {
         val content =
             buildString {
                 append(event.title)
                 append("|")
-                append(event.body?:"")
+                append(event.body ?: "")
             }
         val hash = Sha256.sha256(content.toByteArray())
         return ArtifactCommand(
@@ -92,7 +90,7 @@ class GithubArtifactMapper() {
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
                 type = ArtifactType.ISSUE,
-                unique = event.number.toString()
+                unique = event.number.toString(),
             ),
             sourceUrl = event.url,
             artifactType = ArtifactType.ISSUE,
@@ -106,8 +104,7 @@ class GithubArtifactMapper() {
         )
     }
 
-    fun toCommand(event : GithubPullRequestFetchedEvent) : ArtifactCommand
-    {
+    fun toCommand(event: GithubPullRequestFetchedEvent): ArtifactCommand {
         return ArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
@@ -115,7 +112,7 @@ class GithubArtifactMapper() {
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
                 type = ArtifactType.PULL_REQUEST,
-                unique = event.number.toString()
+                unique = event.number.toString(),
             ),
             sourceUrl = event.url,
             artifactType = ArtifactType.PULL_REQUEST,
@@ -125,8 +122,7 @@ class GithubArtifactMapper() {
             language = null,
             createdAtSource = Instant.parse(event.createdAt),
             updatedAtSource = null,
-            hash = null, //PRs are always re-ingested on updates
+            hash = null, // PRs are always re-ingested on updates
         )
     }
-
 }

@@ -6,12 +6,12 @@ import java.time.Instant
 import java.util.UUID
 
 data class IngestionRunResponse(
-    val runId : UUID,
-    val sourceSystem : SourceSystem,
+    val runId: UUID,
+    val sourceSystem: SourceSystem,
     val startedAt: Instant,
     val finishedAt: Instant? = null,
-    val ingestedCount : Int = 0,
-    val updatedCount : Int = 0,
-    val failedCount : Int = 0,
-    val failedItems : MutableList<FailedArtifact>
+    val ingestedCount: Int = 0,
+    val updatedCount: Int = 0,
+    val failedCount: Int = 0,
+    val failedItems: MutableList<FailedArtifact>,
 )

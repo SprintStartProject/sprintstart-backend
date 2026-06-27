@@ -6,9 +6,10 @@ import com.sprintstart.sprintstartbackend.canonical.repository.IngestionRunRepos
 import org.springframework.stereotype.Service
 
 @Service
-class IngestionStatusService(private val ingestionRunRepository: IngestionRunRepository) {
-    fun getIngestionStatusPerSource()
-    : List<SourceIngestionStatusResponse>{
+class IngestionStatusService(
+    private val ingestionRunRepository: IngestionRunRepository,
+) {
+    fun getIngestionStatusPerSource(): List<SourceIngestionStatusResponse> {
         val lastRun = ingestionRunRepository.findFirstByOrderByStartedAt()
         val github = SourceIngestionStatusResponse(
             sourceSystem = SourceSystem.GITHUB,
@@ -16,8 +17,8 @@ class IngestionStatusService(private val ingestionRunRepository: IngestionRunRep
             ingestedCount = lastRun.ingestedCount,
             updatedCount = lastRun.updatedCount,
             failedCount = lastRun.failedCount,
-            failedItems = lastRun.failedItems
+            failedItems = lastRun.failedItems,
         )
         return listOf(github)
     }
-  }
+}

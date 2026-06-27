@@ -6,5 +6,4 @@ enum class IngestionRunStatus {
     COMPLETED,
     PARTIAL,
     FAILED,
-
 }

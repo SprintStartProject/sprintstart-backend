@@ -4,5 +4,5 @@ enum class FinishedTypes {
     COMMITS,
     FILES,
     ISSUES,
-    PULL_REQUESTS
+    PULL_REQUESTS,
 }
