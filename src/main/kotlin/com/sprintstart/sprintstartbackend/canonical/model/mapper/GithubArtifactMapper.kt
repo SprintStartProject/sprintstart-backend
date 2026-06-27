@@ -15,8 +15,21 @@ import java.time.Instant
 
 private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 
+/**
+ * Translates GitHub domain events into canonical artifact commands.
+ *
+ * The mapper normalizes source-specific identifiers, derives stable hashes where the ingestion
+ * service uses change detection, and enriches file artifacts with lightweight metadata such as
+ * mime type and language.
+ */
 @Component
 class GithubArtifactMapper {
+    /**
+     * Maps a fetched commit into the canonical command shape.
+     *
+     * The commit title is intentionally shortened to keep list views compact while preserving the
+     * full message in `bodyText`.
+     */
     fun toCommand(event: GithubCommitFetchedEvent): ArtifactCommand {
         return ArtifactCommand(
             ingestionRunId = event.transactionId,
@@ -43,6 +56,12 @@ class GithubArtifactMapper {
         )
     }
 
+    /**
+     * Maps a fetched repository file and derives metadata from the file name.
+     *
+     * Content is hashed immediately so the ingestion service can treat file re-fetches as
+     * idempotent when the payload is unchanged.
+     */
     fun toCommand(event: GithubFileFetchedEvent): ArtifactCommand {
         val title = event.path.split("/").last()
         val extension = when (title.lowercase()) {
@@ -75,6 +94,12 @@ class GithubArtifactMapper {
         )
     }
 
+    /**
+     * Maps a fetched GitHub issue and computes a hash from the visible issue content.
+     *
+     * The hash currently tracks title and body, which is the change signal used by
+     * `ArtifactIngestionService` for issue updates.
+     */
     fun toCommand(event: GithubIssueFetchedEvent): ArtifactCommand {
         val content =
             buildString {
@@ -94,7 +119,7 @@ class GithubArtifactMapper {
             ),
             sourceUrl = event.url,
             artifactType = ArtifactType.ISSUE,
-            title = "PR #${event.number} " + event.title,
+            title = "Issue #${event.number} " + event.title,
             bodyText = event.body,
             mime = null,
             language = null,
@@ -104,6 +129,12 @@ class GithubArtifactMapper {
         )
     }
 
+    /**
+     * Maps a fetched pull request into the canonical pull-request representation.
+     *
+     * Pull requests intentionally omit a hash because the ingestion service treats them as mutable
+     * records and always overwrites the current title/body on re-fetch.
+     */
     fun toCommand(event: GithubPullRequestFetchedEvent): ArtifactCommand {
         return ArtifactCommand(
             ingestionRunId = event.transactionId,

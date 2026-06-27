@@ -8,8 +8,18 @@ import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubC
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
 import org.springframework.stereotype.Component
 
+/**
+ * Maps GitHub fetch failures into canonical failed-artifact commands.
+ *
+ * These commands preserve enough source identity for status and history endpoints to explain which
+ * artifact failed and, when possible, where it came from upstream.
+ */
 @Component
 class GithubArtifactFailedMapper {
+    /**
+     * Maps a failed commit fetch. The resulting command carries a stable commit source id and
+     * source URL when the SHA is known.
+     */
     fun toCommand(event: GithubCommitFetchFailedEvent): ArtifactFailedCommand {
         return ArtifactFailedCommand(
             transactionId = event.transactionId,
@@ -31,6 +41,10 @@ class GithubArtifactFailedMapper {
         )
     }
 
+    /**
+     * Maps a failed file fetch. GitHub file failure events do not currently provide a source URL,
+     * so only the canonical file source id is preserved.
+     */
     fun toCommand(event: GithubFileFetchFailedEvent): ArtifactFailedCommand {
         return ArtifactFailedCommand(
             transactionId = event.transactionId,
