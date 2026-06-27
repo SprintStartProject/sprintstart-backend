@@ -1,5 +1,5 @@
 @ApplicationModule(
-        allowedDependencies = "github::github-events"
+        allowedDependencies = {"github::github-events", "github"}
 )
 package com.sprintstart.sprintstartbackend.canonical;
 

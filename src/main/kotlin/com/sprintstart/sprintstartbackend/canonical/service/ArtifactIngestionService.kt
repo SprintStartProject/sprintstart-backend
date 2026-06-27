@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.canonical.service
 
-import com.sprintstart.sprintstartbackend.canonical.model.dto.ArtifactCommand
+import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactCommand
+import com.sprintstart.sprintstartbackend.canonical.model.dto.command.ArtifactFailedCommand
+import com.sprintstart.sprintstartbackend.canonical.model.dto.response.FailedArtifactResponse
 import com.sprintstart.sprintstartbackend.canonical.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.canonical.model.entity.IngestionRun
@@ -11,7 +13,6 @@ import com.sprintstart.sprintstartbackend.canonical.repository.IngestionRunRepos
 import jakarta.transaction.Transactional
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
-import java.time.Instant.now
 import java.util.UUID
 
 @Service
@@ -24,14 +25,12 @@ class ArtifactIngestionService(
         var artifact : Artifact?
         val ingestionRun = ingestionRunRepository
             .findByIdOrNull(command.ingestionRunId)
-            ?:throw IllegalArgumentException("Run not found")
+            ?:throw IllegalArgumentException("Run with id ${command.ingestionRunId} not found")
         when(command.artifactType){
             ArtifactType.COMMIT //TODO updating artifact
                 -> { artifact = artifactRepository.findBySourceId(command.sourceId)
                     if(artifact != null){
                         ingestionRun.ingestedCount++
-                        ingestionRun.processedArtifacts += artifact.id.toString()
-                        completeRunIfFinished(ingestionRun)
                         return
                     }
                 }
@@ -42,8 +41,6 @@ class ArtifactIngestionService(
                         ingestionRun.updatedCount++
                         artifact.bodyText = command.bodyText
                         artifact.hash = command.hash
-                        ingestionRun.processedArtifacts += artifact.id.toString()
-                        completeRunIfFinished(ingestionRun)
                         return
                     }
                     ingestionRun.ingestedCount++
@@ -55,10 +52,7 @@ class ArtifactIngestionService(
                 if(artifact != null){
                     artifact.title = command.title
                     artifact.bodyText = command.bodyText
-                    artifact.version++
                     ingestionRun.updatedCount++
-                    ingestionRun.processedArtifacts += artifact.id.toString()
-                    completeRunIfFinished(ingestionRun)
                     return
                 }
             }
@@ -67,10 +61,7 @@ class ArtifactIngestionService(
                 if(artifact != null){
                     artifact.title = command.title
                     artifact.bodyText = command.bodyText
-                    artifact.version++
                     ingestionRun.updatedCount++
-                    ingestionRun.processedArtifacts += artifact.id.toString()
-                    completeRunIfFinished(ingestionRun)
                     return
                 }
             }
@@ -87,33 +78,43 @@ class ArtifactIngestionService(
             language = command.language,
             ingestionRun = ingestionRun,
             hash = command.hash,
-            version = command.version ?: 1,
             createdAtSource = null,
             updatedAtSource = null
         )
         artifactRepository.save(artifact)
 
-        ingestionRun.processedArtifacts += artifact.id.toString()
-
         ingestionRun.ingestedCount++
     }
 
     @Transactional
-    fun startRun(transactionId: UUID, expectedArtifacts: List<String>, sourceSystem: SourceSystem) {
+    fun startRun(transactionId: UUID, sourceSystem: SourceSystem, status: IngestionRunStatus) {
             val ingestionRun = IngestionRun(
-                    id = transactionId,
-                    expectedArtifacts = expectedArtifacts,
-                    sourceSystem = sourceSystem,
-                    )
+                id = transactionId,
+                sourceSystem = sourceSystem,
+                status = status,
+            )
         ingestionRunRepository.save(ingestionRun)
     }
-    fun completeRunIfFinished(run: IngestionRun){
-        if (run.processedArtifacts.size == run.expectedArtifacts.size) {
-            run.finishedAt = now()
-            run.status = IngestionRunStatus.COMPLETED
-        }
+
+    fun updateRunStatus(transactionId: UUID, status : IngestionRunStatus) {
+        val run = ingestionRunRepository
+            .findByIdOrNull(transactionId)
+            ?:throw IllegalArgumentException("Run with id $transactionId not found")
+        run.status = status
     }
 
+    fun addFailedArtifact(command: ArtifactFailedCommand) {
+
+        val run = ingestionRunRepository
+            .findByIdOrNull(command.transactionId)
+            ?:throw IllegalArgumentException("Run with id ${command.transactionId} not found")
+        run.failedItems.add(FailedArtifactResponse(
+            sourceId = command.sourceId,
+            reason = command.reason,
+            artifactType = command.artifactType,
+            sourceUrl = command.sourceUrl
+        ))
+    }
 
 
 }

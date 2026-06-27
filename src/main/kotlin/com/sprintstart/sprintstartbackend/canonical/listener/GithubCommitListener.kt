@@ -1,0 +1,71 @@
+package com.sprintstart.sprintstartbackend.canonical.listener
+
+import com.sprintstart.sprintstartbackend.canonical.model.entity.FinishedTypes
+import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubArtifactFailedMapper
+import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubArtifactMapper
+import com.sprintstart.sprintstartbackend.canonical.service.ArtifactIngestionService
+import com.sprintstart.sprintstartbackend.canonical.service.GithubFetchingCompletionTracker
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
+
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
+import org.springframework.modulith.events.ApplicationModuleListener
+import org.springframework.stereotype.Component
+
+@Component
+internal class GithubCommitListener(
+
+    private val artifactIngestionService: ArtifactIngestionService,
+    private val gitHubFetchingCompletionTracker: GithubFetchingCompletionTracker,
+    private val githubArtifactMapper: GithubArtifactMapper,
+    private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
+) {
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubCommitsFetchStartedEvent,
+    ) {
+
+    }
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubCommitFetchedEvent,
+    ) {
+        artifactIngestionService.ingest(githubArtifactMapper.toCommand(event))
+    }
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubCommitsFetchCompletedEvent,
+    ) {
+        gitHubFetchingCompletionTracker.markFetchPhaseFinished(
+            event.transactionId,
+            finishedType = FinishedTypes.COMMITS
+        )
+    }
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubCommitFetchFailedEvent,
+    ) {
+        artifactIngestionService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event) )
+    }
+
+    @ApplicationModuleListener
+    fun on(
+        event: GithubCommitsFetchFailedEvent,
+    ) {
+        gitHubFetchingCompletionTracker.markFetchPhaseFinished(
+            event.transactionId,
+            finishedType = FinishedTypes.COMMITS
+        )
+    }
+
+
+
+
+
+}

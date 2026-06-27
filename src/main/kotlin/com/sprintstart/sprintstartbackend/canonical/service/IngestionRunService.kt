@@ -27,6 +27,8 @@ class IngestionRunService(
                     ingestedCount = it.ingestedCount,
                     updatedCount = it.updatedCount,
                     failedCount = it.failedCount,
+                    failedItems = it.failedItems,
+
                 )
             }
 

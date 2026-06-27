@@ -19,17 +19,17 @@ class IngestionRun(
     val startedAt: Instant = Instant.now(),
     var finishedAt: Instant? = null,
     @Column(nullable = false)
-    val expectedArtifacts : List<String>,
-    var processedArtifacts : List<String> = emptyList(),
-    @Column(nullable = false)
     var ingestedCount : Int = 0,
     @Column(nullable = false)
     var updatedCount : Int = 0,
     @Column(nullable = false)
     var failedCount : Int = 0,
     @Column(nullable = false)
-    val failedItems : List<FailedArtifactResponse> = emptyList(),
+    val failedItems : MutableList<FailedArtifactResponse> = mutableListOf(),
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    val finishedTypes: MutableSet<FinishedTypes> = mutableSetOf(),
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    var status: IngestionRunStatus = IngestionRunStatus.RUNNING,
+    var status: IngestionRunStatus,
 )

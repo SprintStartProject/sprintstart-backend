@@ -42,6 +42,5 @@ class Artifact(
     val ingestionRun : IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
-    @Column(nullable = false)
-    var version : Int,
+
 )

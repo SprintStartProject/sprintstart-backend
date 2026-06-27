@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.canonical.model.dto
+package com.sprintstart.sprintstartbackend.canonical.model.dto.command
 
 import com.sprintstart.sprintstartbackend.canonical.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.canonical.model.entity.SourceSystem
@@ -18,5 +18,4 @@ data class ArtifactCommand(
     val createdAtSource : Instant?,
     val updatedAtSource : Instant?,
     val hash: String?,
-    val version : Int?,
 )
