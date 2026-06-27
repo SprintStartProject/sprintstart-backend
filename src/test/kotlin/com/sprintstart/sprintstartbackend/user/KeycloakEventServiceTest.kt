@@ -82,6 +82,40 @@ class KeycloakEventServiceTest {
     }
 
     @Test
+    fun `user update event synchronizes enabled account state`() {
+        val user = User(
+            authId = "auth-1",
+            username = "alice",
+            email = "alice@mail.de",
+            firstname = "Alice",
+            lastname = "Developer",
+            enabled = true,
+            workingArea = WorkingArea.BACKEND_DEV,
+        )
+        every { userRepository.findLockedByAuthId("auth-1") } returns Optional.of(user)
+        every { userRepository.save(user) } returns user
+
+        service.handleEvent(
+            KeycloakEventRequest(
+                source = "keycloak",
+                resourceType = "USER",
+                eventType = "UPDATE",
+                realmId = "sprintstart",
+                authId = "auth-1",
+                username = null,
+                email = null,
+                firstName = null,
+                lastName = null,
+                enabled = false,
+                realmRoles = emptySet(),
+            ),
+        )
+
+        assertThat(user.enabled).isFalse()
+        verify(exactly = 1) { userRepository.save(user) }
+    }
+
+    @Test
     fun `user delete event is ignored when local projection is already gone`() {
         every { userRepository.findLockedByAuthId("auth-1") } returns Optional.empty()
 

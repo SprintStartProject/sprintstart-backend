@@ -63,12 +63,13 @@ class UserServiceTest {
         val request = PatchMeRequest(
             email = "new@mail.de",
             firstName = "Alicia",
+            lastName = "Tester",
             profileIcon = "icon-star",
             workingArea = WorkingArea.FRONTEND_DEV,
         )
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
         every {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", null)
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
         } just runs
         every { userRepository.save(user) } returns user
         every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
@@ -77,11 +78,12 @@ class UserServiceTest {
 
         assertThat(user.email).isEqualTo("new@mail.de")
         assertThat(user.firstname).isEqualTo("Alicia")
+        assertThat(user.lastname).isEqualTo("Tester")
         assertThat(user.profileIcon).isEqualTo("icon-star")
         assertThat(user.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
         assertThat(result.email).isEqualTo("new@mail.de")
         verify(exactly = 1) {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", null)
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
         }
         verify(exactly = 1) {
             eventPublisher.publishEvent(
@@ -96,12 +98,13 @@ class UserServiceTest {
         user.roles.add(Role.USER)
         val request = PatchUserRequest(
             email = "new@mail.de",
+            lastName = "Tester",
             workingArea = WorkingArea.FRONTEND_DEV,
             permissionGroup = Role.ADMIN,
         )
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", null, null)
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", null, "Tester")
         } just runs
         every { keycloakAdminClient.setPermissionGroup("auth-1", Role.ADMIN) } just runs
         every { userRepository.save(user) } returns user
@@ -111,6 +114,7 @@ class UserServiceTest {
 
         assertThat(result.permissionGroup).isEqualTo(Role.ADMIN)
         assertThat(result.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
+        assertThat(user.lastname).isEqualTo("Tester")
         assertThat(user.roles).containsExactly(Role.USER)
         verify(exactly = 1) { keycloakAdminClient.setPermissionGroup("auth-1", Role.ADMIN) }
         verify(exactly = 1) {
