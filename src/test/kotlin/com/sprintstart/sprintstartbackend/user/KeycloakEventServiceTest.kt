@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.KeycloakEventService
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.Optional
@@ -78,5 +79,27 @@ class KeycloakEventServiceTest {
 
         assertThat(user.username).isEqualTo("alice2")
         assertThat(user.roles).containsExactlyInAnyOrder(Role.USER, Role.ADMIN)
+    }
+
+    @Test
+    fun `user delete event is ignored when local projection is already gone`() {
+        every { userRepository.findLockedByAuthId("auth-1") } returns Optional.empty()
+
+        service.handleEvent(
+            KeycloakEventRequest(
+                source = "keycloak",
+                resourceType = "USER",
+                eventType = "DELETE",
+                realmId = "sprintstart",
+                authId = "auth-1",
+                username = null,
+                email = null,
+                firstName = null,
+                lastName = null,
+                realmRoles = emptySet(),
+            ),
+        )
+
+        verify(exactly = 0) { userRepository.delete(any()) }
     }
 }

@@ -127,10 +127,9 @@ class KeycloakEventService(
      * Deletes the user identified by the Keycloak auth ID.
      *
      * @param request Delete event payload.
-     * @throws ResponseStatusException When no user exists for the given auth ID.
      */
     fun deleteUser(request: KeycloakEventRequest) {
-        val user = findLockedByAuthId(request.authId)
+        val user = userRepository.findLockedByAuthId(request.authId).orElse(null) ?: return
 
         userRepository.delete(user)
     }

@@ -155,15 +155,31 @@ class UserServiceTest {
     @Test
     fun `deleteAdminUserById deletes in Keycloak before local projection`() {
         val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
-        every { userRepository.findById(user.id) } returns Optional.of(user)
+        every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
         every { keycloakAdminClient.deleteUser("auth-1") } just runs
-        every { userRepository.delete(user) } returns Unit
+        every { userRepository.deleteRolesByUserId(user.id) } returns 1
+        every { userRepository.deleteProjectionById(user.id) } returns 1
 
         val result = userService.deleteAdminUserById(user.id)
 
         assertThat(result.deleted).isTrue()
         verify(exactly = 1) { keycloakAdminClient.deleteUser("auth-1") }
-        verify(exactly = 1) { userRepository.delete(user) }
+        verify(exactly = 1) { userRepository.deleteRolesByUserId(user.id) }
+        verify(exactly = 1) { userRepository.deleteProjectionById(user.id) }
+    }
+
+    @Test
+    fun `deleteAdminUserById ignores local projection already deleted by Keycloak event`() {
+        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
+        every { keycloakAdminClient.deleteUser("auth-1") } just runs
+        every { userRepository.deleteRolesByUserId(user.id) } returns 0
+        every { userRepository.deleteProjectionById(user.id) } returns 0
+
+        val result = userService.deleteAdminUserById(user.id)
+
+        assertThat(result.id).isEqualTo(user.id)
+        assertThat(result.deleted).isTrue()
     }
 
     @Test
