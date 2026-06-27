@@ -5,10 +5,22 @@ import com.sprintstart.sprintstartbackend.canonical.repository.IngestionRunRepos
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
 
+/**
+ * Reads recent ingestion runs for API consumers.
+ *
+ * This service keeps pagination and response mapping out of the controller so the API surface can
+ * stay stable even if the persistence model grows additional run metadata later.
+ */
 @Service
 class IngestionRunService(
     private val ingestionRunRepository: IngestionRunRepository,
 ) {
+    /**
+     * Returns the newest ingestion runs first.
+     *
+     * @param limit maximum number of runs returned from the first page of run history
+     * @return API-ready run summaries including counters and failed items
+     */
     fun getRecentRuns(
         limit: Int = 10,
     ): List<IngestionRunResponse> =
