@@ -15,33 +15,27 @@ import java.util.UUID
 class Artifact(
     @Id
     val id: UUID = UUID.randomUUID(),
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    val sourceSystem : SourceSystem,
+    val sourceSystem: SourceSystem,
     @Column(nullable = false)
-    val sourceId : String,
+    val sourceId: String,
     @Column(length = 2048)
     val sourceUrl: String?,
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val artifactType: ArtifactType,
     var title: String?,
     var bodyText: String?,
-
-    val mime : String?,
-    val language : String?,
-
-    val createdAtSource : Instant?,
-    val updatedAtSource : Instant?,
-
+    val mime: String?,
+    val language: String?,
+    val createdAtSource: Instant?,
+    val updatedAtSource: Instant?,
     @Column(nullable = false)
     val ingestedAt: Instant = Instant.now(),
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
-    val ingestionRun : IngestionRun,
+    val ingestionRun: IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
-
 )

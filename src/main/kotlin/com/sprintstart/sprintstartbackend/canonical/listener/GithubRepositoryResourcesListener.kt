@@ -8,10 +8,8 @@ import org.springframework.stereotype.Component
 
 @Component
 internal class GithubRepositoryResourcesListener(
-
     private val artifactIngestionService: ArtifactIngestionService,
 ) {
-
     @ApplicationModuleListener
     fun on(
         event: GithubRepositoryResourcesFetchingStartedEvent,
@@ -19,7 +17,7 @@ internal class GithubRepositoryResourcesListener(
         artifactIngestionService
             .updateRunStatus(
                 transactionId = event.transactionId,
-                status = IngestionRunStatus.RUNNING
+                status = IngestionRunStatus.RUNNING,
             )
     }
 }

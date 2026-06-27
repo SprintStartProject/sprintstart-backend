@@ -6,30 +6,19 @@ import com.sprintstart.sprintstartbackend.canonical.model.mapper.GithubArtifactM
 import com.sprintstart.sprintstartbackend.canonical.service.ArtifactIngestionService
 import com.sprintstart.sprintstartbackend.canonical.service.GithubFetchingCompletionTracker
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
-
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
 import org.springframework.modulith.events.ApplicationModuleListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class GithubCommitListener(
-
     private val artifactIngestionService: ArtifactIngestionService,
     private val gitHubFetchingCompletionTracker: GithubFetchingCompletionTracker,
     private val githubArtifactMapper: GithubArtifactMapper,
     private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
 ) {
-
-    @ApplicationModuleListener
-    fun on(
-        event: GithubCommitsFetchStartedEvent,
-    ) {
-
-    }
-
     @ApplicationModuleListener
     fun on(
         event: GithubCommitFetchedEvent,
@@ -43,7 +32,7 @@ internal class GithubCommitListener(
     ) {
         gitHubFetchingCompletionTracker.markFetchPhaseFinished(
             event.transactionId,
-            finishedType = FinishedTypes.COMMITS
+            finishedType = FinishedTypes.COMMITS,
         )
     }
 
@@ -51,7 +40,7 @@ internal class GithubCommitListener(
     fun on(
         event: GithubCommitFetchFailedEvent,
     ) {
-        artifactIngestionService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event) )
+        artifactIngestionService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event))
     }
 
     @ApplicationModuleListener
@@ -60,12 +49,7 @@ internal class GithubCommitListener(
     ) {
         gitHubFetchingCompletionTracker.markFetchPhaseFinished(
             event.transactionId,
-            finishedType = FinishedTypes.COMMITS
+            finishedType = FinishedTypes.COMMITS,
         )
     }
-
-
-
-
-
 }

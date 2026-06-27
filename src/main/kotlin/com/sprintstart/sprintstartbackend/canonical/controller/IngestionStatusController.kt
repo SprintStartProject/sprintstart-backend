@@ -15,15 +15,12 @@ import org.springframework.web.bind.annotation.RestController
     name = "Ingestion status",
 )
 class IngestionStatusController(
-    private val ingestionStatusService : IngestionStatusService,
+    private val ingestionStatusService: IngestionStatusService,
 ) {
-
     @GetMapping
     @Operation(summary = "Get latest ingestion status per source")
-    fun getIngestionStatusPerSource()
-    : ResponseEntity<List<SourceIngestionStatusResponse>> =
+    fun getIngestionStatusPerSource(): ResponseEntity<List<SourceIngestionStatusResponse>> =
         ResponseEntity.ok(
             ingestionStatusService.getIngestionStatusPerSource(),
         )
-
 }

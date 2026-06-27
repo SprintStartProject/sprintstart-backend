@@ -4,8 +4,8 @@ import jakarta.persistence.Embeddable
 
 @Embeddable
 data class FailedArtifact(
-    val sourceId : String?,
+    val sourceId: String?,
     val artifactType: ArtifactType,
     val sourceUrl: String?,
-    val reason : String,
+    val reason: String,
 )
