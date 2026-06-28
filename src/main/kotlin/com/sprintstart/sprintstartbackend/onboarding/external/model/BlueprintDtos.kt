@@ -1,10 +1,12 @@
 package com.sprintstart.sprintstartbackend.onboarding.external.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class GenerateBlueprintsRequest(
     val scopes: List<String>? = null,
+    val active: List<BlueprintSchema> = emptyList(),
 )
 
 @Serializable
@@ -16,56 +18,25 @@ data class GenerateBlueprintsResponse(
 data class BlueprintOutcome(
     val scope: String,
     val status: String,
-    val message: String? = null,
+    val blueprint: GeneratedBlueprint? = null,
+    val notes: List<String> = emptyList(),
 )
 
 @Serializable
-data class DraftListResponse(
-    val items: List<DraftSummary> = emptyList(),
-)
-
-@Serializable
-data class DraftSummary(
-    val scope: String,
-    val createdAt: String? = null,
-    val summary: String? = null,
-)
-
-@Serializable
-data class BlueprintDiff(
-    val scope: String,
-    val changes: List<DiffChange> = emptyList(),
-    val blocked: Boolean = false,
-)
-
-@Serializable
-data class DiffChange(
-    val action: String,
-    val stepId: String? = null,
-    val description: String? = null,
-)
-
-@Serializable
-data class Blueprint(
+data class GeneratedBlueprint(
     val scope: String,
     val version: String,
-    val steps: List<BlueprintStep> = emptyList(),
+    val steps: List<GeneratedBlueprintStep> = emptyList(),
+    val provenance: BlueprintProvenanceSchema? = null,
 )
 
 @Serializable
-data class BlueprintStep(
-    val id: String? = null,
+data class GeneratedBlueprintStep(
+    val id: String,
     val title: String,
     val description: String? = null,
-)
-
-@Serializable
-data class VersionListResponse(
-    val scope: String,
-    val versions: List<String> = emptyList(),
-)
-
-@Serializable
-data class RollbackBlueprintRequest(
-    val version: String,
+    @SerialName("min_experience") val minExperience: String? = null,
+    val audience: List<String> = emptyList(),
+    val requirement: String = "recommended",
+    val invariant: Boolean = false,
 )

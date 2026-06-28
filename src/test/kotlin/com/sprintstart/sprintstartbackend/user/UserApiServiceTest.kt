@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.UserApiService
 import io.mockk.every
@@ -8,6 +10,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.util.Optional
 import java.util.UUID
 
 class UserApiServiceTest {
@@ -52,5 +55,41 @@ class UserApiServiceTest {
         }
 
         assertThat(result).isFalse()
+    }
+
+    @Test
+    fun `getOnboardingProfileByAuthId returns profile when user exists`() {
+        val userId = UUID.randomUUID()
+        val authId = "auth|test-user"
+        val user = User(
+            id = userId,
+            authId = authId,
+            username = "testuser",
+            email = null,
+            firstname = "Test",
+            lastname = "User",
+            workingArea = WorkingArea.BACKEND_DEV,
+            experience = "junior",
+        )
+
+        every { userRepository.findByAuthId(authId) } returns Optional.of(user)
+
+        val result = userApi.getOnboardingProfileByAuthId(authId)
+
+        assertThat(result).isPresent
+        assertThat(result.get().id).isEqualTo(userId)
+        assertThat(result.get().workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
+        assertThat(result.get().experience).isEqualTo("junior")
+    }
+
+    @Test
+    fun `getOnboardingProfileByAuthId returns empty when user not found`() {
+        val authId = "auth|unknown"
+
+        every { userRepository.findByAuthId(authId) } returns Optional.empty()
+
+        val result = userApi.getOnboardingProfileByAuthId(authId)
+
+        assertThat(result).isEmpty
     }
 }

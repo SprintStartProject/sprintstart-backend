@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class AiPathGenerationEvent(
+data class OnboardingAiPathEvent(
     val type: String,
     val name: String? = null,
     val detail: String? = null,
