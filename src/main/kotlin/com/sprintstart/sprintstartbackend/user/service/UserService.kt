@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
@@ -178,7 +179,7 @@ class UserService(
 
     private fun updateWorkingArea(
         user: User,
-        workingArea: com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea,
+        workingArea: WorkingArea,
     ) {
         val previousWorkingArea = user.workingArea
         if (previousWorkingArea != workingArea) {

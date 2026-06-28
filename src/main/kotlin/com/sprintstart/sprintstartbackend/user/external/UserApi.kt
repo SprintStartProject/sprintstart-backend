@@ -6,8 +6,8 @@ import java.util.UUID
 /**
  * Exported user-module API for other backend modules.
  *
- * Other modules should depend on this interface instead of calling [com.sprintstart.sprintstartbackend.user.service.UserService]
- * or [com.sprintstart.sprintstartbackend.user.repository.UserRepository] directly.
+ * Other modules should depend on this interface instead of calling user-module services
+ * or repositories directly.
  */
 interface UserApi {
     /**
