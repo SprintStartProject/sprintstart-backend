@@ -6,14 +6,16 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.GeneratedBlu
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Blueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toSchema
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintOutcomeResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.GenerateBlueprintsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.VersionListResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -35,6 +37,7 @@ class BlueprintService(
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate =
         TransactionTemplate(transactionManager).apply { isReadOnly = true }
+    private val ensureMutex = Mutex()
 
     /**
      * Triggers AI blueprint generation for the given scopes and persists the results.
@@ -136,6 +139,9 @@ class BlueprintService(
         val versions = blueprintRepository
             .findAllByScopeAndStatus(scope, BlueprintStatus.ARCHIVED)
             .map { it.version }
+        if (versions.isEmpty()) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No blueprint found for scope: $scope")
+        }
         return VersionListResponse(scope = scope, versions = versions)
     }
 
@@ -190,30 +196,18 @@ class BlueprintService(
      * @param scopes The scopes that must have an ACTIVE blueprint.
      */
     suspend fun ensureScopesExist(scopes: List<String>) {
-        val existing = scopes.filter { scope ->
-            blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE) != null
-        }
-        val missing = scopes.toSet() - existing.toSet()
-        if (missing.isNotEmpty()) {
-            generateBlueprints(missing.toList())
+        ensureMutex.withLock {
+            val existing = withContext(Dispatchers.IO) {
+                scopes.filter { scope ->
+                    blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE) != null
+                }
+            }
+            val missing = scopes.toSet() - existing.toSet()
+            if (missing.isNotEmpty()) {
+                generateBlueprints(missing.toList())
+            }
         }
     }
-
-    /** Maps a persisted [Blueprint] entity to its outward API response. */
-    private fun Blueprint.toResponse(): BlueprintResponse =
-        BlueprintResponse(
-            scope = scope,
-            version = version,
-            steps = steps.map {
-                BlueprintStepResponse(
-                    id = it.stepId,
-                    title = it.title,
-                    description = it.description,
-                    requirement = it.requirement,
-                    invariant = it.invariant,
-                )
-            },
-        )
 
     private companion object {
         val ACTIVATABLE_STATUSES = setOf("created", "updated")

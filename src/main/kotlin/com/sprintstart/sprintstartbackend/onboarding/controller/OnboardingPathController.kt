@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import kotlinx.coroutines.flow.Flow
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
@@ -126,7 +127,7 @@ class OnboardingPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PostMapping("/me/path/personalize")
+    @PostMapping("/me/path/personalize", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     @PreAuthorize("hasRole('USER')")
     fun personalizePath(
         @Parameter(hidden = true)

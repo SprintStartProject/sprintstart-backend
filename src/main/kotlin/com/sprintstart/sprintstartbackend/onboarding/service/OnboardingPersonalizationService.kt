@@ -11,8 +11,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.Onboard
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -58,6 +60,10 @@ class OnboardingPersonalizationService(
             .getOnboardingProfileByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 
+        if (profile.workingArea == WorkingArea.NO_WORKING_AREA) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "User has no working area set")
+        }
+
         val workingArea = profile.workingArea.toAiScope()
         val experience = profile.experience
         val requiredScopes = listOf("global", "area:$workingArea")
@@ -81,6 +87,8 @@ class OnboardingPersonalizationService(
                     .generatePath(workingArea, experience, blueprints)
                     .map { event -> event.toSseEvent(profile.id) },
             )
+        }.catch { e ->
+            emit(OnboardingSseEvent(type = "error", message = e.message))
         }
     }
 

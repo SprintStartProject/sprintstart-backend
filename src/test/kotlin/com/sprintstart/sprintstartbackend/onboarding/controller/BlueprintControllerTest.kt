@@ -21,7 +21,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 class BlueprintControllerTest(
     @Autowired private val mockMvc: MockMvc,
 ) {
-    @MockkBean(relaxed = true)
+    @MockkBean
     private lateinit var blueprintService: BlueprintService
 
     @MockkBean
