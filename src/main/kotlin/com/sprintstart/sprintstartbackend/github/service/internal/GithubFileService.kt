@@ -1,14 +1,18 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
-import com.sprintstart.sprintstartbackend.github.external.events.FilesSyncStartedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.github.models.ConnectionStatus
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubFileSnapshotSharedId
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.client.dto.ChangedFile
 import com.sprintstart.sprintstartbackend.github.models.client.dto.DeletedFile
 import com.sprintstart.sprintstartbackend.github.models.client.dto.ModifiedFile
+import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubFilesStreamFromDiskFailedPartialException
 import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
@@ -16,11 +20,17 @@ import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.upload.external.UploadIngestionApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flatMapMerge
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.web.server.ResponseStatusException
 import java.nio.charset.MalformedInputException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,7 +38,9 @@ import java.security.MessageDigest
 import java.util.UUID
 import kotlin.io.path.exists
 import kotlin.io.path.extension
-import kotlin.sequences.asSequence
+import kotlin.streams.asSequence
+
+private const val BUFFER_SIZE = 32
 
 private val binaryExtensions = setOf(
     // images
@@ -77,7 +89,6 @@ class GithubFileService(
     private val eventPublisher: ApplicationEventPublisher,
     private val customCache: CustomOnDiskCache,
     private val gitRunner: GitOperationRunner,
-    private val uploadIngestionApi: UploadIngestionApi,
 ) {
     /**
      * Streams the initial connection and ingestion of a GitHub repository's files.
@@ -90,29 +101,46 @@ class GithubFileService(
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
     @Tracked("Fetching all files from repository")
-    @Suppress("UnusedParameter")
-    suspend fun fetchAndIngestAllFiles(
+    internal suspend fun fetchAndIngestAllFiles(
         githubRepositoryId: UUID,
+        repositoryOwner: String,
+        repositoryName: String,
         transactionId: UUID,
     ) {
+        eventPublisher.publishEvent(GithubFilesFetchStartedEvent(transactionId, repositoryOwner, repositoryName))
+
         val githubRepository = withContext(Dispatchers.IO) {
-            repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
+            repoConnectionRepository.findById(githubRepositoryId)
         }
-        try {
-            val path = customCache.getLocalRepositoryPath(githubRepository)
-            val currentRevision = resolveCurrentRevision(path)
-            streamFilesFromDiskAndIngest(githubRepository, path, currentRevision)
-            if (currentRevision != null) {
-                githubRepository.lastSha = currentRevision
-            }
-        } catch (e: Exception) {
-            githubRepository.status = ConnectionStatus.FAILED
-            throw e
-        } finally {
-            withContext(Dispatchers.IO) {
-                repoConnectionRepository.save(githubRepository)
-            }
+
+        if (githubRepository.isEmpty) {
+            eventPublisher.publishEvent(
+                GithubFilesFetchFailedEvent(
+                    transactionId,
+                    repositoryOwner,
+                    repositoryName,
+                    "Internal server error",
+                ),
+            )
+            // Internal server error as this function is only used internally,
+            // so we expect the repository id to be valid.
+            throw ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Repository with id $githubRepositoryId not found",
+            )
         }
+
+        val path = customCache.getLocalRepositoryPath(githubRepository.get())
+        val currentRevision = gitRunner.exec(path, onDiskOperations.gitRevParse()).trim()
+
+        streamFilesFromDiskAndIngest(transactionId, githubRepository.get(), path, currentRevision)
+
+        githubRepository.get().lastSha = currentRevision
+        withContext(Dispatchers.IO) {
+            repoConnectionRepository.save(githubRepository.get())
+        }
+
+        eventPublisher.publishEvent(GithubFilesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))
     }
 
     /**
@@ -129,10 +157,41 @@ class GithubFileService(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        if (githubRepository.lastSha.isBlank()) {
-            throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
+        eventPublisher.publishEvent(
+            GithubFilesFetchStartedEvent(
+                transactionId,
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
+
+        runCatching {
+            if (githubRepository.lastSha.isBlank()) {
+                eventPublisher.publishEvent(
+                    GithubFilesFetchFailedEvent(transactionId, githubRepository.owner, githubRepository.name),
+                )
+                throw RepositoryNotInitializedException(githubRepository.owner, githubRepository.name)
+            }
+            fetchAndIngestFileUpdatesIfNecessary(githubRepository, transactionId)
+        }.onFailure { e ->
+            eventPublisher.publishEvent(
+                GithubFilesFetchFailedEvent(
+                    transactionId,
+                    githubRepository.owner,
+                    githubRepository.name,
+                    e.message ?: "Unknown error",
+                ),
+            )
+            throw e
         }
-        fetchAndIngestFileUpdatesIfNecessary(githubRepository, transactionId)
+
+        eventPublisher.publishEvent(
+            GithubFilesFetchCompletedEvent(
+                transactionId,
+                githubRepository.owner,
+                githubRepository.name,
+            ),
+        )
     }
 
     /**
@@ -151,7 +210,7 @@ class GithubFileService(
         transactionId: UUID,
     ) {
         val ghUrl = "https://github.com/${githubRepository.owner}/${githubRepository.name}"
-        fetchAndIngestFileUpdates(localFsPath, githubRepository.lastSha, latestSha, ghUrl, transactionId)
+        fetchAndIngestFileUpdates(localFsPath, githubRepository, latestSha, ghUrl, transactionId)
 
         githubRepository.lastSha = latestSha
         withContext(Dispatchers.IO) {
@@ -168,41 +227,67 @@ class GithubFileService(
      * or re-ingest ones that changed.
      *
      * @param localFsPath The path to the local copy of the GitHub repository.
-     * @param lastSha The sha representing the last time the repository was updated.
+     * @param repo The sha representing the last time the repository was updated.
      * @param latestSha The newest sha representing the state to update to.
      * @param transactionId The UUID of the overall transaction, this action is a part of.
      */
     private suspend fun fetchAndIngestFileUpdates(
         localFsPath: Path,
-        lastSha: String,
+        repo: GithubRepositoryConnection,
         latestSha: String,
         ghUrl: String,
         transactionId: UUID,
     ) {
-        val output = gitRunner.exec(localFsPath, onDiskOperations.gitDiffCmp(lastSha, latestSha))
+        val output = gitRunner.exec(localFsPath, onDiskOperations.gitDiffCmp(repo.lastSha, latestSha))
         val changedFiles = output.lines().filter { it.isNotBlank() }
-
-        val jobStartedEvent = FilesSyncStartedEvent(
-            transactionId = transactionId,
-            paths = changedFiles,
-        )
-        eventPublisher.publishEvent(jobStartedEvent)
+        val failures = mutableListOf<String>()
 
         changedFiles.forEach { filePath ->
-            val sourceUrl = "$ghUrl/blob/$latestSha/$filePath"
-            when (val changedFile = fetchFileUpdate(localFsPath, filePath)) {
-                is ModifiedFile -> {
-                    ingestFile(changedFile.relativePath, changedFile.content, sourceUrl)
-                }
+            runCatching {
+                val sourceUrl = "$ghUrl/blob/$latestSha/$filePath"
+                when (val changedFile = fetchFileUpdate(localFsPath, filePath)) {
+                    is ModifiedFile -> {
+                        eventPublisher.publishEvent(
+                            GithubFileFetchedEvent(
+                                transactionId,
+                                repo.owner,
+                                repo.name,
+                                changedFile.relativePath,
+                                changedFile.content,
+                                sourceUrl,
+                            ),
+                        )
+                    }
 
-                is DeletedFile -> {
-                    unIngestFile(changedFile.relativePath, transactionId)
-                }
+                    is DeletedFile -> {
+                        eventPublisher.publishEvent(
+                            GithubFileDeletedEvent(
+                                transactionId,
+                                repo.owner,
+                                repo.name,
+                                changedFile.relativePath,
+                            ),
+                        )
+                    }
 
-                else -> {
-                    // Ignore - e.g., path was filtered out as binary
+                    else -> {} // binary — skip
                 }
+            }.onFailure { e ->
+                eventPublisher.publishEvent(
+                    GithubFileFetchFailedEvent(
+                        transactionId,
+                        repo.owner,
+                        repo.name,
+                        filePath,
+                        e.message ?: "Unknown error",
+                    ),
+                )
+                failures.add("$filePath: ${e.message}")
             }
+        }
+
+        if (failures.isNotEmpty()) {
+            throw GithubFilesStreamFromDiskFailedPartialException(failures.joinToString("\n"))
         }
     }
 
@@ -225,98 +310,149 @@ class GithubFileService(
     }
 
     /**
-     * Reads files from disk and directly streams the ingestion of each file.
+     * Streams files from disk, processes them, and ingests their data into the specified GitHub repository.
      *
-     * This function, given the path to a local GitHub repository, reads all files it can find from the disk
-     * and ingests them into the AI system.
+     * This method performs concurrent file processing, publishes events for success and failure cases,
+     * and handles batching of file snapshots for ingestion.
      *
-     * # Ignored
-     *
-     * * `.git`
-     * * All binary file extensions (see [binaryExtensions])
-     *
-     * @see binaryExtensions
-     *
-     * @param githubRepository The GitHub repository to ingest.
-     * @param repositoryPath The path to the GitHub repository, locally.
+     * @param transactionId A unique identifier for the transaction associated with this file processing operation.
+     * @param githubRepository The connection details for the target GitHub repository where file data will be ingested.
+     * @param repositoryPath The local path to the repository where the files are stored on disk.
+     * @param revision The specific revision or branch of the repository being processed.
+     * @throws GithubFilesStreamFromDiskFailedPartialException If there are any failures during file processing.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun streamFilesFromDiskAndIngest(
+        transactionId: UUID,
         githubRepository: GithubRepositoryConnection,
         repositoryPath: Path,
-        revision: String?,
+        revision: String,
     ) {
-        val filesToIngest: List<GithubFilePayload> = withContext(Dispatchers.IO) {
-            Files.walk(repositoryPath).use { stream ->
-                stream
-                    .iterator()
-                    .asSequence()
-                    .filter { Files.isRegularFile(it) }
-                    .filter { !it.startsWith(repositoryPath.resolve(".git")) }
-                    .filter { !it.isBinary() }
-                    .mapNotNull { filePath: Path ->
-                        val relativePath = repositoryPath.relativize(filePath).toString()
-                        val content = readTextSafely(filePath) ?: return@mapNotNull null
+        val concurrency = Runtime.getRuntime().availableProcessors()
+        val failures = mutableListOf<String>()
+        val snapshotBuffer = mutableListOf<GithubFileSnapshot>()
 
-                        val fileSnapshotId = GithubFileSnapshotSharedId(
-                            repositoryId = githubRepository.id,
-                            path = filePath.toString(),
-                        )
-                        val fileSnapshot = GithubFileSnapshot(
-                            id = fileSnapshotId,
-                            sha = content.sha256(),
-                            repository = githubRepository,
-                        )
-                        fileSnapshotRepository.save(fileSnapshot)
+        discoverFilePaths(repositoryPath)
+            .asFlow()
+            .flatMapMerge(concurrency = concurrency) { path ->
+                // Concurrently process discovered files
+                flow {
+                    emit(
+                        processSingleFile(path, repositoryPath, githubRepository, revision),
+                    )
+                }.flowOn(Dispatchers.IO)
+            }.collect { result ->
+                when (result) {
+                    is FileProcessingResult.Success -> {
+                        // Batch snapshots and flush them in batches of 32
+                        snapshotBuffer += result.snapshot
+                        if (snapshotBuffer.size >= BUFFER_SIZE) flushSnapshots(snapshotBuffer)
 
-                        val revisionSegment = revision ?: return@mapNotNull null
-                        val sourceUrl =
-                            "https://github.com/${githubRepository.owner}/${githubRepository.name}/blob/$revisionSegment/$relativePath"
-
-                        GithubFilePayload(
-                            path = relativePath,
-                            content = content,
-                            sourceUrl = sourceUrl,
+                        eventPublisher.publishEvent(
+                            GithubFileFetchedEvent(
+                                transactionId,
+                                githubRepository.owner,
+                                githubRepository.name,
+                                result.payload.path,
+                                result.payload.content,
+                                result.payload.sourceUrl,
+                            ),
                         )
-                    }.toList()
+                    }
+
+                    is FileProcessingResult.Failure -> {
+                        eventPublisher.publishEvent(
+                            GithubFileFetchFailedEvent(
+                                transactionId,
+                                githubRepository.owner,
+                                githubRepository.name,
+                                result.path,
+                                result.reason,
+                            ),
+                        )
+                        failures += "${result.path}: ${result.reason}"
+                    }
+                }
             }
-        }
 
-        for (file in filesToIngest) {
-            ingestFile(file.path, file.content, file.sourceUrl)
+        // Flush any remaining snapshots
+        flushSnapshots(snapshotBuffer)
+
+        if (failures.isNotEmpty()) {
+            throw GithubFilesStreamFromDiskFailedPartialException(failures.joinToString("\n"))
         }
     }
 
     /**
-     * Ingests the given repository file content through the upload module API.
+     * Discovers all regular file paths within a given repository path, excluding files in the ".git" directory
+     * and binary files.
      *
-     * File contents can be much larger than Spring Modulith's persistent event publication table
-     * comfortably supports. Using the upload module API keeps the boundary explicit without
-     * serializing whole documents into `event_publication`.
-     *
-     * @param path The relative path to the file to ingest.
-     * @param content The actual content of the resource.
+     * @param repositoryPath the root path of the repository to be scanned for file paths
+     * @return a list of paths representing all discovered files that are not binary and not within the ".git" directory
      */
-    private suspend fun ingestFile(path: String, content: String, sourceUrl: String) {
-        uploadIngestionApi.ingestGithubFile(path, content, sourceUrl)
-    }
+    private fun discoverFilePaths(repositoryPath: Path): List<Path> =
+        Files.walk(repositoryPath).use { stream ->
+            stream
+                .asSequence()
+                .filter { Files.isRegularFile(it) }
+                .filter { !it.startsWith(repositoryPath.resolve(".git")) }
+                .filter { !it.isBinary() }
+                .toList()
+        }
 
     /**
-     * Publishes a spring event to un-ingest the resource under the given path from the AI system.
+     * Processes a single file by reading its content, computing its hash, generating a source URL,
+     * and creating a file snapshot for the specified GitHub repository.
      *
-     * This function publishes a [GithubFileDeletedEvent], that a handler in the upload/ingestion
-     * module waits for, picks up, and then handles the un-ingestion of.
-     *
-     * @see GithubFileDeletedEvent
-     *
-     * @param path The path to the deleted file.
-     * @param transactionId The UUID of the overall transaction, this action is a part of.
+     * @param filePath The path to the file being processed.
+     * @param repositoryPath The root path of the repository,
+     * used to compute the relative path of the file.
+     * @param githubRepository The connection details for the GitHub repository.
+     * @param revision The revision identifier (e.g., branch, tag, or commit hash)
+     * to construct the source URL.
+     * @return A [FileProcessingResult] that represents either the successful processing
+     * result with file payload and snapshot
+     * or a failure result with a reason for the failure.
      */
-    private fun unIngestFile(path: String, transactionId: UUID) {
-        val event = GithubFileDeletedEvent(
-            transactionId = transactionId,
-            path = path,
+    private suspend fun processSingleFile(
+        filePath: Path,
+        repositoryPath: Path,
+        githubRepository: GithubRepositoryConnection,
+        revision: String,
+    ): FileProcessingResult = runCatching {
+        val (content, sha256) = readFileWithHash(filePath)
+        val relativePath = repositoryPath.relativize(filePath).toString()
+        val sourceUrl =
+            "https://github.com/${githubRepository.owner}/${githubRepository.name}/blob/$revision/$relativePath"
+        val snapshotId = GithubFileSnapshotSharedId(
+            repositoryId = githubRepository.id,
+            path = filePath.toString(),
         )
-        eventPublisher.publishEvent(event)
+        val snapshot = GithubFileSnapshot(id = snapshotId, sha = sha256, repository = githubRepository)
+
+        FileProcessingResult.Success(
+            payload = GithubFilePayload(path = relativePath, content = content, sourceUrl = sourceUrl),
+            snapshot = snapshot,
+        )
+    }.getOrElse { e ->
+        FileProcessingResult.Failure(
+            path = filePath.toString(),
+            reason = "Could not read file content: ${e.message}",
+        )
+    }
+
+    /**
+     * Persists the provided list of file snapshots and clears the buffer.
+     *
+     * @param buffer A mutable list of `GithubFileSnapshot` objects to be saved.
+     * The buffer is cleared after the snapshots are saved.
+     */
+    private suspend fun flushSnapshots(buffer: MutableList<GithubFileSnapshot>) {
+        if (buffer.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            fileSnapshotRepository.saveAll(buffer.toList())
+            buffer.clear()
+        }
     }
 
     /**
@@ -362,6 +498,34 @@ class GithubFileService(
      */
     private fun Path.isBinary() = extension.lowercase() in binaryExtensions
 
+    /**
+     * Reads the content of a file located at the specified path and computes its SHA-256 hash.
+     *
+     * It's basically a collection function. Instead of reading the file content first,
+     * then hashing it,
+     * this function does both in one go to half the work.
+     *
+     * @param filePath The path of the file to be read.
+     * @return A pair where the first element is the file's content as a string,
+     * and the second element is the SHA-256 hash of the file's content as a hexadecimal string.
+     */
+    private suspend fun readFileWithHash(filePath: Path): Pair<String, String> {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val bytes = withContext(Dispatchers.IO) {
+            Files.readAllBytes(filePath)
+        }
+        digest.update(bytes)
+        val hash = digest.digest().joinToString("") { "%02x".format(it) }
+        return String(bytes, Charsets.UTF_8) to hash
+    }
+
+    /**
+     * Reads the content of a file at the given path as a string, handling any malformed input exceptions.
+     * If the file's content cannot be read due to a `MalformedInputException`, null is returned.
+     *
+     * @param path the path to the file to be read
+     * @return the content of the file as a string, or null if a malformed input exception occurs
+     */
     private fun readTextSafely(path: Path): String? {
         return try {
             Files.readString(path)
@@ -370,25 +534,29 @@ class GithubFileService(
         }
     }
 
-    private fun resolveCurrentRevision(localFsPath: Path): String? {
-        return try {
-            gitRunner.exec(localFsPath, onDiskOperations.gitRevParse()).trim()
-        } catch (@Suppress("SwallowedException") e: RuntimeException) {
-            null
-        }
+    /**
+     * Represents the result of processing a file within the system.
+     * This sealed interface distinguishes between successful and failed processing outcomes.
+     */
+    private sealed interface FileProcessingResult {
+        data class Success(
+            val payload: GithubFilePayload,
+            val snapshot: GithubFileSnapshot,
+        ) : FileProcessingResult
+
+        data class Failure(
+            val path: String,
+            val reason: String,
+        ) : FileProcessingResult
     }
 
     /**
-     * Calculates the SHA-256 hash of a string.
+     * Represents the payload of a file in a GitHub repository.
+     *
+     * @property path The file path within the repository.
+     * @property content The content of the file, typically as a string.
+     * @property sourceUrl The source URL of the file in the repository.
      */
-    private fun String.sha256(): String =
-        MessageDigest
-            .getInstance("SHA-256")
-            .digest(toByteArray())
-            .joinToString("") {
-                "%02x".format(it)
-            }
-
     private data class GithubFilePayload(
         val path: String,
         val content: String,

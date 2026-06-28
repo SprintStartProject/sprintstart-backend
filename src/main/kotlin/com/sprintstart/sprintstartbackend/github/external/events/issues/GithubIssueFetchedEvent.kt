@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.github.external.events
+package com.sprintstart.sprintstartbackend.github.external.events.issues
 
 import java.util.UUID
 
@@ -12,6 +12,8 @@ import java.util.UUID
  * processing pipelines.
  *
  * @property transactionId Unique identifier for the transaction associated with this event.
+ * @property repositoryOwner The owner of the GitHub repository where the issue was fetched.
+ * @property repositoryName The name of the GitHub repository where the issue was fetched.
  * @property number The number of the GitHub issue within the repository.
  * @property title The title of the GitHub issue.
  * @property body The optional body or description of the GitHub issue.
@@ -26,6 +28,8 @@ import java.util.UUID
  */
 data class GithubIssueFetchedEvent(
     val transactionId: UUID,
+    val repositoryOwner: String,
+    val repositoryName: String,
     val number: Int,
     val title: String,
     val body: String?,

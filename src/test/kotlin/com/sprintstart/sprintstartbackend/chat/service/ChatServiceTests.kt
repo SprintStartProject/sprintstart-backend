@@ -260,6 +260,33 @@ class ChatServiceTests {
         }
 
         @Test
+        fun `forwards tool_use events without accumulating them into the saved message`() = runTest {
+            val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
+            val aiPromptRequest = AiPromptRequest("Hello", listOf())
+            val stream = listOf(
+                AiStreamMessage(type = "tool_use", name = "retrieve", kind = "tool"),
+                AiStreamMessage("token", "Hello"),
+                AiStreamMessage("token", " world"),
+                AiStreamMessage("done"),
+            )
+            val savedMessages = mutableListOf<ChatMessage>()
+            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
+            every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
+            every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*stream.toTypedArray())
+            every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
+
+            val emitted = chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+
+            // The tool_use event is forwarded downstream untouched
+            assertEquals(stream, emitted)
+            // But only the token content is persisted as the assistant message
+            assertEquals(2, savedMessages.size)
+            assertEquals(ChatRole.ASSISTANT, savedMessages[1].role)
+            assertEquals("Hello world", savedMessages[1].content)
+        }
+
+        @Test
         fun `saves ai response as message on stream completion`() = runTest {
             val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
             val aiPromptRequest = AiPromptRequest("Hello", listOf())

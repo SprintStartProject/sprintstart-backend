@@ -55,6 +55,11 @@ class OnboardingStep(
     var status: StepStatus,
     @Column(nullable = true)
     var completedAt: Instant? = null,
-    @Column(nullable = true)
-    var skipReason: String? = null,
+    @OneToMany(
+        mappedBy = "step",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("createdAt ASC")
+    val skips: MutableList<OnboardingSkip> = mutableListOf(),
 )

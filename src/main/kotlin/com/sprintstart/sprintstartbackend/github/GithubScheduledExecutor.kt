@@ -9,21 +9,21 @@ import org.springframework.stereotype.Component
 
 /**
  * Registers and regularly runs jobs within a given schedule for the GitHub connector module.
- */
+*/
 @Component
 class GithubScheduledExecutor(
- private val githubConnectorService: GithubConnectorService,
- private val scheduledExecutor: ScheduledExecutor,
+private val githubConnectorService: GithubConnectorService,
+private val scheduledExecutor: ScheduledExecutor,
 ) {
- /**
+/**
  * Registers a scheduled job to regularly check for updates in all connected
  * GitHub repositories.
- */
- @Scheduled(cron = $$"${sprintstart.github.cron:0 0 2 * * *}")
- fun syncAllRepositories() {
- scheduledExecutor.launch("github-sync-repositories") {
- githubConnectorService.updateAllRepositories()
- }
- }
-}
 */
+@Scheduled(cron = $$"${sprintstart.github.cron:0 0 2 * * *}")
+fun syncAllRepositories() {
+scheduledExecutor.launch("github-sync-repositories") {
+githubConnectorService.updateAllRepositories()
+}
+}
+}
+ */

@@ -114,8 +114,8 @@ internal class GithubConnectorController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasRole('USER')")
     suspend fun updateAllRepositories(): ResponseEntity<UpdateAllRepositoriesResponse> {
-        val transactionId = githubConnectorService.updateAllRepositories()
-        return ResponseEntity.accepted().body(UpdateAllRepositoriesResponse(transactionId))
+        val response = githubConnectorService.updateAllRepositories()
+        return ResponseEntity.accepted().body(response)
     }
 
     /**
@@ -144,7 +144,7 @@ internal class GithubConnectorController(
     suspend fun updateRepository(
         @Valid @RequestBody request: UpdateRepositoryRequest,
     ): ResponseEntity<UpdateRepositoryResponse> {
-        val transactionId = githubConnectorService.updateRepository(request)
-        return ResponseEntity.accepted().body(UpdateRepositoryResponse(transactionId))
+        val response = githubConnectorService.updateRepository(request)
+        return ResponseEntity.accepted().body(response)
     }
 }

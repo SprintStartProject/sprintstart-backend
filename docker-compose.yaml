@@ -30,12 +30,13 @@ services:
     command:
       - start-dev
       - --import-realm
-      - --hostname=http://localhost:8081/
+      - --hostname=http://localhost:8081/auth
       - --hostname-backchannel-dynamic=true
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
 
+      KC_HTTP_RELATIVE_PATH: /auth
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-database:5432/${KEYCLOAK_POSTGRES_DB}
       KC_DB_USERNAME: ${KEYCLOAK_POSTGRES_USER}
@@ -48,7 +49,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./infra/keycloak/realm-import:/opt/keycloak/data/import
+      - ./infra/keycloak/realm-import:/opt/keycloak/data/import:Z
     depends_on:
       keycloak-database:
         condition: service_started
@@ -67,7 +68,8 @@ services:
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI}
 
-      GITHUB_PAT: ${GITHUB_PAT}
+      CRYPTO_MASTER_KEY: ${CRYPTO_MASTER_KEY}
+      CRYPTO_SALT: ${CRYPTO_SALT}
 
       SPRINTSTART_KEYCLOAK_SHARED_SECRET: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET}
       SPRINTSTART_AI_BASE_URL: ${SPRINTSTART_AI_BASE_URL}

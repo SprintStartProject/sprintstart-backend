@@ -117,11 +117,12 @@ internal class ChatController(
                         mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
                         schema = Schema(
                             examples = [
+                                "data: {\"type\": \"tool_use\", \"name\": \"retrieve\", \"kind\": \"tool\"}",
                                 "data: {\"type\": \"token\", \"content\": \"The main\"}",
                                 "data: {\"type\": \"citation\", \"chunk_id\": \"chunk-1\"," +
                                     "\"filename\": \"retro.md\", \"section_path\": \"Retro > Blockers\"}",
                                 "data: {\"type\": \"done\"}",
-                                "data: {\": \"error\", \"message\": \"LLM backend unreachable\"}",
+                                "data: {\"type\": \"error\", \"message\": \"LLM backend unreachable\"}",
                             ],
                         ),
                     ),
