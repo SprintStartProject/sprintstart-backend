@@ -1,11 +1,22 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.Pageable
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -95,31 +106,66 @@ class OnboardingPathService(
         onboardingPathRepository.deleteByUserId(userId)
     }
 
+    /**
+     * Returns a paginated overview of the team's onboarding paths.
+     *
+     * @param search Optional search string to filter users.
+     * @param roleIds Optional list of project role UUIDs to filter users.
+     * @param projectIds Optional list of project UUIDs to filter users.
+     * @param sortBy The sorting criteria.
+     * @param pageable Pagination parameters.
+     * @return A paginated list of team overview user DTOs.
+     */
     @Transactional(readOnly = true)
     fun getTeamOverview(
         search: String?,
         roleIds: List<UUID>?,
         projectIds: List<UUID>?,
         sortBy: String,
-        pageable: org.springframework.data.domain.Pageable,
-    ): org.springframework.data.domain.Page<
-        com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto,
-    > {
-        val userIdPage = onboardingPathRepository.findUserIdsForOverview(search, roleIds, projectIds, sortBy, pageable)
-        val userDtos = userApi.getUsersByIds(userIdPage.content).associateBy { it.id }
-
-        return userIdPage.map { userId ->
-            val userDto =
-                userDtos[userId] ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found")
-            val path = onboardingPathRepository.findOnboardingPathByUserId(userDto.id).orElse(null)
-
-            buildTeamOverviewUserDto(userDto, path)
+        pageable: Pageable,
+    ): Page<TeamOverviewUserDto> {
+        val allUsersPage = userApi.searchUsers(search, roleIds, projectIds, Pageable.unpaged())
+        val users = allUsersPage.content
+        if (users.isEmpty()) {
+            return PageImpl(emptyList(), pageable, 0)
         }
+
+        val userIds = users.map { it.id }
+        val paths = onboardingPathRepository.findByUserIdIn(userIds).associateBy { it.userId }
+
+        val dtos = users.map { user ->
+            buildTeamOverviewUserDto(user, paths[user.id])
+        }
+
+        val sortedDtos = when (sortBy) {
+            "HIGHEST_PROGRESS" -> dtos.sortedWith(
+                compareByDescending<TeamOverviewUserDto> { it.progressPercentage }
+                    .thenBy { it.lastname }
+                    .thenBy { it.firstname },
+            )
+            "LOWEST_PROGRESS" -> dtos.sortedWith(
+                compareBy<TeamOverviewUserDto> { it.progressPercentage }
+                    .thenBy { it.lastname }
+                    .thenBy { it.firstname },
+            )
+            else -> dtos.sortedWith(compareBy<TeamOverviewUserDto> { it.lastname }.thenBy { it.firstname })
+        }
+
+        val fromIndex = pageable.offset.toInt().coerceAtMost(sortedDtos.size)
+        val toIndex = (fromIndex + pageable.pageSize).coerceAtMost(sortedDtos.size)
+        val pagedList = sortedDtos.subList(fromIndex, toIndex)
+
+        return PageImpl(pagedList, pageable, sortedDtos.size.toLong())
     }
 
+    /**
+     * Returns the team overview for the authenticated user.
+     *
+     * @param authId External authentication identifier.
+     * @return The authenticated user's team overview DTO.
+     */
     @Transactional(readOnly = true)
-    fun getTeamOverviewForMe(authId: String):
-        com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+    fun getTeamOverviewForMe(authId: String): TeamOverviewUserDto {
         val userId = userApi
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
@@ -130,20 +176,27 @@ class OnboardingPathService(
         return buildTeamOverviewUserDto(userDto, path)
     }
 
+    /**
+     * Builds a TeamOverviewUserDto from a UserDto and an optional OnboardingPath.
+     *
+     * @param userDto The user DTO.
+     * @param path The user's onboarding path.
+     * @return The built TeamOverviewUserDto.
+     */
     private fun buildTeamOverviewUserDto(
-        userDto: com.sprintstart.sprintstartbackend.user.external.dto.UserDto,
-        path: com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath?,
-    ): com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+        userDto: UserDto,
+        path: OnboardingPath?,
+    ): TeamOverviewUserDto {
         var progressPercentage = 0.0
         var currentPhase: String? = null
-        var currentStepDto: com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto? = null
+        var currentStepDto: CurrentStepDto? = null
 
         if (path != null) {
             val totalSteps = path.phases.sumOf { it.steps.size }
             val completedSteps = path.phases.sumOf { phase ->
                 phase.steps.count {
-                    it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.FINISHED ||
-                        it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.SKIPPED
+                    it.status == StepStatus.FINISHED ||
+                        it.status == StepStatus.SKIPPED
                 }
             }
             if (totalSteps > 0) {
@@ -154,13 +207,13 @@ class OnboardingPathService(
             for (phase in sortedPhases) {
                 val sortedSteps = phase.steps.sortedBy { it.position }
                 val waitingStep = sortedSteps.firstOrNull {
-                    it.status == com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus.WAITING
+                    it.status == StepStatus.WAITING
                 }
                 if (waitingStep != null) {
                     currentPhase = phase.title
 
                     val skipReq = waitingStep.skips.lastOrNull()?.let { req ->
-                        com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto(
+                        SkipRequestDto(
                             id = req.id.toString(),
                             stepId = req.step.id.toString(),
                             reason = req.reason,
@@ -170,7 +223,7 @@ class OnboardingPathService(
                         )
                     }
 
-                    currentStepDto = com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto(
+                    currentStepDto = CurrentStepDto(
                         id = waitingStep.id.toString(),
                         title = waitingStep.title,
                         startedAt = null,
@@ -182,12 +235,11 @@ class OnboardingPathService(
         }
 
         val currentPhaseDto = currentPhase?.let {
-            com.sprintstart.sprintstartbackend.onboarding.model.response.path
-                .CurrentPhaseDto(title = it)
+            CurrentPhaseDto(title = it)
         }
 
         val userSkills = userDto.skills.map { skill ->
-            com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto(
+            SkillDto(
                 id = skill.skillId.toString(),
                 name = skill.name,
                 roleId = null,
@@ -195,7 +247,7 @@ class OnboardingPathService(
             )
         }
 
-        return com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto(
+        return TeamOverviewUserDto(
             userId = userDto.id.toString(),
             firstname = userDto.firstname,
             lastname = userDto.lastname,

@@ -7,12 +7,16 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.step.CreateO
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingStepService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -24,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
@@ -51,7 +56,7 @@ import java.util.UUID
 )
 class OnboardingStepController(
     val onboardingStepService: OnboardingStepService,
-    val onboardingPathService: com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService,
+    val onboardingPathService: OnboardingPathService,
 ) {
 //  ========================== Endpoints for users (/me/...) ==========================
 
@@ -84,7 +89,7 @@ class OnboardingStepController(
     fun getMyTeamOverview(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-    ): com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto {
+    ): TeamOverviewUserDto {
         return onboardingPathService.getTeamOverviewForMe(jwt.subject)
     }
 
@@ -458,27 +463,44 @@ class OnboardingStepController(
         onboardingStepService.deleteOnboardingStepById(stepId)
     }
 
-    @Operation(summary = "Get team overview")
+    /**
+     * Returns an overview of the team's onboarding paths.
+     *
+     * This endpoint provides a paginated list of team members with their overall onboarding progress,
+     * current phase, and current step. It supports filtering by search term, roles, and projects.
+     *
+     * @param search Optional search string to filter users by name or username.
+     * @param roleIds Optional list of project role UUIDs to filter users by.
+     * @param projectIds Optional list of project UUIDs to filter users by.
+     * @param sortBy The sorting criteria (e.g., 'LONGEST_STEP', 'HIGHEST_PROGRESS'). Defaults to 'LONGEST_STEP'.
+     * @param pageable Pagination parameters.
+     * @return A paginated list of team overview user DTOs.
+     */
+    @Operation(
+        summary = "Get team overview",
+        description = "Returns a paginated overview of the team's onboarding paths, including overall progress and current steps. " +
+            "Supports filtering by search query, project roles, and projects.",
+    )
     @ApiResponses(
-        ApiResponse(responseCode = "200", description = "Team overview returned successfully"),
-        ApiResponse(responseCode = "401", description = "Authentication required"),
-        ApiResponse(responseCode = "403", description = "Insufficient role"),
+        value = [
+            ApiResponse(responseCode = "200", description = "Team overview returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access the team overview"),
+        ],
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/team-overview")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun getTeamOverview(
-        @org.springframework.web.bind.annotation.RequestParam(required = false) search: String?,
-        @org.springframework.web.bind.annotation.RequestParam(required = false) roleIds: List<UUID>?,
-        @org.springframework.web.bind.annotation.RequestParam(required = false) projectIds: List<UUID>?,
-        @org.springframework.web.bind.annotation.RequestParam(
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) roleIds: List<UUID>?,
+        @RequestParam(required = false) projectIds: List<UUID>?,
+        @RequestParam(
             required = false,
             defaultValue = "LONGEST_STEP",
         ) sortBy: String,
-        pageable: org.springframework.data.domain.Pageable,
-    ): org.springframework.data.domain.Page<
-        com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto,
-    > {
+        pageable: Pageable,
+    ): Page<TeamOverviewUserDto> {
         return onboardingPathService.getTeamOverview(search, roleIds, projectIds, sortBy, pageable)
     }
 }

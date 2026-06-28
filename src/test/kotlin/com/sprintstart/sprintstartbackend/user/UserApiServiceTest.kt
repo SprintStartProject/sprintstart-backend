@@ -8,6 +8,10 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.domain.Specification
+import java.util.Optional
 import java.util.UUID
 
 class UserApiServiceTest {
@@ -52,5 +56,48 @@ class UserApiServiceTest {
         }
 
         assertThat(result).isFalse()
+    }
+
+    @Test
+    fun `searchUsers should return page of users`() {
+        val user = com.sprintstart.sprintstartbackend.user.model.entity.User(
+            id = UUID.randomUUID(), 
+            authId = "auth1",
+            username = "alice",
+            firstname = "Alice",
+            lastname = "Test",
+            workingArea = com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea.BACKEND_DEV,
+            email = "alice@test.com"
+        )
+        val page = PageImpl(listOf(user))
+        
+        // Use any() for Specification since it's an inline lambda creation
+        every { userRepository.findAll(any<Specification<com.sprintstart.sprintstartbackend.user.model.entity.User>>(), any<Pageable>()) } returns page
+
+        val result = userApi.searchUsers("search", null, null, Pageable.unpaged())
+
+        assertThat(result.content).hasSize(1)
+        assertThat(result.content[0].id).isEqualTo(user.id)
+    }
+
+    @Test
+    fun `getUsersByIds should return users`() {
+        val userId = UUID.randomUUID()
+        val user = com.sprintstart.sprintstartbackend.user.model.entity.User(
+            id = userId, 
+            authId = "auth1",
+            username = "alice",
+            firstname = "Alice",
+            lastname = "Test",
+            workingArea = com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea.BACKEND_DEV,
+            email = "alice@test.com"
+        )
+        
+        every { userRepository.findAllById(listOf(userId)) } returns listOf(user)
+
+        val result = userApi.getUsersByIds(listOf(userId))
+
+        assertThat(result).hasSize(1)
+        assertThat(result[0].id).isEqualTo(userId)
     }
 }

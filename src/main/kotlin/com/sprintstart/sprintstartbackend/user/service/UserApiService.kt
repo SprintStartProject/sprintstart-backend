@@ -1,7 +1,19 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
+import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
+import com.sprintstart.sprintstartbackend.user.model.entity.Project
+import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import jakarta.persistence.criteria.JoinType
+import jakarta.persistence.criteria.Predicate
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.Optional
@@ -44,12 +56,10 @@ class UserApiService(
         search: String?,
         roleIds: List<UUID>?,
         projectIds: List<UUID>?,
-        pageable: org.springframework.data.domain.Pageable,
-    ): org.springframework.data.domain.Page<com.sprintstart.sprintstartbackend.user.external.dto.UserDto> {
-        val spec = org.springframework.data.jpa.domain.Specification<
-            com.sprintstart.sprintstartbackend.user.model.entity.User,
-        > { root, query, cb ->
-            val predicates = mutableListOf<jakarta.persistence.criteria.Predicate>()
+        pageable: Pageable,
+    ): Page<UserDto> {
+        val spec = Specification<User> { root, query, cb ->
+            val predicates = mutableListOf<Predicate>()
 
             if (!search.isNullOrBlank()) {
                 val searchPattern = "%${search.lowercase()}%"
@@ -60,18 +70,12 @@ class UserApiService(
             }
 
             if (!roleIds.isNullOrEmpty()) {
-                val projectRolesJoin = root.join<
-                    com.sprintstart.sprintstartbackend.user.model.entity.User,
-                    com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole,
-                >("projectRoles", jakarta.persistence.criteria.JoinType.INNER)
+                val projectRolesJoin = root.join<User, ProjectRole>("projectRoles", JoinType.INNER)
                 predicates.add(projectRolesJoin.get<UUID>("id").`in`(roleIds))
             }
 
             if (!projectIds.isNullOrEmpty()) {
-                val projectJoin = root.join<
-                    com.sprintstart.sprintstartbackend.user.model.entity.User,
-                    com.sprintstart.sprintstartbackend.user.model.entity.Project,
-                >("project", jakarta.persistence.criteria.JoinType.INNER)
+                val projectJoin = root.join<User, Project>("project", JoinType.INNER)
                 predicates.add(projectJoin.get<UUID>("id").`in`(projectIds))
             }
 
@@ -82,7 +86,7 @@ class UserApiService(
         }
 
         return userRepository.findAll(spec, pageable).map { user ->
-            com.sprintstart.sprintstartbackend.user.external.dto.UserDto(
+            UserDto(
                 id = user.id,
                 username = user.username,
                 firstname = user.firstname,
@@ -90,21 +94,21 @@ class UserApiService(
                 avatarUrl = user.avatarUrl,
                 workingArea = user.workingArea.name,
                 project = user.project?.let {
-                    com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto(
+                    ProjectDto(
                         projectId = it.id,
                         name = it.name,
                         description = it.description,
                     )
                 },
                 skills = user.skillAssessments.map { assessment ->
-                    com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto(
+                    UserSkillDto(
                         skillId = assessment.skill.id,
                         name = assessment.skill.name,
                         level = assessment.level.name,
                     )
                 },
                 projectRoles = user.projectRoles.map { role ->
-                    com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto(
+                    ProjectRoleDto(
                         roleId = role.id,
                         name = role.name,
                         description = role.description,
@@ -115,9 +119,9 @@ class UserApiService(
     }
 
     @Transactional(readOnly = true)
-    override fun getUsersByIds(ids: List<UUID>): List<com.sprintstart.sprintstartbackend.user.external.dto.UserDto> {
+    override fun getUsersByIds(ids: List<UUID>): List<UserDto> {
         return userRepository.findAllById(ids).map { user ->
-            com.sprintstart.sprintstartbackend.user.external.dto.UserDto(
+            UserDto(
                 id = user.id,
                 username = user.username,
                 firstname = user.firstname,
@@ -125,21 +129,21 @@ class UserApiService(
                 avatarUrl = user.avatarUrl,
                 workingArea = user.workingArea.name,
                 project = user.project?.let {
-                    com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto(
+                    ProjectDto(
                         projectId = it.id,
                         name = it.name,
                         description = it.description,
                     )
                 },
                 skills = user.skillAssessments.map { assessment ->
-                    com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto(
+                    UserSkillDto(
                         skillId = assessment.skill.id,
                         name = assessment.skill.name,
                         level = assessment.level.name,
                     )
                 },
                 projectRoles = user.projectRoles.map { role ->
-                    com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto(
+                    ProjectRoleDto(
                         roleId = role.id,
                         name = role.name,
                         description = role.description,
