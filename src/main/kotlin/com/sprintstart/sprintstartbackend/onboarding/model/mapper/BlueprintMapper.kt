@@ -8,9 +8,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.Bl
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintStepResponse
 
 /**
- * Maps a persisted [Blueprint] entity to the wire schema sent to the stateless AI
- * service. The corpus fingerprint is carried via [BlueprintProvenanceSchema] so the AI
- * can short-circuit regeneration when the corpus is unchanged.
+ * Maps a persisted [Blueprint] entity to its outward API response, including the
+ * ordered list of [BlueprintStepResponse] derived from the entity's steps.
  */
 fun Blueprint.toResponse(): BlueprintResponse =
     BlueprintResponse(
@@ -27,6 +26,11 @@ fun Blueprint.toResponse(): BlueprintResponse =
         },
     )
 
+/**
+ * Maps a persisted [Blueprint] entity to the wire schema sent to the stateless AI
+ * service. The corpus fingerprint is carried via [BlueprintProvenanceSchema] so the AI
+ * can short-circuit regeneration when the corpus is unchanged.
+ */
 fun Blueprint.toSchema(): BlueprintSchema =
     BlueprintSchema(
         scope = scope,
