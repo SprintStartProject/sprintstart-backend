@@ -66,26 +66,18 @@ class OnboardingPersonalizationService(
         }
 
         val workingArea = profile.workingArea.toAiScope()
-        // The user's leveled skill assessments are what let proficiency drive AI
-        // personalization. They are not part of the onboarding profile yet (they land
-        // with the user-skills feature), so send an empty list until then — the wire
-        // contract already carries {name, level}, so populating this is a one-liner.
         val skills = emptyList<SkillAssessmentSchema>()
         val requiredScopes = listOf("global", "area:$workingArea")
 
         return flow {
-            // Generate any missing blueprints. This calls the AI service and may take a
-            // while, so it runs outside a transaction (no DB connection held meanwhile).
             blueprintService.ensureScopesExist(requiredScopes)
 
-            // Short transaction on an IO thread: replace the old path and read the active
-            // blueprints (their steps are lazy, so a session must be open while mapping).
             val blueprints = withContext(Dispatchers.IO) {
                 txTemplate.execute {
                     onboardingPathRepository.deleteByUserId(profile.id)
                     loadActiveBlueprints(requiredScopes)
                 }
-            }.orEmpty()
+            }
 
             emitAll(
                 onboardingAiClient
@@ -101,10 +93,14 @@ class OnboardingPersonalizationService(
      * Maps an AI [OnboardingAiPathEvent] to the outward [OnboardingSseEvent]. A `path`
      * event's generated path is persisted (in its own repository transaction) before the
      * saved view is forwarded.
+     *
+     * @param userId [UUID] The id of the user of the onboarding path.
      */
     private fun OnboardingAiPathEvent.toSseEvent(userId: UUID): OnboardingSseEvent =
         when (type) {
-            "stage" -> OnboardingSseEvent(type = "stage", name = name, detail = detail)
+            "stage" -> {
+                OnboardingSseEvent(type = "stage", name = name, detail = detail)
+            }
 
             "path" -> {
                 val savedPath = path?.let { aiPath ->
@@ -115,15 +111,21 @@ class OnboardingPersonalizationService(
                 OnboardingSseEvent(type = "path", path = savedPath)
             }
 
-            "error" -> OnboardingSseEvent(type = "error", message = message)
+            "error" -> {
+                OnboardingSseEvent(type = "error", message = message)
+            }
 
-            else -> OnboardingSseEvent(type = type)
+            else -> {
+                OnboardingSseEvent(type = type)
+            }
         }
 
     /**
      * Loads the ACTIVE blueprints for [scopes] and maps them to the wire schema the AI
      * service consumes. Scopes without an ACTIVE blueprint are skipped. Must be called
      * within a transaction so each blueprint's lazy steps can be read.
+     *
+     * @param scopes A list of scopes to load active blueprints from.
      */
     private fun loadActiveBlueprints(scopes: List<String>): List<BlueprintSchema> =
         scopes
