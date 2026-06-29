@@ -43,7 +43,7 @@ class OnboardingPersonalizationService(
     /**
      * Generates a personalized onboarding path for the user identified by [authId].
      *
-     * The user's profile (working area + experience) is read up front so a missing user
+     * The user's profile (working area) is read up front so a missing user
      * fails fast with 404 before any streaming begins. The returned cold [Flow], once
      * collected, then: auto-generates any missing blueprints for the user's scope
      * (`global` + `area:<workingArea>`) — a potentially slow AI call made with no
@@ -66,7 +66,6 @@ class OnboardingPersonalizationService(
         }
 
         val workingArea = profile.workingArea.toAiScope()
-        val experience = profile.experience
         // The user's leveled skill assessments are what let proficiency drive AI
         // personalization. They are not part of the onboarding profile yet (they land
         // with the user-skills feature), so send an empty list until then — the wire
@@ -90,7 +89,7 @@ class OnboardingPersonalizationService(
 
             emitAll(
                 onboardingAiClient
-                    .generatePath(workingArea, experience, skills, blueprints)
+                    .generatePath(workingArea, skills, blueprints)
                     .map { event -> event.toSseEvent(profile.id) },
             )
         }.catch { e ->

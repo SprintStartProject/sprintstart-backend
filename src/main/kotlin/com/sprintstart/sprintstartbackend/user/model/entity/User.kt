@@ -40,6 +40,4 @@ class User(
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     var workingArea: WorkingArea,
-    @Column(nullable = true)
-    var experience: String? = null,
 )

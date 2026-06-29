@@ -6,5 +6,4 @@ import java.util.UUID
 data class UserOnboardingProfile(
     val id: UUID,
     val workingArea: WorkingArea,
-    val experience: String?,
 )

@@ -52,7 +52,6 @@ class UserApiService(
             UserOnboardingProfile(
                 id = user.id,
                 workingArea = user.workingArea,
-                experience = user.experience,
             )
         }
 }

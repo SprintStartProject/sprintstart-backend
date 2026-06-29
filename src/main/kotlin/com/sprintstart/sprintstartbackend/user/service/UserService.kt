@@ -74,7 +74,6 @@ class UserService(
                 eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, it))
             }
         }
-        request.experience?.let { user.experience = it }
         return userRepository.save(user).toGetResponse()
     }
 
@@ -108,7 +107,6 @@ class UserService(
             user.workingArea = request.workingArea
             eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, request.workingArea))
         }
-        request.experience?.let { user.experience = it }
         return userRepository.save(user).toUpdateResponse()
     }
 
@@ -134,7 +132,6 @@ class UserService(
                 eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(id, previousWorkingArea, it))
             }
         }
-        request.experience?.let { user.experience = it }
         return userRepository.save(user).toPatchResponse()
     }
 

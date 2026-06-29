@@ -111,7 +111,7 @@ class OnboardingPathController(
     /**
      * Generates an AI-personalized onboarding path for the authenticated user.
      *
-     * The user's working area and experience are read from their profile.
+     * The user's working area is read from their profile.
      * Any existing path is replaced. The response is an SSE stream with
      * `stage`, `path`, `done`, and `error` events.
      */

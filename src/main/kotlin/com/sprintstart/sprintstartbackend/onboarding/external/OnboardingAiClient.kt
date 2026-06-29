@@ -30,14 +30,12 @@ class OnboardingAiClient(
      * terminating the stream.
      *
      * @param workingArea The user's working area scope (e.g. `backend`).
-     * @param experience The user's self-reported experience level, or `null` if unknown.
      * @param skills The user's leveled skill assessments; lets proficiency drive personalization.
      * @param blueprints The active blueprints the AI should personalize; empty yields a generic path.
      * @return A cold [Flow] of [OnboardingAiPathEvent]s emitted as generation progresses.
      */
     fun generatePath(
         workingArea: String,
-        experience: String?,
         skills: List<SkillAssessmentSchema> = emptyList(),
         blueprints: List<BlueprintSchema> = emptyList(),
     ): Flow<OnboardingAiPathEvent> =
@@ -47,7 +45,6 @@ class OnboardingAiClient(
             .body(
                 GenerateOnboardingPathRequest(
                     workingArea = workingArea,
-                    experience = experience,
                     skills = skills,
                     blueprints = blueprints,
                 ),

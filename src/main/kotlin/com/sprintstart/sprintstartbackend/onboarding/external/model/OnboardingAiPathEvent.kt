@@ -18,7 +18,6 @@ data class OnboardingAiPathEvent(
 @Serializable
 data class OnboardingPath(
     val workingArea: String? = null,
-    val experience: String? = null,
     val phases: List<PathPhase> = emptyList(),
 )
 

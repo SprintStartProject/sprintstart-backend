@@ -69,7 +69,6 @@ class UserApiServiceTest {
             firstname = "Test",
             lastname = "User",
             workingArea = WorkingArea.BACKEND_DEV,
-            experience = "junior",
         )
 
         every { userRepository.findByAuthId(authId) } returns Optional.of(user)
@@ -79,7 +78,6 @@ class UserApiServiceTest {
         assertThat(result).isPresent
         assertThat(result.get().id).isEqualTo(userId)
         assertThat(result.get().workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
-        assertThat(result.get().experience).isEqualTo("junior")
     }
 
     @Test

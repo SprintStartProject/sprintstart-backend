@@ -53,7 +53,6 @@ data class SkillAssessmentSchema(
 data class GenerateOnboardingPathRequest(
     @SerialName("working_area")
     val workingArea: String,
-    val experience: String? = null,
     val skills: List<SkillAssessmentSchema> = emptyList(),
     val tags: List<String> = emptyList(),
     val blueprints: List<BlueprintSchema> = emptyList(),

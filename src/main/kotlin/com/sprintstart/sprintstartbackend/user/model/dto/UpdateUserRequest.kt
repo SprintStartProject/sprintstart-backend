@@ -4,5 +4,4 @@ import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 
 data class UpdateUserRequest(
     val workingArea: WorkingArea,
-    val experience: String? = null,
 )

@@ -14,7 +14,6 @@ fun User.toGetResponse(): GetUserResponse =
         firstname = this.firstname,
         lastname = this.lastname,
         workingArea = this.workingArea,
-        experience = this.experience,
     )
 
 fun User.toUpdateResponse(): UpdateUserResponse =
@@ -26,7 +25,6 @@ fun User.toUpdateResponse(): UpdateUserResponse =
         firstname = this.firstname,
         lastname = this.lastname,
         workingArea = this.workingArea,
-        experience = this.experience,
     )
 
 fun User.toPatchResponse(): PatchUserResponse =
@@ -38,5 +36,4 @@ fun User.toPatchResponse(): PatchUserResponse =
         firstname = this.firstname,
         lastname = this.lastname,
         workingArea = this.workingArea,
-        experience = this.experience,
     )
