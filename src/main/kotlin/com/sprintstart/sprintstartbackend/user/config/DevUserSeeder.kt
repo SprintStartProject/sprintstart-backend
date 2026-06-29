@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -20,6 +21,7 @@ import java.util.UUID
  * @property userRepository Repository used to check for and persist user entities.
  */
 @Component
+@ConditionalOnProperty(prefix = "sprintstart.dev-user", name = ["enabled"], havingValue = "true")
 class DevUserSeeder(
     private val userRepository: UserRepository,
 ) : ApplicationRunner {

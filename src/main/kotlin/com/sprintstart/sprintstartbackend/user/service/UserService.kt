@@ -1,16 +1,14 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
+import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
+import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserEnabledRequest
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
-import com.sprintstart.sprintstartbackend.user.model.mapper.toPatchResponse
-import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
@@ -31,6 +29,7 @@ import java.util.UUID
 class UserService(
     private val userRepository: UserRepository,
     private val eventPublisher: ApplicationEventPublisher,
+    private val keycloakAdminClient: KeycloakAdminClient,
 ) {
     /**
      * Returns all persisted users.
@@ -67,14 +66,56 @@ class UserService(
     @Transactional
     fun patchMe(authId: String, request: PatchMeRequest): GetUserResponse {
         val user = findByAuthId(authId)
-        request.workingArea?.let {
-            val previousWorkingArea = user.workingArea
-            if (user.workingArea != it) {
-                user.workingArea = it
-                eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, it))
-            }
-        }
+
+        keycloakAdminClient.updateUserProfile(
+            authId = user.authId,
+            email = request.email,
+            firstName = request.firstName,
+            lastName = request.lastName,
+        )
+
+        request.email?.let { user.email = it }
+        request.firstName?.let { user.firstname = it }
+        request.lastName?.let { user.lastname = it }
+        request.profileIcon?.let { user.profileIcon = it }
+        request.workingArea?.let { updateWorkingArea(user, it) }
+
         return userRepository.save(user).toGetResponse()
+    }
+
+    /**
+     * Partially updates an administrator-selected user.
+     *
+     * Profile fields and permission group changes are first forwarded to Keycloak.
+     * The local projection is then updated for fields owned by this backend. Permission
+     * groups are not mutated locally here because Keycloak role events synchronize the
+     * local role snapshot asynchronously.
+     *
+     * @param id Identifier of the user to update.
+     * @param request Partial administrative update payload.
+     * @return The updated user projection, including the requested permission group when changed.
+     * @throws ResponseStatusException When no user exists for the given ID.
+     */
+    @Transactional
+    fun patchAdminUserById(id: UUID, request: PatchUserRequest): GetUserResponse {
+        val user = findById(id)
+
+        keycloakAdminClient.updateUserProfile(
+            authId = user.authId,
+            email = request.email,
+            firstName = request.firstName,
+            lastName = request.lastName,
+        )
+        request.permissionGroup?.let { keycloakAdminClient.setPermissionGroup(user.authId, it) }
+
+        request.email?.let { user.email = it }
+        request.firstName?.let { user.firstname = it }
+        request.lastName?.let { user.lastname = it }
+        request.workingArea?.let { updateWorkingArea(user, it) }
+
+        // Todo: map this to PatchResponse
+        val response = userRepository.save(user).toGetResponse()
+        return request.permissionGroup?.let { response.copy(permissionGroup = it) } ?: response
     }
 
     /**
@@ -89,50 +130,20 @@ class UserService(
         findById(id).toGetResponse()
 
     /**
-     * Replaces the editable fields of a user.
+     * Enables or disables a user account through Keycloak and mirrors the result locally.
      *
-     * If the working area changes, the service publishes [UserWorkingAreaUpdatedEvent] with
-     * both the previous and new values before persisting the updated entity.
-     *
-     * @param id Identifier of the user to update.
-     * @param request Full update payload.
-     * @return The updated user.
+     * @param id Identifier of the user whose enabled state should change.
+     * @param request Target enabled state.
+     * @return The updated user projection.
      * @throws ResponseStatusException When no user exists for the given ID.
      */
     @Transactional
-    fun updateUserById(id: UUID, request: UpdateUserRequest): UpdateUserResponse {
+    fun updateUserEnabledById(id: UUID, request: UpdateUserEnabledRequest): GetUserResponse {
         val user = findById(id)
-        val previousWorkingArea = user.workingArea
-        if (user.workingArea != request.workingArea) {
-            user.workingArea = request.workingArea
-            eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, request.workingArea))
-        }
-        return userRepository.save(user).toUpdateResponse()
-    }
-
-    /**
-     * Partially updates a user's editable fields.
-     *
-     * Omitted fields remain unchanged. If the working area changes, the service publishes
-     * [UserWorkingAreaUpdatedEvent] with both the previous and new values before persisting
-     * the updated entity.
-     *
-     * @param id Identifier of the user to patch.
-     * @param request Partial update payload.
-     * @return The patched user.
-     * @throws ResponseStatusException When no user exists for the given ID.
-     */
-    @Transactional
-    fun patchUserById(id: UUID, request: PatchUserRequest): PatchUserResponse {
-        val user = findById(id)
-        request.workingArea?.let {
-            val previousWorkingArea = user.workingArea
-            if (user.workingArea != it) {
-                user.workingArea = it
-                eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(id, previousWorkingArea, it))
-            }
-        }
-        return userRepository.save(user).toPatchResponse()
+        keycloakAdminClient.setUserEnabled(user.authId, request.enabled)
+        user.enabled = request.enabled
+        // Todo: map this to updateUserEnabledResponse or return null
+        return userRepository.save(user).toGetResponse()
     }
 
     /**
@@ -143,8 +154,41 @@ class UserService(
      */
     @Transactional
     fun deleteUserById(id: UUID) {
-        val user = findById(id)
-        userRepository.delete(user)
+        val authId = userRepository
+            .findAuthIdById(id)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
+
+        keycloakAdminClient.deleteUser(authId)
+        userRepository.deleteRolesByUserId(id)
+        userRepository.deleteProjectionById(id)
+    }
+
+    /**
+     * Deletes a user and returns the API response used by the admin controller.
+     *
+     * The deletion itself is handled by [deleteUserById] so the Keycloak deletion and
+     * local projection cleanup stay in one place.
+     *
+     * @param id Identifier of the user to delete.
+     * @return Confirmation DTO for the deleted user.
+     * @throws ResponseStatusException When no user exists for the given ID.
+     */
+    @Transactional
+    fun deleteAdminUserById(id: UUID): DeleteUserResponse {
+        deleteUserById(id)
+        // Todo: Remove return
+        return DeleteUserResponse(id = id)
+    }
+
+    private fun updateWorkingArea(
+        user: User,
+        workingArea: WorkingArea,
+    ) {
+        val previousWorkingArea = user.workingArea
+        if (previousWorkingArea != workingArea) {
+            user.workingArea = workingArea
+            eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, workingArea))
+        }
     }
 
     private fun findById(id: UUID): User =
