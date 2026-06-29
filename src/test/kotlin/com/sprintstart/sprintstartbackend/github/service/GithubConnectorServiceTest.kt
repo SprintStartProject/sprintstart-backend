@@ -244,7 +244,8 @@ class GithubConnectorServiceTest {
         @Test
         fun `updateRepository publishes resources started event with the same transactionId as the response`() =
             testScope.runTest {
-                val repo = repoConnection("owner", "repo")
+                val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+                val repo = repoConnection("owner", "repo", user)
                 every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
                 stubSuccessfulUpdate(repo)
 
