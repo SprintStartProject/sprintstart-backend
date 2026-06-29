@@ -123,6 +123,19 @@ class OnboardingSkipServiceTest {
         }
 
         @Test
+        fun `creates pending skip for in-progress step`() {
+            val step = makeStep(StepStatus.IN_PROGRESS)
+            val request = CreateOnboardingSkipRequest(reason = "Need to skip")
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+            every { onboardingSkipRepository.save(any()) } answers { firstArg() }
+
+            val result = service.createOnboardingSkipForMe(authId, stepId, request)
+
+            assertEquals(SkipStatus.PENDING, result.status)
+        }
+
+        @Test
         fun `throws 400 when step already has a pending skip`() {
             val step = makeStep()
             makeSkip(step)

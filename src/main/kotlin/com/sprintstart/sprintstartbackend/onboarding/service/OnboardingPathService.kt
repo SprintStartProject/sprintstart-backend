@@ -206,13 +206,14 @@ class OnboardingPathService(
             val sortedPhases = path.phases.sortedBy { it.position }
             for (phase in sortedPhases) {
                 val sortedSteps = phase.steps.sortedBy { it.position }
-                val waitingStep = sortedSteps.firstOrNull {
-                    it.status == StepStatus.WAITING
+                val activeStep = sortedSteps.firstOrNull {
+                    it.status == StepStatus.WAITING ||
+                        it.status == StepStatus.IN_PROGRESS
                 }
-                if (waitingStep != null) {
+                if (activeStep != null) {
                     currentPhase = phase.title
 
-                    val skipReq = waitingStep.skips.lastOrNull()?.let { req ->
+                    val skipReq = activeStep.skips.lastOrNull()?.let { req ->
                         SkipRequestDto(
                             id = req.id.toString(),
                             stepId = req.step.id.toString(),
@@ -224,9 +225,9 @@ class OnboardingPathService(
                     }
 
                     currentStepDto = CurrentStepDto(
-                        id = waitingStep.id.toString(),
-                        title = waitingStep.title,
-                        startedAt = null,
+                        id = activeStep.id.toString(),
+                        title = activeStep.title,
+                        startedAt = activeStep.startedAt,
                         skip = skipReq,
                     )
                     break

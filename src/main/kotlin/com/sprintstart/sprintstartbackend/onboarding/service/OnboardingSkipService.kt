@@ -344,10 +344,10 @@ class OnboardingSkipService(
     }
 
     private fun ensureStepCanReceivePendingSkip(step: OnboardingStep) {
-        if (step.status != StepStatus.WAITING) {
+        if (step.status != StepStatus.WAITING && step.status != StepStatus.IN_PROGRESS) {
             throw ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
-                "Only waiting steps can receive a skip request",
+                "Only waiting or in-progress steps can receive a skip request",
             )
         }
 
