@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.Gi
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -34,6 +35,7 @@ class GithubPullRequestsService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all pull requests from repository")
     internal suspend fun fetchAndIngestAllPullRequests(
         githubRepositoryId: UUID,
         repositoryOwner: String,
@@ -55,9 +57,9 @@ class GithubPullRequestsService(
             }
 
             if (since == null) {
-                githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name)
+                githubClient.fetchAllPullRequests(githubRepository)
             } else {
-                githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name, since.toString())
+                githubClient.fetchAllPullRequests(githubRepository, since.toString())
             }
         }.onFailure {
             eventPublisher.publishEvent(

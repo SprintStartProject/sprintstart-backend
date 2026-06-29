@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIs
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -31,6 +32,7 @@ class GithubIssuesService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all issues from repository")
     internal suspend fun fetchAndIngestAllIssues(
         githubRepositoryId: UUID,
         repositoryOwner: String,
@@ -46,9 +48,9 @@ class GithubIssuesService(
             }
 
             if (since == null) {
-                githubClient.fetchIssues(githubRepository.owner, githubRepository.name)
+                githubClient.fetchIssues(githubRepository)
             } else {
-                githubClient.fetchIssues(githubRepository.owner, githubRepository.name, since.toString())
+                githubClient.fetchIssues(githubRepository, since.toString())
             }
         }.onFailure {
             eventPublisher.publishEvent(
