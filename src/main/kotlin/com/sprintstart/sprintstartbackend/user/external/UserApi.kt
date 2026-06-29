@@ -25,4 +25,6 @@ interface UserApi {
      * @return The matching user ID when present.
      */
     fun getUserIdByAuthId(authId: String): Optional<UUID>
+
+    fun getOnboardingProfileByAuthId(authId: String): Optional<UserOnboardingProfile>
 }

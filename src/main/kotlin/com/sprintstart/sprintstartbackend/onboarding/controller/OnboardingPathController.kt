@@ -2,19 +2,24 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import kotlinx.coroutines.flow.Flow
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -32,6 +37,7 @@ import java.util.UUID
 @Tag(name = "Onboarding - Paths", description = "Retrieve and delete onboarding paths at hierarchy depth 0")
 class OnboardingPathController(
     private val onboardingPathService: OnboardingPathService,
+    private val onboardingPersonalizationService: OnboardingPersonalizationService,
 ) {
 //  ========================== Endpoints for users (/me/...) ==========================
 
@@ -100,6 +106,34 @@ class OnboardingPathController(
         @AuthenticationPrincipal jwt: Jwt,
     ) {
         onboardingPathService.deleteOnboardingPathForMe(jwt.subject)
+    }
+
+    /**
+     * Generates an AI-personalized onboarding path for the authenticated user.
+     *
+     * The user's working area is read from their profile.
+     * Any existing path is replaced. The response is an SSE stream with
+     * `stage`, `path`, `done`, and `error` events.
+     */
+    @Operation(
+        summary = "Personalize onboarding path via AI",
+        description = "Triggers AI generation of a personalized onboarding path " +
+            "for the authenticated user. Returns an SSE stream with progress events.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "SSE stream of personalization events"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/me/path/personalize", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PreAuthorize("hasRole('USER')")
+    fun personalizePath(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): Flow<OnboardingSseEvent> {
+        return onboardingPersonalizationService.personalize(jwt.subject)
     }
 
 //  ========================== Endpoints for admins ==========================

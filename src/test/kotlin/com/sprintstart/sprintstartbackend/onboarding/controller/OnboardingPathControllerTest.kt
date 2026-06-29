@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -37,6 +38,9 @@ class OnboardingPathControllerTest(
 ) {
     @MockkBean
     private lateinit var onboardingPathService: OnboardingPathService
+
+    @MockkBean
+    private lateinit var onboardingPersonalizationService: OnboardingPersonalizationService
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder

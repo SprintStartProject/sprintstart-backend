@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.UserApiService
 import io.mockk.every
@@ -56,37 +58,36 @@ class UserApiServiceTest {
     }
 
     @Test
-    fun `getUserIdByAuthId should return user id when auth id exists`() {
-        // given
+    fun `getOnboardingProfileByAuthId returns profile when user exists`() {
         val userId = UUID.randomUUID()
-        every {
-            userRepository.findIdByAuthId("auth-1")
-        } returns Optional.of(userId)
+        val authId = "auth|test-user"
+        val user = User(
+            id = userId,
+            authId = authId,
+            username = "testuser",
+            email = null,
+            firstname = "Test",
+            lastname = "User",
+            workingArea = WorkingArea.BACKEND_DEV,
+        )
 
-        // when
-        val result = userApi.getUserIdByAuthId("auth-1")
+        every { userRepository.findByAuthId(authId) } returns Optional.of(user)
 
-        // then
-        verify(exactly = 1) {
-            userRepository.findIdByAuthId("auth-1")
-        }
-        assertThat(result).contains(userId)
+        val result = userApi.getOnboardingProfileByAuthId(authId)
+
+        assertThat(result).isPresent
+        assertThat(result.get().id).isEqualTo(userId)
+        assertThat(result.get().workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
     }
 
     @Test
-    fun `getUserIdByAuthId should return empty when auth id does not exist`() {
-        // given
-        every {
-            userRepository.findIdByAuthId("missing-auth")
-        } returns Optional.empty()
+    fun `getOnboardingProfileByAuthId returns empty when user not found`() {
+        val authId = "auth|unknown"
 
-        // when
-        val result = userApi.getUserIdByAuthId("missing-auth")
+        every { userRepository.findByAuthId(authId) } returns Optional.empty()
 
-        // then
-        verify(exactly = 1) {
-            userRepository.findIdByAuthId("missing-auth")
-        }
-        assertThat(result).isEmpty()
+        val result = userApi.getOnboardingProfileByAuthId(authId)
+
+        assertThat(result).isEmpty
     }
 }

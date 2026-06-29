@@ -19,6 +19,8 @@ class OnboardingPath(
     val userId: UUID,
     @Column(nullable = false)
     val createdAt: Instant = Instant.now(),
+    @Column(nullable = true)
+    val blueprintId: UUID? = null,
     @OneToMany(
         mappedBy = "path",
         cascade = [CascadeType.ALL],
