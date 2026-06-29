@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubC
 import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
@@ -36,7 +38,11 @@ class GithubCommitsServiceTest {
 
     private val transactionId = UUID.randomUUID()
     private val repoPath = Path.of("/fake/repo")
-    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo")
+    private val user = GithubUser(
+        id = GithubUserPat("auth-id", "token-name"),
+        token = "test-token",
+    )
+    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo", user = user)
 
     @BeforeEach
     fun setUp() {
@@ -46,7 +52,7 @@ class GithubCommitsServiceTest {
             eventPublisher = eventPublisher,
             gitRunner = gitRunner,
         )
-        coEvery { customCache.getLocalRepositoryPath("owner", "repo") } returns repoPath
+        coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
     }
 
     // ── git command routing ───────────────────────────────────────────────────

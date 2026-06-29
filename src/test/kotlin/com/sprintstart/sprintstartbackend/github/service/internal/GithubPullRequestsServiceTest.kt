@@ -9,6 +9,8 @@ import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.Gi
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentsConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubActor
@@ -45,7 +47,11 @@ class GithubPullRequestsServiceTest {
     private lateinit var service: GithubPullRequestsService
 
     private val transactionId = UUID.randomUUID()
-    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo")
+    private val user = GithubUser(
+        id = GithubUserPat("auth-id", "token-name"),
+        token = "test-token",
+    )
+    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo", user = user)
 
     @BeforeEach
     fun setUp() {
@@ -61,11 +67,11 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `fetches all pull requests without since filter when since is null`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = null)
 
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") }
+            coEvery { githubClient.fetchAllPullRequests(repo) }
         }
 
         @Test
@@ -73,12 +79,12 @@ class GithubPullRequestsServiceTest {
             val since = Instant.parse("2024-01-01T00:00:00Z")
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery {
-                githubClient.fetchAllPullRequests("owner", "repo", since.toString())
+                githubClient.fetchAllPullRequests(repo, since.toString())
             } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = since)
 
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo", since.toString()) }
+            coEvery { githubClient.fetchAllPullRequests(repo, since.toString()) }
         }
     }
 
@@ -87,7 +93,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes one event per pull request plus summary`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(number = 1),
                 pullRequest(number = 2),
                 pullRequest(number = 3),
@@ -102,7 +108,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes lifecycle events when there are no pull requests`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
@@ -115,7 +121,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes GithubPullRequestsFetchingStartedEvent on start`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(any()) } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
@@ -125,7 +131,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes GithubPullRequestsFetchingCompletedEvent on completion`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(any()) } returns emptyList()
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
@@ -135,7 +141,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes GithubPullRequestsFetchingFailedEvent when API fails`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } throws RuntimeException("API error")
+            coEvery { githubClient.fetchAllPullRequests(any()) } throws RuntimeException("API error")
 
             assertThrows<RuntimeException> {
                 service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
@@ -150,7 +156,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps pull request fields to event correctly`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(
                     number = 42,
                     title = "PR Title",
@@ -188,7 +194,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps null author to null in event`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(authorLogin = null),
             )
 
@@ -202,7 +208,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps labels to list of name strings`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(labels = listOf("bug", "enhancement")),
             )
 
@@ -216,7 +222,7 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps null labels to null in event`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(labels = null),
             )
 
@@ -237,7 +243,7 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
@@ -262,7 +268,7 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
@@ -293,7 +299,7 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
@@ -313,7 +319,7 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
