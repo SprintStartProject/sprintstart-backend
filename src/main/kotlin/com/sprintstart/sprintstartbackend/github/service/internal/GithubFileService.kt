@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConn
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
@@ -99,6 +100,7 @@ class GithubFileService(
      * @param githubRepositoryId The GitHub repository id to initialize.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Tracked("Fetching all files from repository")
     internal suspend fun fetchAndIngestAllFiles(
         githubRepositoryId: UUID,
         repositoryOwner: String,
@@ -128,7 +130,7 @@ class GithubFileService(
             )
         }
 
-        val path = customCache.getLocalRepositoryPath(githubRepository.get().owner, githubRepository.get().name)
+        val path = customCache.getLocalRepositoryPath(githubRepository.get())
         val currentRevision = gitRunner.exec(path, onDiskOperations.gitRevParse()).trim()
 
         streamFilesFromDiskAndIngest(transactionId, githubRepository.get(), path, currentRevision)
@@ -150,6 +152,7 @@ class GithubFileService(
      * @param githubRepository The GitHub repository to fetch/ingest on.
      * @param transactionId The UUID of the overall transaction, this action is a part of.
      */
+    @Tracked("Fetching file updates from repository")
     suspend fun fetchAndIngestFileUpdatesIncremental(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
@@ -465,7 +468,7 @@ class GithubFileService(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.owner, githubRepository.name)
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository)
         val latestSha = updateLocalRepository(localFsPath)
 
         if (githubRepository.lastSha == latestSha) {

@@ -10,7 +10,7 @@ import java.nio.file.Paths
 
 @Component
 internal class UploadEventListener(
-    private val artifactIngestionService: ArtifactIngestionService,
+    private val uploadIngestionService: UploadIngestionService,
     private val applicationScope: CoroutineScope,
 ) {
     @EventListener
@@ -22,7 +22,7 @@ internal class UploadEventListener(
         )
 
         applicationScope.launch {
-            artifactIngestionService.ingestUploadedArtifact(event, content)
+            uploadIngestionService.ingestUploadedArtifact(event, content)
         }
     }
 }

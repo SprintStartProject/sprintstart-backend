@@ -1,6 +1,8 @@
 style:
   LoopWithTooManyJumpStatements:
     active: false
+  ReturnCount:
+    active: false
 
 complexity:
   LongMethod:

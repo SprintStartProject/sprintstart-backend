@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommits
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -37,6 +38,7 @@ class GithubCommitsService(
      * @throws GithubCommitsFetchFailedPartiallyException If one or more commits fail to process during the
      * operation, this exception is thrown with details of the failures.
      */
+    @Tracked("Fetching latest commits from repository")
     internal suspend fun fetchAndIngestLatestCommits(
         latestSnapshot: GithubRepositorySnapshot,
         transactionId: UUID,
@@ -93,8 +95,7 @@ class GithubCommitsService(
         transactionId: UUID,
     ): String = runCatching {
         val localCopyPath = customCache.getLocalRepositoryPath(
-            latestSnapshot.repository.owner,
-            latestSnapshot.repository.name,
+            latestSnapshot.repository,
         )
         if (doSyncAll) {
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommits())
