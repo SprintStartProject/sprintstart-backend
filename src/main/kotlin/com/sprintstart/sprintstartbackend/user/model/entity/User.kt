@@ -29,6 +29,12 @@ class User(
     var firstname: String,
     @Column(nullable = false)
     var lastname: String,
+    @Column(nullable = false)
+    var enabled: Boolean = true,
+    @Column(nullable = true)
+    var profileIcon: String? = null,
+    @Column(nullable = false)
+    var hasCompletedOnboarding: Boolean = false,
     @ElementCollection(fetch = FetchType.EAGER)
     @Enumerated(EnumType.STRING)
     @CollectionTable(

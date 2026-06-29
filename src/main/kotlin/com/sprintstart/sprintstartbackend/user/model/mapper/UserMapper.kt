@@ -1,8 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.model.mapper
 
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 
 fun User.toGetResponse(): GetUserResponse =
@@ -11,29 +10,18 @@ fun User.toGetResponse(): GetUserResponse =
         authId = this.authId,
         username = this.username,
         email = this.email,
-        firstname = this.firstname,
-        lastname = this.lastname,
+        firstName = this.firstname,
+        lastName = this.lastname,
         workingArea = this.workingArea,
+        permissionGroup = this.effectivePermissionGroup(),
+        enabled = this.enabled,
+        profileIcon = this.profileIcon,
+        hasCompletedOnboarding = this.hasCompletedOnboarding,
     )
 
-fun User.toUpdateResponse(): UpdateUserResponse =
-    UpdateUserResponse(
-        id = this.id,
-        authId = this.authId,
-        username = this.username,
-        email = this.email,
-        firstname = this.firstname,
-        lastname = this.lastname,
-        workingArea = this.workingArea,
-    )
+fun User.effectivePermissionGroup(): Role {
+    val priority = listOf(Role.ADMIN, Role.HR, Role.PM, Role.USER)
 
-fun User.toPatchResponse(): PatchUserResponse =
-    PatchUserResponse(
-        id = this.id,
-        authId = this.authId,
-        username = this.username,
-        email = this.email,
-        firstname = this.firstname,
-        lastname = this.lastname,
-        workingArea = this.workingArea,
-    )
+    return priority.firstOrNull { it in roles }
+        ?: Role.USER
+}
