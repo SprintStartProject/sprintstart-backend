@@ -196,7 +196,7 @@ class GithubConnectorService(
 
         eventPublisher.publishEvent(
             GithubRepositoryResourcesFetchingStartedEvent(
-                UUID.randomUUID(),
+                transactionId,
                 githubRepository.owner,
                 githubRepository.name,
             ),

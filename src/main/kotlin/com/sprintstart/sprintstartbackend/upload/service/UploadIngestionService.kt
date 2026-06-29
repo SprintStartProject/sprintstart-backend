@@ -16,7 +16,7 @@ import java.util.UUID
  * cross-module integrations stay explicit.
  */
 @Service
-class ArtifactIngestionService(
+class UploadIngestionService(
     private val ingestionAiClient: IngestionAiClient,
 ) : UploadIngestionApi {
     suspend fun ingestUploadedArtifact(event: ArtifactUploadedEvent, content: String) {

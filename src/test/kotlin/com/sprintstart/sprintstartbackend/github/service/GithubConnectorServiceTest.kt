@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.github.service
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
+import com.sprintstart.sprintstartbackend.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.update.GithubAllRepositoriesUpdateStartedEvent
@@ -239,6 +240,22 @@ class GithubConnectorServiceTest {
 
             coVerify { repoSnapshotRepository.save(any()) }
         }
+
+        @Test
+        fun `updateRepository publishes resources started event with the same transactionId as the response`() =
+            testScope.runTest {
+                val user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token")
+                val repo = repoConnection("owner", "repo", user)
+                every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
+                stubSuccessfulUpdate(repo)
+
+                val startedEvent = slot<GithubRepositoryResourcesFetchingStartedEvent>()
+
+                val response = service.updateRepository(updateRequest())
+
+                verify { eventPublisher.publishEvent(capture(startedEvent)) }
+                assertThat(startedEvent.captured.transactionId).isEqualTo(response.transactionId)
+            }
 
         @Test
         fun `updateRepository throws RepositoryNotInitializedException when no snapshot exists`() =
