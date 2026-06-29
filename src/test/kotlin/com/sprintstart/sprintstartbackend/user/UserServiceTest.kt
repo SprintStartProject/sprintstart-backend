@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
@@ -34,15 +36,39 @@ class UserServiceTest {
     @Test
     fun `getMe returns extended user response`() {
         val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val jwt = mockk<Jwt>()
+        every { jwt.subject } returns "auth-1"
         user.roles.add(Role.USER)
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
 
-        val result = userService.getMe("auth-1")
+        val result = userService.getMe(jwt)
 
         assertThat(result.firstName).isEqualTo("First")
         assertThat(result.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
         assertThat(result.permissionGroup).isEqualTo(Role.USER)
         assertThat(result.enabled).isTrue()
+    }
+
+    @Test
+    fun `getMe should provision JIT when user missing`() {
+        val jwt = mockk<Jwt>()
+        every { jwt.subject } returns "missing"
+        every { jwt.getClaimAsString("preferred_username") } returns "missingUser"
+        every { jwt.getClaimAsString("email") } returns "missing@test.com"
+        every { jwt.getClaimAsString("given_name") } returns "Missing"
+        every { jwt.getClaimAsString("family_name") } returns "User"
+
+        every { userRepository.findByAuthId("missing") } returns Optional.empty()
+        every { userRepository.save(any<User>()) } answers { firstArg() }
+        every { eventPublisher.publishEvent(any<UserCreatedEvent>()) } just runs
+
+        val result = userService.getMe(jwt)
+
+        assertThat(result.authId).isEqualTo("missing")
+        assertThat(result.username).isEqualTo("missingUser")
+        assertThat(result.workingArea).isEqualTo(WorkingArea.NO_WORKING_AREA)
+        verify(exactly = 1) { userRepository.save(any<User>()) }
+        verify(exactly = 1) { eventPublisher.publishEvent(any<UserCreatedEvent>()) }
     }
 
     @Test

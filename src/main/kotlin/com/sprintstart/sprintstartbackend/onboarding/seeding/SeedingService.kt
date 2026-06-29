@@ -50,6 +50,23 @@ class SeedingService(
     }
 
     /**
+     * Seeds the default onboarding path for a newly created user.
+     *
+     * Uses [backend-seed-data.yml] as a stand-in generic onboarding path so
+     * that [GET /api/v1/onboarding/me/path] returns a valid response immediately
+     * after account creation, without requiring the user to select a working area.
+     *
+     * If the user already has an onboarding path (e.g. seeded by a concurrent call),
+     * this method exits silently.
+     *
+     * @param userId The unique identifier of the newly created user.
+     */
+    @Transactional
+    fun seedDefault(userId: UUID) {
+        seed(userId, WorkingArea.BACKEND_DEV)
+    }
+
+    /**
      * Seeds onboarding data for the given user.
      *
      * The method exits without creating data if:

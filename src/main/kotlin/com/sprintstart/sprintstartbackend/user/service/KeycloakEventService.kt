@@ -3,10 +3,12 @@ package com.sprintstart.sprintstartbackend.user.service
 import com.sprintstart.sprintstartbackend.config.KeycloakRoleMapper
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.KeycloakEventRequest
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -22,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 @Service
 class KeycloakEventService(
     private val userRepository: UserRepository,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -100,7 +103,8 @@ class KeycloakEventService(
 
         newUser.roles.addAll(mappedRoles(request.realmRoles))
 
-        userRepository.save(newUser)
+        val savedUser = userRepository.save(newUser)
+        eventPublisher.publishEvent(UserCreatedEvent(savedUser.id))
     }
 
     /**

@@ -58,7 +58,7 @@ class UserControllerTest(
 
     @Test
     fun `getMe returns current user`() {
-        every { userService.getMe("user") } returns userResponse()
+        every { userService.getMe(any()) } returns userResponse()
 
         mockMvc
             .perform(get("/api/v1/users/me").with(userJwt))
@@ -67,7 +67,7 @@ class UserControllerTest(
             .andExpect(jsonPath("$.workingArea").value("BACKEND_DEV"))
             .andExpect(jsonPath("$.permissionGroup").value("USER"))
 
-        verify(exactly = 1) { userService.getMe("user") }
+        verify(exactly = 1) { userService.getMe(any()) }
     }
 
     @Test

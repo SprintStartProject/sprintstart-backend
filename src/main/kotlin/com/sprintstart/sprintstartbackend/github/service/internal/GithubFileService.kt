@@ -421,7 +421,7 @@ class GithubFileService(
         revision: String,
     ): FileProcessingResult = runCatching {
         val (content, sha256) = readFileWithHash(filePath)
-        val relativePath = repositoryPath.relativize(filePath).toString()
+        val relativePath = repositoryPath.relativize(filePath).toString().replace("\\", "/")
         val sourceUrl =
             "https://github.com/${githubRepository.owner}/${githubRepository.name}/blob/$revision/$relativePath"
         val snapshotId = GithubFileSnapshotSharedId(

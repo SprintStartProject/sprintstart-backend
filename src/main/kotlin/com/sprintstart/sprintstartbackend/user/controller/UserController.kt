@@ -65,7 +65,9 @@ class UserSelfController(
     fun getMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-    ): GetUserResponse = userService.getMe(jwt.subject)
+    ): GetUserResponse {
+        return userService.getMe(jwt)
+    }
 
     /**
      * Partially updates the authenticated user's profile.

@@ -2,20 +2,24 @@ package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.KeycloakEventRequest
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.KeycloakEventService
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import java.util.Optional
 
 class KeycloakEventServiceTest {
     private val userRepository: UserRepository = mockk(relaxed = true)
-    private val service = KeycloakEventService(userRepository)
+    private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
+    private val service = KeycloakEventService(userRepository, eventPublisher)
 
     @Test
     fun `realm role mapping event replaces local permission groups with event role snapshot`() {
@@ -134,6 +138,31 @@ class KeycloakEventServiceTest {
             ),
         )
 
-        verify(exactly = 0) { userRepository.delete(any()) }
+        verify(exactly = 0) { userRepository.delete(any<User>()) }
+    }
+
+    @Test
+    fun `register user event publishes UserCreatedEvent with the saved user id`() {
+        val savedUser = slot<User>()
+        every { userRepository.save(capture(savedUser)) } answers { savedUser.captured }
+
+        service.handleEvent(
+            KeycloakEventRequest(
+                source = "keycloak",
+                resourceType = "USER",
+                eventType = "REGISTER",
+                realmId = "sprintstart",
+                authId = "auth-new",
+                username = "newuser",
+                email = "new@example.com",
+                firstName = "New",
+                lastName = "User",
+                realmRoles = setOf("user"),
+            ),
+        )
+
+        val publishedEvent = slot<UserCreatedEvent>()
+        verify(exactly = 1) { eventPublisher.publishEvent(capture(publishedEvent)) }
+        assertThat(publishedEvent.captured.userId).isEqualTo(savedUser.captured.id)
     }
 }

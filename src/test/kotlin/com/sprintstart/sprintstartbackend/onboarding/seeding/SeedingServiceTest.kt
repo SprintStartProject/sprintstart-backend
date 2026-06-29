@@ -246,6 +246,23 @@ class SeedingServiceTest {
         }
     }
 
+    @Test
+    fun `seedDefault should seed using backend-seed-data yml as the default`() {
+        val userId = UUID.randomUUID()
+
+        every { userApi.exists(userId) } returns true
+        every { onboardingPathRepository.existsByUserId(userId) } returns false
+        every { resourceLoader.getResource("classpath:backend-seed-data.yml") } returns existingYamlResource()
+        every { onboardingPathRepository.save(any()) } answers { firstArg() }
+
+        seedingService.seedDefault(userId)
+
+        verify(exactly = 1) {
+            resourceLoader.getResource("classpath:backend-seed-data.yml")
+            onboardingPathRepository.save(any())
+        }
+    }
+
     private fun existingYamlResource(): Resource {
         return object : ByteArrayResource(seedYaml().toByteArray()) {
             override fun getFilename(): String {

@@ -26,16 +26,25 @@ class OnDiskOperationsTest {
 
     @Nested
     inner class Exec {
+        private val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+
         @Test
         fun `exec returns stdout of successful process`() {
-            val result = OnDiskOperations.exec(tempDir, ProcessBuilder("echo", "hello"))
+            val command = if (isWindows) listOf("cmd.exe", "/c", "echo hello") else listOf("echo", "hello")
+            val result = OnDiskOperations.exec(tempDir, ProcessBuilder(command))
             assertThat(result.trim()).isEqualTo("hello")
         }
 
         @Test
         fun `exec captures multiline output`() {
-            val result = OnDiskOperations.exec(tempDir, ProcessBuilder("printf", "line1\nline2\nline3"))
-            assertThat(result.lines().filter { it.isNotBlank() }).containsExactly("line1", "line2", "line3")
+            val command = if (isWindows) {
+                listOf("cmd.exe", "/c", "echo line1 & echo line2 & echo line3")
+            } else {
+                listOf("printf", "line1\nline2\nline3")
+            }
+            val result = OnDiskOperations.exec(tempDir, ProcessBuilder(command))
+            assertThat(result.lines().filter { it.isNotBlank() }.map { it.trim() })
+                .containsExactly("line1", "line2", "line3")
         }
 
         @Test
@@ -55,11 +64,13 @@ class OnDiskOperationsTest {
 
         @Test
         fun `exec includes process output in exception message`() {
+            val command = if (isWindows) {
+                listOf("cmd.exe", "/c", "echo fatal: auth failed & exit 128")
+            } else {
+                listOf("bash", "-lc", "printf 'fatal: auth failed'; exit 128")
+            }
             assertThatThrownBy {
-                OnDiskOperations.exec(
-                    tempDir,
-                    ProcessBuilder("bash", "-lc", "printf 'fatal: auth failed'; exit 128"),
-                )
+                OnDiskOperations.exec(tempDir, ProcessBuilder(command))
             }.hasMessageContaining("fatal: auth failed")
         }
 
@@ -82,7 +93,8 @@ class OnDiskOperationsTest {
         fun `exec runs command in the provided directory`() {
             // Create a subdirectory and verify exec resolves relative to it
             val subDir = Files.createTempDirectory(tempDir, "subdir")
-            val result = OnDiskOperations.exec(subDir, ProcessBuilder("pwd"))
+            val command = if (isWindows) listOf("cmd.exe", "/c", "cd") else listOf("pwd")
+            val result = OnDiskOperations.exec(subDir, ProcessBuilder(command))
             assertThat(result.trim()).isEqualTo(subDir.toAbsolutePath().toString())
         }
     }

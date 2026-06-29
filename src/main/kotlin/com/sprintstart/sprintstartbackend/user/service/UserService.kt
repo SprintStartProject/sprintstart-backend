@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
@@ -12,6 +13,7 @@ import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
@@ -41,15 +43,30 @@ class UserService(
         userRepository.findAll().map { it.toGetResponse() }
 
     /**
-     * Returns the user identified by the authentication subject.
+     * Returns the user identified by the authentication subject. If the user does not exist,
+     * they are provisioned Just-In-Time (JIT) using claims from the JWT.
      *
-     * @param authId External authentication identifier from the JWT subject.
+     * @param jwt The authenticated JWT containing the caller subject and claims.
      * @return The matching user.
-     * @throws ResponseStatusException When no user exists for the given auth ID.
      */
-    @Transactional(readOnly = true)
-    fun getMe(authId: String): GetUserResponse =
-        findByAuthId(authId).toGetResponse()
+    @Transactional
+    fun getMe(jwt: Jwt): GetUserResponse {
+        val user = userRepository.findByAuthId(jwt.subject).orElseGet {
+            val newUser = User(
+                authId = jwt.subject,
+                username = jwt.getClaimAsString("preferred_username") ?: jwt.subject,
+                email = jwt.getClaimAsString("email"),
+                firstname = jwt.getClaimAsString("given_name") ?: "Unknown",
+                lastname = jwt.getClaimAsString("family_name") ?: "User",
+                workingArea = com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea.NO_WORKING_AREA,
+                roles = mutableSetOf(com.sprintstart.sprintstartbackend.user.external.enums.Role.USER),
+            )
+            val savedUser = userRepository.save(newUser)
+            eventPublisher.publishEvent(UserCreatedEvent(savedUser.id))
+            savedUser
+        }
+        return user.toGetResponse()
+    }
 
     /**
      * Partially updates the authenticated user's editable fields.

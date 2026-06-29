@@ -271,7 +271,7 @@ class CustomOnDiskCacheTest {
 
             val result = runBlocking { cache.getLocalRepositoryPath(repository) }
 
-            assertThat(result.toString()).endsWith("my-org/my-repo")
+            assertThat(result.toString().replace("\\", "/")).endsWith("my-org/my-repo")
             assertThat(result.toString()).startsWith(tempDir.toString())
         }
     }

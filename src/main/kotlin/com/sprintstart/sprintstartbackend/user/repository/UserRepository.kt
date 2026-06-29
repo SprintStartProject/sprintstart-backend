@@ -3,13 +3,16 @@ package com.sprintstart.sprintstartbackend.user.repository
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import java.util.Optional
 import java.util.UUID
 
-interface UserRepository : JpaRepository<User, UUID> {
+interface UserRepository :
+    JpaRepository<User, UUID>,
+    JpaSpecificationExecutor<User> {
     fun findByAuthId(authId: String): Optional<User>
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
