@@ -138,6 +138,7 @@ class GithubFileListenerTest {
         sourceSystem = SourceSystem.GITHUB,
         sourceId = "github:owner/repo:FILE:src/main/App.kt",
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
+        repositoryFullName = "owner/repo",
         artifactType = ArtifactType.FILE,
         title = "App.kt",
         bodyText = "content",

@@ -32,6 +32,7 @@ class GithubArtifactMapperTest {
         assertThat(result.sourceSystem).isEqualTo(SourceSystem.GITHUB)
         assertThat(result.sourceId).isEqualTo("github:owner/repo:FILE:src/main/App.kt")
         assertThat(result.sourceUrl).isEqualTo(event.sourceUrl)
+        assertThat(result.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.FILE)
         assertThat(result.title).isEqualTo("App.kt")
         assertThat(result.bodyText).isEqualTo("fun main() = Unit")
@@ -75,6 +76,7 @@ class GithubArtifactMapperTest {
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:COMMIT:abc123")
         assertThat(result.sourceUrl).isEqualTo("https://github.com/owner/repo/commit/abc123")
+        assertThat(result.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.COMMIT)
         assertThat(result.title).hasSize(72)
         assertThat(result.bodyText).isEqualTo(message)
@@ -105,6 +107,7 @@ class GithubArtifactMapperTest {
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:ISSUE:42")
         assertThat(result.sourceUrl).isEqualTo(event.url)
+        assertThat(result.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.ISSUE)
         assertThat(result.title).isEqualTo("Issue #42 Bug report")
         assertThat(result.bodyText).isEqualTo("Something broke")
@@ -136,6 +139,7 @@ class GithubArtifactMapperTest {
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:PULL_REQUEST:7")
         assertThat(result.sourceUrl).isEqualTo(event.url)
+        assertThat(result.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.PULL_REQUEST)
         assertThat(result.title).isEqualTo("PR #7 Improve docs")
         assertThat(result.bodyText).isNull()

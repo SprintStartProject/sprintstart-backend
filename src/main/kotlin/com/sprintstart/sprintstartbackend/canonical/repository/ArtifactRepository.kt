@@ -10,7 +10,9 @@ import java.util.UUID
 
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
+
     fun deleteBySourceId(sourceId: String)
+
     @Query(
         """
             SElECT a FROM Artifact a
@@ -18,10 +20,9 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
                 OR LOWER(a.artifactType) LIKE LOWER(CONCAT('%', :filter, '%'))
                 OR LOWER(a.sourceSystem) LIKE LOWER(CONCAT('%', :filter, '%'))
                 OR LOWER(a.repositoryFullName) LIKE LOWER(CONCAT('%', :filter, '%'))
-        """
+        """,
     )
     fun search(
-        @Param("filter") filter: String, pageable: org.springframework.data.domain.Pageable
+        @Param("filter") filter: String, pageable: org.springframework.data.domain.Pageable,
     ): Page<Artifact>
-
 }

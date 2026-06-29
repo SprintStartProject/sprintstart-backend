@@ -15,14 +15,17 @@ class ArtifactQueryService(
     private val artifactRepository: ArtifactRepository,
     private val artifactMapper: ArtifactMapper,
 ) {
-    fun getAllArtifacts(page: Int, size: Int, filter: String?) : ArtifactPageResponse {
+    fun getAllArtifacts(page: Int, size: Int, filter: String): ArtifactPageResponse {
         val pageable = PageRequest.of(
-            page-1, size, Sort.by("ingestedAt").descending())
+            page - 1,
+            size,
+            Sort.by("ingestedAt").descending(),
+        )
 
-        val result : Page<Artifact> =
-            if(filter.isNullOrBlank()){
+        val result: Page<Artifact> =
+            if (filter.isBlank()) {
                 artifactRepository.findAll(pageable)
-            }else{
+            } else {
                 artifactRepository.search(filter.trim(), pageable)
             }
         return ArtifactPageResponse(
@@ -34,11 +37,7 @@ class ArtifactQueryService(
                 totalPages = result.totalPages.toLong(),
                 hasNext = result.hasNext(),
                 hasPrevious = result.hasPrevious(),
-            )
+            ),
         )
-    }
-
-    fun getProjectArtifacts(page: Int, size: Int, filter: String?, projectId: String) : ArtifactPageResponse{
-
     }
 }

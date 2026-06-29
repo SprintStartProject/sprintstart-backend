@@ -46,6 +46,7 @@ class ArtifactIngestionServiceTest {
         assertThat(run.updatedCount).isZero()
         assertThat(savedArtifact.captured.sourceSystem).isEqualTo(SourceSystem.GITHUB)
         assertThat(savedArtifact.captured.sourceId).isEqualTo("github:owner/repo:FILE:src/main/App.kt")
+        assertThat(savedArtifact.captured.repositoryFullName).isEqualTo("owner/repo")
         assertThat(savedArtifact.captured.title).isEqualTo("App.kt")
         assertThat(savedArtifact.captured.bodyText).isEqualTo("content")
         assertThat(savedArtifact.captured.hash).isEqualTo("hash-1")
@@ -155,6 +156,7 @@ class ArtifactIngestionServiceTest {
         sourceSystem = SourceSystem.GITHUB,
         sourceId = sourceId,
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
+        repositoryFullName = "owner/repo",
         artifactType = artifactType,
         title = "App.kt",
         bodyText = bodyText,
@@ -178,6 +180,7 @@ class ArtifactIngestionServiceTest {
         sourceSystem = SourceSystem.GITHUB,
         sourceId = "github:owner/repo:${artifactType.name}:src/main/App.kt",
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
+        repositoryFullName = "owner/repo",
         artifactType = artifactType,
         title = "App.kt",
         bodyText = "old content",

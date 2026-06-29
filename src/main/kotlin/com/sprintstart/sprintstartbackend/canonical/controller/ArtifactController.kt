@@ -8,11 +8,13 @@ import jakarta.validation.constraints.Min
 import org.springframework.http.ResponseEntity
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
+private const val DEFAULT_PAGE = "1"
+private const val DEFAULT_SIZE = "20"
+private const val MAX_PAGE_SIZE = 100L
 
 @RestController
 @Validated
@@ -26,23 +28,11 @@ class ArtifactController(
 ) {
     @GetMapping("admin/artifacts")
     fun getAllArtifacts(
-        @RequestParam(defaultValue = "1") @Min(1) page: Int,
-        @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
-        @RequestParam filter: String,
+        @RequestParam(defaultValue = DEFAULT_PAGE) @Min(1) page: Int,
+        @RequestParam(defaultValue = DEFAULT_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) size: Int,
+        @RequestParam(defaultValue = "") filter: String,
     ): ResponseEntity<ArtifactPageResponse> =
         ResponseEntity.ok(
             artifactQueryService.getAllArtifacts(page, size, filter),
         )
-
-    @GetMapping("projects/{projectId}/artifacts")
-    fun getProjectArtifacts(
-        @RequestParam(defaultValue = "1") @Min(1) page: Int,
-        @RequestParam(defaultValue = "20") @Min(1) @Max(100) size: Int,
-        @RequestParam filter: String,
-        @PathVariable projectId: String
-    ): ResponseEntity<ArtifactPageResponse> =
-        ResponseEntity.ok(
-            artifactQueryService.getProjectArtifacts(page, size, filter, projectId),
-        )
-
 }

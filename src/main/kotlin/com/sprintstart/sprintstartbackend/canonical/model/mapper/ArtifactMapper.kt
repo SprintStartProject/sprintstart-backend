@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component
 
 @Component
 class ArtifactMapper {
-
     fun toResponse(artifact: Artifact): ArtifactResponse {
         return ArtifactResponse(
             id = artifact.id,
@@ -17,5 +16,4 @@ class ArtifactMapper {
             artifactType = artifact.artifactType,
         )
     }
-
 }

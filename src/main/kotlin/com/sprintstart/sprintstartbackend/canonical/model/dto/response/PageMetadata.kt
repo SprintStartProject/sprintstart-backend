@@ -6,5 +6,5 @@ data class PageMetadata(
     val totalElements: Long,
     val totalPages: Long,
     val hasNext: Boolean,
-    val hasPrevious: Boolean
+    val hasPrevious: Boolean,
 )

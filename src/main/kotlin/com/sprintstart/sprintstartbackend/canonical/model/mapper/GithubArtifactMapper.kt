@@ -45,7 +45,10 @@ class GithubArtifactMapper {
                 repositoryName = event.repositoryName,
                 sha = event.sha,
             ),
-            repositoryFullName = event.repositoryOwner + event.repositoryName,
+            repositoryFullName = buildRepositoryFullName(
+                owner = event.repositoryOwner,
+                name = event.repositoryName,
+            ),
             artifactType = ArtifactType.COMMIT,
             title = event.msg.take(GITHUB_COMMIT_MESSAGE_LENGTH),
             bodyText = event.msg,
@@ -84,7 +87,10 @@ class GithubArtifactMapper {
                 unique = event.path,
             ),
             sourceUrl = event.sourceUrl,
-            repositoryFullName = event.repositoryOwner + event.repositoryName,
+            repositoryFullName = buildRepositoryFullName(
+                owner = event.repositoryOwner,
+                name = event.repositoryName,
+            ),
             artifactType = ArtifactType.FILE,
             title = title,
             bodyText = event.content,
@@ -120,7 +126,10 @@ class GithubArtifactMapper {
                 unique = event.number.toString(),
             ),
             sourceUrl = event.url,
-            repositoryFullName = "${event.repositoryOwner}/${event.repositoryName}}",
+            repositoryFullName = buildRepositoryFullName(
+                owner = event.repositoryOwner,
+                name = event.repositoryName,
+            ),
             artifactType = ArtifactType.ISSUE,
             title = "Issue #${event.number} " + event.title,
             bodyText = event.body,
@@ -149,7 +158,10 @@ class GithubArtifactMapper {
                 unique = event.number.toString(),
             ),
             sourceUrl = event.url,
-            repositoryFullName = event.repositoryOwner + event.repositoryName,
+            repositoryFullName = buildRepositoryFullName(
+                owner = event.repositoryOwner,
+                name = event.repositoryName,
+            ),
             artifactType = ArtifactType.PULL_REQUEST,
             title = "PR #${event.number} " + event.title,
             bodyText = event.body,
@@ -160,4 +172,6 @@ class GithubArtifactMapper {
             hash = null, // PRs are always re-ingested on updates
         )
     }
+
+    private fun buildRepositoryFullName(owner: String, name: String) = "$owner/$name"
 }
