@@ -34,6 +34,8 @@ import java.util.UUID
 
 private const val TEST_AUTH_ID = "testAuthId"
 
+// Todo: update this test with error paths
+
 @WebMvcTest(controllers = [UserSelfController::class, AdminUserController::class])
 @Import(SecurityConfig::class)
 @AutoConfigureMockMvc

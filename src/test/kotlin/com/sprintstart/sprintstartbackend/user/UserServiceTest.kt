@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 
+// Todo: update this test with error paths
 class UserServiceTest {
     private val userRepository: UserRepository = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk()

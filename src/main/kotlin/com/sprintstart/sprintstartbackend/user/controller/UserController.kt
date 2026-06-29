@@ -206,6 +206,7 @@ class AdminUserController(
      * @param id The UUID of the user whose account status should be updated.
      * @param request The target enabled state.
      * @return The updated user profile.
+     * Todo: split into /enable and /disable endpoints
      */
     @Operation(
         summary = "Patch user enabled status",
@@ -237,6 +238,7 @@ class AdminUserController(
      *
      * @param id The UUID of the user to delete.
      * @return A response confirming which user was deleted.
+     * Todo: remove return type
      */
     @Operation(
         summary = "Delete user by id",

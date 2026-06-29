@@ -113,6 +113,7 @@ class UserService(
         request.lastName?.let { user.lastname = it }
         request.workingArea?.let { updateWorkingArea(user, it) }
 
+        // Todo: map this to PatchResponse
         val response = userRepository.save(user).toGetResponse()
         return request.permissionGroup?.let { response.copy(permissionGroup = it) } ?: response
     }
@@ -141,6 +142,7 @@ class UserService(
         val user = findById(id)
         keycloakAdminClient.setUserEnabled(user.authId, request.enabled)
         user.enabled = request.enabled
+        // Todo: map this to updateUserEnabledResponse or return null
         return userRepository.save(user).toGetResponse()
     }
 
@@ -174,6 +176,7 @@ class UserService(
     @Transactional
     fun deleteAdminUserById(id: UUID): DeleteUserResponse {
         deleteUserById(id)
+        // Todo: Remove return
         return DeleteUserResponse(id = id)
     }
 
