@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubSourceUrlFactory.buildCommitUrl
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildSourceId
+import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.springframework.stereotype.Component
 import java.time.Instant
 
@@ -71,8 +72,7 @@ class GithubArtifactMapper {
 
         val language = FileMetaDataResolver.languageFor(extension)
         val mime = FileMetaDataResolver.mimeFor(extension)
-        val hash = Sha256.sha256(event.content.toByteArray())
-
+        val hash = event.content.toByteArray().sha256()
         return ArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
@@ -99,6 +99,7 @@ class GithubArtifactMapper {
      *
      * The hash currently tracks title and body, which is the change signal used by
      * `ArtifactIngestionService` for issue updates.
+     * @throws java.time.format.DateTimeParseException when the issue creation timestamp is malformed.
      */
     fun toCommand(event: GithubIssueFetchedEvent): ArtifactCommand {
         val content =
@@ -107,7 +108,7 @@ class GithubArtifactMapper {
                 append("|")
                 append(event.body ?: "")
             }
-        val hash = Sha256.sha256(content.toByteArray())
+        val hash = content.toByteArray().sha256()
         return ArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
@@ -134,6 +135,7 @@ class GithubArtifactMapper {
      *
      * Pull requests intentionally omit a hash because the ingestion service treats them as mutable
      * records and always overwrites the current title/body on re-fetch.
+     * @throws java.time.format.DateTimeParseException when the pull request creation timestamp is malformed.
      */
     fun toCommand(event: GithubPullRequestFetchedEvent): ArtifactCommand {
         return ArtifactCommand(

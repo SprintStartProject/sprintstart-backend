@@ -8,16 +8,16 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
-import com.sprintstart.sprintstartbackend.ingestion.service.GithubFetchingCompletionTracker
+import com.sprintstart.sprintstartbackend.ingestion.service.IngestionStatusService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class GithubCommitListener(
     private val artifactIngestionService: ArtifactIngestionService,
-    private val gitHubFetchingCompletionTracker: GithubFetchingCompletionTracker,
     private val githubArtifactMapper: GithubArtifactMapper,
     private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
+    private val ingestionStatusService: IngestionStatusService,
 ) {
     @EventListener
     fun on(
@@ -30,7 +30,7 @@ internal class GithubCommitListener(
     fun on(
         event: GithubCommitsFetchCompletedEvent,
     ) {
-        gitHubFetchingCompletionTracker.markFetchPhaseFinished(
+        ingestionStatusService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.COMMITS,
         )
@@ -47,7 +47,7 @@ internal class GithubCommitListener(
     fun on(
         event: GithubCommitsFetchFailedEvent,
     ) {
-        gitHubFetchingCompletionTracker.markFetchPhaseFinished(
+        ingestionStatusService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.COMMITS,
         )

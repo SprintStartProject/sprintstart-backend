@@ -20,6 +20,7 @@ class IngestionRunService(
      *
      * @param limit maximum number of runs returned from the first page of run history
      * @return API-ready run summaries including counters and failed items
+     * @throws IllegalArgumentException If Spring Data rejects the requested page size.
      */
     fun getRecentRuns(
         limit: Int = 10,

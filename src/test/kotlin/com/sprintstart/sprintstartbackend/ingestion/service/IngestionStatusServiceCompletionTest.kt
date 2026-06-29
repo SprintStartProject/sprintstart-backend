@@ -13,17 +13,16 @@ import org.junit.jupiter.api.Test
 import java.util.Optional
 import java.util.UUID
 
-class GithubFetchingCompletionTrackerTest {
-    private val artifactIngestionService = mockk<ArtifactIngestionService>()
+class IngestionStatusServiceCompletionTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
-    private val tracker = GithubFetchingCompletionTracker(artifactIngestionService, ingestionRunRepository)
+    private val service = IngestionStatusService(ingestionRunRepository)
 
     @Test
     fun `markFetchPhaseFinished keeps run running until all phases complete`() {
         val run = ingestionRun()
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
 
-        tracker.markFetchPhaseFinished(run.id, FinishedTypes.FILES)
+        service.markFetchPhaseFinished(run.id, FinishedTypes.FILES)
 
         assertThat(run.finishedTypes).containsExactly(FinishedTypes.FILES)
         assertThat(run.status).isEqualTo(IngestionRunStatus.RUNNING)
@@ -41,7 +40,7 @@ class GithubFetchingCompletionTrackerTest {
         )
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
 
-        tracker.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
+        service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
         assertThat(run.status).isEqualTo(IngestionRunStatus.COMPLETED)
         assertThat(run.finishedTypes).containsAll(FinishedTypes.entries)
@@ -61,7 +60,7 @@ class GithubFetchingCompletionTrackerTest {
         )
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
 
-        tracker.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
+        service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
         assertThat(run.status).isEqualTo(IngestionRunStatus.PARTIAL)
     }
@@ -78,7 +77,7 @@ class GithubFetchingCompletionTrackerTest {
         )
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
 
-        tracker.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
+        service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
         assertThat(run.status).isEqualTo(IngestionRunStatus.FAILED)
     }
@@ -88,7 +87,7 @@ class GithubFetchingCompletionTrackerTest {
         val runId = UUID.randomUUID()
         every { ingestionRunRepository.findById(runId) } returns Optional.empty()
 
-        assertThatThrownBy { tracker.markFetchPhaseFinished(runId, FinishedTypes.FILES) }
+        assertThatThrownBy { service.markFetchPhaseFinished(runId, FinishedTypes.FILES) }
             .isInstanceOf(NoSuchElementException::class.java)
             .hasMessageContaining(runId.toString())
     }

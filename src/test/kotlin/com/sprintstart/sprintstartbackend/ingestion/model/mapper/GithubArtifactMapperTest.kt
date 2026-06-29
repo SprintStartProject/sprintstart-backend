@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIs
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -37,7 +38,7 @@ class GithubArtifactMapperTest {
         assertThat(result.bodyText).isEqualTo("fun main() = Unit")
         assertThat(result.mime).isEqualTo("text/x-kotlin")
         assertThat(result.language).isEqualTo("Kotlin")
-        assertThat(result.hash).isEqualTo(Sha256.sha256(event.content.toByteArray()))
+        assertThat(result.hash).isEqualTo(event.content.toByteArray().sha256())
     }
 
     @Test
@@ -109,7 +110,7 @@ class GithubArtifactMapperTest {
         assertThat(result.title).isEqualTo("Issue #42 Bug report")
         assertThat(result.bodyText).isEqualTo("Something broke")
         assertThat(result.createdAtSource).isEqualTo(Instant.parse("2024-01-01T00:00:00Z"))
-        assertThat(result.hash).isEqualTo(Sha256.sha256("Bug report|Something broke".toByteArray()))
+        assertThat(result.hash).isEqualTo("Bug report|Something broke".toByteArray().sha256())
     }
 
     @Test

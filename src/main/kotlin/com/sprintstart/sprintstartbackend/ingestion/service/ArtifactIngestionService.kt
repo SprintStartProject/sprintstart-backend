@@ -32,7 +32,7 @@ class ArtifactIngestionService(
     private val artifactRepository: ArtifactRepository,
 ) {
     /**
-     * Persists or updates a ingestion artifact for the active ingestion run.
+     * Persists or updates an ingestion artifact for the active ingestion run.
      *
      * Business rules:
      * - commits are idempotent by `sourceId`; an already-known commit is ignored
@@ -119,7 +119,10 @@ class ArtifactIngestionService(
      * Creates an ingestion run before connector work begins.
      *
      * The initial status is controlled by the caller so listeners can distinguish between
-     * connection setup, active fetching, and immediate startup failures.
+     * connection setup, active fetching, and immediate startup failures. If the run already
+     * exists, the mutable lifecycle fields are updated instead of creating a duplicate row.
+     *
+     * @param failureReason Optional run-level failure reason for lifecycle failures.
      */
     @Transactional
     fun startRun(
@@ -183,7 +186,7 @@ class ArtifactIngestionService(
     }
 
     /**
-     * Removes a ingestion file artifact when GitHub reports that the source file was deleted.
+     * Removes an ingestion file artifact when GitHub reports that the source file was deleted.
      *
      * This does not affect historic run counters; it only removes the current file artifact row
      * addressed by the ingestion GitHub `sourceId`.

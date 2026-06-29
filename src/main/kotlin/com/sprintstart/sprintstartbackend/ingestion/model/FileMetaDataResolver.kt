@@ -1,5 +1,11 @@
 package com.sprintstart.sprintstartbackend.ingestion.model
 
+/**
+ * Resolves lightweight file metadata from file extensions.
+ *
+ * The ingestion mapper uses this metadata to enrich file artifacts with language and mime hints
+ * without requiring a full content inspection step.
+ */
 object FileMetaDataResolver {
     private val EXTENSION_TO_LANGUAGE =
         mapOf(
@@ -71,10 +77,22 @@ object FileMetaDataResolver {
             "jar" to "application/java-archive",
         )
 
+    /**
+     * Resolves a display language from a normalized file extension.
+     *
+     * @param extension Lowercase file extension without the leading dot.
+     * @return A display language name, or null when the extension is unknown.
+     */
     fun languageFor(extension: String): String? {
         return EXTENSION_TO_LANGUAGE[extension]
     }
 
+    /**
+     * Resolves a mime type from a normalized file extension.
+     *
+     * @param extension Lowercase file extension without the leading dot.
+     * @return A mime type, or null when the extension is unknown.
+     */
     fun mimeFor(extension: String): String? {
         return EXTENSION_TO_MIME[extension]
     }

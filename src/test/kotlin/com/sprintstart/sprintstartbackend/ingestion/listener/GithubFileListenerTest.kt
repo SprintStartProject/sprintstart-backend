@@ -13,7 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
-import com.sprintstart.sprintstartbackend.ingestion.service.GithubFetchingCompletionTracker
+import com.sprintstart.sprintstartbackend.ingestion.service.IngestionStatusService
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -24,14 +24,14 @@ import java.util.UUID
 
 class GithubFileListenerTest {
     private val artifactIngestionService = mockk<ArtifactIngestionService>()
-    private val completionTracker = mockk<GithubFetchingCompletionTracker>()
     private val artifactMapper = mockk<GithubArtifactMapper>()
     private val failedMapper = mockk<GithubArtifactFailedMapper>()
+    private val ingestionStatusService = mockk<IngestionStatusService>()
     private val listener = GithubFileListener(
         artifactIngestionService,
-        completionTracker,
         artifactMapper,
         failedMapper,
+        ingestionStatusService,
     )
 
     @Test
@@ -75,7 +75,7 @@ class GithubFileListenerTest {
     @Test
     fun `files completed event marks files phase finished`() {
         val runId = UUID.randomUUID()
-        every { completionTracker.markFetchPhaseFinished(any(), any()) } just runs
+        every { ingestionStatusService.markFetchPhaseFinished(any(), any()) } just runs
 
         listener.on(
             GithubFilesFetchCompletedEvent(
@@ -86,14 +86,14 @@ class GithubFileListenerTest {
         )
 
         verify(exactly = 1) {
-            completionTracker.markFetchPhaseFinished(runId, FinishedTypes.FILES)
+            ingestionStatusService.markFetchPhaseFinished(runId, FinishedTypes.FILES)
         }
     }
 
     @Test
     fun `files failed event marks files phase finished`() {
         val runId = UUID.randomUUID()
-        every { completionTracker.markFetchPhaseFinished(any(), any()) } just runs
+        every { ingestionStatusService.markFetchPhaseFinished(any(), any()) } just runs
 
         listener.on(
             GithubFilesFetchFailedEvent(
@@ -105,7 +105,7 @@ class GithubFileListenerTest {
         )
 
         verify(exactly = 1) {
-            completionTracker.markFetchPhaseFinished(runId, FinishedTypes.FILES)
+            ingestionStatusService.markFetchPhaseFinished(runId, FinishedTypes.FILES)
         }
     }
 
