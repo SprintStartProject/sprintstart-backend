@@ -146,12 +146,12 @@ class ArtifactIngestionService(
                 sourceSystem = sourceSystem,
                 status = status,
                 failureReason = failureReason,
-                finishedAt = if(status == IngestionRunStatus.FAILED) Instant.now() else null,
+                finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null,
             )
             ingestionRunRepository.save(ingestionRun)
         } else {
             ingestionRun.status = status
-            ingestionRun.finishedAt = if(status == IngestionRunStatus.FAILED) Instant.now() else null
+            ingestionRun.finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null
             ingestionRun.failureReason = failureReason
         }
     }

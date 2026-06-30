@@ -29,5 +29,5 @@ data class IngestionRunResponse(
     val failedCount: Int = 0,
     @field:Schema(description = "Failure details captured for individual source artifacts in this run.")
     val failedItems: MutableList<FailedArtifact>,
-    val status: IngestionRunStatus
+    val status: IngestionRunStatus,
 )
