@@ -109,16 +109,58 @@ class OnboardingStepService(
      * @return The requested step.
      * @throws ResponseStatusException When the user or step does not exist.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun getOnboardingStepForMe(authId: String, stepId: UUID): GetOnboardingStepResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
 
-        return onboardingStepRepository
+        val step = onboardingStepRepository
             .findByIdAndPhasePathUserId(stepId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
-            .toGetResponse()
+
+        return step.toGetResponse()
+    }
+
+    /**
+     * Marks a step in the authenticated user's onboarding path as in progress.
+     *
+     * The first time a step is started its [OnboardingStep.startedAt] timestamp is
+     * recorded so the time spent on the step can be tracked. Calling this again on an
+     * already started step is a no-op and keeps the original start timestamp. Finished
+     * or skipped steps cannot be started.
+     *
+     * @param authId External authentication identifier.
+     * @param stepId Identifier of the step to start.
+     * @return The updated step.
+     * @throws ResponseStatusException When the user or step does not exist, or the step
+     * is finished or skipped.
+     */
+    @Transactional
+    fun startOnboardingStepForMe(
+        authId: String,
+        stepId: UUID,
+    ): UpdateOnboardingStepResponse {
+        val userId = userApi
+            .getUserIdByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+        val step = onboardingStepRepository
+            .findByIdAndPhasePathUserId(stepId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+
+        if (step.status == StepStatus.FINISHED || step.status == StepStatus.SKIPPED) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be started")
+        }
+
+        if (step.status == StepStatus.WAITING) {
+            step.status = StepStatus.IN_PROGRESS
+        }
+        if (step.startedAt == null) {
+            step.startedAt = Instant.now()
+        }
+
+        return step.toUpdateResponse()
     }
 
     /**
@@ -172,11 +214,15 @@ class OnboardingStepService(
             .findByIdAndPhasePathUserId(stepId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
-        if (step.status != StepStatus.WAITING) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A step that is finished can't be completed")
+        if (step.status != StepStatus.WAITING && step.status != StepStatus.IN_PROGRESS) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be completed")
         }
 
-        step.completedAt = Instant.now()
+        val completedAt = Instant.now()
+        if (step.startedAt == null) {
+            step.startedAt = completedAt
+        }
+        step.completedAt = completedAt
         if (step.skips.isNotEmpty() && step.skips.last().status == SkipStatus.PENDING) {
             step.skips.removeLast()
         }

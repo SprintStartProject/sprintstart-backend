@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.UpdateOn
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.CreateOnboardingSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetAllOnboardingSkipsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingSkipResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingStepSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.ReviewOnboardingSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingSkipService
@@ -138,14 +139,13 @@ class OnboardingSkipControllerTest(
         expectedOutcome = "Outcome",
         status = StepStatus.WAITING,
         completedAt = null,
-        skip = GetOnboardingSkipResponse(
+        skip = GetOnboardingStepSkipResponse(
             id = skipId,
             stepId = stepId,
-            status = SkipStatus.PENDING,
             reason = "Updated reason",
+            accepted = null,
             reviewComment = null,
-            createdAt = timestamp,
-            resolvedAt = null,
+            reviewedAt = null,
         ),
     )
 
