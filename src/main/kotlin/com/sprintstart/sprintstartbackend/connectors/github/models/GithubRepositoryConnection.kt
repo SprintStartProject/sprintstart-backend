@@ -31,12 +31,15 @@ class GithubRepositoryConnection(
     )
     var user: GithubUser,
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    var status: ConnectionStatus = ConnectionStatus.UP_TO_DATE,
+    @Column(name = "connection_state", nullable = false)
+    var connectionState: ConnectionState = ConnectionState.UP_TO_DATE,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_state", nullable = false)
+    var sourceStatus: SourceStatus = SourceStatus.EXCLUDED,
     @Column(name = "last_sha", nullable = false)
     var lastSha: String = "",
     @OneToOne(mappedBy = "repository", fetch = FetchType.LAZY, cascade = [CascadeType.ALL], orphanRemoval = true)
     var snapshot: GithubRepositorySnapshot? = null,
-    @OneToMany(mappedBy = "repository", orphanRemoval = true)
+    @OneToMany(mappedBy = "repository", fetch = FetchType.LAZY, orphanRemoval = true)
     var filesSnapshots: MutableList<GithubFileSnapshot> = mutableListOf(),
 )
