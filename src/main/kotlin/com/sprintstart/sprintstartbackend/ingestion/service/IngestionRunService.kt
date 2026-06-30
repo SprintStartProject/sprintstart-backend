@@ -38,6 +38,7 @@ class IngestionRunService(
                     updatedCount = it.updatedCount,
                     failedCount = it.failedCount,
                     failedItems = it.failedItems,
+                    status = it.status,
                 )
             }
 }

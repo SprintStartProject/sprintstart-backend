@@ -31,7 +31,7 @@ class IngestionStatusService(
      * @return One status row per supported source system.
      */
     fun getIngestionStatusPerSource(): List<SourceIngestionStatusResponse> {
-        val lastRun = ingestionRunRepository.findFirstByOrderByStartedAt()
+        val lastRun = ingestionRunRepository.findFirstByOrderByStartedAtDesc()
         val github = SourceIngestionStatusResponse(
             sourceSystem = SourceSystem.GITHUB,
             lastRunTime = lastRun?.startedAt,
@@ -39,6 +39,7 @@ class IngestionStatusService(
             updatedCount = lastRun?.updatedCount ?: 0,
             failedCount = lastRun?.failedCount ?: 0,
             failedItems = lastRun?.failedItems ?: mutableListOf(),
+            status = lastRun?.status,
         )
 
         return listOf(github) // TODO add jira etc. later

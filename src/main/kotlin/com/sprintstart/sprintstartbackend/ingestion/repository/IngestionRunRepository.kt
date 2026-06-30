@@ -13,5 +13,5 @@ interface IngestionRunRepository : JpaRepository<IngestionRun, UUID> {
         pageable: Pageable,
     ): List<IngestionRun>
 
-    fun findFirstByOrderByStartedAt(): IngestionRun?
+    fun findFirstByOrderByStartedAtDesc(): IngestionRun?
 }

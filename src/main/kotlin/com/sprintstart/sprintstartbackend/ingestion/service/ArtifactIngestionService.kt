@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepos
 import jakarta.transaction.Transactional
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -145,10 +146,12 @@ class ArtifactIngestionService(
                 sourceSystem = sourceSystem,
                 status = status,
                 failureReason = failureReason,
+                finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null,
             )
             ingestionRunRepository.save(ingestionRun)
         } else {
             ingestionRun.status = status
+            ingestionRun.finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null
             ingestionRun.failureReason = failureReason
         }
     }

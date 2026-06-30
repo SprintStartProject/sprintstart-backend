@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto.response
 
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
@@ -28,4 +29,5 @@ data class IngestionRunResponse(
     val failedCount: Int = 0,
     @field:Schema(description = "Failure details captured for individual source artifacts in this run.")
     val failedItems: MutableList<FailedArtifact>,
+    val status: IngestionRunStatus,
 )

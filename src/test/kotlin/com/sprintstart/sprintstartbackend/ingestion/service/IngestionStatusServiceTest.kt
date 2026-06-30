@@ -19,7 +19,7 @@ class IngestionStatusServiceTest {
 
     @Test
     fun `getIngestionStatusPerSource returns empty github state when no runs exist`() {
-        every { ingestionRunRepository.findFirstByOrderByStartedAt() } returns null
+        every { ingestionRunRepository.findFirstByOrderByStartedAtDesc() } returns null
 
         val result = service.getIngestionStatusPerSource()
 
@@ -50,7 +50,7 @@ class IngestionStatusServiceTest {
             failedItems = mutableListOf(failedItem),
             status = IngestionRunStatus.PARTIAL,
         )
-        every { ingestionRunRepository.findFirstByOrderByStartedAt() } returns run
+        every { ingestionRunRepository.findFirstByOrderByStartedAtDesc() } returns run
 
         val result = service.getIngestionStatusPerSource()
 
