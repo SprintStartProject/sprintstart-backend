@@ -25,6 +25,13 @@ class ArtifactIngestionClient(
     private val webClient: WebClient,
     private val applicationConfig: ApplicationConfig,
 ) {
+    /**
+     * Sends a batched artifact sync request to the AI ingestion service.
+     *
+     * @param body The artifacts to ingest and artifact ids to remove from the AI index.
+     * @return The AI ingestion result for the synchronized artifacts.
+     * @throws IngestionResponseException when the AI service returns a non-successful HTTP response.
+     */
     suspend fun ingest(
         body: RunArtifactsAiSyncRequest,
     ): RunArtifactsIngestResponse =

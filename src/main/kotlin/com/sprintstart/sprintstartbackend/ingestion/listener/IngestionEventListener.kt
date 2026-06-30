@@ -12,6 +12,11 @@ class IngestionEventListener(
     private val runArtifactsIngestionService: RunArtifactsIngestionService,
     private val applicationScope: CoroutineScope,
 ) {
+    /**
+     * Handles a completed ingestion run event by scheduling artifact synchronization with the AI service.
+     *
+     * @param event The run-finished event containing the ingestion run id to synchronize.
+     */
     @EventListener
     fun handleRunFinished(
         event: RunFinishedEvent,
