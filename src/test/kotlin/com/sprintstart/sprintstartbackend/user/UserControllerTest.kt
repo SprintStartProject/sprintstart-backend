@@ -6,11 +6,11 @@ import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.controller.AdminUserController
 import com.sprintstart.sprintstartbackend.user.controller.UserSelfController
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
+import com.sprintstart.sprintstartbackend.user.model.dto.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserEnabledRequest
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import io.mockk.every
@@ -64,7 +64,7 @@ class UserControllerTest(
             .perform(get("/api/v1/users/me").with(userJwt))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.firstName").value("Alice"))
-            .andExpect(jsonPath("$.workingArea").value("BACKEND_DEV"))
+            .andExpect(jsonPath("$.projectRoles[0].name").value("Backend Developer"))
             .andExpect(jsonPath("$.permissionGroup").value("USER"))
 
         verify(exactly = 1) { userService.getMe(any()) }
@@ -76,7 +76,6 @@ class UserControllerTest(
             email = "new@mail.de",
             firstName = "Alicia",
             profileIcon = "icon-star",
-            workingArea = WorkingArea.FRONTEND_DEV,
         )
         every { userService.patchMe("user", request) } returns userResponse(email = "new@mail.de", firstName = "Alicia")
 
@@ -120,7 +119,6 @@ class UserControllerTest(
         val request = PatchUserRequest(
             email = "new@mail.de",
             firstName = "Alicia",
-            workingArea = WorkingArea.FRONTEND_DEV,
             permissionGroup = Role.ADMIN,
         )
         every {
@@ -178,7 +176,9 @@ class UserControllerTest(
         id: UUID = UUID.randomUUID(),
         email: String = "alice@mail.de",
         firstName: String = "Alice",
-        workingArea: WorkingArea = WorkingArea.BACKEND_DEV,
+        projectRoles: List<ProjectRoleSummary> = listOf(
+            ProjectRoleSummary(id = UUID.randomUUID(), name = "Backend Developer"),
+        ),
         enabled: Boolean = true,
         permissionGroup: Role = Role.USER,
     ) = GetUserResponse(
@@ -188,7 +188,7 @@ class UserControllerTest(
         email = email,
         firstName = firstName,
         lastName = "Developer",
-        workingArea = workingArea,
+        projectRoles = projectRoles,
         permissionGroup = permissionGroup,
         enabled = enabled,
         profileIcon = "icon-star",

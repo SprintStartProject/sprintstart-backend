@@ -93,7 +93,6 @@ class UserApiService(
                 firstname = user.firstname,
                 lastname = user.lastname,
                 avatarUrl = user.avatarUrl,
-                workingArea = user.workingArea.name,
                 project = user.project?.let {
                     ProjectDto(
                         projectId = it.id,
@@ -128,7 +127,6 @@ class UserApiService(
                 firstname = user.firstname,
                 lastname = user.lastname,
                 avatarUrl = user.avatarUrl,
-                workingArea = user.workingArea.name,
                 project = user.project?.let {
                     ProjectDto(
                         projectId = it.id,
@@ -165,7 +163,20 @@ class UserApiService(
         userRepository.findByAuthId(authId).map { user ->
             UserOnboardingProfile(
                 id = user.id,
-                workingArea = user.workingArea,
+                projectRoles = user.projectRoles.map { role ->
+                    ProjectRoleDto(
+                        roleId = role.id,
+                        name = role.name,
+                        description = role.description,
+                    )
+                },
+                skills = user.skillAssessments.map { assessment ->
+                    UserSkillDto(
+                        skillId = assessment.skill.id,
+                        name = assessment.skill.name,
+                        level = assessment.level.name,
+                    )
+                },
             )
         }
 }

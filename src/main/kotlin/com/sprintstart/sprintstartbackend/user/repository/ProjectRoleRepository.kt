@@ -6,4 +6,6 @@ import org.springframework.stereotype.Repository
 import java.util.UUID
 
 @Repository
-interface ProjectRoleRepository : JpaRepository<ProjectRole, UUID>
+interface ProjectRoleRepository : JpaRepository<ProjectRole, UUID> {
+    fun findByName(name: String): ProjectRole?
+}

@@ -12,7 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.Onboard
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.dto.toAiScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -43,10 +43,10 @@ class OnboardingPersonalizationService(
     /**
      * Generates a personalized onboarding path for the user identified by [authId].
      *
-     * The user's profile (working area) is read up front so a missing user
+     * The user's profile (assigned project role) is read up front so a missing user
      * fails fast with 404 before any streaming begins. The returned cold [Flow], once
      * collected, then: auto-generates any missing blueprints for the user's scope
-     * (`global` + `area:<workingArea>`) — a potentially slow AI call made with no
+     * (`global` + `area:<role-slug>`) — a potentially slow AI call made with no
      * transaction held — opens a short transaction to delete the user's existing path
      * and read the active blueprints, and finally streams the AI personalization events.
      * Each event is mapped to an [OnboardingSseEvent]; a `path` event is persisted before
@@ -54,20 +54,21 @@ class OnboardingPersonalizationService(
      *
      * @param authId External authentication identifier from the JWT subject.
      * @return A cold [Flow] of [OnboardingSseEvent] emitted during path generation.
-     * @throws ResponseStatusException 404 if no user exists for [authId].
+     * @throws ResponseStatusException 404 if no user exists for [authId], 400 if the user
+     * does not have exactly one project role assigned.
      */
     fun personalize(authId: String): Flow<OnboardingSseEvent> {
         val profile = userApi
             .getOnboardingProfileByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 
-        if (profile.workingArea == WorkingArea.NO_WORKING_AREA) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "User has no working area set")
+        if (profile.projectRoles.size != 1) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "User must have exactly one project role assigned")
         }
 
-        val workingArea = profile.workingArea.toAiScope()
-        val skills = emptyList<SkillAssessmentSchema>()
-        val requiredScopes = listOf("global", "area:$workingArea")
+        val scope = profile.projectRoles.single().toAiScope()
+        val skills = profile.skills.map { SkillAssessmentSchema(name = it.name, level = it.level.lowercase()) }
+        val requiredScopes = listOf("global", "area:$scope")
 
         return flow {
             blueprintService.ensureScopesExist(requiredScopes)
@@ -81,7 +82,7 @@ class OnboardingPersonalizationService(
 
             emitAll(
                 onboardingAiClient
-                    .generatePath(workingArea, skills, blueprints)
+                    .generatePath(scope, skills, blueprints)
                     .map { event -> event.toSseEvent(profile.id) },
             )
         }.catch { e ->

@@ -1,8 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
-import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
@@ -23,9 +22,7 @@ import java.util.UUID
  * Application service for user profile reads and updates.
  *
  * This service owns user-facing operations within the user module and maps persisted
- * [User] entities to response DTOs for controllers. When an update changes the user's
- * working area, the service publishes [UserWorkingAreaUpdatedEvent] so other modules can
- * react through explicit module events instead of direct repository access.
+ * [User] entities to response DTOs for controllers.
  */
 @Service
 class UserService(
@@ -58,8 +55,7 @@ class UserService(
                 email = jwt.getClaimAsString("email"),
                 firstname = jwt.getClaimAsString("given_name") ?: "Unknown",
                 lastname = jwt.getClaimAsString("family_name") ?: "User",
-                workingArea = com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea.NO_WORKING_AREA,
-                roles = mutableSetOf(com.sprintstart.sprintstartbackend.user.external.enums.Role.USER),
+                roles = mutableSetOf(Role.USER),
             )
             val savedUser = userRepository.save(newUser)
             eventPublisher.publishEvent(UserCreatedEvent(savedUser.id))
@@ -71,9 +67,7 @@ class UserService(
     /**
      * Partially updates the authenticated user's editable fields.
      *
-     * Omitted fields remain unchanged. If the working area changes, the service publishes
-     * [UserWorkingAreaUpdatedEvent] with both the previous and new values before persisting
-     * the updated entity.
+     * Omitted fields remain unchanged.
      *
      * @param authId External authentication identifier from the JWT subject.
      * @param request Partial update payload.
@@ -95,7 +89,6 @@ class UserService(
         request.firstName?.let { user.firstname = it }
         request.lastName?.let { user.lastname = it }
         request.profileIcon?.let { user.profileIcon = it }
-        request.workingArea?.let { updateWorkingArea(user, it) }
 
         return userRepository.save(user).toGetResponse()
     }
@@ -128,7 +121,6 @@ class UserService(
         request.email?.let { user.email = it }
         request.firstName?.let { user.firstname = it }
         request.lastName?.let { user.lastname = it }
-        request.workingArea?.let { updateWorkingArea(user, it) }
 
         // Todo: map this to PatchResponse
         val response = userRepository.save(user).toGetResponse()
@@ -195,17 +187,6 @@ class UserService(
         deleteUserById(id)
         // Todo: Remove return
         return DeleteUserResponse(id = id)
-    }
-
-    private fun updateWorkingArea(
-        user: User,
-        workingArea: WorkingArea,
-    ) {
-        val previousWorkingArea = user.workingArea
-        if (previousWorkingArea != workingArea) {
-            user.workingArea = workingArea
-            eventPublisher.publishEvent(UserWorkingAreaUpdatedEvent(user.id, previousWorkingArea, workingArea))
-        }
     }
 
     private fun findById(id: UUID): User =

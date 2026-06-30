@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.KeycloakEventRequest
 import com.sprintstart.sprintstartbackend.user.model.entity.User
@@ -29,7 +28,6 @@ class KeycloakEventServiceTest {
             email = "alice@mail.de",
             firstname = "Alice",
             lastname = "Developer",
-            workingArea = WorkingArea.BACKEND_DEV,
         )
         user.roles.addAll(setOf(Role.USER, Role.ADMIN))
         every { userRepository.findLockedByAuthId("auth-1") } returns Optional.of(user)
@@ -60,7 +58,6 @@ class KeycloakEventServiceTest {
             email = "alice@mail.de",
             firstname = "Alice",
             lastname = "Developer",
-            workingArea = WorkingArea.BACKEND_DEV,
         )
         user.roles.addAll(setOf(Role.USER, Role.ADMIN))
         every { userRepository.findLockedByAuthId("auth-1") } returns Optional.of(user)
@@ -94,7 +91,6 @@ class KeycloakEventServiceTest {
             firstname = "Alice",
             lastname = "Developer",
             enabled = true,
-            workingArea = WorkingArea.BACKEND_DEV,
         )
         every { userRepository.findLockedByAuthId("auth-1") } returns Optional.of(user)
         every { userRepository.save(user) } returns user

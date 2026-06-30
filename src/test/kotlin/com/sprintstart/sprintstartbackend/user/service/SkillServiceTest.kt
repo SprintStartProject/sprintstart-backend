@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.entity.SkillLevel
@@ -103,7 +102,6 @@ class SkillServiceTest {
             username = "alice",
             firstname = "Alice",
             lastname = "Test",
-            workingArea = WorkingArea.BACKEND_DEV,
             email = null,
         )
         val skillId = UUID.randomUUID()
@@ -141,7 +139,6 @@ class SkillServiceTest {
             username = "alice",
             firstname = "Alice",
             lastname = "Test",
-            workingArea = WorkingArea.BACKEND_DEV,
             email = null,
         )
         val skillId = UUID.randomUUID()

@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
@@ -77,7 +76,6 @@ class ProjectRoleServiceTest {
             username = "alice",
             firstname = "Alice",
             lastname = "Test",
-            workingArea = WorkingArea.BACKEND_DEV,
             email = null,
         )
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
@@ -114,7 +112,6 @@ class ProjectRoleServiceTest {
             username = "alice",
             firstname = "Alice",
             lastname = "Test",
-            workingArea = WorkingArea.BACKEND_DEV,
             email = null,
         )
 
@@ -137,7 +134,6 @@ class ProjectRoleServiceTest {
             username = "alice",
             firstname = "Alice",
             lastname = "Test",
-            workingArea = WorkingArea.BACKEND_DEV,
             email = null,
         )
         user.projectRoles.add(role)

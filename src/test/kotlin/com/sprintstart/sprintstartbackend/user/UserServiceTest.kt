@@ -1,9 +1,7 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
-import com.sprintstart.sprintstartbackend.user.external.events.UserWorkingAreaUpdatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserEnabledRequest
@@ -35,7 +33,7 @@ class UserServiceTest {
 
     @Test
     fun `getMe returns extended user response`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         val jwt = mockk<Jwt>()
         every { jwt.subject } returns "auth-1"
         user.roles.add(Role.USER)
@@ -44,7 +42,7 @@ class UserServiceTest {
         val result = userService.getMe(jwt)
 
         assertThat(result.firstName).isEqualTo("First")
-        assertThat(result.workingArea).isEqualTo(WorkingArea.BACKEND_DEV)
+        assertThat(result.projectRoles).isEmpty()
         assertThat(result.permissionGroup).isEqualTo(Role.USER)
         assertThat(result.enabled).isTrue()
     }
@@ -66,14 +64,14 @@ class UserServiceTest {
 
         assertThat(result.authId).isEqualTo("missing")
         assertThat(result.username).isEqualTo("missingUser")
-        assertThat(result.workingArea).isEqualTo(WorkingArea.NO_WORKING_AREA)
+        assertThat(result.projectRoles).isEmpty()
         verify(exactly = 1) { userRepository.save(any<User>()) }
         verify(exactly = 1) { eventPublisher.publishEvent(any<UserCreatedEvent>()) }
     }
 
     @Test
     fun `getAllUsers returns local projections without Keycloak calls`() {
-        val keycloakUser = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val keycloakUser = user(authId = "auth-1", username = "alice")
         keycloakUser.roles.add(Role.USER)
         every { userRepository.findAll() } returns listOf(keycloakUser)
 
@@ -86,20 +84,18 @@ class UserServiceTest {
 
     @Test
     fun `patchMe forwards identity fields to Keycloak and updates local projection`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         val request = PatchMeRequest(
             email = "new@mail.de",
             firstName = "Alicia",
             lastName = "Tester",
             profileIcon = "icon-star",
-            workingArea = WorkingArea.FRONTEND_DEV,
         )
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
         every {
             keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
         } just runs
         every { userRepository.save(user) } returns user
-        every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
 
         val result = userService.patchMe("auth-1", request)
 
@@ -107,26 +103,19 @@ class UserServiceTest {
         assertThat(user.firstname).isEqualTo("Alicia")
         assertThat(user.lastname).isEqualTo("Tester")
         assertThat(user.profileIcon).isEqualTo("icon-star")
-        assertThat(user.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
         assertThat(result.email).isEqualTo("new@mail.de")
         verify(exactly = 1) {
             keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
-        }
-        verify(exactly = 1) {
-            eventPublisher.publishEvent(
-                UserWorkingAreaUpdatedEvent(user.id, WorkingArea.BACKEND_DEV, WorkingArea.FRONTEND_DEV),
-            )
         }
     }
 
     @Test
     fun `patchAdminUserById forwards profile and permission group to Keycloak`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         user.roles.add(Role.USER)
         val request = PatchUserRequest(
             email = "new@mail.de",
             lastName = "Tester",
-            workingArea = WorkingArea.FRONTEND_DEV,
             permissionGroup = Role.ADMIN,
         )
         every { userRepository.findById(user.id) } returns Optional.of(user)
@@ -135,25 +124,18 @@ class UserServiceTest {
         } just runs
         every { keycloakAdminClient.setPermissionGroup("auth-1", Role.ADMIN) } just runs
         every { userRepository.save(user) } returns user
-        every { eventPublisher.publishEvent(any<UserWorkingAreaUpdatedEvent>()) } just runs
 
         val result = userService.patchAdminUserById(user.id, request)
 
         assertThat(result.permissionGroup).isEqualTo(Role.ADMIN)
-        assertThat(result.workingArea).isEqualTo(WorkingArea.FRONTEND_DEV)
         assertThat(user.lastname).isEqualTo("Tester")
         assertThat(user.roles).containsExactly(Role.USER)
         verify(exactly = 1) { keycloakAdminClient.setPermissionGroup("auth-1", Role.ADMIN) }
-        verify(exactly = 1) {
-            eventPublisher.publishEvent(
-                UserWorkingAreaUpdatedEvent(user.id, WorkingArea.BACKEND_DEV, WorkingArea.FRONTEND_DEV),
-            )
-        }
     }
 
     @Test
     fun `patchAdminUserById returns requested permission group without mutating local roles directly`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         user.roles.addAll(setOf(Role.USER, Role.ADMIN))
         val request = PatchUserRequest(permissionGroup = Role.PM)
         every { userRepository.findById(user.id) } returns Optional.of(user)
@@ -171,7 +153,7 @@ class UserServiceTest {
 
     @Test
     fun `updateUserEnabledById forwards enabled status to Keycloak`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every { keycloakAdminClient.setUserEnabled("auth-1", false) } just runs
         every { userRepository.save(user) } returns user
@@ -185,7 +167,7 @@ class UserServiceTest {
 
     @Test
     fun `deleteAdminUserById deletes in Keycloak before local projection`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
         every { keycloakAdminClient.deleteUser("auth-1") } just runs
         every { userRepository.deleteRolesByUserId(user.id) } returns 1
@@ -201,7 +183,7 @@ class UserServiceTest {
 
     @Test
     fun `deleteAdminUserById ignores local projection already deleted by Keycloak event`() {
-        val user = user(authId = "auth-1", username = "alice", workingArea = WorkingArea.BACKEND_DEV)
+        val user = user(authId = "auth-1", username = "alice")
         every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
         every { keycloakAdminClient.deleteUser("auth-1") } just runs
         every { userRepository.deleteRolesByUserId(user.id) } returns 0
@@ -226,13 +208,11 @@ class UserServiceTest {
     private fun user(
         authId: String,
         username: String,
-        workingArea: WorkingArea,
     ) = User(
         authId = authId,
         username = username,
         email = "first.last@mail.de",
         firstname = "First",
         lastname = "Last",
-        workingArea = workingArea,
     )
 }

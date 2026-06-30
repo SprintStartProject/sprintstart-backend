@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.external
 
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
+import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
 import java.util.UUID
 
 data class UserOnboardingProfile(
     val id: UUID,
-    val workingArea: WorkingArea,
+    val projectRoles: List<ProjectRoleDto>,
+    val skills: List<UserSkillDto> = emptyList(),
 )
