@@ -54,6 +54,8 @@ class OnboardingStep(
     @Column(nullable = false)
     var status: StepStatus,
     @Column(nullable = true)
+    var startedAt: Instant? = null,
+    @Column(nullable = true)
     var completedAt: Instant? = null,
     @OneToMany(
         mappedBy = "step",
@@ -62,4 +64,11 @@ class OnboardingStep(
     )
     @OrderBy("createdAt ASC")
     val skips: MutableList<OnboardingSkip> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "step",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("createdAt ASC")
+    val feedback: MutableList<OnboardingFeedback> = mutableListOf(),
 )

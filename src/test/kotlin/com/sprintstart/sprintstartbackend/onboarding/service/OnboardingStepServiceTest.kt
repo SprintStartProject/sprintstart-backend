@@ -224,7 +224,19 @@ class OnboardingStepServiceTest {
         }
 
         @Test
-        fun `throws 403 when step is not waiting`() {
+        fun `completes in-progress step`() {
+            val step = makeStep(0, StepStatus.IN_PROGRESS)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            val result = service.completeOnboardingStepForMe(authId, stepId)
+
+            assertEquals(StepStatus.FINISHED, result.status)
+            assertNotNull(result.completedAt)
+        }
+
+        @Test
+        fun `throws 400 when step is finished`() {
             val step = makeStep(0, StepStatus.FINISHED)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
@@ -232,6 +244,55 @@ class OnboardingStepServiceTest {
             assertThrows<ResponseStatusException> {
                 service.completeOnboardingStepForMe(authId, stepId)
             }.also { assertEquals(400, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
+    inner class StartOnboardingStepForMe {
+        @Test
+        fun `starts waiting step and records startedAt`() {
+            val step = makeStep(0, StepStatus.WAITING)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            val result = service.startOnboardingStepForMe(authId, stepId)
+
+            assertEquals(StepStatus.IN_PROGRESS, result.status)
+            assertNotNull(step.startedAt)
+        }
+
+        @Test
+        fun `keeps original startedAt when starting an already in-progress step`() {
+            val step = makeStep(0, StepStatus.IN_PROGRESS)
+            val original = java.time.Instant.now()
+            step.startedAt = original
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            val result = service.startOnboardingStepForMe(authId, stepId)
+
+            assertEquals(StepStatus.IN_PROGRESS, result.status)
+            assertEquals(original, step.startedAt)
+        }
+
+        @Test
+        fun `throws 400 when starting a finished step`() {
+            val step = makeStep(0, StepStatus.FINISHED)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            assertThrows<ResponseStatusException> {
+                service.startOnboardingStepForMe(authId, stepId)
+            }.also { assertEquals(400, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `throws 404 when user not found`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.startOnboardingStepForMe(authId, stepId)
+            }.also { assertEquals(404, it.statusCode.value()) }
         }
     }
 

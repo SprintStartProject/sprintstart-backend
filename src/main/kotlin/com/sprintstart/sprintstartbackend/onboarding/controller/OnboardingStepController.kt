@@ -229,9 +229,9 @@ class OnboardingStepController(
     /**
      * Marks one step in the authenticated user's onboarding path as completed.
      *
-     * The target object is at depth 2. Only steps in [StepStatus.WAITING] can be
-     * completed through this endpoint. Completing a step records its completion
-     * timestamp and returns the updated step response.
+     * The target object is at depth 2. Only steps in [StepStatus.WAITING] or
+     * [StepStatus.IN_PROGRESS] can be completed through this endpoint. Completing a step
+     * records its completion timestamp and returns the updated step response.
      *
      * @param jwt Authenticated JWT used to resolve the current user.
      * @param stepId Identifier of the step to complete.
@@ -240,8 +240,8 @@ class OnboardingStepController(
     @Operation(
         summary = "Complete current user's onboarding step",
         description = "Marks an onboarding step at hierarchy depth 2 as completed for the authenticated user. " +
-            "Only steps in WAITING status can be completed. Completing a step records its completion timestamp " +
-            "and returns the updated step.",
+            "Only steps in WAITING or IN_PROGRESS status can be completed. " +
+            "Completing a step records its completion timestamp and returns the updated step.",
     )
     @ApiResponses(
         value = [
@@ -264,6 +264,46 @@ class OnboardingStepController(
         @PathVariable stepId: UUID,
     ): UpdateOnboardingStepResponse {
         return onboardingStepService.completeOnboardingStepForMe(jwt.subject, stepId)
+    }
+
+    /**
+     * Marks one step in the authenticated user's onboarding path as in progress.
+     *
+     * The target object is at depth 2. Starting a step records its start timestamp the
+     * first time it is started so the time spent on it can be tracked. Steps that are
+     * already finished or skipped cannot be started.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param stepId Identifier of the step to start.
+     * @return The updated step after it has been marked as in progress.
+     */
+    @Operation(
+        summary = "Start current user's onboarding step",
+        description = "Marks an onboarding step at hierarchy depth 2 as in progress for the authenticated user. " +
+            "The start timestamp is recorded the first time the step is started. " +
+            "Finished or skipped steps cannot be started.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Step started successfully"),
+            ApiResponse(responseCode = "400", description = "Step cannot be started in its current status"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding step found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/me/steps/{stepId}/start")
+    @PreAuthorize("hasRole('USER')")
+    fun startOnboardingStepForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the onboarding step to start")
+        @PathVariable stepId: UUID,
+    ): UpdateOnboardingStepResponse {
+        return onboardingStepService.startOnboardingStepForMe(jwt.subject, stepId)
     }
 
     /**

@@ -361,6 +361,44 @@ class OnboardingStepControllerTest(
             .andExpect(status().isForbidden)
     }
 
+    @Test
+    fun `startOnboardingStepForMe should return 200 and updated step`() {
+        every { onboardingStepService.startOnboardingStepForMe(authId, stepId) } returns buildUpdateStepResponse()
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingStepService.startOnboardingStepForMe(authId, stepId) }
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 404 when step not found`() {
+        every { onboardingStepService.startOnboardingStepForMe(authId, stepId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(userJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingStepService.startOnboardingStepForMe(authId, stepId) }
+    }
+
     // ========================== Admin endpoints ==========================
 
     @Test
