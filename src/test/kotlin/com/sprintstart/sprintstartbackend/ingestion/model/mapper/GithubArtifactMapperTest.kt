@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256

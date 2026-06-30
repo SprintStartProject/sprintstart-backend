@@ -4,10 +4,11 @@ import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
-import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.github.util.GithubQueryLoader
+import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import io.mockk.every
 import io.mockk.mockk

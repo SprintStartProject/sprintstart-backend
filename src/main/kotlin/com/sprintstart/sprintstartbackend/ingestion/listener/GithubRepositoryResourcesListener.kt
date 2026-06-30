@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
-import com.sprintstart.sprintstartbackend.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
 import org.springframework.context.event.EventListener

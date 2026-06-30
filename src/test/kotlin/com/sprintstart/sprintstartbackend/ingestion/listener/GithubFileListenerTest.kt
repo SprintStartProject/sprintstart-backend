@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.ArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.ArtifactFailedCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType

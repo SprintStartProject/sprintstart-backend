@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
