@@ -8,4 +8,6 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
     fun deleteBySourceId(sourceId: String)
+
+    fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
 }

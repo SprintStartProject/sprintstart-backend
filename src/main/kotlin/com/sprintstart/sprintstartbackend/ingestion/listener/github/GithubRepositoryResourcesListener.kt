@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.ingestion.listener
+package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
 import com.sprintstart.sprintstartbackend.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus

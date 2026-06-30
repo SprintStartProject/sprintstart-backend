@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildSourceId
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
@@ -46,14 +47,14 @@ class ArtifactIngestionService(
      * - `updatedCount` increments only when an existing artifact is changed
      *
      * @param command [ArtifactCommand] the command containing all data needed for ingestion.
-     * @throws IllegalArgumentException when the referenced ingestion run does not exist.
+     * @throws IngestionRunNotFoundException when the referenced ingestion run does not exist.
      */
     @Transactional
-    fun ingest(command: ArtifactCommand) {
+    fun persistArtifact(command: ArtifactCommand) {
         var artifact: Artifact?
         val ingestionRun = ingestionRunRepository
             .findByIdOrNull(command.ingestionRunId)
-            ?: throw IllegalArgumentException("Run with id ${command.ingestionRunId} not found")
+            ?: throw IngestionRunNotFoundException(command.ingestionRunId)
         when (command.artifactType) {
             ArtifactType.COMMIT,
             -> {
@@ -162,13 +163,13 @@ class ArtifactIngestionService(
      *
      * @param transactionId The id of the transaction to update the status of.
      * @param status [IngestionRunStatus] The new status.
-     * @throws IllegalArgumentException when the run id is unknown
+     * @throws IngestionRunNotFoundException when the run id is unknown
      */
     @Transactional
     fun updateRunStatus(transactionId: UUID, status: IngestionRunStatus) {
         val run = ingestionRunRepository
             .findByIdOrNull(transactionId)
-            ?: throw IllegalArgumentException("Run with id $transactionId not found")
+            ?: throw IngestionRunNotFoundException(transactionId)
         run.status = status
     }
 
@@ -180,13 +181,13 @@ class ArtifactIngestionService(
      * error details without scanning connector logs.
      *
      * @param command [ArtifactFailedCommand] The command for a failed artifact containing all data needed.
-     * @throws IllegalArgumentException when the run id is unknown
+     * @throws IngestionRunNotFoundException when the run id is unknown
      */
     @Transactional
     fun addFailedArtifact(command: ArtifactFailedCommand) {
         val run = ingestionRunRepository
             .findByIdOrNull(command.transactionId)
-            ?: throw IllegalArgumentException("Run with id ${command.transactionId} not found")
+            ?: throw IngestionRunNotFoundException(command.transactionId)
         run.failedItems.add(
             FailedArtifact(
                 sourceId = command.sourceId,

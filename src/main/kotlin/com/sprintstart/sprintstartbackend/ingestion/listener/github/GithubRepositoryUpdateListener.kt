@@ -1,7 +1,7 @@
-package com.sprintstart.sprintstartbackend.ingestion.listener
+package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
-import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.update.GithubRepositoryUpdateStartedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
@@ -9,12 +9,12 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
-internal class GithubRepositoryConnectionListener(
+internal class GithubRepositoryUpdateListener(
     private val artifactIngestionService: ArtifactIngestionService,
 ) {
     @EventListener
     fun on(
-        event: GithubRepositoryConnectionInitiatedEvent,
+        event: GithubRepositoryUpdateStartedEvent,
     ) {
         artifactIngestionService
             .startRun(
@@ -26,7 +26,7 @@ internal class GithubRepositoryConnectionListener(
 
     @EventListener
     fun on(
-        event: GithubRepositoryConnectionInitiationFailedEvent,
+        event: GithubRepositoryUpdateFailedEvent,
     ) {
         artifactIngestionService
             .startRun(

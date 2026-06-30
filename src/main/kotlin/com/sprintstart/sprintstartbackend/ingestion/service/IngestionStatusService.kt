@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceIng
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
@@ -57,13 +58,13 @@ class IngestionStatusService(
      *
      * @param runId The unique identifier of the ingestion run whose phase has finished.
      * @param finishedType The GitHub fetch phase that reached a terminal state.
-     * @throws NoSuchElementException when the run id does not exist
+     * @throws IngestionRunNotFoundException when the run id does not exist
      */
     @Transactional
     fun markFetchPhaseFinished(runId: UUID, finishedType: FinishedTypes) {
         val run = ingestionRunRepository
             .findById(runId)
-            .orElseThrow { NoSuchElementException("Run with id $runId not found") }
+            .orElseThrow { IngestionRunNotFoundException(runId) }
         run.finishedTypes.add(finishedType)
         if (run.finishedTypes.containsAll(FinishedTypes.entries)) {
             if (run.failedCount > 0) {

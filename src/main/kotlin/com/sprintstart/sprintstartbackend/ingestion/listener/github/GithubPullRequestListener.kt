@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.ingestion.listener
+package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
@@ -20,7 +20,7 @@ internal class GithubPullRequestListener(
     fun on(
         event: GithubPullRequestFetchedEvent,
     ) {
-        artifactIngestionService.ingest(githubArtifactMapper.toCommand(event))
+        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener

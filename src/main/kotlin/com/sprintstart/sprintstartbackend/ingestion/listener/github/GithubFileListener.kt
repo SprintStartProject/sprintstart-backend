@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.ingestion.listener
+package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
@@ -24,7 +24,7 @@ internal class GithubFileListener(
     fun on(
         event: GithubFileFetchedEvent,
     ) {
-        artifactIngestionService.ingest(githubArtifactMapper.toCommand(event))
+        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener

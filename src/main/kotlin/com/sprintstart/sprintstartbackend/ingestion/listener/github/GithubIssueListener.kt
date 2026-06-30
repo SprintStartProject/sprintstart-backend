@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.ingestion.listener
+package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.github.external.events.issues.GithubIssuesFetchCompletedEvent
@@ -20,7 +20,7 @@ internal class GithubIssueListener(
     fun on(
         event: GithubIssueFetchedEvent,
     ) {
-        artifactIngestionService.ingest(githubArtifactMapper.toCommand(event))
+        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener

@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -88,7 +89,7 @@ class IngestionStatusServiceCompletionTest {
         every { ingestionRunRepository.findById(runId) } returns Optional.empty()
 
         assertThatThrownBy { service.markFetchPhaseFinished(runId, FinishedTypes.FILES) }
-            .isInstanceOf(NoSuchElementException::class.java)
+            .isInstanceOf(IngestionRunNotFoundException::class.java)
             .hasMessageContaining(runId.toString())
     }
 
