@@ -8,6 +8,6 @@ import kotlinx.serialization.Serializable
 data class AddPatRequest(
     @NotBlank
     val name: String,
-    @Pattern(regexp = """^ghp_[a-zA-Z0-9]{36}$""")
+    @Pattern(regexp = """^(ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]+)$""")
     val token: String,
 )

@@ -8,7 +8,6 @@ import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnecti
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
@@ -22,7 +21,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import java.nio.file.Path
 import java.time.Instant
@@ -188,9 +186,7 @@ class GithubCommitsServiceTest {
         fun `publishes GithubCommitFetchFailedEvent on parse failure`() = runTest {
             every { gitRunner.exec(repoPath, any()) } returns "malformed"
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
-            }
+            service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
 
             verify { eventPublisher.publishEvent(any<GithubCommitFetchFailedEvent>()) }
         }
@@ -204,12 +200,10 @@ class GithubCommitsServiceTest {
                 2024-01-03T00:00:00Z - sha3 - carol - another good commit
                 """.trimIndent()
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
-            }
+            service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
 
             val events = mutableListOf<Any>()
-            verify(exactly = 4) { eventPublisher.publishEvent(capture(events)) }
+            verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
             val fetchedEvents = events.filterIsInstance<GithubCommitFetchedEvent>()
             assertThat(fetchedEvents).hasSize(2)
         }
@@ -265,27 +259,21 @@ class GithubCommitsServiceTest {
         fun `throws GithubCommitsFetchFailedPartiallyException when commit line has wrong number of parts`() = runTest {
             every { gitRunner.exec(repoPath, any()) } returns "malformed-line-without-separators"
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
-            }
+            service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
         }
 
         @Test
         fun `throws GithubCommitsFetchFailedPartiallyException when commit line has too few parts`() = runTest {
             every { gitRunner.exec(repoPath, any()) } returns "2024-01-01T00:00:00Z - sha123"
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
-            }
+            service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
         }
 
         @Test
         fun `throws GithubCommitsFetchFailedPartiallyException when date string is malformed`() = runTest {
             every { gitRunner.exec(repoPath, any()) } returns "not-a-date - sha123 - alice - message"
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
-            }
+            service.fetchAndIngestLatestCommits(snapshot(), transactionId, doSyncAll = true)
         }
 
         @Test

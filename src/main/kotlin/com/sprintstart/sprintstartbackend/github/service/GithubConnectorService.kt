@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -190,10 +191,6 @@ class GithubConnectorService(
             throw e
         }.getOrNull() ?: return
 
-        val newSnapshot = GithubRepositorySnapshot(
-            repository = githubRepository,
-        )
-
         eventPublisher.publishEvent(
             GithubRepositoryResourcesFetchingStartedEvent(
                 transactionId,
@@ -226,7 +223,7 @@ class GithubConnectorService(
             )
         }
 
-        repoSnapshotRepository.save(newSnapshot)
+        repoSnapshotRepository.updateSyncTimestamps(githubRepository.id, Instant.now())
     }
 
     /**

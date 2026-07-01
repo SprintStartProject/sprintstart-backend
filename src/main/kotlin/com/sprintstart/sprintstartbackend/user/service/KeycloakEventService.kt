@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.config.KeycloakRoleMapper
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.dto.KeycloakEventRequest
 import com.sprintstart.sprintstartbackend.user.model.entity.User
@@ -81,7 +80,7 @@ class KeycloakEventService(
     /**
      * Creates a new user from a Keycloak registration event.
      *
-     * The user starts with [WorkingArea.NO_WORKING_AREA] and receives the subset of
+     * The user starts with no project roles assigned and receives the subset of
      * realm roles that map to roles known by this module.
      *
      * @param request Registration event payload.
@@ -98,7 +97,6 @@ class KeycloakEventService(
             lastname = request.lastName
                 ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "lastName must not be null"),
             enabled = request.enabled ?: true,
-            workingArea = WorkingArea.NO_WORKING_AREA,
         )
 
         newUser.roles.addAll(mappedRoles(request.realmRoles))

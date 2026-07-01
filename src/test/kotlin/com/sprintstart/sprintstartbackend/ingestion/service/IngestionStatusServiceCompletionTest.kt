@@ -25,7 +25,7 @@ class IngestionStatusServiceCompletionTest {
     @Test
     fun `markFetchPhaseFinished keeps run running until all phases complete`() {
         val run = ingestionRun()
-        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+        every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
 
         service.markFetchPhaseFinished(run.id, FinishedTypes.FILES)
 
@@ -44,7 +44,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.ISSUES,
             ),
         )
-        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+        every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
 
         service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
@@ -65,7 +65,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.ISSUES,
             ),
         )
-        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+        every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
 
         service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
@@ -83,7 +83,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.ISSUES,
             ),
         )
-        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+        every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
 
         service.markFetchPhaseFinished(run.id, FinishedTypes.PULL_REQUESTS)
 
@@ -94,7 +94,7 @@ class IngestionStatusServiceCompletionTest {
     @Test
     fun `markFetchPhaseFinished throws when run is missing`() {
         val runId = UUID.randomUUID()
-        every { ingestionRunRepository.findById(runId) } returns Optional.empty()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.empty()
 
         assertThatThrownBy { service.markFetchPhaseFinished(runId, FinishedTypes.FILES) }
             .isInstanceOf(IngestionRunNotFoundException::class.java)

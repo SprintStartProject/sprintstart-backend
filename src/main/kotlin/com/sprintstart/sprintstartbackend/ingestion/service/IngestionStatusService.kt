@@ -66,7 +66,7 @@ class IngestionStatusService(
     @Transactional
     fun markFetchPhaseFinished(runId: UUID, finishedType: FinishedTypes) {
         val run = ingestionRunRepository
-            .findById(runId)
+            .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
         run.finishedTypes.add(finishedType)
         if (run.finishedTypes.containsAll(FinishedTypes.entries)) {

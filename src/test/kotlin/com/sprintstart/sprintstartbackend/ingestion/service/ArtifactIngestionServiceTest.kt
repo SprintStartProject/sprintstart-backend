@@ -35,21 +35,26 @@ class ArtifactIngestionServiceTest {
 
     @BeforeEach
     fun setUp() {
+        val run = ingestionRun()
+        every { ingestionRunRepository.existsById(runId) } returns true
+        every { ingestionRunRepository.getReferenceById(runId) } returns run
         every { artifactRepository.save(any()) } answers { firstArg() }
+        every { ingestionRunRepository.incrementIngestedCount(any()) } just runs
+        every { ingestionRunRepository.incrementUpdatedCount(any()) } just runs
     }
 
     @Test
     fun `ingest saves new artifact and increments ingested count`() {
         val run = ingestionRun()
+        every { ingestionRunRepository.existsById(runId) } returns true
+        every { ingestionRunRepository.getReferenceById(runId) } returns run
         val savedArtifact = slot<Artifact>()
-        every { ingestionRunRepository.findById(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId("github:owner/repo:FILE:src/main/App.kt") } returns null
         every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
 
         service.persistArtifact(artifactCommand())
 
-        assertThat(run.ingestedCount).isEqualTo(1)
-        assertThat(run.updatedCount).isZero()
+        verify { ingestionRunRepository.incrementIngestedCount(runId) }
         assertThat(savedArtifact.captured.sourceSystem).isEqualTo(SourceSystem.GITHUB)
         assertThat(savedArtifact.captured.sourceId).isEqualTo("github:owner/repo:FILE:src/main/App.kt")
         assertThat(savedArtifact.captured.title).isEqualTo("App.kt")
@@ -60,7 +65,7 @@ class ArtifactIngestionServiceTest {
 
     @Test
     fun `ingest throws when run does not exist`() {
-        every { ingestionRunRepository.findById(runId) } returns Optional.empty()
+        every { ingestionRunRepository.existsById(runId) } returns false
 
         assertThatThrownBy { service.persistArtifact(artifactCommand()) }
             .isInstanceOf(IngestionRunNotFoundException::class.java)
@@ -71,9 +76,7 @@ class ArtifactIngestionServiceTest {
 
     @Test
     fun `ingest ignores duplicate commit source id`() {
-        val run = ingestionRun()
         val existing = artifact(artifactType = ArtifactType.COMMIT, hash = null)
-        every { ingestionRunRepository.findById(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
 
         service.persistArtifact(
@@ -84,31 +87,27 @@ class ArtifactIngestionServiceTest {
             ),
         )
 
-        assertThat(run.ingestedCount).isZero()
-        assertThat(run.updatedCount).isZero()
+        verify(exactly = 0) { ingestionRunRepository.incrementIngestedCount(any()) }
+        verify(exactly = 0) { ingestionRunRepository.incrementUpdatedCount(any()) }
         verify(exactly = 0) { artifactRepository.save(any()) }
     }
 
     @Test
     fun `ingest ignores unchanged file source id`() {
-        val run = ingestionRun()
         val existing = artifact(hash = "same-hash")
-        every { ingestionRunRepository.findById(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
 
         service.persistArtifact(artifactCommand(sourceId = existing.sourceId, hash = "same-hash"))
 
-        assertThat(run.ingestedCount).isZero()
-        assertThat(run.updatedCount).isZero()
         assertThat(existing.bodyText).isEqualTo("old content")
+        verify(exactly = 0) { ingestionRunRepository.incrementIngestedCount(any()) }
+        verify(exactly = 0) { ingestionRunRepository.incrementUpdatedCount(any()) }
         verify(exactly = 0) { artifactRepository.save(any()) }
     }
 
     @Test
     fun `ingest updates changed file and increments updated count`() {
-        val run = ingestionRun()
         val existing = artifact(hash = "old-hash")
-        every { ingestionRunRepository.findById(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
 
         service.persistArtifact(
@@ -119,8 +118,8 @@ class ArtifactIngestionServiceTest {
             ),
         )
 
-        assertThat(run.ingestedCount).isZero()
-        assertThat(run.updatedCount).isEqualTo(1)
+        verify { ingestionRunRepository.incrementUpdatedCount(runId) }
+        verify(exactly = 0) { ingestionRunRepository.incrementIngestedCount(any()) }
         assertThat(existing.bodyText).isEqualTo("new content")
         assertThat(existing.hash).isEqualTo("new-hash")
         verify(exactly = 0) { artifactRepository.save(any()) }

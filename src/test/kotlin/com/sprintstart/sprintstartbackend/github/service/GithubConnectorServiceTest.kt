@@ -28,7 +28,9 @@ import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.runs
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -238,7 +240,7 @@ class GithubConnectorServiceTest {
 
             service.updateRepository(updateRequest())
 
-            coVerify { repoSnapshotRepository.save(any()) }
+            coVerify { repoSnapshotRepository.updateSyncTimestamps(any(), any()) }
         }
 
         @Test
@@ -370,7 +372,7 @@ class GithubConnectorServiceTest {
 
     private fun stubSuccessfulUpdate(repo: GithubRepositoryConnection) {
         every { repoSnapshotRepository.findLatestByRepository(repo.id) } returns repoSnapshot(repo)
-        every { repoSnapshotRepository.save(any()) } answers { firstArg() }
+        every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs
         coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
         coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any(), any()) }
         coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }

@@ -10,7 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintReposit
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -52,7 +52,9 @@ class OnboardingPersonalizationServiceTest {
     private val authId = "auth|test-user"
     private val profile = UserOnboardingProfile(
         id = userId,
-        workingArea = WorkingArea.BACKEND_DEV,
+        projectRoles = listOf(
+            ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
+        ),
     )
 
     @Nested
@@ -67,7 +69,33 @@ class OnboardingPersonalizationServiceTest {
         }
 
         @Test
-        fun `calls ensureScopesExist with global and area derived from working area`() = runTest {
+        fun `throws 400 when user has no project role assigned`() {
+            val profileWithNoRoles = UserOnboardingProfile(id = userId, projectRoles = emptyList())
+            every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileWithNoRoles)
+
+            val ex = assertThrows<ResponseStatusException> { service.personalize(authId) }
+
+            assertEquals(400, ex.statusCode.value())
+        }
+
+        @Test
+        fun `throws 400 when user has more than one project role assigned`() {
+            val profileWithTwoRoles = UserOnboardingProfile(
+                id = userId,
+                projectRoles = listOf(
+                    ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
+                    ProjectRoleDto(roleId = UUID.randomUUID(), name = "Frontend", description = "Frontend work"),
+                ),
+            )
+            every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileWithTwoRoles)
+
+            val ex = assertThrows<ResponseStatusException> { service.personalize(authId) }
+
+            assertEquals(400, ex.statusCode.value())
+        }
+
+        @Test
+        fun `calls ensureScopesExist with global and area derived from project role`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
             coEvery { blueprintService.ensureScopesExist(listOf("global", "area:backend")) } just runs
             every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null

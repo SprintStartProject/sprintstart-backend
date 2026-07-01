@@ -163,8 +163,8 @@ class OnboardingPathServiceTest {
             val user1Id = UUID.randomUUID()
             val user2Id = UUID.randomUUID()
 
-            val user1 = UserDto(user1Id, "u1", "f1", "l1", null, "DEV", null, emptyList(), emptyList())
-            val user2 = UserDto(user2Id, "u2", "f2", "l2", null, "DEV", null, emptyList(), emptyList())
+            val user1 = UserDto(user1Id, "u1", "f1", "l1", null, null, emptyList(), emptyList())
+            val user2 = UserDto(user2Id, "u2", "f2", "l2", null, null, emptyList(), emptyList())
 
             every { userApi.searchUsers(null, null, null, Pageable.unpaged()) } returns PageImpl(listOf(user1, user2))
             every { onboardingPathRepository.findByUserIdIn(listOf(user1Id, user2Id)) } returns listOf(

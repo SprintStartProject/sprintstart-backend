@@ -47,6 +47,8 @@ class GithubUserControllerTest {
 
     private val authId = "test-auth-id"
     private val validTokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    private val validFineGrainedToken =
+        "github_pat_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890123"
 
     private val userJwt = jwt()
         .jwt { it.subject(authId) }
@@ -133,6 +135,20 @@ class GithubUserControllerTest {
         }
 
         @Test
+        fun `should return 201 when fine-grained PAT is added`() {
+            val request = AddPatRequest("my-token", validFineGrainedToken)
+            every { githubUserService.addPAT(authId, any()) } just Runs
+
+            mockMvc
+                .perform(
+                    post("/api/v1/github/pat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(userJwt),
+                ).andExpect(status().isCreated)
+        }
+
+        @Test
         fun `should return 400 when token pattern is invalid`() {
             val request = AddPatRequest(validTokenName, "invalid-token")
 
@@ -213,6 +229,20 @@ class GithubUserControllerTest {
                         .content(objectMapper.writeValueAsString(request))
                         .with(userJwt),
                 ).andExpect(status().isNotFound)
+        }
+
+        @Test
+        fun `should return 200 when PAT is rotated to fine-grained token`() {
+            val request = UpdatePatRequest(validTokenName, validFineGrainedToken)
+            every { githubUserService.updatePAT(authId, any()) } just Runs
+
+            mockMvc
+                .perform(
+                    put("/api/v1/github/pat/update")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(userJwt),
+                ).andExpect(status().isOk)
         }
 
         @Test

@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.entity
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
 import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column
 import jakarta.persistence.ElementCollection
@@ -43,9 +42,6 @@ class User(
     )
     @Column(name = "role", nullable = false)
     val roles: MutableSet<Role> = mutableSetOf(),
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    var workingArea: WorkingArea,
     @Column(nullable = true)
     var avatarUrl: String? = null,
     @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)

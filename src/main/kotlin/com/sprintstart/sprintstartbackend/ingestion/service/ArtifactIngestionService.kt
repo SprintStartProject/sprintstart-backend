@@ -53,10 +53,11 @@ class ArtifactIngestionService(
      */
     @Transactional
     fun persistArtifact(command: ArtifactCommand) {
+        val runId = command.ingestionRunId
+        if (!ingestionRunRepository.existsById(runId)) {
+            throw IngestionRunNotFoundException(runId)
+        }
         var artifact: Artifact?
-        val ingestionRun = ingestionRunRepository
-            .findByIdOrNull(command.ingestionRunId)
-            ?: throw IngestionRunNotFoundException(command.ingestionRunId)
         when (command.artifactType) {
             ArtifactType.COMMIT,
             -> {
@@ -73,7 +74,7 @@ class ArtifactIngestionService(
                     if (artifact.hash != command.hash) {
                         artifact.bodyText = command.bodyText
                         artifact.hash = command.hash
-                        ingestionRun.updatedCount++
+                        ingestionRunRepository.incrementUpdatedCount(runId)
                     }
                     return
                 }
@@ -86,7 +87,7 @@ class ArtifactIngestionService(
                     if (artifact.hash != command.hash) {
                         artifact.title = command.title
                         artifact.bodyText = command.bodyText
-                        ingestionRun.updatedCount++
+                        ingestionRunRepository.incrementUpdatedCount(runId)
                     }
                     return
                 }
@@ -98,12 +99,13 @@ class ArtifactIngestionService(
                 if (artifact != null) {
                     artifact.title = command.title
                     artifact.bodyText = command.bodyText
-                    ingestionRun.updatedCount++
+                    ingestionRunRepository.incrementUpdatedCount(runId)
                     return
                 }
             }
         }
 
+        val ingestionRun = ingestionRunRepository.getReferenceById(runId)
         artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
@@ -119,8 +121,7 @@ class ArtifactIngestionService(
             updatedAtSource = null,
         )
         artifactRepository.save(artifact)
-
-        ingestionRun.ingestedCount++
+        ingestionRunRepository.incrementIngestedCount(runId)
     }
 
     /**

@@ -8,7 +8,6 @@ import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubC
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.github.models.client.dto.Commit
-import com.sprintstart.sprintstartbackend.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.github.util.CustomOnDiskCache
 import com.sprintstart.sprintstartbackend.github.util.GitOperationRunner
 import com.sprintstart.sprintstartbackend.github.util.OnDiskOperations
@@ -61,7 +60,15 @@ class GithubCommitsService(
             .forEach { line -> processCommitLine(latestSnapshot.repository, line, transactionId, failures) }
 
         if (failures.isNotEmpty()) {
-            throw GithubCommitsFetchFailedPartiallyException(failures.joinToString("\n"))
+            eventPublisher.publishEvent(
+                GithubCommitsFetchFailedEvent(
+                    transactionId,
+                    latestSnapshot.repository.owner,
+                    latestSnapshot.repository.name,
+                    failures.joinToString("\n"),
+                ),
+            )
+            return
         }
 
         eventPublisher.publishEvent(
