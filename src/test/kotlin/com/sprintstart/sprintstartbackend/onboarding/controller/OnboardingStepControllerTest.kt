@@ -51,6 +51,10 @@ class OnboardingStepControllerTest(
     private lateinit var onboardingStepService: OnboardingStepService
 
     @MockkBean
+    private lateinit var onboardingPathService:
+        com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
+
+    @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
     private val phaseId = UUID.randomUUID()
@@ -95,8 +99,6 @@ class OnboardingStepControllerTest(
         type = StepType.VIDEO,
         estimatedMinutes = 20,
         expectedOutcome = "You will know Y",
-        status = StepStatus.FINISHED,
-        skipReason = null,
     )
 
     private fun buildGetStepResponse() = GetOnboardingStepResponse(
@@ -111,7 +113,7 @@ class OnboardingStepControllerTest(
         resources = emptyList(),
         status = StepStatus.WAITING,
         completedAt = null,
-        skipReason = null,
+        skip = null,
     )
 
     private fun buildGetStepsResponse() = GetOnboardingStepsResponse(
@@ -124,7 +126,7 @@ class OnboardingStepControllerTest(
         estimatedMinutes = 30,
         status = StepStatus.WAITING,
         completedAt = null,
-        skipReason = null,
+        skip = null,
     )
 
     private fun buildCreateStepResponse() = CreateOnboardingStepResponse(
@@ -149,7 +151,7 @@ class OnboardingStepControllerTest(
         expectedOutcome = "You will know Y",
         status = StepStatus.FINISHED,
         completedAt = null,
-        skipReason = null,
+        skip = null,
     )
 
     // ========================== /me endpoints ==========================
@@ -297,6 +299,44 @@ class OnboardingStepControllerTest(
     }
 
     @Test
+    fun `completeOnboardingStepForMe should return 200 and updated step`() {
+        every { onboardingStepService.completeOnboardingStepForMe(authId, stepId) } returns buildUpdateStepResponse()
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/complete").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingStepService.completeOnboardingStepForMe(authId, stepId) }
+    }
+
+    @Test
+    fun `completeOnboardingStepForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/complete"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `completeOnboardingStepForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/complete").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `completeOnboardingStepForMe should return 404 when step not found`() {
+        every { onboardingStepService.completeOnboardingStepForMe(authId, stepId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/complete").with(userJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingStepService.completeOnboardingStepForMe(authId, stepId) }
+    }
+
+    @Test
     fun `deleteOnboardingStepForMe should return 204`() {
         every { onboardingStepService.deleteOnboardingStepForMe(authId, stepId) } just Runs
 
@@ -319,6 +359,44 @@ class OnboardingStepControllerTest(
         mockMvc
             .perform(delete("/api/v1/onboarding/me/steps/$stepId").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 200 and updated step`() {
+        every { onboardingStepService.startOnboardingStepForMe(authId, stepId) } returns buildUpdateStepResponse()
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { onboardingStepService.startOnboardingStepForMe(authId, stepId) }
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `startOnboardingStepForMe should return 404 when step not found`() {
+        every { onboardingStepService.startOnboardingStepForMe(authId, stepId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(put("/api/v1/onboarding/me/steps/$stepId/start").with(userJwt))
+            .andExpect(status().isNotFound)
+
+        verify(exactly = 1) { onboardingStepService.startOnboardingStepForMe(authId, stepId) }
     }
 
     // ========================== Admin endpoints ==========================

@@ -10,5 +10,6 @@ data class KeycloakEventRequest(
     val email: String?,
     val firstName: String?,
     val lastName: String?,
+    val enabled: Boolean? = null,
     val realmRoles: Set<String> = emptySet(),
 )

@@ -7,12 +7,16 @@ import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateAllR
 import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateRepositoryResponse
 import com.sprintstart.sprintstartbackend.github.service.GithubConnectorService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -71,10 +75,16 @@ internal class GithubConnectorController(
     )
     @PostMapping("/connect")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('USER')")
     suspend fun connectRepository(
-        @Valid @RequestBody request: ConnectRepositoryRequest,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal
+        jwt: Jwt,
+        @Valid
+        @RequestBody
+        request: ConnectRepositoryRequest,
     ): ResponseEntity<ConnectRepositoryResponse> {
-        val transactionId = githubConnectorService.connectRepositoryIfExists(request)
+        val transactionId = githubConnectorService.connectRepositoryIfExists(jwt.subject, request)
         return ResponseEntity.accepted().body(ConnectRepositoryResponse(transactionId))
     }
 
@@ -102,9 +112,10 @@ internal class GithubConnectorController(
     )
     @PostMapping("/update-all")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('USER')")
     suspend fun updateAllRepositories(): ResponseEntity<UpdateAllRepositoriesResponse> {
-        val transactionId = githubConnectorService.updateAllRepositories()
-        return ResponseEntity.accepted().body(UpdateAllRepositoriesResponse(transactionId))
+        val response = githubConnectorService.updateAllRepositories()
+        return ResponseEntity.accepted().body(response)
     }
 
     /**
@@ -129,10 +140,11 @@ internal class GithubConnectorController(
     )
     @PostMapping("/update")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('USER')")
     suspend fun updateRepository(
         @Valid @RequestBody request: UpdateRepositoryRequest,
     ): ResponseEntity<UpdateRepositoryResponse> {
-        val transactionId = githubConnectorService.updateRepository(request)
-        return ResponseEntity.accepted().body(UpdateRepositoryResponse(transactionId))
+        val response = githubConnectorService.updateRepository(request)
+        return ResponseEntity.accepted().body(response)
     }
 }

@@ -1,6 +1,4 @@
-@ApplicationModule(
-        type = ApplicationModule.Type.OPEN
-)
+@NamedInterface("api")
 package com.sprintstart.sprintstartbackend.github.external;
 
-import org.springframework.modulith.ApplicationModule;
+import org.springframework.modulith.NamedInterface;

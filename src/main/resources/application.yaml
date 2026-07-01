@@ -8,6 +8,9 @@ sprintstart:
     repo-base-url: "https://api.github.com/repos"
     token: ${GITHUB_PAT}
     cron: "0 2 * * 1" # Every Monday night at 2:00 am
+  crypto:
+    master-key: ${CRYPTO_MASTER_KEY}
+    salt: ${CRYPTO_SALT}
 
 spring:
   config:
@@ -25,12 +28,16 @@ spring:
     hibernate:
       ddl-auto: update # create-drop
     show-sql: true
+  mvc:
+    async:
+      request-timeout: 600000
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/realms/sprintstart}
-          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/realms/sprintstart/protocol/openid-connect/certs}
+          issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/auth/realms/sprintstart}
+          jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/auth/realms/sprintstart/protocol/openid-connect/certs}
 
 app:
   upload:

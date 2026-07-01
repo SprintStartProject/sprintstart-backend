@@ -13,4 +13,6 @@ interface OnboardingPathRepository : JpaRepository<OnboardingPath, UUID> {
     fun existsByUserId(userId: UUID): Boolean
 
     fun findByUserId(userId: UUID): Optional<OnboardingPath>
+
+    fun findByUserIdIn(userIds: Collection<UUID>): List<OnboardingPath>
 }

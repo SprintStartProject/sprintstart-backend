@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.dto
 
-import com.sprintstart.sprintstartbackend.user.external.enums.WorkingArea
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import java.util.UUID
 
 data class GetUserResponse(
@@ -8,7 +8,16 @@ data class GetUserResponse(
     val authId: String,
     val username: String,
     val email: String? = null,
-    val firstname: String,
-    val lastname: String,
-    val workingArea: WorkingArea,
+    val firstName: String,
+    val lastName: String,
+    val projectRoles: List<ProjectRoleSummary>,
+    val permissionGroup: Role,
+    val enabled: Boolean,
+    val profileIcon: String? = null,
+    val hasCompletedOnboarding: Boolean,
+)
+
+data class ProjectRoleSummary(
+    val id: UUID,
+    val name: String,
 )

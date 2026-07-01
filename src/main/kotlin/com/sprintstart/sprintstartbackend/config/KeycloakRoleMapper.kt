@@ -15,4 +15,12 @@ object KeycloakRoleMapper {
             .mapNotNull { realmRoleMapping[it] }
             .toSet()
     }
+
+    fun toRealmRole(role: Role): String {
+        return realmRoleMapping.entries
+            .first { it.value == role }
+            .key
+    }
+
+    fun managedRealmRoles(): Set<String> = realmRoleMapping.keys
 }

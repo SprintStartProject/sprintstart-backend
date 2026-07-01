@@ -58,7 +58,7 @@ class ChatAiClient(
      * The caller is responsible for collecting on an appropriate dispatcher / scope.
      *
      * Each emitted [AiStreamMessage] has already been filtered for type:
-     * - `token` and `citation` chunks pass through.
+     * - `token`, `citation` and `tool_use` chunks pass through.
      * - `done` terminates the stream normally.
      * - `error` chunks terminate the stream with [AiResponseException].
      *
@@ -77,10 +77,10 @@ class ChatAiClient(
                     System.err.println("AiClient: skipping malformed SSE chunk '$raw': ${err.message}")
                     true
                 },
-            ).map { message ->
-                when (message.type) {
-                    "error" -> throw AiResponseException("AI responded with error: ${message.content}")
-                    else -> message // token, citation — pass through
+            ).map { chunk ->
+                when (chunk.type) {
+                    "error" -> throw AiResponseException("AI responded with error: ${chunk.message}")
+                    else -> chunk // token, citation, tool_use — pass through
                 }
             }
 

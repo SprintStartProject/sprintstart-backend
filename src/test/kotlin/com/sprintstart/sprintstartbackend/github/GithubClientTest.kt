@@ -2,7 +2,11 @@ package com.sprintstart.sprintstartbackend.github
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
+import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import io.mockk.every
@@ -43,9 +47,9 @@ class GithubClientTest {
             github = GithubConfig(
                 baseUrl = baseUrl,
                 repoBaseUrl = repoBaseUrl,
-                token = "test-token",
                 cron = "0 0 * * *",
             ),
+            crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
         )
 
         queryLoader = mockk {
@@ -76,6 +80,11 @@ class GithubClientTest {
     inner class RepositoryExists {
         @Test
         fun `repositoryExists returns true when GitHub responds with 2xx`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(
                 MockResponse()
                     .setResponseCode(200)
@@ -83,13 +92,18 @@ class GithubClientTest {
                     .setBody("{}"),
             )
 
-            val result = runBlocking { githubClient.repositoryExists("owner", "repo") }
+            val result = runBlocking { githubClient.repositoryExists(repository) }
 
             assertThat(result).isTrue()
         }
 
         @Test
         fun `repositoryExists returns false when GitHub responds with 404`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(
                 MockResponse()
                     .setResponseCode(404)
@@ -97,17 +111,22 @@ class GithubClientTest {
                     .setBody("""{"message": "Not Found"}"""),
             )
 
-            val result = runBlocking { githubClient.repositoryExists("owner", "repo") }
+            val result = runBlocking { githubClient.repositoryExists(repository) }
 
             assertThat(result).isFalse()
         }
 
         @Test
         fun `repositoryExists propagates exception on non-404 error`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
 
             assertThatThrownBy {
-                runBlocking { githubClient.repositoryExists("owner", "repo") }
+                runBlocking { githubClient.repositoryExists(repository) }
             }.hasMessageContaining("500")
         }
     }
@@ -116,9 +135,14 @@ class GithubClientTest {
     inner class FetchIssues {
         @Test
         fun `fetchIssues uses all-issues query when no sinceTimestamp provided`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyIssuesResponse())
 
-            runBlocking { githubClient.fetchIssues("owner", "repo") }
+            runBlocking { githubClient.fetchIssues(repository) }
 
             verify { queryLoader.load("github/graphql/100-issues.graphql") }
             verify(exactly = 0) { queryLoader.load("github/graphql/issues-since.graphql") }
@@ -126,9 +150,14 @@ class GithubClientTest {
 
         @Test
         fun `fetchIssues uses since-query when sinceTimestamp is provided`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyIssuesResponse())
 
-            runBlocking { githubClient.fetchIssues("owner", "repo", sinceTimestamp = "2024-01-01T00:00:00Z") }
+            runBlocking { githubClient.fetchIssues(repository, sinceTimestamp = "2024-01-01T00:00:00Z") }
 
             verify { queryLoader.load("github/graphql/issues-since.graphql") }
             verify(exactly = 0) { queryLoader.load("github/graphql/100-issues.graphql") }
@@ -136,9 +165,14 @@ class GithubClientTest {
 
         @Test
         fun `fetchIssues passes sinceTimestamp in request variables`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyIssuesResponse())
 
-            runBlocking { githubClient.fetchIssues("owner", "repo", sinceTimestamp = "2024-01-01T00:00:00Z") }
+            runBlocking { githubClient.fetchIssues(repository, sinceTimestamp = "2024-01-01T00:00:00Z") }
 
             val recorded = mockWebServer.takeRequest()
             assertThat(recorded.body.readUtf8()).contains("2024-01-01T00:00:00Z")
@@ -149,9 +183,14 @@ class GithubClientTest {
     inner class FetchIssuesPagination {
         @Test
         fun `fetchIssues returns all issues from a single page`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(issuesResponse(issues = listOf(issueJson(1)), hasNextPage = false))
 
-            val result = runBlocking { githubClient.fetchIssues("owner", "repo") }
+            val result = runBlocking { githubClient.fetchIssues(repository) }
 
             assertThat(result).hasSize(1)
             assertThat(result.first().number).isEqualTo(1)
@@ -160,10 +199,15 @@ class GithubClientTest {
 
         @Test
         fun `fetchIssues paginates until hasNextPage is false`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(issuesResponse(listOf(issueJson(1)), hasNextPage = true, cursor = "cursor-abc"))
             mockWebServer.enqueue(issuesResponse(listOf(issueJson(2)), hasNextPage = false))
 
-            val result = runBlocking { githubClient.fetchIssues("owner", "repo") }
+            val result = runBlocking { githubClient.fetchIssues(repository) }
 
             assertThat(result).hasSize(2)
             assertThat(result.map { it.number }).containsExactly(1, 2)
@@ -171,10 +215,15 @@ class GithubClientTest {
 
         @Test
         fun `fetchIssues sends cursor in second request when paginating`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(issuesResponse(listOf(issueJson(1)), hasNextPage = true, cursor = "cursor-abc"))
             mockWebServer.enqueue(issuesResponse(listOf(issueJson(2)), hasNextPage = false))
 
-            runBlocking { githubClient.fetchIssues("owner", "repo") }
+            runBlocking { githubClient.fetchIssues(repository) }
 
             mockWebServer.takeRequest() // discard first
             val secondRequest = mockWebServer.takeRequest()
@@ -183,9 +232,14 @@ class GithubClientTest {
 
         @Test
         fun `fetchIssues returns empty list when repository has no issues`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyIssuesResponse())
 
-            val result = runBlocking { githubClient.fetchIssues("owner", "repo") }
+            val result = runBlocking { githubClient.fetchIssues(repository) }
 
             assertThat(result).isEmpty()
         }
@@ -195,19 +249,29 @@ class GithubClientTest {
     inner class FetchAllPullRequests {
         @Test
         fun `fetchAllPullRequests returns empty list when no PRs found`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyPrSearchResponse())
 
-            val result = runBlocking { githubClient.fetchAllPullRequests("owner", "repo") }
+            val result = runBlocking { githubClient.fetchAllPullRequests(repository) }
 
             assertThat(result).isEmpty()
         }
 
         @Test
         fun `fetchAllPullRequests includes sinceTimestamp in search query string when provided`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyPrSearchResponse())
 
             runBlocking {
-                githubClient.fetchAllPullRequests("owner", "repo", sinceTimestamp = "2024-01-01T00:00:00Z")
+                githubClient.fetchAllPullRequests(repository, sinceTimestamp = "2024-01-01T00:00:00Z")
             }
 
             val recorded = mockWebServer.takeRequest()
@@ -216,9 +280,14 @@ class GithubClientTest {
 
         @Test
         fun `fetchAllPullRequests does not include updated filter when sinceTimestamp is null`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyPrSearchResponse())
 
-            runBlocking { githubClient.fetchAllPullRequests("owner", "repo") }
+            runBlocking { githubClient.fetchAllPullRequests(repository) }
 
             val recorded = mockWebServer.takeRequest()
             assertThat(recorded.body.readUtf8()).doesNotContain("updated:>=")
@@ -226,10 +295,15 @@ class GithubClientTest {
 
         @Test
         fun `fetchAllPullRequests fetches details for each PR number found`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(prSearchResponse(listOf(prNodeJson(number = 42))))
             mockWebServer.enqueue(singlePrResponse(prNumber = 42))
 
-            val result = runBlocking { githubClient.fetchAllPullRequests("owner", "repo") }
+            val result = runBlocking { githubClient.fetchAllPullRequests(repository) }
 
             assertThat(result).hasSize(1)
             assertThat(result.first().number).isEqualTo(42)
@@ -237,19 +311,29 @@ class GithubClientTest {
 
         @Test
         fun `fetchAllPullRequests skips PR when details response returns null`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(prSearchResponse(listOf(prNodeJson(number = 99))))
             mockWebServer.enqueue(nullSinglePrResponse())
 
-            val result = runBlocking { githubClient.fetchAllPullRequests("owner", "repo") }
+            val result = runBlocking { githubClient.fetchAllPullRequests(repository) }
 
             assertThat(result).isEmpty()
         }
 
         @Test
         fun `fetchAllPullRequests sends auth header on every request`() {
+            val repository = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+            )
             mockWebServer.enqueue(emptyPrSearchResponse())
 
-            runBlocking { githubClient.fetchAllPullRequests("owner", "repo") }
+            runBlocking { githubClient.fetchAllPullRequests(repository) }
 
             val recorded = mockWebServer.takeRequest()
             assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer test-token")

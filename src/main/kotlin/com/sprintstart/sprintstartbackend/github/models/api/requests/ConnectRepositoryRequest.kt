@@ -10,4 +10,6 @@ data class ConnectRepositoryRequest(
     val owner: String,
     @NotBlank
     val name: String,
+    @NotBlank
+    val tokenName: String,
 )

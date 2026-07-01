@@ -44,6 +44,8 @@ class KeycloakEventController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Event accepted and processed"),
+            ApiResponse(responseCode = "400", description = "Required user fields are missing in the event payload"),
+            ApiResponse(responseCode = "404", description = "Referenced local user projection was not found"),
         ],
     )
     @PostMapping

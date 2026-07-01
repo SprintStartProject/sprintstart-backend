@@ -16,5 +16,8 @@ logs/
 *.log
 
 AGENTS.md
-
 docs/
+
+# Agent instructions
+GEMINI.md
+CLAUDE.md

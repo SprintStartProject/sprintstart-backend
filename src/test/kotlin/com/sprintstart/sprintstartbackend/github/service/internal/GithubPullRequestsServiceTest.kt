@@ -1,11 +1,16 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestComment
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReview
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThreadComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReview
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.CommentsConnection
 import com.sprintstart.sprintstartbackend.github.models.client.graphql.GithubActor
@@ -22,11 +27,13 @@ import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConn
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
 import java.time.Instant
 import java.util.Optional
@@ -40,7 +47,11 @@ class GithubPullRequestsServiceTest {
     private lateinit var service: GithubPullRequestsService
 
     private val transactionId = UUID.randomUUID()
-    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo")
+    private val user = GithubUser(
+        id = GithubUserPat("auth-id", "token-name"),
+        token = "test-token",
+    )
+    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo", user = user)
 
     @BeforeEach
     fun setUp() {
@@ -56,11 +67,11 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `fetches all pull requests without since filter when since is null`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns emptyList()
 
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId, since = null)
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = null)
 
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") }
+            coEvery { githubClient.fetchAllPullRequests(repo) }
         }
 
         @Test
@@ -68,12 +79,12 @@ class GithubPullRequestsServiceTest {
             val since = Instant.parse("2024-01-01T00:00:00Z")
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery {
-                githubClient.fetchAllPullRequests("owner", "repo", since.toString())
+                githubClient.fetchAllPullRequests(repo, since.toString())
             } returns emptyList()
 
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId, since = since)
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = since)
 
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo", since.toString()) }
+            coEvery { githubClient.fetchAllPullRequests(repo, since.toString()) }
         }
     }
 
@@ -82,26 +93,61 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `publishes one event per pull request plus summary`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(number = 1),
                 pullRequest(number = 2),
                 pullRequest(number = 3),
             )
 
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
             val events = mutableListOf<Any>()
-            io.mockk.verify(exactly = 4) { eventPublisher.publishEvent(capture(events)) }
+            verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
         }
 
         @Test
-        fun `publishes no events when there are no pull requests`() = runTest {
+        fun `publishes lifecycle events when there are no pull requests`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns emptyList()
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns emptyList()
 
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
-            io.mockk.verify(exactly = 0) { eventPublisher.publishEvent(any()) }
+            val events = mutableListOf<Any>()
+            verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
+            assertThat(events).anyMatch { it is GithubPullRequestsFetchStartedEvent }
+            assertThat(events).anyMatch { it is GithubPullRequestsFetchCompletedEvent }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingStartedEvent on start`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(any()) } returns emptyList()
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchStartedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingCompletedEvent on completion`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(any()) } returns emptyList()
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchCompletedEvent>()) }
+        }
+
+        @Test
+        fun `publishes GithubPullRequestsFetchingFailedEvent when API fails`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(any()) } throws RuntimeException("API error")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            }
+
+            verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchFailedEvent>()) }
         }
     }
 
@@ -110,9 +156,10 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps pull request fields to event correctly`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(
                     number = 42,
+                    title = "PR Title",
                     body = "PR body",
                     state = "MERGED",
                     createdAt = "2024-01-01T00:00:00Z",
@@ -125,14 +172,15 @@ class GithubPullRequestsServiceTest {
                 repoConnectionRepository.findById(any())
             } returns Optional.of(repo)
 
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
             with(eventSlot.captured) {
                 assertThat(number).isEqualTo(42)
+                assertThat(title).isEqualTo("PR Title")
                 assertThat(body).isEqualTo("PR body")
                 assertThat(state).isEqualTo("MERGED")
                 assertThat(createdAt).isEqualTo("2024-01-01T00:00:00Z")
@@ -146,13 +194,13 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps null author to null in event`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(authorLogin = null),
             )
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.author).isNull()
         }
@@ -160,13 +208,13 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps labels to list of name strings`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(labels = listOf("bug", "enhancement")),
             )
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.labels).containsExactly("bug", "enhancement")
         }
@@ -174,13 +222,13 @@ class GithubPullRequestsServiceTest {
         @Test
         fun `maps null labels to null in event`() = runTest {
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(
                 pullRequest(labels = null),
             )
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.labels).isNull()
         }
@@ -195,11 +243,11 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.reviews).containsExactly(
                 GithubPullRequestReview(body = "LGTM", state = "APPROVED", author = "reviewer"),
@@ -220,11 +268,11 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(eventSlot.captured.comments).containsExactly(
                 GithubPullRequestComment(body = "Nice work", author = "commenter", createdAt = "2024-01-01T00:00:00Z"),
@@ -251,11 +299,11 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             val thread = eventSlot.captured.reviewThreads!!.first()
             assertThat(thread.comments).containsExactly(
@@ -271,11 +319,11 @@ class GithubPullRequestsServiceTest {
                 ),
             )
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { githubClient.fetchAllPullRequests("owner", "repo") } returns listOf(pr)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pr)
 
             val eventSlot = slot<GithubPullRequestFetchedEvent>()
-            service.fetchAndIngestAllPullRequests(repo.id, transactionId)
-            io.mockk.verify { eventPublisher.publishEvent(capture(eventSlot)) }
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
 
             assertThat(
                 eventSlot.captured.reviewThreads!!
@@ -289,6 +337,7 @@ class GithubPullRequestsServiceTest {
 
     private fun pullRequest(
         number: Int = 1,
+        title: String = "TITLE",
         body: String? = "body",
         state: String = "OPEN",
         createdAt: String = "2024-01-01T00:00:00Z",
@@ -298,7 +347,7 @@ class GithubPullRequestsServiceTest {
         labels: List<String>? = emptyList(),
     ) = PullRequest(
         number = number,
-        title = "PR $number",
+        title = title,
         body = body,
         state = state,
         createdAt = createdAt,

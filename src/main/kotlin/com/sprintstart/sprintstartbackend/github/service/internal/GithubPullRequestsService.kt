@@ -1,13 +1,16 @@
 package com.sprintstart.sprintstartbackend.github.service.internal
 
 import com.sprintstart.sprintstartbackend.github.GithubClient
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestComment
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReview
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThread
-import com.sprintstart.sprintstartbackend.github.external.events.GithubPullRequestReviewThreadComment
-import com.sprintstart.sprintstartbackend.github.external.events.PullRequestsSyncStartedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReview
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThread
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -32,30 +35,51 @@ class GithubPullRequestsService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
-    suspend fun fetchAndIngestAllPullRequests(
+    @Tracked("Fetching all pull requests from repository")
+    internal suspend fun fetchAndIngestAllPullRequests(
         githubRepositoryId: UUID,
+        repositoryOwner: String,
+        repositoryName: String,
         transactionId: UUID,
         since: Instant? = null,
     ) {
-        val githubRepository = withContext(Dispatchers.IO) {
-            repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
-        }
-        val pullRequests = if (since == null) {
-            githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name)
-        } else {
-            githubClient.fetchAllPullRequests(githubRepository.owner, githubRepository.name, since.toString())
-        }
-
-        val jobStartedEvent = PullRequestsSyncStartedEvent(
-            transactionId = transactionId,
-            prNumbers = pullRequests.map { it.number },
+        eventPublisher.publishEvent(
+            GithubPullRequestsFetchStartedEvent(
+                transactionId,
+                repositoryOwner,
+                repositoryName,
+            ),
         )
-        eventPublisher.publishEvent(jobStartedEvent)
+
+        val pullRequests = runCatching {
+            val githubRepository = withContext(Dispatchers.IO) {
+                repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
+            }
+
+            if (since == null) {
+                githubClient.fetchAllPullRequests(githubRepository)
+            } else {
+                githubClient.fetchAllPullRequests(githubRepository, since.toString())
+            }
+        }.onFailure {
+            eventPublisher.publishEvent(
+                GithubPullRequestsFetchFailedEvent(
+                    transactionId,
+                    repositoryOwner,
+                    repositoryName,
+                    it.message ?: "Unknown error",
+                ),
+            )
+            throw it
+        }.getOrNull() ?: return
 
         pullRequests.forEach { pullRequest ->
             val event = GithubPullRequestFetchedEvent(
                 transactionId = transactionId,
+                repositoryOwner = repositoryOwner,
+                repositoryName = repositoryName,
                 number = pullRequest.number,
+                title = pullRequest.title,
                 body = pullRequest.body,
                 state = pullRequest.state,
                 createdAt = pullRequest.createdAt,
@@ -92,5 +116,13 @@ class GithubPullRequestsService(
 
             eventPublisher.publishEvent(event)
         }
+
+        eventPublisher.publishEvent(
+            GithubPullRequestsFetchCompletedEvent(
+                transactionId,
+                repositoryOwner,
+                repositoryName,
+            ),
+        )
     }
 }

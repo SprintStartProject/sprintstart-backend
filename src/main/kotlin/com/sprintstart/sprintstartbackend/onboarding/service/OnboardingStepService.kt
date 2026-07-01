@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
@@ -27,8 +28,7 @@ import kotlin.ranges.contains
 /**
  * Manages onboarding steps within a phase.
  *
- * Steps are ordered siblings under a phase. Position changes trigger sibling reordering,
- * and status updates also maintain completion metadata such as `completedAt` and `skipReason`.
+ * Steps are ordered siblings under a phase. Position changes trigger sibling reordering.
  */
 @Suppress("TooManyFunctions")
 @Service
@@ -109,23 +109,65 @@ class OnboardingStepService(
      * @return The requested step.
      * @throws ResponseStatusException When the user or step does not exist.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     fun getOnboardingStepForMe(authId: String, stepId: UUID): GetOnboardingStepResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
 
-        return onboardingStepRepository
+        val step = onboardingStepRepository
             .findByIdAndPhasePathUserId(stepId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
-            .toGetResponse()
+
+        return step.toGetResponse()
+    }
+
+    /**
+     * Marks a step in the authenticated user's onboarding path as in progress.
+     *
+     * The first time a step is started its [OnboardingStep.startedAt] timestamp is
+     * recorded so the time spent on the step can be tracked. Calling this again on an
+     * already started step is a no-op and keeps the original start timestamp. Finished
+     * or skipped steps cannot be started.
+     *
+     * @param authId External authentication identifier.
+     * @param stepId Identifier of the step to start.
+     * @return The updated step.
+     * @throws ResponseStatusException When the user or step does not exist, or the step
+     * is finished or skipped.
+     */
+    @Transactional
+    fun startOnboardingStepForMe(
+        authId: String,
+        stepId: UUID,
+    ): UpdateOnboardingStepResponse {
+        val userId = userApi
+            .getUserIdByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+        val step = onboardingStepRepository
+            .findByIdAndPhasePathUserId(stepId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+
+        if (step.status == StepStatus.FINISHED || step.status == StepStatus.SKIPPED) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be started")
+        }
+
+        if (step.status == StepStatus.WAITING) {
+            step.status = StepStatus.IN_PROGRESS
+        }
+        if (step.startedAt == null) {
+            step.startedAt = Instant.now()
+        }
+
+        return step.toUpdateResponse()
     }
 
     /**
      * Updates a step in the authenticated user's onboarding path.
      *
-     * Position changes reorder sibling steps. Status changes also update completion metadata:
-     * finished and skipped steps receive a completion timestamp, while waiting steps clear it.
+     * This endpoint only updates step metadata. Position changes reorder sibling
+     * steps. Status transitions are handled by dedicated endpoints.
      *
      * @param authId External authentication identifier.
      * @param stepId Identifier of the step to update.
@@ -156,9 +198,36 @@ class OnboardingStepService(
         step.estimatedMinutes = request.estimatedMinutes
         step.expectedOutcome = request.expectedOutcome
 
-        updateStatus(step, request)
+        return step.toUpdateResponse()
+    }
 
-        step.status = request.status
+    @Transactional
+    fun completeOnboardingStepForMe(
+        authId: String,
+        stepId: UUID,
+    ): UpdateOnboardingStepResponse {
+        val userId = userApi
+            .getUserIdByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+        val step = onboardingStepRepository
+            .findByIdAndPhasePathUserId(stepId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+
+        if (step.status != StepStatus.WAITING && step.status != StepStatus.IN_PROGRESS) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be completed")
+        }
+
+        val completedAt = Instant.now()
+        if (step.startedAt == null) {
+            step.startedAt = completedAt
+        }
+        step.completedAt = completedAt
+        if (step.skips.isNotEmpty() && step.skips.last().status == SkipStatus.PENDING) {
+            step.skips.removeLast()
+        }
+
+        step.status = StepStatus.FINISHED
 
         return step.toUpdateResponse()
     }
@@ -238,7 +307,7 @@ class OnboardingStepService(
             status = StepStatus.WAITING,
         )
 
-        return onboardingStep.toCreateResponse()
+        return onboardingStepRepository.save(onboardingStep).toCreateResponse()
     }
 
     /**
@@ -259,8 +328,8 @@ class OnboardingStepService(
     /**
      * Updates a step by ID.
      *
-     * Position changes reorder sibling steps. Status changes also update completion metadata:
-     * finished and skipped steps receive a completion timestamp, while waiting steps clear it.
+     * This endpoint only updates step metadata. Position changes reorder sibling
+     * steps. Status transitions are handled by dedicated endpoints.
      *
      * @param stepId Identifier of the step to update.
      * @param request Step update payload.
@@ -281,10 +350,6 @@ class OnboardingStepService(
         step.type = request.type
         step.estimatedMinutes = request.estimatedMinutes
         step.expectedOutcome = request.expectedOutcome
-
-        updateStatus(step, request)
-
-        step.status = request.status
 
         return step.toUpdateResponse()
     }
@@ -389,38 +454,6 @@ class OnboardingStepService(
                 )
 
             stepsToShift.forEach { it.position += 1 }
-        }
-    }
-
-    /**
-     * Updates completion metadata when the step status changes.
-     *
-     * Finished and skipped steps receive the current timestamp as their completion
-     * time. Skipped steps also store the provided skip reason, or a default reason
-     * if none was provided. Waiting steps are treated as incomplete and therefore
-     * have their completion metadata cleared.
-     */
-    private fun updateStatus(
-        step: OnboardingStep,
-        request: UpdateOnboardingStepRequest,
-    ) {
-        if (step.status != request.status) {
-            when (request.status) {
-                StepStatus.FINISHED -> {
-                    step.completedAt = Instant.now()
-                    step.skipReason = null
-                }
-
-                StepStatus.SKIPPED -> {
-                    step.completedAt = Instant.now()
-                    step.skipReason = request.skipReason ?: "No reason given"
-                }
-
-                StepStatus.WAITING -> {
-                    step.completedAt = null
-                    step.skipReason = ""
-                }
-            }
         }
     }
 }
