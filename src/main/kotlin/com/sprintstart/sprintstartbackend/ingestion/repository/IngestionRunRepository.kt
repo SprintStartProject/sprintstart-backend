@@ -21,6 +21,10 @@ interface IngestionRunRepository : JpaRepository<IngestionRun, UUID> {
 
     fun findFirstByOrderByStartedAtDesc(): IngestionRun?
 
+    /**
+     * Loads a run with a database write lock for lifecycle paths that mutate counters or
+     * collection-valued fields from independently delivered events.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM IngestionRun r WHERE r.id = :id")
     fun findByIdForUpdate(

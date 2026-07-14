@@ -20,7 +20,14 @@ import java.util.UUID
 class IngestionStatusServiceCompletionTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val publisher = mockk<ApplicationEventPublisher>(relaxed = true)
-    private val service = IngestionStatusService(ingestionRunRepository, publisher)
+    private val ingestionRunLifeCycleService = IngestionRunLifeCycleService(
+        ingestionRunRepository,
+        publisher,
+    )
+    private val service = GithubIngestionRunService(
+        ingestionRunRepository,
+        ingestionRunLifeCycleService,
+    )
 
     @Test
     fun `markFetchPhaseFinished keeps run running until all phases complete`() {
@@ -31,7 +38,7 @@ class IngestionStatusServiceCompletionTest {
 
         assertThat(run.finishedTypes).containsExactly(FinishedTypes.FILES)
         assertThat(run.status).isEqualTo(IngestionRunStatus.RUNNING)
-        assertThat(run.finishedAt).isNotNull()
+        assertThat(run.finishedAt).isNull()
         verify(exactly = 0) { publisher.publishEvent(any()) }
     }
 

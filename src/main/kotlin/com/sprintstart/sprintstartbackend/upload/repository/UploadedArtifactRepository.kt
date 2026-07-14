@@ -12,4 +12,6 @@ interface UploadedArtifactRepository : JpaRepository<UploadedArtifact, UUID> {
     ): List<UploadedArtifact>
 
     fun existsByHash(hash: String): Boolean
+
+    fun findByStoragePath(storagePath: String): UploadedArtifact?
 }

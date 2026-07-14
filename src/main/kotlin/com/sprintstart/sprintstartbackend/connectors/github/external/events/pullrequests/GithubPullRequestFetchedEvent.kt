@@ -29,6 +29,7 @@ import java.util.UUID
  */
 data class GithubPullRequestFetchedEvent(
     val transactionId: UUID,
+    val repositoryId: UUID,
     val repositoryOwner: String,
     val repositoryName: String,
     val number: Int,

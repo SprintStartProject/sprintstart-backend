@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.entity
 
+import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column
+import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
@@ -27,9 +29,20 @@ class Artifact(
     val artifactType: ArtifactType,
     var title: String?,
     @Column(columnDefinition = "TEXT")
-    var bodyText: String?,
+    var content: String?,
     val mime: String?,
     val language: String?,
+    @Column(nullable = false)
+    val metadata: String = "{}",
+    @ElementCollection
+    @CollectionTable(
+        name = "artifact_projects",
+        joinColumns = [JoinColumn(name = "artifact_id")],
+    )
+    @Column(name = "project_id", nullable = false)
+    // Add companion obj to Artifact to have Artifact.create
+    // to keep internal state hidden
+    private val projectIdsInternal: MutableSet<UUID> = mutableSetOf(),
     val createdAtSource: Instant?,
     val updatedAtSource: Instant?,
     @Column(nullable = false)
@@ -39,4 +52,15 @@ class Artifact(
     val ingestionRun: IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
-)
+) {
+    val projectIds: Set<UUID>
+        get() = projectIdsInternal.toSet()
+
+    fun addProjectIds(projectIds: Set<UUID>) {
+        projectIdsInternal.addAll(projectIds)
+    }
+
+    fun addProjectId(projectId: UUID) {
+        projectIdsInternal.add(projectId)
+    }
+}

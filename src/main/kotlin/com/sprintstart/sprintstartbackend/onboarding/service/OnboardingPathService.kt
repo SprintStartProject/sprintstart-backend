@@ -253,7 +253,7 @@ class OnboardingPathService(
             firstname = userDto.firstname,
             lastname = userDto.lastname,
             profileIcon = userDto.profileIcon,
-            project = userDto.project,
+            projectIds = userDto.projects,
             roles = userDto.projectRoles,
             skills = userSkills,
             progressPercentage = progressPercentage,

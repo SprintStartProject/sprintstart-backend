@@ -5,7 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.init
 import com.sprintstart.sprintstartbackend.ingestion.listener.github.GithubRepositoryConnectionListener
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
-import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
+import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -15,13 +15,13 @@ import org.junit.jupiter.api.Test
 import java.util.UUID
 
 class GithubRepositoryConnectionListenerTest {
-    private val artifactIngestionService = mockk<ArtifactIngestionService>()
-    private val listener = GithubRepositoryConnectionListener(artifactIngestionService)
+    private val ingestionRunLifeCycleService = mockk<IngestionRunLifeCycleService>()
+    private val listener = GithubRepositoryConnectionListener(ingestionRunLifeCycleService)
 
     @Test
     fun `initiated event starts connected github run`() {
         val runId = UUID.randomUUID()
-        every { artifactIngestionService.startRun(any(), any(), any(), any()) } just runs
+        every { ingestionRunLifeCycleService.startRun(any(), any(), any(), any()) } just runs
 
         listener.on(
             GithubRepositoryConnectionInitiatedEvent(
@@ -32,7 +32,7 @@ class GithubRepositoryConnectionListenerTest {
         )
 
         verify(exactly = 1) {
-            artifactIngestionService.startRun(
+            ingestionRunLifeCycleService.startRun(
                 transactionId = runId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.CONNECTED,
@@ -44,7 +44,7 @@ class GithubRepositoryConnectionListenerTest {
     @Test
     fun `failed initiation event starts failed github run`() {
         val runId = UUID.randomUUID()
-        every { artifactIngestionService.startRun(any(), any(), any(), any()) } just runs
+        every { ingestionRunLifeCycleService.startRun(any(), any(), any(), any()) } just runs
 
         listener.on(
             GithubRepositoryConnectionInitiationFailedEvent(
@@ -56,7 +56,7 @@ class GithubRepositoryConnectionListenerTest {
         )
 
         verify(exactly = 1) {
-            artifactIngestionService.startRun(
+            ingestionRunLifeCycleService.startRun(
                 transactionId = runId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.FAILED,

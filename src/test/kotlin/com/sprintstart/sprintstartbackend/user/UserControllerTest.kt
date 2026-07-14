@@ -76,6 +76,7 @@ class UserControllerTest(
             email = "new@mail.de",
             firstName = "Alicia",
             profileIcon = "icon-star",
+            projectsId = emptySet(),
         )
         every { userService.patchMe("user", request) } returns userResponse(email = "new@mail.de", firstName = "Alicia")
 
@@ -120,6 +121,7 @@ class UserControllerTest(
             email = "new@mail.de",
             firstName = "Alicia",
             permissionGroup = Role.ADMIN,
+            projectsId = emptySet(),
         )
         every {
             userService.patchAdminUserById(id, request)
@@ -179,6 +181,7 @@ class UserControllerTest(
         projectRoles: List<ProjectRoleSummary> = listOf(
             ProjectRoleSummary(id = UUID.randomUUID(), name = "Backend Developer"),
         ),
+        projectIds: Set<UUID> = emptySet(),
         enabled: Boolean = true,
         permissionGroup: Role = Role.USER,
     ) = GetUserResponse(
@@ -188,6 +191,7 @@ class UserControllerTest(
         email = email,
         firstName = firstName,
         lastName = "Developer",
+        projectIds = projectIds,
         projectRoles = projectRoles,
         permissionGroup = permissionGroup,
         enabled = enabled,

@@ -77,7 +77,7 @@ internal class GithubConnectorController(
     )
     @PostMapping("/connect")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PM')")
     suspend fun connectRepository(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
@@ -114,7 +114,7 @@ internal class GithubConnectorController(
     )
     @PostMapping("/update-all")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PM')")
     suspend fun updateAllRepositories(): ResponseEntity<UpdateAllRepositoriesResponse> {
         val response = githubUpdateService.updateAllRepositories()
         return ResponseEntity.accepted().body(response)
@@ -142,7 +142,7 @@ internal class GithubConnectorController(
     )
     @PostMapping("/update")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PM')")
     suspend fun updateRepository(
         @Valid @RequestBody request: UpdateRepositoryRequest,
     ): ResponseEntity<UpdateRepositoryResponse> {

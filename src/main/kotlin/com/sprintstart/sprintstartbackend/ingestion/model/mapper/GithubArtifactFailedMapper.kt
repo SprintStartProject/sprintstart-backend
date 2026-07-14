@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.ArtifactFailedCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubSourceUrlFactory.buildCommitUrl
@@ -23,8 +24,6 @@ class GithubArtifactFailedMapper {
     fun toCommand(event: GithubCommitFetchFailedEvent): ArtifactFailedCommand {
         return ArtifactFailedCommand(
             transactionId = event.transactionId,
-            repositoryOwner = event.repositoryOwner,
-            repositoryName = event.repositoryName,
             sourceId = buildSourceId(
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
@@ -38,6 +37,10 @@ class GithubArtifactFailedMapper {
             ),
             reason = event.reason,
             artifactType = ArtifactType.COMMIT,
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(event.repositoryOwner, event.repositoryName),
+            ),
         )
     }
 
@@ -48,8 +51,6 @@ class GithubArtifactFailedMapper {
     fun toCommand(event: GithubFileFetchFailedEvent): ArtifactFailedCommand {
         return ArtifactFailedCommand(
             transactionId = event.transactionId,
-            repositoryOwner = event.repositoryOwner,
-            repositoryName = event.repositoryName,
             sourceId = buildSourceId(
                 repositoryOwner = event.repositoryOwner,
                 repositoryName = event.repositoryName,
@@ -59,6 +60,12 @@ class GithubArtifactFailedMapper {
             reason = event.reason,
             artifactType = ArtifactType.FILE,
             sourceUrl = null,
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(event.repositoryOwner, event.repositoryName),
+            ),
         )
     }
+
+    private fun buildRepositoryFullName(owner: String, name: String) = "$owner/$name"
 }

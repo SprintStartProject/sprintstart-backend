@@ -72,7 +72,9 @@ class GithubIssuesService(
 
         if (performUpdate) {
             issues.forEach { issue ->
-                eventPublisher.publishEvent(issue.toFetchedEvent(transactionId, repositoryOwner, repositoryName))
+                eventPublisher.publishEvent(
+                    issue.toFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
+                )
             }
         } else {
             if (githubRepository != null && issues.isNotEmpty()) {
@@ -87,9 +89,15 @@ class GithubIssuesService(
         eventPublisher.publishEvent(GithubIssuesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))
     }
 
-    private fun Issue.toFetchedEvent(transactionId: UUID, owner: String, name: String): GithubIssueFetchedEvent {
+    private fun Issue.toFetchedEvent(
+        transactionId: UUID,
+        repositoryId: UUID,
+        owner: String,
+        name: String,
+    ): GithubIssueFetchedEvent {
         return GithubIssueFetchedEvent(
             transactionId = transactionId,
+            repositoryId = repositoryId,
             repositoryOwner = owner,
             repositoryName = name,
             number = this.number,

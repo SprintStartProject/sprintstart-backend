@@ -20,6 +20,7 @@ import java.util.UUID
  */
 data class GithubFileFetchedEvent(
     val transactionId: UUID,
+    val repositoryId: UUID,
     val repositoryOwner: String,
     val repositoryName: String,
     val path: String,

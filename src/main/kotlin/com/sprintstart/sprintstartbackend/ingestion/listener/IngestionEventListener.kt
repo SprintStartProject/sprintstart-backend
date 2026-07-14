@@ -4,8 +4,9 @@ import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import org.springframework.transaction.event.TransactionPhase
+import org.springframework.transaction.event.TransactionalEventListener
 
 @Component
 class IngestionEventListener(
@@ -17,7 +18,7 @@ class IngestionEventListener(
      *
      * @param event The run-finished event containing the ingestion run id to synchronize.
      */
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun handleRunFinished(
         event: RunFinishedEvent,
     ) {

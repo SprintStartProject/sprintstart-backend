@@ -5,29 +5,29 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.issu
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssuesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
-import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
-import com.sprintstart.sprintstartbackend.ingestion.service.IngestionStatusService
+import com.sprintstart.sprintstartbackend.ingestion.service.GithubIngestionRunService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class GithubIssueListener(
-    private val artifactIngestionService: ArtifactIngestionService,
+    private val githubArtifactProviderService: GithubArtifactProviderService,
     private val githubArtifactMapper: GithubArtifactMapper,
-    private val ingestionStatusService: IngestionStatusService,
+    private val githubIngestionRunService: GithubIngestionRunService,
 ) {
     @EventListener
     fun on(
         event: GithubIssueFetchedEvent,
     ) {
-        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
+        githubArtifactProviderService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener
     fun on(
         event: GithubIssuesFetchCompletedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.ISSUES,
         )
@@ -37,7 +37,7 @@ internal class GithubIssueListener(
     fun on(
         event: GithubIssuesFetchFailedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.ISSUES,
         )

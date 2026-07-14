@@ -10,6 +10,8 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
+import jakarta.persistence.JoinTable
+import jakarta.persistence.ManyToMany
 import jakarta.persistence.Table
 import java.util.UUID
 
@@ -44,11 +46,15 @@ class User(
     val roles: MutableSet<Role> = mutableSetOf(),
     @Column(nullable = true)
     var avatarUrl: String? = null,
-    @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
-    @jakarta.persistence.JoinColumn(name = "project_id")
-    var project: Project? = null,
-    @jakarta.persistence.ManyToMany(fetch = jakarta.persistence.FetchType.LAZY)
-    @jakarta.persistence.JoinTable(
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "user_projects",
+        joinColumns = [JoinColumn(name = "user_id")],
+        inverseJoinColumns = [JoinColumn(name = "project_id")],
+    )
+    var projects: MutableSet<Project> = mutableSetOf(),
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
         name = "user_project_roles",
         joinColumns = [
             jakarta.persistence.JoinColumn(

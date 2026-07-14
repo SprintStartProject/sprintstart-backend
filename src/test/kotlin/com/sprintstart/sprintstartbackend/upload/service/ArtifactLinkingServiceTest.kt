@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import com.sprintstart.sprintstartbackend.upload.model.entity.ArtifactImage
+import com.sprintstart.sprintstartbackend.upload.model.entity.LinkedImage
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
-import com.sprintstart.sprintstartbackend.upload.repository.ArtifactImageRepository
+import com.sprintstart.sprintstartbackend.upload.repository.LinkedImageRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -12,7 +12,7 @@ import java.util.UUID
 
 class ArtifactLinkingServiceTest {
     private val repository =
-        Mockito.mock(ArtifactImageRepository::class.java)
+        Mockito.mock(LinkedImageRepository::class.java)
 
     private val service =
         ArtifactLinkingService(
@@ -38,13 +38,13 @@ class ArtifactLinkingServiceTest {
         )
 
         val captor =
-            ArgumentCaptor.forClass(ArtifactImage::class.java)
+            ArgumentCaptor.forClass(LinkedImage::class.java)
 
         Mockito.verify(repository).save(captor.capture())
 
         val saved = captor.value
 
-        assertEquals(markdownArtifact.id, saved.artifact.id)
+        assertEquals(markdownArtifact.id, saved.markdownArtifact.id)
         assertEquals(imageArtifact.id, saved.imageArtifact.id)
         assertEquals("logo.png", saved.originalPath)
     }

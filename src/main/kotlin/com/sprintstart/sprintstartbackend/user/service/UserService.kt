@@ -83,6 +83,7 @@ class UserService(
             email = request.email,
             firstName = request.firstName,
             lastName = request.lastName,
+            projectIds = request.projectsId,
         )
 
         request.email?.let { user.email = it }
@@ -115,6 +116,7 @@ class UserService(
             email = request.email,
             firstName = request.firstName,
             lastName = request.lastName,
+            projectIds = request.projectsId,
         )
         request.permissionGroup?.let { keycloakAdminClient.setPermissionGroup(user.authId, it) }
 

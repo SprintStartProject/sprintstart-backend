@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.upload.model.dto
+package com.sprintstart.sprintstartbackend.upload.model.dto.response
 
 import java.util.UUID
 

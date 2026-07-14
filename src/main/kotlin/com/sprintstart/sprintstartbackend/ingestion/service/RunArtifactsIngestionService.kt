@@ -29,8 +29,13 @@ class RunArtifactsIngestionService(
     /**
      * Loads the run output, skips empty runs, and dispatches the batched ingest/deindex request.
      *
+     * Empty runs are intentionally ignored because there is nothing for the AI layer to index or
+     * remove. Repository reads are executed on [Dispatchers.IO] before the outbound HTTP call.
+     *
      * @param runId The completed ingestion run whose artifacts should be synced to AI.
      * @throws IngestionRunNotFoundException when the run id does not exist.
+     * @throws com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+     * when the AI ingestion service rejects the sync request.
      */
     suspend fun ingestRunArtifacts(runId: UUID) {
         val request = withContext(Dispatchers.IO) {

@@ -13,6 +13,7 @@ import java.util.UUID
  */
 data class GithubCommitFetchFailedEvent(
     val transactionId: UUID,
+    val repositoryId: UUID,
     val repositoryOwner: String,
     val repositoryName: String,
     val sha: String?,

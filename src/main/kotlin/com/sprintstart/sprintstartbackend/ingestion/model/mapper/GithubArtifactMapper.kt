@@ -5,7 +5,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.file
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.FileMetaDataResolver
-import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.ArtifactCommand
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubSourceUrlFactory.buildCommitUrl
@@ -17,7 +18,7 @@ import java.time.Instant
 private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 
 /**
- * Translates GitHub domain events into ingestion artifact commands.
+ * Translates GitHub domain events into canonical artifact commands.
  *
  * The mapper normalizes source-specific identifiers, derives stable hashes where the ingestion
  * service uses change detection, and enriches file artifacts with lightweight metadata such as
@@ -26,13 +27,13 @@ private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 @Component
 class GithubArtifactMapper {
     /**
-     * Maps a fetched commit into the ingestion command shape.
+     * Maps a fetched commit into the canonical command shape.
      *
      * The commit title is intentionally shortened to keep list views compact while preserving the
      * full message in `bodyText`.
      */
-    fun toCommand(event: GithubCommitFetchedEvent): ArtifactCommand {
-        return ArtifactCommand(
+    fun toCommand(event: GithubCommitFetchedEvent): GithubArtifactCommand {
+        return GithubArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
             sourceId = buildSourceId(
@@ -54,6 +55,13 @@ class GithubArtifactMapper {
             createdAtSource = event.date,
             updatedAtSource = null,
             hash = null,
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(
+                    owner = event.repositoryOwner,
+                    name = event.repositoryName,
+                ),
+            ),
         )
     }
 
@@ -63,7 +71,7 @@ class GithubArtifactMapper {
      * Content is hashed immediately so the ingestion service can treat file re-fetches as
      * idempotent when the payload is unchanged.
      */
-    fun toCommand(event: GithubFileFetchedEvent): ArtifactCommand {
+    fun toCommand(event: GithubFileFetchedEvent): GithubArtifactCommand {
         val title = event.path.split("/").last()
         val extension = when (title.lowercase()) {
             "dockerfile" -> "dockerfile"
@@ -73,7 +81,7 @@ class GithubArtifactMapper {
         val language = FileMetaDataResolver.languageFor(extension)
         val mime = FileMetaDataResolver.mimeFor(extension)
         val hash = event.content.toByteArray().sha256()
-        return ArtifactCommand(
+        return GithubArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
             sourceId = buildSourceId(
@@ -91,6 +99,13 @@ class GithubArtifactMapper {
             createdAtSource = null,
             updatedAtSource = null,
             hash = hash,
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(
+                    owner = event.repositoryOwner,
+                    name = event.repositoryName,
+                ),
+            ),
         )
     }
 
@@ -98,10 +113,10 @@ class GithubArtifactMapper {
      * Maps a fetched GitHub issue and computes a hash from the visible issue content.
      *
      * The hash currently tracks title and body, which is the change signal used by
-     * `ArtifactIngestionService` for issue updates.
+     * `GithubArtifactProviderService` for issue updates.
      * @throws java.time.format.DateTimeParseException when the issue creation timestamp is malformed.
      */
-    fun toCommand(event: GithubIssueFetchedEvent): ArtifactCommand {
+    fun toCommand(event: GithubIssueFetchedEvent): GithubArtifactCommand {
         val content =
             buildString {
                 append(event.title)
@@ -109,7 +124,7 @@ class GithubArtifactMapper {
                 append(event.body ?: "")
             }
         val hash = content.toByteArray().sha256()
-        return ArtifactCommand(
+        return GithubArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
             sourceId = buildSourceId(
@@ -127,6 +142,13 @@ class GithubArtifactMapper {
             createdAtSource = Instant.parse(event.createdAt),
             updatedAtSource = null,
             hash = hash,
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(
+                    owner = event.repositoryOwner,
+                    name = event.repositoryName,
+                ),
+            ),
         )
     }
 
@@ -137,8 +159,8 @@ class GithubArtifactMapper {
      * records and always overwrites the current title/body on re-fetch.
      * @throws java.time.format.DateTimeParseException when the pull request creation timestamp is malformed.
      */
-    fun toCommand(event: GithubPullRequestFetchedEvent): ArtifactCommand {
-        return ArtifactCommand(
+    fun toCommand(event: GithubPullRequestFetchedEvent): GithubArtifactCommand {
+        return GithubArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.GITHUB,
             sourceId = buildSourceId(
@@ -156,6 +178,15 @@ class GithubArtifactMapper {
             createdAtSource = Instant.parse(event.createdAt),
             updatedAtSource = null,
             hash = null, // PRs are always re-ingested on updates
+            metadata = GithubArtifactMetadata(
+                repositoryId = event.repositoryId,
+                repositoryFullName = buildRepositoryFullName(
+                    owner = event.repositoryOwner,
+                    name = event.repositoryName,
+                ),
+            ),
         )
     }
+
+    private fun buildRepositoryFullName(owner: String, name: String) = "$owner/$name"
 }

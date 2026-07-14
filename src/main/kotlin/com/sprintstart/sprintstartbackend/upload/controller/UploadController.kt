@@ -1,17 +1,22 @@
 package com.sprintstart.sprintstartbackend.upload.controller
 
-import com.sprintstart.sprintstartbackend.upload.model.dto.UploadArtifactResponse
-import com.sprintstart.sprintstartbackend.upload.model.dto.UploadListItemResponse
+import com.sprintstart.sprintstartbackend.upload.model.dto.request.DeleteArtifactsRequest
+import com.sprintstart.sprintstartbackend.upload.model.dto.request.UploadArtifactsRequest
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadArtifactResponse
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.service.UploadService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
+import jakarta.validation.Valid
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -43,12 +48,18 @@ class UploadController(
     fun upload(
         @RequestPart("files")
         files: List<MultipartFile>,
-        @RequestParam("uploaderId")
-        uploaderId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal
+        jwt: Jwt,
+        @Valid
+        @RequestPart("request")
+        request: UploadArtifactsRequest,
     ): ResponseEntity<List<UploadArtifactResponse>> {
         val response = uploadService.upload(
+            authId = jwt.subject,
             files = files,
-            uploaderId = uploaderId,
+            projectId = request.projectId,
+            uploaderId = request.uploaderId,
         )
 
         return ResponseEntity.ok(response)
@@ -79,11 +90,19 @@ class UploadController(
     )
     @DeleteMapping("/{artifactId}")
     @PreAuthorize("hasRole('USER')")
-    fun deleteUpload(
-        @PathVariable artifactId: UUID,
+    fun deleteUploads(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal
+        jwt: Jwt,
+        @Valid
+        @RequestPart("request")
+        request: DeleteArtifactsRequest,
     ): ResponseEntity<Void> {
         uploadService.deleteUpload(
-            artifactId,
+            authId = jwt.subject,
+            request.artifactIds,
+            request.removerId,
+            request.projectId,
         )
 
         return ResponseEntity

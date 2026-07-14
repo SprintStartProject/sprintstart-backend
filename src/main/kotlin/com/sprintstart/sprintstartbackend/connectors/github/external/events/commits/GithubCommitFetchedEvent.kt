@@ -20,6 +20,7 @@ import java.util.UUID
  */
 data class GithubCommitFetchedEvent(
     val transactionId: UUID,
+    val repositoryId: UUID,
     val repositoryOwner: String,
     val repositoryName: String,
     val author: String,

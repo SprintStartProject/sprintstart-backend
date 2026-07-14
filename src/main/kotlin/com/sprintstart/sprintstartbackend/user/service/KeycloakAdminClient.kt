@@ -17,6 +17,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 interface KeycloakAdminClient {
     fun updateUserProfile(
@@ -24,6 +25,7 @@ interface KeycloakAdminClient {
         email: String? = null,
         firstName: String? = null,
         lastName: String? = null,
+        projectIds: Set<UUID>,
     )
 
     fun setUserEnabled(authId: String, enabled: Boolean)
@@ -44,7 +46,13 @@ class HttpKeycloakAdminClient(
 ) : KeycloakAdminClient {
     private val objectMapper = jacksonObjectMapper()
 
-    override fun updateUserProfile(authId: String, email: String?, firstName: String?, lastName: String?) {
+    override fun updateUserProfile(
+        authId: String,
+        email: String?,
+        firstName: String?,
+        lastName: String?,
+        projectIds: Set<UUID>,
+    ) {
         val payload = mutableMapOf<String, Any>()
         email?.let { payload["email"] = it }
         firstName?.let { payload["firstName"] = it }

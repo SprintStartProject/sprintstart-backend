@@ -4,6 +4,12 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
 
+/**
+ * Validates uploaded files before storage.
+ *
+ * The service keeps upload constraints close to the upload module: files must be non-empty, below
+ * the configured size limit, have a safe filename, and use an allowed extension.
+ */
 @Service
 class UploadValidationService(
     @Value("\${app.upload.max-file-size-bytes}")
@@ -17,6 +23,17 @@ class UploadValidationService(
         "webp",
     )
 
+    /**
+     * Applies all upload acceptance checks before storage is attempted.
+     *
+     * Filenames are rejected when missing or when they contain path traversal or path separator
+     * characters, because the local storage implementation writes the original filename under an
+     * artifact-specific directory.
+     *
+     * @param file The multipart file submitted by the caller.
+     * @throws IllegalArgumentException when the file is empty, too large, has an unsafe filename,
+     * or uses an unsupported extension.
+     */
     fun validate(file: MultipartFile) {
         validateEmpty(file)
 
