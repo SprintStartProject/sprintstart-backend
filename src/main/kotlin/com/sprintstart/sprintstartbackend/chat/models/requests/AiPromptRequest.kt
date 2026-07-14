@@ -1,7 +1,10 @@
 package com.sprintstart.sprintstartbackend.chat.models.requests
 
+import com.sprintstart.sprintstartbackend.chat.models.AiChatFilters
+import com.sprintstart.sprintstartbackend.chat.models.ChatFilters
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import jakarta.validation.constraints.NotBlank
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -12,8 +15,12 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AiPromptRequest(
-    @NotBlank val prompt: String,
+    @NotBlank
+    @SerialName("question")
+    val prompt: String,
+    @SerialName("history")
     val context: List<ContextEntry>,
+    val filters: AiChatFilters? = null,
 )
 
 @Serializable
@@ -26,5 +33,13 @@ internal fun ChatMessage.toAiContextEntry(): ContextEntry {
     return ContextEntry(
         role = this.role.name.lowercase(),
         content = this.content,
+    )
+}
+
+internal fun ChatFilters.toAiChatFilters(): AiChatFilters {
+    return AiChatFilters(
+        sourceSystems = this.sourceSystems,
+        from = this.from?.toString(),
+        to = this.to?.toString(),
     )
 }

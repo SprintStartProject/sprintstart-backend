@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.chat.controller
 
+import com.sprintstart.sprintstartbackend.chat.models.ChatFilters
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
@@ -12,6 +13,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatRespon
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -136,6 +139,35 @@ class ChatControllerUnitTest {
 
             assertEquals(tokens, result)
             coVerify(exactly = 1) { chatService.prompt(request) }
+        }
+    }
+
+    @Test
+    fun `delegates prompt with filters to service unchanged`() = runTest {
+        val request = PromptRequest(
+            chatId = chatId,
+            msg = "What changed in authentication?",
+            filters = ChatFilters(
+                sourceSystems = listOf(SourceSystem.GITHUB),
+                from = Instant.parse("2026-01-01T00:00:00Z"),
+                to = Instant.parse("2026-07-01T00:00:00Z"),
+            ),
+        )
+
+        val tokens = listOf(
+            AiStreamMessage("token", "Answer"),
+            AiStreamMessage("done"),
+        )
+
+        coEvery {
+            chatService.prompt(request)
+        } returns flowOf(*tokens.toTypedArray())
+
+        val result = controller.prompt(request).toList()
+
+        assertEquals(tokens, result)
+        coVerify(exactly = 1) {
+            chatService.prompt(request)
         }
     }
 }
