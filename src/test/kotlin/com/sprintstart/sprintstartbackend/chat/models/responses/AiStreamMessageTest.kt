@@ -32,14 +32,14 @@ class AiStreamMessageTest {
     @Test
     fun `deserializes a citation event with snake_case fields`() {
         val raw =
-            """{"type": "citation", "chunk_id": "chunk-1", "filename": "retro.md", "section_path": "Retro > Blockers"}"""
+            """{"type": "citation", "artifact_id": "artifact-1", "start_line": 12, "start_page": null}"""
 
         val message = json.decodeFromString<AiStreamMessage>(raw)
 
         assertEquals("citation", message.type)
-        assertEquals("chunk-1", message.chunkId)
-        assertEquals("retro.md", message.filename)
-        assertEquals("Retro > Blockers", message.sectionPath)
+        assertEquals("artifact-1", message.artifactId)
+        assertEquals(12, message.startLine)
+        assertNull(message.startPage)
     }
 
     @Test
@@ -66,13 +66,29 @@ class AiStreamMessageTest {
     fun `serializes a citation event with snake_case wire names and omits null fields`() {
         val message = AiStreamMessage(
             type = "citation",
-            chunkId = "chunk-1",
-            filename = "retro.md",
-            sectionPath = "Retro > Blockers",
+            artifactId = "artifact-1",
+            startLine = 12,
         )
 
         assertEquals(
-            """{"type":"citation","chunk_id":"chunk-1","filename":"retro.md","section_path":"Retro > Blockers"}""",
+            """{"type":"citation","artifact_id":"artifact-1","start_line":12}""",
+            json.encodeToString(message),
+        )
+    }
+
+    @Test
+    fun `serializes a backend-enriched citation event with filename and source_url`() {
+        val message = AiStreamMessage(
+            type = "citation",
+            artifactId = "artifact-1",
+            filename = "retro.md",
+            sourceUrl = "https://github.com/example/retro.md",
+            startLine = 12,
+        )
+
+        assertEquals(
+            """{"type":"citation","artifact_id":"artifact-1","filename":"retro.md",""" +
+                """"source_url":"https://github.com/example/retro.md","start_line":12}""",
             json.encodeToString(message),
         )
     }

@@ -11,8 +11,20 @@ import kotlin.test.assertEquals
 class AiPromptRequestTest {
     @Test
     fun `conversion to request succeeds`() {
-        val chat = Chat(UUID.randomUUID(), "Chat title", UUID.randomUUID(), OffsetDateTime.now())
-        val chatMessage = ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "Some content", OffsetDateTime.now())
+        val chat = Chat(
+            UUID.randomUUID(),
+            "Chat title",
+            UUID.randomUUID(),
+            OffsetDateTime.now(),
+        )
+        val chatMessage = ChatMessage(
+            UUID.randomUUID(),
+            ChatRole.USER,
+            chat,
+            emptyList(),
+            "Some content",
+            OffsetDateTime.now(),
+        )
 
         val request = chatMessage.toAiContextEntry()
 

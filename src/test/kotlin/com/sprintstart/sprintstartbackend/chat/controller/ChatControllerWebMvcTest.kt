@@ -345,9 +345,8 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("token", "The main blocker"),
                 AiStreamMessage(
                     type = "citation",
-                    chunkId = "chunk-1",
-                    filename = "retro.md",
-                    sectionPath = "Retro > Blockers",
+                    artifactId = "artifact-1",
+                    startLine = 12,
                 ),
                 AiStreamMessage("done"),
             )
@@ -376,8 +375,8 @@ class ChatControllerWebMvcTest(
             assertEquals(expected, actual)
             // Wire field names must mirror the AI service contract for the frontend.
             assert(actual.contains("""{"type":"tool_use","name":"retrieve","kind":"tool"}"""))
-            assert(actual.contains(""""chunk_id":"chunk-1""""))
-            assert(actual.contains(""""section_path":"Retro > Blockers""""))
+            assert(actual.contains(""""artifact_id":"artifact-1""""))
+            assert(actual.contains(""""start_line":12"""))
         }
 
         @Test

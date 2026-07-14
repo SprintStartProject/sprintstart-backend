@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
+import com.sprintstart.sprintstartbackend.chat.models.Citation
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiGenerateChatTitleRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiPromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
@@ -20,11 +21,14 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onEach
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
@@ -41,9 +45,13 @@ import java.util.UUID
 internal class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
+    private val citationRepository: CitationRepository,
     private val chatAiClient: ChatAiClient,
     private val userApi: UserApi,
+    private val artifactLookupService: ArtifactLookupService,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * Retrieves the n latest chats without their messages. N is determined by `request.limit`.
      *
@@ -169,16 +177,56 @@ internal class ChatService(
 
         messageRepository.save(msg)
 
+        data class PendingCitation(
+            val id: UUID,
+            val artifactId: UUID,
+            val filename: String,
+            val sourceUrl: String?,
+            val startLine: Int?,
+            val startPage: Int?,
+        )
+
         val sb = StringBuilder()
+        val citations = mutableListOf<PendingCitation>()
 
         // Define stream handler
         // - On each token we collect the token and emit it to the controller
+        // - On each citation we resolve filename/sourceUrl (the AI service only sends
+        //   the artifact id + position) so the client sees a complete citation live,
+        //   not only once the chat is reloaded from persisted history
         // - On completion, we store the entire response as msg in db
         return chatAiClient
             .streamPrompt(AiPromptRequest(request.msg, context))
-            .onEach { msg ->
-                msg.content?.let { sb.append(it) }
-            }.onCompletion { cause ->
+            .map { event ->
+                when (event.type) {
+                    "token" -> {
+                        event.content?.let(sb::append)
+                        event
+                    }
+
+                    "citation" -> {
+                        val artifactId = event.artifactId?.let(::parseUuidOrNull)
+                        val resolved = artifactId?.let(artifactLookupService::resolve)
+                        if (artifactId == null || resolved == null) {
+                            logger.warn("Could not resolve artifact {} for citation", event.artifactId)
+                            null
+                        } else {
+                            citations += PendingCitation(
+                                id = UUID.randomUUID(),
+                                artifactId = artifactId,
+                                filename = resolved.filename,
+                                sourceUrl = resolved.sourceUrl,
+                                startLine = event.startLine,
+                                startPage = event.startPage,
+                            )
+                            event.copy(filename = resolved.filename, sourceUrl = resolved.sourceUrl)
+                        }
+                    }
+
+                    else -> event
+                }
+            }.filterNotNull()
+            .onCompletion { cause ->
                 if (cause == null) {
                     val msg = ChatMessage(
                         role = ChatRole.ASSISTANT,
@@ -186,10 +234,38 @@ internal class ChatService(
                         content = sb.toString(),
                         createdAt = OffsetDateTime.now(),
                     )
+
                     messageRepository.save(msg)
+
+                    val citationEntities = citations.map { pending ->
+                        Citation(
+                            id = pending.id,
+                            artifactId = pending.artifactId,
+                            filename = pending.filename,
+                            sourceUrl = pending.sourceUrl,
+                            startLine = pending.startLine,
+                            startPage = pending.startPage,
+                            message = msg,
+                        )
+                    }
+
+                    citationRepository.saveAll(citationEntities)
                 } else {
                     println("Stream either got killed or experienced an error: ${cause.message}")
                 }
             }
     }
 }
+
+/**
+ * Parses [value] as a [UUID], or null if it isn't one.
+ *
+ * A malformed citation artifact id from the AI service should degrade that one citation,
+ * not kill the whole chat stream the way [UUID.fromString]'s thrown exception would.
+ */
+private fun parseUuidOrNull(value: String): UUID? =
+    try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        null
+    }

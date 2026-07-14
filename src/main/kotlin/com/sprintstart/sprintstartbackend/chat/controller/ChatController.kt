@@ -119,8 +119,8 @@ internal class ChatController(
                             examples = [
                                 "data: {\"type\": \"tool_use\", \"name\": \"retrieve\", \"kind\": \"tool\"}",
                                 "data: {\"type\": \"token\", \"content\": \"The main\"}",
-                                "data: {\"type\": \"citation\", \"chunk_id\": \"chunk-1\"," +
-                                    "\"filename\": \"retro.md\", \"section_path\": \"Retro > Blockers\"}",
+                                "data: {\"type\": \"citation\", \"artifact_id\": \"artifact-1\"," +
+                                    "\"start_line\": 12}",
                                 "data: {\"type\": \"done\"}",
                                 "data: {\"type\": \"error\", \"message\": \"LLM backend unreachable\"}",
                             ],

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
+import com.sprintstart.sprintstartbackend.chat.models.Citation
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiPromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
@@ -16,6 +17,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -42,13 +44,17 @@ class ChatServiceTests {
     private val applicationConfig: ApplicationConfig = mockk()
     private val chatRepository: ChatRepository = mockk()
     private val chatMessageRepository: ChatMessageRepository = mockk()
+    private val citationRepository: CitationRepository = mockk()
     private val chatAiClient: ChatAiClient = mockk()
     private val userApi: UserApi = mockk()
+    private val artifactLookupService: ArtifactLookupService = mockk()
     private val chatService = ChatService(
         chatRepository,
         chatMessageRepository,
+        citationRepository,
         chatAiClient,
         userApi,
+        artifactLookupService,
     )
 
     private val userId = UUID.randomUUID()
@@ -132,11 +138,11 @@ class ChatServiceTests {
     inner class GetChat {
         private val chat = Chat(UUID.randomUUID(), "Some test chat", userId, OffsetDateTime.now())
         private val chatMessages = listOf(
-            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "First message", OffsetDateTime.now()),
-            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "Second message", OffsetDateTime.now()),
-            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "Third message", OffsetDateTime.now()),
-            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "Fourth message", OffsetDateTime.now()),
-            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, "Fifth message", OffsetDateTime.now()),
+            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, emptyList(), "First message", OffsetDateTime.now()),
+            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, emptyList(), "Second message", OffsetDateTime.now()),
+            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, emptyList(), "Third message", OffsetDateTime.now()),
+            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, emptyList(), "Fourth message", OffsetDateTime.now()),
+            ChatMessage(UUID.randomUUID(), ChatRole.USER, chat, emptyList(), "Fifth message", OffsetDateTime.now()),
         )
 
         @Test
@@ -251,6 +257,7 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
             coEvery { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
@@ -273,6 +280,7 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*stream.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
@@ -298,6 +306,7 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
@@ -317,6 +326,7 @@ class ChatServiceTests {
             every { chatRepository.save(any()) } answers { firstArg() }
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
             coEvery { chatAiClient.getChatTitle(any()) } returns AiGenerateChatTitleResponse("Sprint planning")
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
@@ -333,6 +343,7 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
             every { chatAiClient.streamPrompt(any()) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
@@ -370,6 +381,113 @@ class ChatServiceTests {
 
             // Only the user message should have been saved, not the AI response
             verify(exactly = 1) { chatMessageRepository.save(any()) }
+        }
+
+        @Test
+        fun `persists citations after ai response`() = runTest {
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+            )
+
+            val artifactId1 = UUID.randomUUID()
+            val artifactId2 = UUID.randomUUID()
+
+            val stream = listOf(
+                AiStreamMessage(
+                    type = "token",
+                    content = "Hello",
+                ),
+                AiStreamMessage(
+                    type = "citation",
+                    artifactId = artifactId1.toString(),
+                    startLine = 12,
+                ),
+                AiStreamMessage(
+                    type = "citation",
+                    artifactId = artifactId2.toString(),
+                    startPage = 3,
+                ),
+                AiStreamMessage(type = "done"),
+            )
+
+            val savedMessages = mutableListOf<ChatMessage>()
+            val citationSlot = slot<Iterable<Citation>>()
+
+            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
+            every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
+            every { citationRepository.saveAll(capture(citationSlot)) } answers { firstArg() }
+            every { artifactLookupService.resolve(artifactId1) } returns
+                ResolvedArtifact(filename = "architecture.md", sourceUrl = null)
+            every { artifactLookupService.resolve(artifactId2) } returns
+                ResolvedArtifact(filename = "backend.md", sourceUrl = "https://github.com/example/backend.md")
+
+            coEvery { chatAiClient.streamPrompt(any()) } returns flowOf(*stream.toTypedArray())
+            every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
+
+            val emitted = chatService.prompt(PromptRequest(chatId, "Hello")).toList()
+
+            val emittedCitations = emitted.filter { it.type == "citation" }
+            assertEquals(2, emittedCitations.size)
+            assertEquals("architecture.md", emittedCitations[0].filename)
+            assertEquals("backend.md", emittedCitations[1].filename)
+            assertEquals("https://github.com/example/backend.md", emittedCitations[1].sourceUrl)
+
+            assertEquals(2, savedMessages.size)
+            assertEquals(ChatRole.ASSISTANT, savedMessages[1].role)
+
+            val savedCitations = citationSlot.captured.toList()
+
+            assertEquals(2, savedCitations.size)
+
+            assertEquals(artifactId1, savedCitations[0].artifactId)
+            assertEquals("architecture.md", savedCitations[0].filename)
+            assertEquals(12, savedCitations[0].startLine)
+
+            assertEquals(artifactId2, savedCitations[1].artifactId)
+            assertEquals("backend.md", savedCitations[1].filename)
+            assertEquals("https://github.com/example/backend.md", savedCitations[1].sourceUrl)
+            assertEquals(3, savedCitations[1].startPage)
+            assertEquals(savedMessages[1], savedCitations[0].message)
+            assertEquals(savedMessages[1], savedCitations[1].message)
+        }
+
+        @Test
+        fun `skips citations whose artifact cannot be resolved`() = runTest {
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+            )
+            val unknownArtifactId = UUID.randomUUID()
+
+            val stream = listOf(
+                AiStreamMessage(
+                    type = "citation",
+                    artifactId = unknownArtifactId.toString(),
+                ),
+                AiStreamMessage(type = "done"),
+            )
+
+            val citationSlot = slot<Iterable<Citation>>()
+
+            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
+            every { chatMessageRepository.save(any()) } answers { firstArg() }
+            every { citationRepository.saveAll(capture(citationSlot)) } answers { firstArg() }
+            every { artifactLookupService.resolve(unknownArtifactId) } returns null
+
+            coEvery { chatAiClient.streamPrompt(any()) } returns flowOf(*stream.toTypedArray())
+            every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
+
+            val emitted = chatService.prompt(PromptRequest(chatId, "Hello")).toList()
+
+            assertEquals(0, emitted.count { it.type == "citation" })
+            assertEquals(0, citationSlot.captured.toList().size)
         }
     }
 }
