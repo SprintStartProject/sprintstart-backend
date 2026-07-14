@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Service implementation of the ingestion metadata API used by other modules.
@@ -28,5 +29,15 @@ internal class ArtifactIngestionApiService(
             .mapNotNull { component ->
                 artifactRepository.findFirstIngestedAt(component)?.let { component to it }
             }.toMap()
+    }
+
+    @Transactional(readOnly = true)
+    override fun exists(artifactId: UUID): Boolean {
+        return artifactRepository.existsById(artifactId)
+    }
+
+    @Transactional(readOnly = true)
+    override fun getHash(artifactId: UUID): String? {
+        return artifactRepository.findById(artifactId).orElse(null)?.hash
     }
 }
