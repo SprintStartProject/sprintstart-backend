@@ -42,7 +42,7 @@ class UserServiceTest {
         val result = userService.getMe(jwt)
 
         assertThat(result.firstName).isEqualTo("First")
-        assertThat(result.projectRoles).isEmpty()
+        assertThat(result.roles).containsExactly(Role.USER)
         assertThat(result.permissionGroup).isEqualTo(Role.USER)
         assertThat(result.enabled).isTrue()
     }
@@ -64,7 +64,7 @@ class UserServiceTest {
 
         assertThat(result.authId).isEqualTo("missing")
         assertThat(result.username).isEqualTo("missingUser")
-        assertThat(result.projectRoles).isEmpty()
+        assertThat(result.roles).containsExactly(Role.USER)
         verify(exactly = 1) { userRepository.save(any<User>()) }
         verify(exactly = 1) { eventPublisher.publishEvent(any<UserCreatedEvent>()) }
     }

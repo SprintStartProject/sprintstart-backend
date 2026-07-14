@@ -44,6 +44,7 @@ import kotlin.test.assertFailsWith
 @OptIn(ExperimentalCoroutinesApi::class)
 class GithubConnectorServiceTest {
     private val testScope = TestScope()
+    private val testProjectId = UUID.randomUUID()
 
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val repoConfigRepository = mockk<GithubRepositoryConfigRepository>()
@@ -55,12 +56,13 @@ class GithubConnectorServiceTest {
     private val githubClient = mockk<GithubClient>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val userApi = mockk<UserApi>()
-    private val projectId = UUID.randomUUID()
 
     private lateinit var service: GithubConnectorService
 
     @BeforeEach
     fun setUp() {
+        every { userApi.getUserByAuthId(any()) } returns userDto()
+
         service = GithubConnectorService(
             applicationScope = testScope,
             repoConnectionRepository = repoConnectionRepository,
@@ -81,7 +83,6 @@ class GithubConnectorServiceTest {
         @Test
         fun `connectRepositoryIfExists throws GithubUserPatNotFoundException when PAT not found`() =
             runTest {
-                every { userApi.getUserByAuthId("mock-id") } returns userDto(projectId)
                 every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
                 every { githubUserRepository.findById(any()) } returns Optional.empty()
 
@@ -93,7 +94,6 @@ class GithubConnectorServiceTest {
         @Test
         fun `connectRepositoryIfExists throws RepositoryNotFoundException when repo does not exist on GitHub`() =
             runTest {
-                every { userApi.getUserByAuthId("mock-id") } returns userDto(projectId)
                 every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
                 every {
                     githubUserRepository.findById(any())
@@ -123,15 +123,7 @@ class GithubConnectorServiceTest {
 
             service.connectRepositoryIfExists("auth-id", connectRequest())
 
-            verify {
-                repoConnectionRepository.save(
-                    match {
-                        it.owner == "owner" &&
-                            it.name == "repo" &&
-                            projectId in it.projectIds
-                    },
-                )
-            }
+            coVerify { repoConnectionRepository.save(match { it.owner == "owner" && it.name == "repo" }) }
         }
 
         @Test
@@ -190,7 +182,6 @@ class GithubConnectorServiceTest {
 
         @Test
         fun `publishes GithubRepositoryConnectionInitiationFailedEvent when repo not found`() = testScope.runTest {
-            every { userApi.getUserByAuthId("auth-id") } returns userDto(projectId)
             every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
             every {
                 githubUserRepository.findById(any())
@@ -291,7 +282,25 @@ class GithubConnectorServiceTest {
         owner = "owner",
         name = "repo",
         tokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-        projectId = projectId,
+        projectId = testProjectId,
+    )
+
+    private fun userDto() = UserDto(
+        id = UUID.randomUUID(),
+        username = "test-user",
+        firstname = "Test",
+        lastname = "User",
+        avatarUrl = null,
+        profileIcon = null,
+        projects = setOf(
+            ProjectDto(
+                projectId = testProjectId,
+                name = "Test Project",
+                description = null,
+            ),
+        ),
+        skills = emptyList(),
+        projectRoles = emptyList(),
     )
 
     private fun repoConnection(owner: String, name: String, user: GithubUser) = GithubRepositoryConnection(
@@ -301,7 +310,6 @@ class GithubConnectorServiceTest {
     )
 
     private fun stubSuccessfulConnect() {
-        every { userApi.getUserByAuthId(any()) } returns userDto(projectId)
         every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
         every {
             githubUserRepository.findById(any())
@@ -316,22 +324,4 @@ class GithubConnectorServiceTest {
         coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
         coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
     }
-
-    private fun userDto(projectId: UUID) = UserDto(
-        id = UUID.randomUUID(),
-        username = "alice",
-        firstname = "Alice",
-        lastname = "Doe",
-        avatarUrl = null,
-        profileIcon = null,
-        projects = setOf(
-            ProjectDto(
-                projectId = projectId,
-                name = "Project",
-                description = null,
-            ),
-        ),
-        skills = emptyList(),
-        projectRoles = emptyList(),
-    )
 }

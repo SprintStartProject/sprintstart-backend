@@ -94,7 +94,7 @@ class GithubConnectorService(
      * - Fetching the repository commits
      * - Fetching the repository issues
      * - Fetching the repository pull requests
-     * - Starting a CRON job that checks for upates every night.
+     * - Starting a CRON job that checks for updates every night.
      *
      * _**Schema:** `https://github.com/{owner}/{name}`_
      *
