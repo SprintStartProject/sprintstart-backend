@@ -66,16 +66,6 @@ class GithubConnectorService(
         repoConnectionRepository.findAll()
 
     /**
-     * Retrieves all GitHub repositories linked to the given project.
-     *
-     * @param projectId The project whose connected GitHub repositories should be returned.
-     * @return a list of connected GitHub repositories linked to the project.
-     */
-    @Tracked("Retrieving project-scoped GitHub repositories for overview")
-    fun getSourcesByProjectId(projectId: UUID): List<GithubRepositoryConnection> =
-        repoConnectionRepository.findAllByProjectId(projectId)
-
-    /**
      * Patches a 'source' in the connector overview sense.
      *
      * For the connector overview, sources are GitHub repositories.
@@ -117,7 +107,9 @@ class GithubConnectorService(
     @Tracked("Connecting GitHub repository")
     @Transactional
     suspend fun connectRepositoryIfExists(authId: String, request: ConnectRepositoryRequest): UUID {
-        if (!userApi.userHasAccessToProject(authId, request.projectId)) {
+        val userInRepo = userApi.getUserByAuthId(authId)
+
+        if (request.projectId !in userInRepo.projects.map { it.projectId }) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
         }
 

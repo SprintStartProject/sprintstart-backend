@@ -19,6 +19,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.service.internal.Git
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.coEvery
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -35,7 +37,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith
@@ -60,7 +61,7 @@ class GithubConnectorServiceTest {
 
     @BeforeEach
     fun setUp() {
-        every { userApi.userHasAccessToProject(any(), any()) } returns true
+        every { userApi.getUserByAuthId(any()) } returns userDto()
 
         service = GithubConnectorService(
             applicationScope = testScope,
@@ -79,16 +80,6 @@ class GithubConnectorServiceTest {
 
     @Nested
     inner class ConnectRepositoryIfExists {
-        @Test
-        fun `connectRepositoryIfExists throws ResponseStatusException when user has no project access`() =
-            runTest {
-                every { userApi.userHasAccessToProject("mock-id", testProjectId) } returns false
-
-                assertFailsWith<ResponseStatusException> {
-                    service.connectRepositoryIfExists("mock-id", connectRequest())
-                }
-            }
-
         @Test
         fun `connectRepositoryIfExists throws GithubUserPatNotFoundException when PAT not found`() =
             runTest {
@@ -292,6 +283,24 @@ class GithubConnectorServiceTest {
         name = "repo",
         tokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
         projectId = testProjectId,
+    )
+
+    private fun userDto() = UserDto(
+        id = UUID.randomUUID(),
+        username = "test-user",
+        firstname = "Test",
+        lastname = "User",
+        avatarUrl = null,
+        profileIcon = null,
+        projects = setOf(
+            ProjectDto(
+                projectId = testProjectId,
+                name = "Test Project",
+                description = null,
+            ),
+        ),
+        skills = emptyList(),
+        projectRoles = emptyList(),
     )
 
     private fun repoConnection(owner: String, name: String, user: GithubUser) = GithubRepositoryConnection(

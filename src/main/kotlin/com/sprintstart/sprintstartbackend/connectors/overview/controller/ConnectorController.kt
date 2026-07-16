@@ -23,10 +23,8 @@ import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
-import java.util.UUID
 
 // The pattern to match connector ids. Matches all strings,
 // that are lowercase, don't contain spaces, `-` is allowed.
@@ -141,9 +139,8 @@ class ConnectorController(
     @GetMapping("/{id}/sources")
     fun getSourcesOfConnector(
         @Pattern(regexp = ID_PATTERN) @PathVariable id: String,
-        @RequestParam(required = false) projectId: UUID?,
     ): ResponseEntity<GetSourcesOfConnectorResponse> =
-        ResponseEntity.ok(connectorConfigurationService.getSourcesOfConnector(id, projectId))
+        ResponseEntity.ok(connectorConfigurationService.getSourcesOfConnector(id))
 
     /**
      * Patches a given list of sources of a given connector, changing their statuses (`enabled`/`disabled`).

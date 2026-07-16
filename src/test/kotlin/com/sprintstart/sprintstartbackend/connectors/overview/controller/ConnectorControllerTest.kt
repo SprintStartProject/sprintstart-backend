@@ -34,7 +34,6 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
-import java.util.UUID
 
 @WebMvcTest(controllers = [ConnectorController::class])
 @AutoConfigureMockMvc
@@ -283,7 +282,7 @@ class ConnectorControllerTest {
 
         @Test
         fun `should return 200 with sources when authenticated as ADMIN`() {
-            every { connectorConfigurationService.getSourcesOfConnector(githubId, null) } returns
+            every { connectorConfigurationService.getSourcesOfConnector(githubId) } returns
                 GetSourcesOfConnectorResponse(githubId, sources)
 
             mockMvc
@@ -296,27 +295,12 @@ class ConnectorControllerTest {
 
         @Test
         fun `should return 200 with sources when authenticated as PM`() {
-            every { connectorConfigurationService.getSourcesOfConnector(githubId, null) } returns
+            every { connectorConfigurationService.getSourcesOfConnector(githubId) } returns
                 GetSourcesOfConnectorResponse(githubId, sources)
 
             mockMvc
                 .perform(get("/api/v1/connectors/{id}/sources", githubId).with(pmJwt))
                 .andExpect(status().isOk)
-        }
-
-        @Test
-        fun `should pass project id when provided`() {
-            val projectId = UUID.randomUUID()
-            every { connectorConfigurationService.getSourcesOfConnector(githubId, projectId) } returns
-                GetSourcesOfConnectorResponse(githubId, sources)
-
-            mockMvc
-                .perform(
-                    get("/api/v1/connectors/{id}/sources", githubId)
-                        .param("projectId", projectId.toString())
-                        .with(pmJwt),
-                ).andExpect(status().isOk)
-                .andExpect(jsonPath("$.sources[0].id").value("spring-projects/spring-boot"))
         }
 
         @Test
@@ -336,7 +320,7 @@ class ConnectorControllerTest {
         @Test
         fun `should return 404 when connector not found`() {
             val id = "unknown"
-            every { connectorConfigurationService.getSourcesOfConnector(id, null) } throws
+            every { connectorConfigurationService.getSourcesOfConnector(id) } throws
                 ConnectorNotFoundException("Unable to load up connector with id $id")
 
             mockMvc

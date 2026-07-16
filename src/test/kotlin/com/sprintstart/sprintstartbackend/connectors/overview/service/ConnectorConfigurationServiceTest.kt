@@ -23,7 +23,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.util.Optional
-import java.util.UUID
 import kotlin.test.assertFailsWith
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -267,26 +266,6 @@ class ConnectorConfigurationServiceTest {
 
             assertThat(result.connectorId).isEqualTo("github")
             assertThat(result.sources).isEmpty()
-        }
-
-        @Test
-        fun `should return project scoped sources when project id is provided`() {
-            val projectId = UUID.randomUUID()
-            val sources = listOf(
-                ConnectorSource(
-                    id = "owner/repo",
-                    name = "repo",
-                    url = "https://github.com/owner/repo",
-                    enabled = true,
-                ),
-            )
-            every { githubConnector.getSources(projectId) } returns sources
-
-            val result = service.getSourcesOfConnector("github", projectId)
-
-            assertThat(result.connectorId).isEqualTo("github")
-            assertThat(result.sources).hasSize(1)
-            assertThat(result.sources[0].id).isEqualTo("owner/repo")
         }
 
         @Test

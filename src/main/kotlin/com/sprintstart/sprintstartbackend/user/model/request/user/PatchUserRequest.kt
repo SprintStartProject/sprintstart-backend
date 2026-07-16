@@ -8,5 +8,5 @@ data class PatchUserRequest(
     val firstName: String? = null,
     val lastName: String? = null,
     val permissionGroup: Role? = null,
-    val projectsId: Set<UUID> = emptySet(),
+    val projectsId: Set<UUID>,
 )

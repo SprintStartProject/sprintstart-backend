@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
@@ -136,10 +135,6 @@ class UserApiService(
     override fun userHasAccessToProject(authId: String, projectId: UUID): Boolean {
         val user = userRepository.findByAuthId(authId).orElse(null)
             ?: return false
-        if (Role.ADMIN in user.roles) {
-            return true
-        }
-
         return projectId in user.projects.map { it.id }
     }
 }

@@ -1,7 +1,5 @@
 package com.sprintstart.sprintstartbackend.connectors.overview.models
 
-import java.util.UUID
-
 /**
  * A scaffold for connectors.
  *
@@ -47,16 +45,6 @@ interface IConnector {
      * @return a list of all sources of this connector.
      */
     fun getSources(): List<ConnectorSource>
-
-    /**
-     * Retrieve all sources of this connector that are linked to a specific project.
-     *
-     * Connectors that do not support project-scoped source lookup can keep the default behavior.
-     *
-     * @param projectId The project whose sources should be retrieved.
-     * @return a list of sources linked to the project.
-     */
-    fun getSources(projectId: UUID): List<ConnectorSource> = getSources()
 
     /**
      * Method signature for patching a connector source.

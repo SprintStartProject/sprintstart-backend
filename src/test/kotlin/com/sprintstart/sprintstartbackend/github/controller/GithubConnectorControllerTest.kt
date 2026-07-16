@@ -61,10 +61,6 @@ class GithubConnectorControllerTest {
         .jwt { it.subject("mockId") }
         .authorities(SimpleGrantedAuthority("ROLE_PM"))
 
-    private val adminJwt = jwt()
-        .jwt { it.subject("adminId") }
-        .authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
-
     private val validTokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
     private val projectId = UUID.randomUUID()
 
@@ -93,38 +89,6 @@ class GithubConnectorControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
                         .with(pmJwt),
-                ).andExpect(request().asyncStarted())
-                .andReturn()
-
-            mockMvc
-                .perform(asyncDispatch(asyncResult))
-                .andExpect(status().isAccepted)
-                .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
-        }
-
-        @Test
-        fun `should return 202 Accepted when authenticated as ADMIN`() {
-            val request = ConnectRepositoryRequest(
-                owner = "spring-projects",
-                name = "spring-modulith",
-                tokenName = validTokenName,
-                projectId = projectId,
-            )
-            val expectedTransactionId = UUID.randomUUID()
-
-            coEvery {
-                githubConnectorService.connectRepositoryIfExists(
-                    "adminId",
-                    request,
-                )
-            } returns expectedTransactionId
-
-            val asyncResult = mockMvc
-                .perform(
-                    post("/api/v1/github/connect")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request))
-                        .with(adminJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 

@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
@@ -103,18 +102,6 @@ class UserApiServiceTest {
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
 
         val result = userApi.userHasAccessToProject("auth-1", projectId)
-
-        assertThat(result).isTrue()
-    }
-
-    @Test
-    fun `userHasAccessToProject should return true when user is admin`() {
-        val requestedProjectId = UUID.randomUUID()
-        val user = user(project = null).apply { roles.add(Role.ADMIN) }
-
-        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
-
-        val result = userApi.userHasAccessToProject("auth-1", requestedProjectId)
 
         assertThat(result).isTrue()
     }

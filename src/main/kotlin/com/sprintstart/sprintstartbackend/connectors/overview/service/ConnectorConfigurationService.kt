@@ -21,7 +21,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
-import java.util.UUID
 
 @Service
 class ConnectorConfigurationService(
@@ -129,14 +128,14 @@ class ConnectorConfigurationService(
      */
     @Tracked("Retrieving all sources of given connector")
     @Transactional(readOnly = true)
-    fun getSourcesOfConnector(connectorId: String, projectId: UUID? = null): GetSourcesOfConnectorResponse {
+    fun getSourcesOfConnector(connectorId: String): GetSourcesOfConnectorResponse {
         val connector = connectors.stream().filter { it.id == connectorId }.findFirst().orElseThrow {
             ConnectorNotFoundException("Unable to load up connector with id $connectorId")
         }
 
         return GetSourcesOfConnectorResponse(
             connectorId = connectorId,
-            sources = projectId?.let { connector.getSources(it) } ?: connector.getSources(),
+            sources = connector.getSources(),
         )
     }
 
