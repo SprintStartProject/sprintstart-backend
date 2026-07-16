@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -50,8 +49,6 @@ class IngestionRunServiceTest {
             failedCount = 1,
             failedItems = mutableListOf(failedItem),
             status = IngestionRunStatus.PARTIAL,
-            aiSyncStatus = AiSyncStatus.FAILED,
-            aiSyncFailureReason = "AI service unreachable",
         )
         every { ingestionRunRepository.findByOrderByStartedAtDesc(capture(pageable)) } returns listOf(run)
 
@@ -67,7 +64,5 @@ class IngestionRunServiceTest {
         assertThat(response.updatedCount).isEqualTo(2)
         assertThat(response.failedCount).isEqualTo(1)
         assertThat(response.failedItems).containsExactly(failedItem)
-        assertThat(response.aiSyncStatus).isEqualTo(AiSyncStatus.FAILED)
-        assertThat(response.aiSyncFailureReason).isEqualTo("AI service unreachable")
     }
 }

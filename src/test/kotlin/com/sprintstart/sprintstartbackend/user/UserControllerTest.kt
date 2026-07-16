@@ -9,7 +9,6 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
-import com.sprintstart.sprintstartbackend.user.model.response.project.MyProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
@@ -92,31 +91,6 @@ class UserControllerTest(
             .andExpect(jsonPath("$.firstName").value("Alicia"))
 
         verify(exactly = 1) { userService.patchMe("user", request) }
-    }
-
-    @Test
-    fun `getMyProjects returns current user's projects`() {
-        val projectId = UUID.randomUUID()
-        every { userService.getMyProjects("user") } returns listOf(
-            MyProjectResponse(id = projectId, name = "Apollo"),
-        )
-
-        mockMvc
-            .perform(get("/api/v1/users/me/projects").with(userJwt))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].id").value(projectId.toString()))
-            .andExpect(jsonPath("$[0].name").value("Apollo"))
-
-        verify(exactly = 1) { userService.getMyProjects("user") }
-    }
-
-    @Test
-    fun `getMyProjects rejects unauthenticated caller`() {
-        mockMvc
-            .perform(get("/api/v1/users/me/projects"))
-            .andExpect(status().isUnauthorized)
-
-        verify(exactly = 0) { userService.getMyProjects(any()) }
     }
 
     @Test

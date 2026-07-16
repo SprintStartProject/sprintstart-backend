@@ -39,8 +39,6 @@ class IngestionRunService(
                     failedCount = it.failedCount,
                     failedItems = it.failedItems,
                     status = it.status,
-                    aiSyncStatus = it.aiSyncStatus,
-                    aiSyncFailureReason = it.aiSyncFailureReason,
                 )
             }
 }

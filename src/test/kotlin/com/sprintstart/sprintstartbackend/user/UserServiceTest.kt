@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
-import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
@@ -196,37 +195,6 @@ class UserServiceTest {
 
         assertThat(result.id).isEqualTo(user.id)
         assertThat(result.deleted).isTrue()
-    }
-
-    @Test
-    fun `getMyProjects returns the projects the user is assigned to`() {
-        val user = user(authId = "auth-1", username = "alice")
-        user.projects.add(Project(name = "Apollo", description = "A project"))
-        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
-
-        val result = userService.getMyProjects("auth-1")
-
-        assertThat(result).hasSize(1)
-        assertThat(result.single().name).isEqualTo("Apollo")
-    }
-
-    @Test
-    fun `getMyProjects returns empty list when user has no projects`() {
-        val user = user(authId = "auth-1", username = "alice")
-        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
-
-        val result = userService.getMyProjects("auth-1")
-
-        assertThat(result).isEmpty()
-    }
-
-    @Test
-    fun `getMyProjects throws NOT_FOUND when user missing`() {
-        every { userRepository.findByAuthId("missing") } returns Optional.empty()
-
-        val ex = assertThrows<ResponseStatusException> { userService.getMyProjects("missing") }
-
-        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
     }
 
     @Test

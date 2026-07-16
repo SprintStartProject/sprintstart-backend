@@ -40,8 +40,4 @@ class IngestionRun(
     @Column(nullable = false)
     var status: IngestionRunStatus,
     var failureReason: String? = null,
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    var aiSyncStatus: AiSyncStatus = AiSyncStatus.PENDING,
-    var aiSyncFailureReason: String? = null,
 )

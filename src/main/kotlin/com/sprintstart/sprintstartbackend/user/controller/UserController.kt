@@ -3,7 +3,6 @@ package com.sprintstart.sprintstartbackend.user.controller
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
-import com.sprintstart.sprintstartbackend.user.model.response.project.MyProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.GetUserResponse
 import com.sprintstart.sprintstartbackend.user.service.UserService
@@ -101,35 +100,6 @@ class UserSelfController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): GetUserResponse = userService.patchMe(jwt.subject, request)
-
-    /**
-     * Returns the projects the authenticated user is assigned to.
-     *
-     * Unlike [com.sprintstart.sprintstartbackend.user.controller.AdminProjectController],
-     * this is available to any authenticated user, not just admins -- it exists so
-     * non-admin flows (e.g. connecting a GitHub repository) that need a project id
-     * can offer a picker scoped to the current user's own projects.
-     *
-     * @param jwt The authenticated JWT containing the caller subject.
-     * @return The current user's assigned projects.
-     */
-    @Operation(
-        summary = "Get current user's projects",
-        description = "Returns the projects the authenticated user is assigned to.",
-    )
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "200", description = "Projects returned successfully"),
-            ApiResponse(responseCode = "401", description = "Authentication required"),
-        ],
-    )
-    @GetMapping("/me/projects")
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasRole('USER')")
-    fun getMyProjects(
-        @Parameter(hidden = true)
-        @AuthenticationPrincipal jwt: Jwt,
-    ): List<MyProjectResponse> = userService.getMyProjects(jwt.subject)
 }
 
 /**
