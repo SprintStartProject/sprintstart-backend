@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import com.sprintstart.sprintstartbackend.upload.allowedExtensions
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
@@ -16,6 +15,14 @@ class UploadValidationService(
     @Value("\${app.upload.max-file-size-bytes}")
     private val maxFileSizeBytes: Long,
 ) {
+    private val allowedExtensions = setOf(
+        "md",
+        "png",
+        "jpg",
+        "jpeg",
+        "webp",
+    )
+
     /**
      * Applies all upload acceptance checks before storage is attempted.
      *
@@ -68,24 +75,16 @@ class UploadValidationService(
         val filename = file.originalFilename
             ?: throw IllegalArgumentException("Missing filename")
 
-        val extension = extensionFor(filename)
+        val extension = filename
+            .substringAfterLast(
+                delimiter = ".",
+                missingDelimiterValue = "",
+            ).lowercase()
 
         if (extension !in allowedExtensions) {
             throw IllegalArgumentException(
                 "Unsupported file extension: $extension",
             )
-        }
-    }
-
-    private fun extensionFor(filename: String): String {
-        return when (filename.lowercase()) {
-            "dockerfile" -> "dockerfile"
-            else ->
-                filename
-                    .substringAfterLast(
-                        delimiter = ".",
-                        missingDelimiterValue = "",
-                    ).lowercase()
         }
     }
 }

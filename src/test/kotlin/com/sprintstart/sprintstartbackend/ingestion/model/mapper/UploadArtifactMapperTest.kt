@@ -7,7 +7,6 @@ import com.sprintstart.sprintstartbackend.upload.external.UploadedArtifactReader
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.ArtifactUploadedEvent
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -54,33 +53,5 @@ class UploadArtifactMapperTest {
                 actorId = uploaderId,
             ),
         )
-    }
-
-    @Test
-    fun `toCommand skips text read for pdf uploads`() {
-        val runId = UUID.randomUUID()
-        val projectId = UUID.randomUUID()
-        val artifactId = UUID.randomUUID()
-        val uploaderId = UUID.randomUUID()
-        val event = ArtifactUploadedEvent(
-            transactionId = runId,
-            projectId = projectId,
-            artifactId = artifactId,
-            filename = "guide.pdf",
-            storagePath = "/uploads/$artifactId/guide.pdf",
-            mime = "application/pdf",
-            hash = "hash",
-            uploadedAt = Instant.parse("2026-07-11T10:15:30Z"),
-            uploaderId = uploaderId,
-        )
-
-        val result = mapper.toCommand(event)
-
-        assertThat(result.content).isNull()
-        assertThat(result.language).isNull()
-        assertThat(result.mime).isEqualTo("application/pdf")
-        verify(exactly = 0) {
-            uploadedArtifactReader.readText(artifactId)
-        }
     }
 }

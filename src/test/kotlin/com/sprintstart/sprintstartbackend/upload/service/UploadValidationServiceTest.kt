@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.mock.web.MockMultipartFile
 
 class UploadValidationServiceTest {
@@ -96,8 +94,8 @@ class UploadValidationServiceTest {
     fun `rejects unsupported extension`() {
         val file = MockMultipartFile(
             "files",
-            "archive.zip",
-            "application/zip",
+            "notes.txt",
+            "text/plain",
             "hello".toByteArray(),
         )
 
@@ -105,33 +103,7 @@ class UploadValidationServiceTest {
             service.validate(file)
         }
 
-        assertEquals("Unsupported file extension: zip", ex.message)
-    }
-
-    @ParameterizedTest
-    @ValueSource(
-        strings = [
-            "notes.txt",
-            "guide.pdf",
-            "Service.java",
-            "native.cpp",
-            "component.tsx",
-            "Dockerfile",
-            "script.sh",
-            "config.yaml",
-        ],
-    )
-    fun `accepts text document and code upload extensions`(filename: String) {
-        val file = MockMultipartFile(
-            "files",
-            filename,
-            "application/octet-stream",
-            "content".toByteArray(),
-        )
-
-        assertDoesNotThrow {
-            service.validate(file)
-        }
+        assertEquals("Unsupported file extension: txt", ex.message)
     }
 
     @Test

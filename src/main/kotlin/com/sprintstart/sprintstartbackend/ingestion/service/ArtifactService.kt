@@ -1,12 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
-import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResult
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
-import com.sprintstart.sprintstartbackend.upload.external.UploadedArtifactReader
+import com.sprintstart.sprintstartbackend.shared.ArtifactContentCodec
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -16,35 +14,32 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
- * Resolves project-scoped artifact open targets for authenticated callers.
+ * Resolves project-scoped artifact content for authenticated callers.
  *
  * This service centralizes the authorization and ownership checks required before raw artifact
- * payloads or remote source URLs can be returned to the API layer.
+ * payloads can be returned to the API layer.
  */
 @Service
 class ArtifactService(
     private val userApi: UserApi,
     private val artifactRepository: ArtifactRepository,
-    private val uploadedArtifactReader: UploadedArtifactReader,
 ) {
     /**
-     * Loads one artifact open target when the authenticated user has access to the requested project.
+     * Loads one artifact payload when the authenticated user has access to the requested project.
      *
      * The method first verifies project access through the user module, then ensures the artifact
-     * exists and is linked to the same project. Stored text content is returned directly for any
-     * source, upload artifacts can return original stored bytes, and remote artifacts without local
-     * bytes redirect to their source URL when available.
+     * exists and is linked to the same project before returning its stored content and mime type.
      *
      * @param projectId The project that scopes access to the artifact.
      * @param artifactId The identifier of the artifact to retrieve.
      * @param authId The authenticated caller subject from the JWT.
-     * @return Stored artifact bytes or a source URL redirect target.
+     * @return The stored artifact payload together with the effective mime type.
      * @throws ResponseStatusException `403` when the caller has no access to the project.
      * @throws ResponseStatusException `404` when the artifact is missing, not linked to the
      * requested project, or has no stored content.
      */
     @Transactional(readOnly = true)
-    fun getArtifactContent(projectId: UUID, artifactId: UUID, authId: String): ArtifactContentResult {
+    fun getArtifactContent(projectId: UUID, artifactId: UUID, authId: String): ArtifactContentResponse {
         ensureAccessToProject(authId, projectId)
         val artifact = requireArtifact(artifactId)
 
@@ -54,47 +49,20 @@ class ArtifactService(
                 "This artifact does not belong to project with id $projectId.",
             )
         }
-        artifact.content?.let {
-            return ArtifactContentResponse(
-                content = it.toByteArray(Charsets.UTF_8),
-                mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
-            )
+        val storedContent = artifact.content
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact content not found")
+        val mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
+
+        val bodyBytes = if (artifact.sourceSystem == SourceSystem.UPLOAD) {
+            ArtifactContentCodec.decode(storedContent, mime)
+        } else {
+            storedContent.toByteArray(Charsets.UTF_8)
         }
 
-        when (artifact.sourceSystem) {
-            SourceSystem.UPLOAD -> {
-                readUploadedBytes(artifact)?.let {
-                    return ArtifactContentResponse(
-                        content = it,
-                        mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
-                    )
-                }
-            }
-
-            SourceSystem.GITHUB,
-            SourceSystem.JIRA,
-            -> {
-                artifact.sourceUrl?.let {
-                    return ArtifactContentRedirectResponse(it)
-                }
-            }
-        }
-
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact content not found")
-    }
-
-    private fun readUploadedBytes(artifact: Artifact): ByteArray? {
-        val uploadArtifactId = runCatching {
-            UUID.fromString(artifact.sourceId)
-        }.getOrElse {
-            return null
-        }
-
-        return runCatching {
-            uploadedArtifactReader.readBytes(uploadArtifactId)
-        }.getOrElse {
-            return null
-        }
+        return ArtifactContentResponse(
+            content = bodyBytes,
+            mime = mime,
+        )
     }
 
     /**
