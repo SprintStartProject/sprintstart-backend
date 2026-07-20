@@ -32,4 +32,18 @@ class OnboardingPhase(
     )
     @OrderBy("position ASC")
     val steps: MutableList<OnboardingStep> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "phase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("position ASC")
+    val checkQuestions: MutableList<PhaseCheckQuestion> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "phase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("createdAt ASC")
+    val checkAttempts: MutableList<PhaseCheckAttempt> = mutableListOf(),
 )

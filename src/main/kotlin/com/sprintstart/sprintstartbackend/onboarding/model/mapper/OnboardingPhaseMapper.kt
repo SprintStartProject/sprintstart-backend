@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.PhaseUnlockReason
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.CreateOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
@@ -28,13 +29,19 @@ fun OnboardingPhase.toGetResponse(): GetOnboardingPhaseResponse {
     )
 }
 
-fun OnboardingPhase.toGetForUserResponse(): GetOnboardingPhaseForUserResponse {
+fun OnboardingPhase.toGetForUserResponse(
+    locked: Boolean = false,
+    unlockReason: PhaseUnlockReason? = null,
+): GetOnboardingPhaseForUserResponse {
     return GetOnboardingPhaseForUserResponse(
         id = this.id,
         pathId = this.path.id,
         position = this.position,
         title = this.title,
         description = this.description,
+        locked = locked,
+        unlockReason = unlockReason,
+        checkSummary = this.toCheckSummaryResponse(),
         steps = this.steps.map { step -> step.toGetAllResponse() },
     )
 }

@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnb
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.UpdateOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -45,6 +46,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding phases for user")
     fun getOnboardingPhasesForMe(authId: String): List<GetOnboardingPhasesResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -68,6 +70,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the user or phase does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific onboarding phase for user")
     fun getOnboardingPhaseForMe(authId: String, phaseId: UUID): GetOnboardingPhaseResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -90,6 +93,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the user, path, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Creating new onboarding phase for user")
     fun createOnboardingPhaseForMe(
         authId: String,
         request: CreateOnboardingPhaseRequest,
@@ -128,6 +132,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the user, phase, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Updating onboarding phase for user")
     fun updateOnboardingPhaseForMe(
         authId: String,
         phaseId: UUID,
@@ -160,6 +165,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the user or phase does not exist.
      */
     @Transactional
+    @Tracked("Deleting onboarding phase for user")
     fun deleteOnboardingPhaseForMe(
         authId: String,
         phaseId: UUID,
@@ -190,6 +196,7 @@ class OnboardingPhaseService(
      * @return Ordered phases for the user's path.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding phases for a user")
     fun getOnboardingPhasesForUser(userId: UUID): List<GetOnboardingPhasesResponse> {
         return onboardingPhaseRepository.findAllByPathUserId(userId).map { it.toGetAllResponse() }
     }
@@ -205,6 +212,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the path or requested position does not exist.
      */
     @Transactional
+    @Tracked("Creating new onboarding phase for a user")
     fun createOnboardingPhaseForUserId(
         userId: UUID,
         request: CreateOnboardingPhaseRequest,
@@ -234,6 +242,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the phase does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific onboarding phase")
     fun getOnboardingPhaseById(phaseId: UUID): GetOnboardingPhaseResponse {
         return onboardingPhaseRepository
             .findById(phaseId)
@@ -253,6 +262,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException When the phase does not exist or the position is invalid.
      */
     @Transactional
+    @Tracked("Retrieving specific onboarding phase")
     fun updateOnboardingPhaseById(
         phaseId: UUID,
         request: UpdateOnboardingPhaseRequest,
@@ -277,6 +287,7 @@ class OnboardingPhaseService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no phase exists with [phaseId].
      */
     @Transactional
+    @Tracked("Deleting onboarding phase")
     fun deleteOnboardingPhaseById(
         phaseId: UUID,
     ) {

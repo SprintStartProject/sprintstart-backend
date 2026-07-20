@@ -1,8 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto.response
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
-import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID
@@ -30,4 +31,13 @@ data class IngestionRunResponse(
     @field:Schema(description = "Failure details captured for individual source artifacts in this run.")
     val failedItems: MutableList<FailedArtifact>,
     val status: IngestionRunStatus,
+    @field:Schema(
+        description =
+            "Whether this run's artifacts have actually reached the AI service's index. " +
+                "`status` above only reflects local fetch-and-store, so a run can be COMPLETED " +
+                "while this is still PENDING or has moved to FAILED.",
+    )
+    val aiSyncStatus: AiSyncStatus,
+    @field:Schema(description = "Failure detail when aiSyncStatus is FAILED.")
+    val aiSyncFailureReason: String? = null,
 )

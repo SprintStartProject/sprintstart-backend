@@ -37,6 +37,7 @@ class KeycloakAdminClientTest {
             email = "new@mail.de",
             firstName = "Alicia",
             lastName = null,
+            projectIds = emptySet(),
         )
 
         val payload = objectMapper.readTree(body.captured)
@@ -48,7 +49,7 @@ class KeycloakAdminClientTest {
 
     @Test
     fun `updateUserProfile skips Keycloak request when no profile fields are provided`() {
-        client.updateUserProfile(authId = "auth-1")
+        client.updateUserProfile(authId = "auth-1", projectIds = emptySet())
 
         verify(exactly = 0) { tokenProvider.accessToken() }
         verify(exactly = 0) { transport.send(any(), any(), any(), any()) }

@@ -3,6 +3,9 @@ package com.sprintstart.sprintstartbackend.user.controller
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.request.AssignProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
+import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -144,5 +148,62 @@ class ProjectRoleController(
         @Parameter(description = "UUID of the project role to remove") @PathVariable roleId: UUID,
     ) {
         projectRoleService.unassignRoleFromUser(userId, roleId)
+    }
+
+    /**
+     * Retrieves all skills linked to a project role.
+     *
+     * @param roleId The UUID of the project role.
+     * @return List of skills linked to the role.
+     */
+    @Operation(
+        summary = "Get skills for project role",
+        description = "Retrieves all skills currently linked to a specific project role.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Skills returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role not found"),
+        ],
+    )
+    @GetMapping("/projectRoles/{roleId}/skills")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR', 'USER')")
+    fun getSkillsForRole(
+        @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
+    ): List<GetSkillResponse> {
+        return projectRoleService.getSkillsForRole(roleId)
+    }
+
+    /**
+     * Replaces the full set of skills linked to a project role.
+     *
+     * @param roleId The UUID of the project role.
+     * @param request The request containing the full set of skill IDs to link to the role.
+     * @return The skills linked to the role after the update.
+     */
+    @Operation(
+        summary = "Set skills for project role",
+        description = "Replaces the full set of skills linked to a project role.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Skills updated successfully"),
+            ApiResponse(responseCode = "400", description = "Update would leave a skill with no project role"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role or skill not found"),
+        ],
+    )
+    @PutMapping("/projectRoles/{roleId}/skills")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun setSkillsForRole(
+        @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
+        @RequestBody request: UpdateRoleSkillsRequest,
+    ): List<UpdateRoleSkillsResponse> {
+        return projectRoleService.setSkillsForRole(roleId, request)
     }
 }

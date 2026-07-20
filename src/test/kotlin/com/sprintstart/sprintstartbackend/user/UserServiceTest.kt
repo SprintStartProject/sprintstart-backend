@@ -2,10 +2,11 @@ package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserEnabledRequest
+import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
+import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
+import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.KeycloakAdminClient
 import com.sprintstart.sprintstartbackend.user.service.UserService
@@ -42,7 +43,7 @@ class UserServiceTest {
         val result = userService.getMe(jwt)
 
         assertThat(result.firstName).isEqualTo("First")
-        assertThat(result.projectRoles).isEmpty()
+        assertThat(result.roles).containsExactly(Role.USER)
         assertThat(result.permissionGroup).isEqualTo(Role.USER)
         assertThat(result.enabled).isTrue()
     }
@@ -64,7 +65,7 @@ class UserServiceTest {
 
         assertThat(result.authId).isEqualTo("missing")
         assertThat(result.username).isEqualTo("missingUser")
-        assertThat(result.projectRoles).isEmpty()
+        assertThat(result.roles).containsExactly(Role.USER)
         verify(exactly = 1) { userRepository.save(any<User>()) }
         verify(exactly = 1) { eventPublisher.publishEvent(any<UserCreatedEvent>()) }
     }
@@ -90,10 +91,11 @@ class UserServiceTest {
             firstName = "Alicia",
             lastName = "Tester",
             profileIcon = "icon-star",
+            projectsId = emptySet(),
         )
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
         every {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester", emptySet())
         } just runs
         every { userRepository.save(user) } returns user
 
@@ -105,7 +107,7 @@ class UserServiceTest {
         assertThat(user.profileIcon).isEqualTo("icon-star")
         assertThat(result.email).isEqualTo("new@mail.de")
         verify(exactly = 1) {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester")
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", "Alicia", "Tester", emptySet())
         }
     }
 
@@ -117,10 +119,11 @@ class UserServiceTest {
             email = "new@mail.de",
             lastName = "Tester",
             permissionGroup = Role.ADMIN,
+            projectsId = emptySet(),
         )
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every {
-            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", null, "Tester")
+            keycloakAdminClient.updateUserProfile("auth-1", "new@mail.de", null, "Tester", emptySet())
         } just runs
         every { keycloakAdminClient.setPermissionGroup("auth-1", Role.ADMIN) } just runs
         every { userRepository.save(user) } returns user
@@ -137,10 +140,10 @@ class UserServiceTest {
     fun `patchAdminUserById returns requested permission group without mutating local roles directly`() {
         val user = user(authId = "auth-1", username = "alice")
         user.roles.addAll(setOf(Role.USER, Role.ADMIN))
-        val request = PatchUserRequest(permissionGroup = Role.PM)
+        val request = PatchUserRequest(permissionGroup = Role.PM, projectsId = emptySet())
         every { userRepository.findById(user.id) } returns Optional.of(user)
         every {
-            keycloakAdminClient.updateUserProfile("auth-1", null, null, null)
+            keycloakAdminClient.updateUserProfile("auth-1", null, null, null, emptySet())
         } just runs
         every { keycloakAdminClient.setPermissionGroup("auth-1", Role.PM) } just runs
         every { userRepository.save(user) } returns user
@@ -193,6 +196,37 @@ class UserServiceTest {
 
         assertThat(result.id).isEqualTo(user.id)
         assertThat(result.deleted).isTrue()
+    }
+
+    @Test
+    fun `getMyProjects returns the projects the user is assigned to`() {
+        val user = user(authId = "auth-1", username = "alice")
+        user.projects.add(Project(name = "Apollo", description = "A project"))
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userService.getMyProjects("auth-1")
+
+        assertThat(result).hasSize(1)
+        assertThat(result.single().name).isEqualTo("Apollo")
+    }
+
+    @Test
+    fun `getMyProjects returns empty list when user has no projects`() {
+        val user = user(authId = "auth-1", username = "alice")
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userService.getMyProjects("auth-1")
+
+        assertThat(result).isEmpty()
+    }
+
+    @Test
+    fun `getMyProjects throws NOT_FOUND when user missing`() {
+        every { userRepository.findByAuthId("missing") } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> { userService.getMyProjects("missing") }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
     }
 
     @Test

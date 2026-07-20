@@ -1,14 +1,16 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
-import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import jakarta.persistence.criteria.JoinType
 import jakarta.persistence.criteria.Predicate
@@ -37,6 +39,7 @@ class UserApiService(
      * @return `true` if a user with the given identifier exists, otherwise `false`.
      */
     @Transactional(readOnly = true)
+    @Tracked("Checking if user exists")
     override fun exists(id: UUID): Boolean {
         return userRepository.existsById(id)
     }
@@ -48,11 +51,41 @@ class UserApiService(
      * @return The matching user ID when present.
      */
     @Transactional
+    @Tracked("Resolving user ID by auth ID")
     override fun getUserIdByAuthId(authId: String): Optional<UUID> {
         return userRepository.findIdByAuthId(authId)
     }
 
+    /**
+     * Retrieves a user by their external authentication identifier.
+     *
+     * @param authId The external authentication identifier of the user.
+     * @return A data transfer object (DTO) representing the user.
+     * @throws NoSuchElementException if no user is found with the provided authentication identifier.
+     */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving user by auth ID")
+    override fun getUserByAuthId(authId: String): UserDto {
+        val user = userRepository.findByAuthId(authId).orElseThrow {
+            NoSuchElementException("User with id $authId not found")
+        }
+        return user.toUserApiDto()
+    }
+
+    /**
+     * Searches for users based on the provided filters and pagination information.
+     *
+     * @param search An optional search string used to filter users by username, first name, or last name.
+     *               If null or blank, this filter is ignored.
+     * @param roleIds An optional list of role IDs used to filter users who are associated with specific project roles.
+     *                If null or empty, this filter is ignored.
+     * @param projectIds An optional list of project IDs used to filter users who are associated with specific projects.
+     *                   If null or empty, this filter is ignored.
+     * @param pageable The pagination information used to control the page size and number for the results.
+     * @return A paginated list of users matching the provided filters, represented as a page of UserDto objects.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Searching for users")
     override fun searchUsers(
         search: String?,
         roleIds: List<UUID>?,
@@ -76,7 +109,7 @@ class UserApiService(
             }
 
             if (!projectIds.isNullOrEmpty()) {
-                val projectJoin = root.join<User, Project>("project", JoinType.INNER)
+                val projectJoin = root.join<User, Project>("projects", JoinType.INNER)
                 predicates.add(projectJoin.get<UUID>("id").`in`(projectIds))
             }
 
@@ -86,70 +119,19 @@ class UserApiService(
             if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
         }
 
-        return userRepository.findAll(spec, pageable).map { user ->
-            UserDto(
-                id = user.id,
-                username = user.username,
-                firstname = user.firstname,
-                lastname = user.lastname,
-                avatarUrl = user.avatarUrl,
-                project = user.project?.let {
-                    ProjectDto(
-                        projectId = it.id,
-                        name = it.name,
-                        description = it.description,
-                    )
-                },
-                skills = user.skillAssessments.map { assessment ->
-                    UserSkillDto(
-                        skillId = assessment.skill.id,
-                        name = assessment.skill.name,
-                        level = assessment.level.name,
-                    )
-                },
-                projectRoles = user.projectRoles.map { role ->
-                    ProjectRoleDto(
-                        roleId = role.id,
-                        name = role.name,
-                        description = role.description,
-                    )
-                },
-            )
-        }
+        return userRepository.findAll(spec, pageable).map { it.toUserApiDto() }
     }
 
+    /**
+     * Retrieves a list of users based on their unique identifiers.
+     *
+     * @param ids A list of unique identifiers (UUIDs) representing the users to be fetched.
+     * @return A list of UserDto objects corresponding to the provided identifiers.
+     */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving users by IDs")
     override fun getUsersByIds(ids: List<UUID>): List<UserDto> {
-        return userRepository.findAllById(ids).map { user ->
-            UserDto(
-                id = user.id,
-                username = user.username,
-                firstname = user.firstname,
-                lastname = user.lastname,
-                avatarUrl = user.avatarUrl,
-                project = user.project?.let {
-                    ProjectDto(
-                        projectId = it.id,
-                        name = it.name,
-                        description = it.description,
-                    )
-                },
-                skills = user.skillAssessments.map { assessment ->
-                    UserSkillDto(
-                        skillId = assessment.skill.id,
-                        name = assessment.skill.name,
-                        level = assessment.level.name,
-                    )
-                },
-                projectRoles = user.projectRoles.map { role ->
-                    ProjectRoleDto(
-                        roleId = role.id,
-                        name = role.name,
-                        description = role.description,
-                    )
-                },
-            )
-        }
+        return userRepository.findAllById(ids).map { it.toUserApiDto() }
     }
 
     /**
@@ -159,6 +141,7 @@ class UserApiService(
      * @return The user's onboarding profile when present.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding profile by auth ID")
     override fun getOnboardingProfileByAuthId(authId: String): Optional<UserOnboardingProfile> =
         userRepository.findByAuthId(authId).map { user ->
             UserOnboardingProfile(
@@ -179,4 +162,23 @@ class UserApiService(
                 },
             )
         }
+
+    /**
+     * Determines whether a user with the given authentication identifier has access to the specified project.
+     *
+     * @param authId The external authentication identifier of the user.
+     * @param projectId The unique identifier of the project to check access for.
+     * @return `true` if the user has access to the project, otherwise `false`.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Checking if user has access to project")
+    override fun userHasAccessToProject(authId: String, projectId: UUID): Boolean {
+        val user = userRepository.findByAuthId(authId).orElse(null)
+            ?: return false
+        if (Role.ADMIN in user.roles) {
+            return true
+        }
+
+        return projectId in user.projects.map { it.id }
+    }
 }

@@ -1,15 +1,31 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
+import com.sprintstart.sprintstartbackend.AiConfig
+import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.CryptoConfig
+import com.sprintstart.sprintstartbackend.GithubConfig
+import com.sprintstart.sprintstartbackend.UploadConfig
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.mock.web.MockMultipartFile
 
 class UploadValidationServiceTest {
     private val service =
         UploadValidationService(
-            maxFileSizeBytes = 100,
+            applicationConfig = ApplicationConfig(
+                ai = AiConfig(baseUrl = "http://unused"),
+                github = GithubConfig(
+                    baseUrl = "https://api.github.com",
+                    repoBaseUrl = "https://api.github.com/repos",
+                    cron = "0 0 * * *",
+                ),
+                crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
+                upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
+            ),
         )
 
     @Test
@@ -94,8 +110,8 @@ class UploadValidationServiceTest {
     fun `rejects unsupported extension`() {
         val file = MockMultipartFile(
             "files",
-            "notes.txt",
-            "text/plain",
+            "archive.zip",
+            "application/zip",
             "hello".toByteArray(),
         )
 
@@ -103,7 +119,33 @@ class UploadValidationServiceTest {
             service.validate(file)
         }
 
-        assertEquals("Unsupported file extension: txt", ex.message)
+        assertEquals("Unsupported file extension: zip", ex.message)
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "notes.txt",
+            "guide.pdf",
+            "Service.java",
+            "native.cpp",
+            "component.tsx",
+            "Dockerfile",
+            "script.sh",
+            "config.yaml",
+        ],
+    )
+    fun `accepts text document and code upload extensions`(filename: String) {
+        val file = MockMultipartFile(
+            "files",
+            filename,
+            "application/octet-stream",
+            "content".toByteArray(),
+        )
+
+        assertDoesNotThrow {
+            service.validate(file)
+        }
     }
 
     @Test

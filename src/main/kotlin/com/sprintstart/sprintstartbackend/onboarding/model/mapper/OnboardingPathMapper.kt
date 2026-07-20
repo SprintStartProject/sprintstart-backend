@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.PhaseUnlockReason
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CreateOnboardingPathResponse
@@ -30,11 +31,31 @@ fun OnboardingPath.toGetResponse(): GetOnboardingPathResponse {
 }
 
 fun OnboardingPath.toGetForUserResponse(): GetOnboardingPathForUserResponse {
+    // The reason the phase being visited is locked; null while every previous
+    // phase is completed (steps done/skipped and check passed if one exists).
+    var lockReason: PhaseUnlockReason? = null
+
+    val phaseResponses = phases.sortedBy { it.position }.map { phase ->
+        val response = phase.toGetForUserResponse(
+            locked = lockReason != null,
+            unlockReason = lockReason,
+        )
+
+        // A locked phase locks everything after it as well.
+        lockReason = when {
+            lockReason != null || !phase.stepsCompleted() -> PhaseUnlockReason.PREVIOUS_PHASE_INCOMPLETE
+            phase.hasCheck() && !phase.checkPassed() -> PhaseUnlockReason.PREVIOUS_PHASE_CHECK_NOT_PASSED
+            else -> null
+        }
+
+        response
+    }
+
     return GetOnboardingPathForUserResponse(
         id = this.id,
         userId = this.userId,
         createdAt = this.createdAt,
-        phases = phases.map { phase -> phase.toGetForUserResponse() },
+        phases = phaseResponses,
     )
 }
 

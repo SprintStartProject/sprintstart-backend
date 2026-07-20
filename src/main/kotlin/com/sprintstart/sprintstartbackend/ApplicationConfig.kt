@@ -19,6 +19,7 @@ data class ApplicationConfig(
     val github: GithubConfig,
     val keycloak: KeycloakConfig = KeycloakConfig(),
     val crypto: CryptoConfig,
+    val upload: UploadConfig,
 )
 
 /**
@@ -88,4 +89,10 @@ data class CryptoConfig(
     val masterKey: String,
     @get:JsonProperty("salt")
     val salt: String,
+)
+
+data class UploadConfig(
+    val directory: String,
+    @get:JsonProperty("max-file-size-bytes")
+    val maxFileSizeBytes: Long,
 )

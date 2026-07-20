@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.entity
 
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillLevel
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType

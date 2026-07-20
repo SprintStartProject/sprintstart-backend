@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto.request
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
-import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import kotlinx.serialization.Serializable
 
 @Serializable

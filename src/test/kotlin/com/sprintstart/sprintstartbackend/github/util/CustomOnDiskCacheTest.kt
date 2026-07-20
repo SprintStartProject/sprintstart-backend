@@ -1,12 +1,11 @@
 package com.sprintstart.sprintstartbackend.github.util
 
-import com.sprintstart.sprintstartbackend.AiConfig
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.CryptoConfig
-import com.sprintstart.sprintstartbackend.GithubConfig
-import com.sprintstart.sprintstartbackend.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.util.CustomOnDiskCache
+import com.sprintstart.sprintstartbackend.connectors.github.util.GitOperationRunner
+import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -26,16 +25,6 @@ class CustomOnDiskCacheTest {
     private val gitRunner = mockk<GitOperationRunner>()
     private val onDiskOperations = OnDiskOperations()
 
-    private val applicationConfig = ApplicationConfig(
-        ai = AiConfig(baseUrl = "http://unused"),
-        github = GithubConfig(
-            baseUrl = "http://unused",
-            repoBaseUrl = "http://unused",
-            cron = "0 0 * * *",
-        ),
-        crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
-    )
-
     private lateinit var cache: CustomOnDiskCache
 
     @BeforeEach
@@ -43,7 +32,6 @@ class CustomOnDiskCacheTest {
         tempDir = Files.createTempDirectory("cache-test")
         cache = CustomOnDiskCache(
             cacheBasePath = tempDir.toString(),
-            applicationConfig = applicationConfig,
             onDiskOperations = onDiskOperations,
             gitRunner = gitRunner,
         )

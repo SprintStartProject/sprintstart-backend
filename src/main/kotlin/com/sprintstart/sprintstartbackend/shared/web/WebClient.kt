@@ -4,7 +4,6 @@ import kotlinx.serialization.json.Json
 import org.springframework.stereotype.Component
 import java.net.http.HttpClient
 
-@Suppress("MagicNumber")
 val HTTP_SUCCESS_RANGE = 200..299
 
 /**

@@ -1,6 +1,9 @@
 package com.sprintstart.sprintstartbackend.user
 
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import com.sprintstart.sprintstartbackend.user.model.entity.Project
+import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.UserApiService
 import io.mockk.every
@@ -89,4 +92,58 @@ class UserApiServiceTest {
         }
         assertThat(result).isEmpty()
     }
+
+    @Test
+    fun `userHasAccessToProject should return true when user belongs to project`() {
+        val projectId = UUID.randomUUID()
+        val user = user(project = Project(id = projectId, name = "Project"))
+
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userApi.userHasAccessToProject("auth-1", projectId)
+
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun `userHasAccessToProject should return true when user is admin`() {
+        val requestedProjectId = UUID.randomUUID()
+        val user = user(project = null).apply { roles.add(Role.ADMIN) }
+
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userApi.userHasAccessToProject("auth-1", requestedProjectId)
+
+        assertThat(result).isTrue()
+    }
+
+    @Test
+    fun `userHasAccessToProject should return false when user belongs to another project`() {
+        val requestedProjectId = UUID.randomUUID()
+        val user = user(project = Project(id = UUID.randomUUID(), name = "Project"))
+
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userApi.userHasAccessToProject("auth-1", requestedProjectId)
+
+        assertThat(result).isFalse()
+    }
+
+    @Test
+    fun `userHasAccessToProject should return false when user does not exist`() {
+        every { userRepository.findByAuthId("missing-auth") } returns Optional.empty()
+
+        val result = userApi.userHasAccessToProject("missing-auth", UUID.randomUUID())
+
+        assertThat(result).isFalse()
+    }
+
+    private fun user(project: Project?) = User(
+        authId = "auth-1",
+        username = "alice",
+        email = "alice@example.com",
+        firstname = "Alice",
+        lastname = "Doe",
+        projects = project?.let { mutableSetOf(it) } ?: mutableSetOf(),
+    )
 }

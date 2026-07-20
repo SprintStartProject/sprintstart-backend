@@ -13,7 +13,7 @@ class ArtifactAiMapper {
         sourceUrl = artifact.sourceUrl,
         artifactType = artifact.artifactType,
         title = artifact.title,
-        bodyText = artifact.bodyText,
+        bodyText = artifact.content,
         mime = artifact.mime,
         language = artifact.language,
     )

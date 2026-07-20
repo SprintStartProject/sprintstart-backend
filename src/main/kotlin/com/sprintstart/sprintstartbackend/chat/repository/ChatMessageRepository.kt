@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.repository
 
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
+import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
@@ -32,4 +33,12 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
         nativeQuery = true,
     )
     fun findAllByChat(@Param("chat_id") chatId: UUID, pageable: Pageable): Page<ChatMessage>
+
+    /**
+     * Fetches all chat messages with the given role across every chat.
+     *
+     * @param role The role to filter messages by.
+     * @return All messages authored in the given role.
+     */
+    fun findAllByRole(role: ChatRole): List<ChatMessage>
 }

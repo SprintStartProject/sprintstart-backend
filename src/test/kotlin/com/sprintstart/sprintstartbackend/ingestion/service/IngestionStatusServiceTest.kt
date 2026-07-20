@@ -1,23 +1,21 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
-import com.sprintstart.sprintstartbackend.ingestion.model.entity.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.springframework.context.ApplicationEventPublisher
 import java.time.Instant
 import java.util.UUID
 
 class IngestionStatusServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
-    private val publisher = mockk<ApplicationEventPublisher>(relaxed = true)
-    private val service = IngestionStatusService(ingestionRunRepository, publisher)
+    private val service = IngestionStatusService(ingestionRunRepository)
 
     @Test
     fun `getIngestionStatusPerSource returns empty github state when no runs exist`() {

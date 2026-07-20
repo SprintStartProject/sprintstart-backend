@@ -6,12 +6,13 @@ import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.controller.AdminUserController
 import com.sprintstart.sprintstartbackend.user.controller.UserSelfController
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
-import com.sprintstart.sprintstartbackend.user.model.dto.DeleteUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.GetUserResponse
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchMeRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.PatchUserRequest
-import com.sprintstart.sprintstartbackend.user.model.dto.ProjectRoleSummary
-import com.sprintstart.sprintstartbackend.user.model.dto.UpdateUserEnabledRequest
+import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
+import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
+import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
+import com.sprintstart.sprintstartbackend.user.model.response.project.MyProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.DeleteUserResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import io.mockk.every
 import io.mockk.verify
@@ -64,7 +65,7 @@ class UserControllerTest(
             .perform(get("/api/v1/users/me").with(userJwt))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.firstName").value("Alice"))
-            .andExpect(jsonPath("$.projectRoles[0].name").value("Backend Developer"))
+            .andExpect(jsonPath("$.roles[0]").value("USER"))
             .andExpect(jsonPath("$.permissionGroup").value("USER"))
 
         verify(exactly = 1) { userService.getMe(any()) }
@@ -76,6 +77,7 @@ class UserControllerTest(
             email = "new@mail.de",
             firstName = "Alicia",
             profileIcon = "icon-star",
+            projectsId = emptySet(),
         )
         every { userService.patchMe("user", request) } returns userResponse(email = "new@mail.de", firstName = "Alicia")
 
@@ -90,6 +92,31 @@ class UserControllerTest(
             .andExpect(jsonPath("$.firstName").value("Alicia"))
 
         verify(exactly = 1) { userService.patchMe("user", request) }
+    }
+
+    @Test
+    fun `getMyProjects returns current user's projects`() {
+        val projectId = UUID.randomUUID()
+        every { userService.getMyProjects("user") } returns listOf(
+            MyProjectResponse(id = projectId, name = "Apollo"),
+        )
+
+        mockMvc
+            .perform(get("/api/v1/users/me/projects").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(projectId.toString()))
+            .andExpect(jsonPath("$[0].name").value("Apollo"))
+
+        verify(exactly = 1) { userService.getMyProjects("user") }
+    }
+
+    @Test
+    fun `getMyProjects rejects unauthenticated caller`() {
+        mockMvc
+            .perform(get("/api/v1/users/me/projects"))
+            .andExpect(status().isUnauthorized)
+
+        verify(exactly = 0) { userService.getMyProjects(any()) }
     }
 
     @Test
@@ -120,6 +147,7 @@ class UserControllerTest(
             email = "new@mail.de",
             firstName = "Alicia",
             permissionGroup = Role.ADMIN,
+            projectsId = emptySet(),
         )
         every {
             userService.patchAdminUserById(id, request)
@@ -176,9 +204,9 @@ class UserControllerTest(
         id: UUID = UUID.randomUUID(),
         email: String = "alice@mail.de",
         firstName: String = "Alice",
-        projectRoles: List<ProjectRoleSummary> = listOf(
-            ProjectRoleSummary(id = UUID.randomUUID(), name = "Backend Developer"),
-        ),
+        projectIds: Set<UUID> = emptySet(),
+        roles: Set<Role> = setOf(Role.USER),
+        projectRoles: List<ProjectRoleSummary> = emptyList(),
         enabled: Boolean = true,
         permissionGroup: Role = Role.USER,
     ) = GetUserResponse(
@@ -188,6 +216,8 @@ class UserControllerTest(
         email = email,
         firstName = firstName,
         lastName = "Developer",
+        projectIds = projectIds,
+        roles = roles,
         projectRoles = projectRoles,
         permissionGroup = permissionGroup,
         enabled = enabled,

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toCreateResponse
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.UpdateOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingTaskRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -47,6 +49,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException When the user does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving an onboarding task")
     fun getOnboardingTasksForMe(authId: String, stepId: UUID): List<GetOnboardingTasksResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -69,6 +72,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException When the user, step, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Creating a task in an onboarding step")
     fun createOnboardingTaskForMe(
         authId: String,
         stepId: UUID,
@@ -91,6 +95,8 @@ class OnboardingTaskService(
             description = request.description,
         )
 
+        reopenStepIfFinished(step)
+
         return onboardingTaskRepository.save(onboardingTask).toCreateResponse()
     }
 
@@ -103,6 +109,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException When the user or task does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific onboarding task for user")
     fun getOnboardingTaskForMe(authId: String, taskId: UUID): GetOnboardingTaskResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -127,6 +134,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException When the user, task, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Updating an onboarding task for user")
     fun updateOnboardingTaskForMe(
         authId: String,
         taskId: UUID,
@@ -158,6 +166,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException When the user or task does not exist.
      */
     @Transactional
+    @Tracked("Deleting an onboarding task for user")
     fun deleteOnboardingTaskForMe(authId: String, taskId: UUID) {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -179,6 +188,7 @@ class OnboardingTaskService(
      * @return A list of tasks for the given step.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding tasks for admin by step id")
     fun getOnboardingTasksByStepId(stepId: UUID): List<GetOnboardingTaskResponse> {
         return onboardingTaskRepository
             .findAllByStepId(stepId)
@@ -197,6 +207,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional
+    @Tracked("Creating new onboarding task for step for admin")
     fun createOnboardingTaskForStepId(
         stepId: UUID,
         request: CreateOnboardingTaskRequest,
@@ -214,6 +225,8 @@ class OnboardingTaskService(
             description = request.description,
         )
 
+        reopenStepIfFinished(step)
+
         return onboardingTaskRepository.save(onboardingTask).toCreateResponse()
     }
 
@@ -225,6 +238,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding task for admin")
     fun getOnboardingTaskById(taskId: UUID): GetOnboardingTaskResponse {
         return onboardingTaskRepository
             .findById(taskId)
@@ -244,6 +258,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
      */
     @Transactional
+    @Tracked("Updating onboarding task for admin")
     fun updateOnboardingTaskById(taskId: UUID, request: UpdateOnboardingTaskRequest): UpdateOnboardingTaskResponse {
         val task = onboardingTaskRepository
             .findById(taskId)
@@ -266,6 +281,7 @@ class OnboardingTaskService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no task exists with [taskId].
      */
     @Transactional
+    @Tracked("Deleting onboarding task for admin")
     fun deleteOnboardingTaskById(taskId: UUID) {
         val task = onboardingTaskRepository
             .findById(taskId)
@@ -279,6 +295,22 @@ class OnboardingTaskService(
     }
 
 //  ========================== Helper Methods ==========================
+
+    /**
+     * Reopens a completed step when new work is added to it.
+     *
+     * A step may only remain [StepStatus.FINISHED] while all of its tasks are done. Adding a
+     * new (unfinished) task therefore reverts a finished step back to [StepStatus.IN_PROGRESS]
+     * and clears its completion timestamp. This keeps the step's status consistent with its
+     * tasks — without it a step added to via the team-management view would stay "done" despite
+     * having open work, and there is no separate PM endpoint to reset another user's step status.
+     */
+    private fun reopenStepIfFinished(step: OnboardingStep) {
+        if (step.status == StepStatus.FINISHED) {
+            step.status = StepStatus.IN_PROGRESS
+            step.completedAt = null
+        }
+    }
 
     /**
      * Makes room for a new task at the requested position by shifting all existing

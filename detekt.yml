@@ -3,6 +3,8 @@ style:
     active: false
   ReturnCount:
     active: false
+  MagicNumber:
+    active: false
 
 complexity:
   LongMethod:

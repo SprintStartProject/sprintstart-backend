@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDt
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import org.springframework.data.domain.Page
@@ -46,6 +47,7 @@ class OnboardingPathService(
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding path for user")
     fun getOnboardingPathForMe(authId: String): GetOnboardingPathForUserResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -63,6 +65,7 @@ class OnboardingPathService(
      * @param authId External authentication identifier.
      * @throws ResponseStatusException When the user does not exist.
      */
+    @Tracked("Deleting onboarding path for user")
     fun deleteOnboardingPathForMe(authId: String) {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -82,6 +85,7 @@ class OnboardingPathService(
      * @return The user's onboarding path.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
+    @Tracked("Retrieving onboarding path for user")
     fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathResponse {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
@@ -99,6 +103,7 @@ class OnboardingPathService(
      * @param userId The ID of the user whose path should be deleted.
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no user exists with [userId].
      */
+    @Tracked("Deleting onboarding path for user")
     fun deleteOnboardingPathByUserId(userId: UUID) {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
@@ -117,6 +122,7 @@ class OnboardingPathService(
      * @return A paginated list of team overview user DTOs.
      */
     @Transactional(readOnly = true)
+    @Tracked("Listing onboarding paths of team")
     fun getTeamOverview(
         search: String?,
         roleIds: List<UUID>?,
@@ -143,11 +149,13 @@ class OnboardingPathService(
                     .thenBy { it.lastname }
                     .thenBy { it.firstname },
             )
+
             "LOWEST_PROGRESS" -> dtos.sortedWith(
                 compareBy<TeamOverviewUserDto> { it.progressPercentage }
                     .thenBy { it.lastname }
                     .thenBy { it.firstname },
             )
+
             else -> dtos.sortedWith(compareBy<TeamOverviewUserDto> { it.lastname }.thenBy { it.firstname })
         }
 
@@ -165,6 +173,7 @@ class OnboardingPathService(
      * @return The authenticated user's team overview DTO.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving team overview for user")
     fun getTeamOverviewForMe(authId: String): TeamOverviewUserDto {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -252,7 +261,8 @@ class OnboardingPathService(
             userId = userDto.id.toString(),
             firstname = userDto.firstname,
             lastname = userDto.lastname,
-            project = userDto.project,
+            profileIcon = userDto.profileIcon,
+            projectIds = userDto.projects,
             roles = userDto.projectRoles,
             skills = userSkills,
             progressPercentage = progressPercentage,

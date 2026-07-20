@@ -1,11 +1,21 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.user.model.dto.SkillAssessmentDto
-import com.sprintstart.sprintstartbackend.user.model.dto.SkillDto
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
+import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.entity.UserSkillAssessment
-import com.sprintstart.sprintstartbackend.user.model.request.CreateSkillAssessmentRequest
-import com.sprintstart.sprintstartbackend.user.model.request.CreateSkillRequest
+import com.sprintstart.sprintstartbackend.user.model.mapper.toCreateResponse
+import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateResponse
+import com.sprintstart.sprintstartbackend.user.model.request.skill.CreateSkillAssessmentRequest
+import com.sprintstart.sprintstartbackend.user.model.request.skill.CreateSkillRequest
+import com.sprintstart.sprintstartbackend.user.model.request.skill.UpdateSkillRequest
+import com.sprintstart.sprintstartbackend.user.model.response.skill.CreateSkillAssessmentResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.CreateSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillAssessmentResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateSkillResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
 import com.sprintstart.sprintstartbackend.user.repository.SkillRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
@@ -24,64 +34,119 @@ class SkillService(
     private val userSkillAssessmentRepository: UserSkillAssessmentRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getAllSkills(): List<SkillDto> {
-        return skillRepository.findAll().map { skill ->
-            SkillDto(
-                id = skill.id,
-                name = skill.name,
-                roleId = skill.projectRole.id,
-            )
-        }
-    }
-
-    @Transactional
-    fun createSkill(request: CreateSkillRequest): SkillDto {
-        val role = projectRoleRepository
-            .findById(request.roleId)
-            .orElseThrow {
-                ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Project role with id ${request.roleId} not found",
-                )
-            }
-
-        val skill = Skill(
-            name = request.name,
-            projectRole = role,
-        )
-        val savedSkill = skillRepository.save(skill)
-
-        return SkillDto(
-            id = savedSkill.id,
-            name = savedSkill.name,
-            roleId = savedSkill.projectRole.id,
-        )
-    }
-
-    @Transactional
-    fun deleteSkill(skillId: UUID) {
-        if (!skillRepository.existsById(skillId)) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id $skillId not found")
-        }
-        skillRepository.deleteById(skillId)
+    @Tracked("Retrieving all skills")
+    fun getAllSkills(): List<GetSkillResponse> {
+        return skillRepository.findAll().map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getUserSkillAssessments(userId: UUID): List<SkillAssessmentDto> {
-        if (!userRepository.existsById(userId)) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "User with id $userId not found")
-        }
-        return userSkillAssessmentRepository.findByUserId(userId).map { assessment ->
-            SkillAssessmentDto(
-                userId = assessment.user.id,
-                skillId = assessment.skill.id,
-                level = assessment.level,
-            )
-        }
+    @Tracked("Retrieving skill by id")
+    fun getSkillById(skillId: UUID): GetSkillResponse {
+        return skillRepository
+            .findById(skillId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id $skillId not found") }
+            .toGetResponse()
     }
 
     @Transactional
-    fun assessSkillForMe(authId: String, request: CreateSkillAssessmentRequest): SkillAssessmentDto {
+    @Tracked("Creating skill")
+    fun createSkill(request: CreateSkillRequest): CreateSkillResponse {
+        val roles = findRolesByIds(request.roleIds)
+        val existingSkill = skillRepository.findByNormalizedName(request.name)
+
+        if (existingSkill != null) {
+            if (existingSkill.status != SkillStatus.RETIRED) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Skill with name '${request.name}' already exists")
+            }
+
+            existingSkill.name = request.name
+            existingSkill.projectRoles = roles
+            existingSkill.status = SkillStatus.ACTIVE
+
+            return skillRepository.save(existingSkill).toCreateResponse()
+        }
+
+        return skillRepository
+            .save(
+                Skill(
+                    name = request.name,
+                    projectRoles = roles,
+                ),
+            ).toCreateResponse()
+    }
+
+    @Transactional
+    @Tracked("Updating skill")
+    fun updateSkill(skillId: UUID, request: UpdateSkillRequest): UpdateSkillResponse {
+        val skill = skillRepository
+            .findById(skillId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id $skillId not found") }
+
+        request.name?.let { newName ->
+            if (skillRepository.existsByNormalizedNameExcluding(newName, skillId)) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Skill with name '$newName' already exists")
+            }
+            skill.name = newName
+        }
+
+        request.roleIds?.let { roleIds ->
+            skill.projectRoles = findRolesByIds(roleIds)
+        }
+
+        return skillRepository.save(skill).toUpdateResponse()
+    }
+
+    private fun findRolesByIds(roleIds: List<UUID>): MutableSet<ProjectRole> {
+        val roles = projectRoleRepository.findAllById(roleIds)
+        val foundIds = roles.map { it.id }.toSet()
+        val missingIds = roleIds.toSet() - foundIds
+        if (missingIds.isNotEmpty()) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Project role(s) with id(s) $missingIds not found")
+        }
+        return roles.toMutableSet()
+    }
+
+    /**
+     * Retires a skill so it can no longer be assigned to new users.
+     * Existing assessments referencing this skill are preserved.
+     */
+    @Transactional
+    @Tracked("Retiring skill")
+    fun retireSkill(skillId: UUID) {
+        val skill = skillRepository
+            .findById(skillId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id $skillId not found") }
+
+        skill.status = SkillStatus.RETIRED
+        skillRepository.save(skill)
+    }
+
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving user skill assessments")
+    fun getUserSkillAssessments(userId: UUID): List<GetSkillAssessmentResponse> {
+        if (!userRepository.existsById(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "User with id $userId not found")
+        }
+        return userSkillAssessmentRepository.findByUserId(userId).map { it.toGetResponse() }
+    }
+
+    @Transactional
+    @Tracked("Retrieving my skill assessments")
+    fun getMySkillAssessments(authId: String): List<GetSkillAssessmentResponse> {
+        val user = userRepository
+            .findByAuthId(authId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId $authId not found") }
+
+        val assessments = userSkillAssessmentRepository
+            .findByUserId(user.id)
+            .map { it.toGetResponse() }
+
+        return assessments
+    }
+
+    @Transactional
+    @Tracked("Assessing skill for me")
+    fun assessSkillForMe(authId: String, request: CreateSkillAssessmentRequest): CreateSkillAssessmentResponse {
         val user = userRepository
             .findByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId $authId not found") }
@@ -90,7 +155,13 @@ class SkillService(
             .findById(request.skillId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id ${request.skillId} not found") }
 
-        // Remove existing assessment for this skill
+        if (skill.status == SkillStatus.RETIRED) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Skill '${skill.name}' is retired and cannot be assigned",
+            )
+        }
+
         user.skillAssessments.removeIf { it.skill.id == skill.id }
 
         val assessment = UserSkillAssessment(
@@ -102,12 +173,7 @@ class SkillService(
         user.skillAssessments.add(assessment)
         userRepository.save(user)
 
-        // After saving user, return the assessment DTO
         val savedAssessment = user.skillAssessments.first { it.skill.id == skill.id }
-        return SkillAssessmentDto(
-            userId = savedAssessment.user.id,
-            skillId = savedAssessment.skill.id,
-            level = savedAssessment.level,
-        )
+        return savedAssessment.toCreateResponse()
     }
 }

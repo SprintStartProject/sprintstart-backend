@@ -3,9 +3,13 @@ package com.sprintstart.sprintstartbackend.user.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.request.AssignProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
+import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import io.mockk.Runs
 import io.mockk.every
@@ -16,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -24,8 +29,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 @WebMvcTest(ProjectRoleController::class)
@@ -151,5 +158,106 @@ class ProjectRoleControllerTest(
             ).andExpect(status().isNoContent)
 
         verify(exactly = 1) { projectRoleService.unassignRoleFromUser(userId, roleId) }
+    }
+
+    @Test
+    fun `getSkillsForRole should return 200 and skills for the role`() {
+        val roleId = UUID.randomUUID()
+        val dto = GetSkillResponse(
+            id = UUID.randomUUID(),
+            name = "Kotlin",
+            roleIds = listOf(roleId),
+            status = SkillStatus.ACTIVE,
+        )
+        every { projectRoleService.getSkillsForRole(roleId) } returns listOf(dto)
+
+        mockMvc
+            .perform(get("/api/v1/projectRoles/$roleId/skills").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { projectRoleService.getSkillsForRole(roleId) }
+    }
+
+    @Test
+    fun `getSkillsForRole should return 404 when role not found`() {
+        val roleId = UUID.randomUUID()
+        every { projectRoleService.getSkillsForRole(roleId) } throws ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(get("/api/v1/projectRoles/$roleId/skills").with(userJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `setSkillsForRole should return 200 for admins`() {
+        val roleId = UUID.randomUUID()
+        val request = UpdateRoleSkillsRequest(skillIds = listOf(UUID.randomUUID()))
+        val dto = UpdateRoleSkillsResponse(
+            id = request.skillIds[0],
+            name = "Kotlin",
+            roleIds = listOf(roleId),
+            status = SkillStatus.ACTIVE,
+        )
+        every { projectRoleService.setSkillsForRole(roleId, request) } returns listOf(dto)
+
+        mockMvc
+            .perform(
+                put("/api/v1/projectRoles/$roleId/skills")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { projectRoleService.setSkillsForRole(roleId, request) }
+    }
+
+    @Test
+    fun `setSkillsForRole should return 403 for normal users`() {
+        val roleId = UUID.randomUUID()
+        val request = UpdateRoleSkillsRequest(skillIds = listOf(UUID.randomUUID()))
+
+        mockMvc
+            .perform(
+                put("/api/v1/projectRoles/$roleId/skills")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectRoleService.setSkillsForRole(any(), any()) }
+    }
+
+    @Test
+    fun `setSkillsForRole should return 404 when role not found`() {
+        val roleId = UUID.randomUUID()
+        val request = UpdateRoleSkillsRequest(skillIds = listOf(UUID.randomUUID()))
+        every { projectRoleService.setSkillsForRole(roleId, request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(
+                put("/api/v1/projectRoles/$roleId/skills")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `setSkillsForRole should return 400 when unassigning would orphan a skill`() {
+        val roleId = UUID.randomUUID()
+        val request = UpdateRoleSkillsRequest(skillIds = emptyList())
+        every { projectRoleService.setSkillsForRole(roleId, request) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST)
+
+        mockMvc
+            .perform(
+                put("/api/v1/projectRoles/$roleId/skills")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
     }
 }

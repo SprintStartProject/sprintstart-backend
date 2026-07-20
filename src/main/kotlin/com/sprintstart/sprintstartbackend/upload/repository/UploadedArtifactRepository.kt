@@ -10,6 +10,4 @@ interface UploadedArtifactRepository : JpaRepository<UploadedArtifact, UUID> {
     fun findAllByUploaderId(
         uploaderId: UUID,
     ): List<UploadedArtifact>
-
-    fun existsByHash(hash: String): Boolean
 }

@@ -1,37 +1,39 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
-import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
-import com.sprintstart.sprintstartbackend.ingestion.service.IngestionStatusService
+import com.sprintstart.sprintstartbackend.ingestion.service.FailedArtifactService
+import com.sprintstart.sprintstartbackend.ingestion.service.GithubIngestionRunService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class GithubFileListener(
-    private val artifactIngestionService: ArtifactIngestionService,
+    private val githubArtifactProviderService: GithubArtifactProviderService,
     private val githubArtifactMapper: GithubArtifactMapper,
     private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
-    private val ingestionStatusService: IngestionStatusService,
+    private val githubIngestionRunService: GithubIngestionRunService,
+    private val failedArtifactService: FailedArtifactService,
 ) {
     @EventListener
     fun on(
         event: GithubFileFetchedEvent,
     ) {
-        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
+        githubArtifactProviderService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener
     fun on(
         event: GithubFilesFetchCompletedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.FILES,
         )
@@ -41,14 +43,14 @@ internal class GithubFileListener(
     fun on(
         event: GithubFileFetchFailedEvent,
     ) {
-        artifactIngestionService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event))
+        failedArtifactService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event))
     }
 
     @EventListener
     fun on(
         event: GithubFilesFetchFailedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.FILES,
         )
@@ -58,6 +60,6 @@ internal class GithubFileListener(
     fun on(
         event: GithubFileDeletedEvent,
     ) {
-        artifactIngestionService.deleteFileArtifact(event)
+        githubArtifactProviderService.deleteFileArtifact(event)
     }
 }

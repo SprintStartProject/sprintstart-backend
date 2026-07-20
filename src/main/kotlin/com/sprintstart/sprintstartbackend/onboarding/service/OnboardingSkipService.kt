@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.ReviewO
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingSkipRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -57,6 +58,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all skip requests for user")
     fun getAllSkipsForMe(authId: String): List<GetOnboardingSkipResponse> {
         val userId = getUserId(authId)
 
@@ -74,6 +76,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or step does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all skip requests for user on step")
     fun getSkipsByStepIdForMe(authId: String, stepId: UUID): List<GetOnboardingSkipResponse> {
         val userId = getUserId(authId)
         ensureUserOwnsStep(userId, stepId)
@@ -92,6 +95,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or skip does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific skip request for user")
     fun getSkipByIdForMe(authId: String, skipId: UUID): GetOnboardingSkipResponse {
         val userId = getUserId(authId)
 
@@ -116,6 +120,7 @@ class OnboardingSkipService(
      * already has a pending skip.
      */
     @Transactional
+    @Tracked("Creating new skip request for user on step")
     fun createOnboardingSkipForMe(
         authId: String,
         stepId: UUID,
@@ -146,6 +151,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.BAD_REQUEST] if the skip is no longer pending.
      */
     @Transactional
+    @Tracked("Updating skip request for user")
     fun updateOnboardingSkipForMe(
         authId: String,
         skipId: UUID,
@@ -175,6 +181,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or skip does not exist.
      */
     @Transactional
+    @Tracked("Deleting skip request for user")
     fun deleteSkipByIdForMe(authId: String, skipId: UUID) {
         val userId = getUserId(authId)
         val skip = onboardingSkipRepository
@@ -193,6 +200,7 @@ class OnboardingSkipService(
      * @return All skips ordered by creation time.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all skip requests")
     fun getAllSkips(): List<GetAllOnboardingSkipsResponse> {
         return onboardingSkipRepository.findAllByOrderByCreatedAtAsc().map { it.toGetAllResponse() }
     }
@@ -205,6 +213,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all skip requests for user")
     fun getAllSkipsByUserId(userId: UUID): List<GetOnboardingSkipResponse> {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with id: $userId")
@@ -223,6 +232,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the step does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all skip requests for step")
     fun getAllSkipsByStepId(stepId: UUID): List<GetOnboardingSkipResponse> {
         if (!onboardingStepRepository.existsById(stepId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
@@ -241,6 +251,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the skip does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific skip request")
     fun getSkipById(skipId: UUID): GetOnboardingSkipResponse {
         return onboardingSkipRepository
             .findById(skipId)
@@ -261,6 +272,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.BAD_REQUEST] if the skip is no longer pending.
      */
     @Transactional
+    @Tracked("Accepting skip request")
     fun acceptSkipById(skipId: UUID, request: ReviewOnboardingSkipRequest): ReviewOnboardingSkipResponse {
         val skip = onboardingSkipRepository
             .findById(skipId)
@@ -292,6 +304,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.BAD_REQUEST] if the skip is no longer pending.
      */
     @Transactional
+    @Tracked("Denying skip request")
     fun denySkipById(skipId: UUID, request: ReviewOnboardingSkipRequest): ReviewOnboardingSkipResponse {
         val skip = onboardingSkipRepository
             .findById(skipId)
@@ -320,6 +333,7 @@ class OnboardingSkipService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the skip does not exist.
      */
     @Transactional
+    @Tracked("Deleting skip request")
     fun deleteSkipById(skipId: UUID) {
         val skip = onboardingSkipRepository
             .findById(skipId)

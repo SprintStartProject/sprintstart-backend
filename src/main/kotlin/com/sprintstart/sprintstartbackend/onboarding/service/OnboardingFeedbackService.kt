@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.Get
 import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.ReadOnboardingFeedbackResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingFeedbackRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -32,6 +33,7 @@ class OnboardingFeedbackService(
      * @throws ResponseStatusException (not found) If no user with the given id could be found
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all feedback for this user")
     fun getAllFeedbackForMe(authId: String): List<GetOnboardingFeedbackResponse> {
         val userId = getUserId(authId)
 
@@ -48,6 +50,7 @@ class OnboardingFeedbackService(
      * @throws ResponseStatusException (not found) if user or step with given id could not be found.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all feedback this user for a specific step")
     fun getFeedbackByStepIdForMe(authId: String, stepId: UUID): List<GetOnboardingFeedbackResponse> {
         val userId = getUserId(authId)
         ensureUserOwnsStep(userId, stepId)
@@ -65,6 +68,7 @@ class OnboardingFeedbackService(
      * @throws ResponseStatusException (not found) if user or step with given id could not be found.
      */
     @Transactional
+    @Tracked("Adding feedback for this user")
     fun createFeedbackForMe(authId: String, request: CreateOnboardingFeedbackRequest): GetOnboardingFeedbackResponse {
         val userId = getUserId(authId)
         val step = request.stepId?.let { stepId -> ensureUserOwnsStep(userId, stepId) }
@@ -94,6 +98,7 @@ class OnboardingFeedbackService(
      * Retrieves all feedback for all users.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all feedback of all users")
     fun getAllFeedback(): List<GetAdminOnboardingFeedbackResponse> {
         return onboardingFeedbackRepository
             .findAllByOrderByCreatedAtAsc()
@@ -107,6 +112,7 @@ class OnboardingFeedbackService(
      * @throws ResponseStatusException (not found) if user or step with given id could not be found.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all feedback of a specific user")
     fun getAllFeedbackByUserId(userId: UUID): List<GetAdminOnboardingFeedbackResponse> {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found with id: $userId")
@@ -124,6 +130,7 @@ class OnboardingFeedbackService(
      * @throws ResponseStatusException (not found) if step with given id could not be found.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all feedback for a specific step")
     fun getAllFeedbackByStepId(stepId: UUID): List<GetAdminOnboardingFeedbackResponse> {
         if (!onboardingStepRepository.existsById(stepId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
@@ -140,7 +147,8 @@ class OnboardingFeedbackService(
      * @param feedbackId The id of the feedback to mark as read.
      * @throws ResponseStatusException (not found) if feedback with given id could not be found.
      */
-    @Transactional(readOnly = true)
+    @Transactional
+    @Tracked("Marking feedback as read")
     fun markFeedbackAsRead(feedbackId: UUID): ReadOnboardingFeedbackResponse {
         val feedback = onboardingFeedbackRepository
             .findById(feedbackId)

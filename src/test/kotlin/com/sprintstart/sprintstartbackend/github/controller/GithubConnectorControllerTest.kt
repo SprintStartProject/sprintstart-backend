@@ -2,18 +2,22 @@ package com.sprintstart.sprintstartbackend.github.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
-import com.sprintstart.sprintstartbackend.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.github.models.api.requests.ConnectRepositoryRequest
-import com.sprintstart.sprintstartbackend.github.models.api.requests.UpdateRepositoryRequest
-import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateAllRepositoriesResponse
-import com.sprintstart.sprintstartbackend.github.models.api.responses.UpdateRepositoryResponse
-import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotConnectedException
-import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotFoundException
-import com.sprintstart.sprintstartbackend.github.models.exceptions.RepositoryNotInitializedException
-import com.sprintstart.sprintstartbackend.github.repository.GithubUserRepository
-import com.sprintstart.sprintstartbackend.github.service.GithubConnectorService
+import com.sprintstart.sprintstartbackend.connectors.github.controller.GithubConnectorController
+import com.sprintstart.sprintstartbackend.connectors.github.controller.GithubExceptionHandler
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.UpdateRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.UpdateAllRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.UpdateRepositoryResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotInitializedException
+import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUserRepository
+import com.sprintstart.sprintstartbackend.connectors.github.service.GithubConnectorService
+import com.sprintstart.sprintstartbackend.connectors.github.service.GithubUpdatesService
 import io.mockk.coEvery
+import io.mockk.every
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -36,7 +40,7 @@ import java.util.UUID
 
 @WebMvcTest(controllers = [GithubConnectorController::class])
 @AutoConfigureMockMvc
-@Import(ExceptionHandler::class, SecurityConfig::class)
+@Import(GithubExceptionHandler::class, SecurityConfig::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GithubConnectorControllerTest {
     @Autowired
@@ -46,15 +50,23 @@ class GithubConnectorControllerTest {
     private lateinit var githubConnectorService: GithubConnectorService
 
     @MockkBean
+    private lateinit var githubUpdateService: GithubUpdatesService
+
+    @MockkBean
     private lateinit var githubUserRepository: GithubUserRepository
 
     private val objectMapper = jacksonObjectMapper()
 
-    private val userJwt = jwt()
+    private val pmJwt = jwt()
         .jwt { it.subject("mockId") }
-        .authorities(SimpleGrantedAuthority("ROLE_USER"))
+        .authorities(SimpleGrantedAuthority("ROLE_PM"))
+
+    private val adminJwt = jwt()
+        .jwt { it.subject("adminId") }
+        .authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
 
     private val validTokenName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    private val projectId = UUID.randomUUID()
 
     @Nested
     inner class ConnectRepository {
@@ -64,6 +76,7 @@ class GithubConnectorControllerTest {
                 owner = "spring-projects",
                 name = "spring-modulith",
                 tokenName = validTokenName,
+                projectId = projectId,
             )
             val expectedTransactionId = UUID.randomUUID()
 
@@ -79,7 +92,39 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/connect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+        }
+
+        @Test
+        fun `should return 202 Accepted when authenticated as ADMIN`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+            val expectedTransactionId = UUID.randomUUID()
+
+            coEvery {
+                githubConnectorService.connectRepositoryIfExists(
+                    "adminId",
+                    request,
+                )
+            } returns expectedTransactionId
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(adminJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -93,7 +138,12 @@ class GithubConnectorControllerTest {
         fun `should return 404 Not Found when repository does not exist`() {
             val owner = "unknown-owner"
             val name = "unknown-repo"
-            val request = ConnectRepositoryRequest(owner = owner, name = name, tokenName = validTokenName)
+            val request = ConnectRepositoryRequest(
+                owner = owner,
+                name = name,
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
 
             coEvery {
                 githubUserRepository.findById(any())
@@ -115,7 +165,7 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/connect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -128,27 +178,37 @@ class GithubConnectorControllerTest {
         // Validation failures are NOT async - they fail before the coroutine starts
         @Test
         fun `should return 400 Bad Request when owner is blank`() {
-            val request = ConnectRepositoryRequest(owner = "", name = "spring-modulith", tokenName = validTokenName)
+            val request = ConnectRepositoryRequest(
+                owner = "",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
 
             mockMvc
                 .perform(
                     post("/api/v1/github/connect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(status().isBadRequest)
         }
 
         @Test
         fun `should return 400 Bad Request when name is blank`() {
-            val request = ConnectRepositoryRequest(owner = "spring-projects", name = "", tokenName = validTokenName)
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
 
             mockMvc
                 .perform(
                     post("/api/v1/github/connect")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(status().isBadRequest)
         }
     }
@@ -157,7 +217,7 @@ class GithubConnectorControllerTest {
     inner class UpdateAllRepositories {
         @Test
         fun `should return 400 when one of the repositories is not initialized`() {
-            coEvery { githubConnectorService.updateAllRepositories() } throws RepositoryNotInitializedException(
+            every { githubUpdateService.updateAllRepositories() } throws RepositoryNotInitializedException(
                 "owner",
                 "name",
             )
@@ -165,7 +225,7 @@ class GithubConnectorControllerTest {
             val asyncResult = mockMvc
                 .perform(
                     post("/api/v1/github/update-all")
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -178,14 +238,14 @@ class GithubConnectorControllerTest {
         @Test
         fun `should return 202 Accepted when all repositories are initialized`() {
             val transactionId = UUID.randomUUID()
-            coEvery { githubConnectorService.updateAllRepositories() } returns UpdateAllRepositoriesResponse(
+            every { githubUpdateService.updateAllRepositories() } returns UpdateAllRepositoriesResponse(
                 transactionId,
             )
 
             val asyncResult = mockMvc
                 .perform(
                     post("/api/v1/github/update-all")
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -201,7 +261,7 @@ class GithubConnectorControllerTest {
         @Test
         fun `should return 400 when repository not connected`() {
             val request = UpdateRepositoryRequest(owner = "owner", name = "name")
-            coEvery { githubConnectorService.updateRepository(request) } throws RepositoryNotConnectedException(
+            every { githubUpdateService.updateRepository(request, true) } throws RepositoryNotConnectedException(
                 "owner",
                 "name",
             )
@@ -211,7 +271,7 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -224,7 +284,7 @@ class GithubConnectorControllerTest {
         @Test
         fun `should return 400 when repository not initialized`() {
             val request = UpdateRepositoryRequest(owner = "owner", name = "name")
-            coEvery { githubConnectorService.updateRepository(request) } throws RepositoryNotInitializedException(
+            every { githubUpdateService.updateRepository(request, true) } throws RepositoryNotInitializedException(
                 "owner",
                 "name",
             )
@@ -234,7 +294,7 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -248,14 +308,19 @@ class GithubConnectorControllerTest {
         fun `should return 202 Accepted when repository is connected and initialized`() {
             val transactionId = UUID.randomUUID()
             val request = UpdateRepositoryRequest(owner = "owner", name = "name")
-            coEvery { githubConnectorService.updateRepository(request) } returns UpdateRepositoryResponse(transactionId)
+            every {
+                githubUpdateService.updateRepository(
+                    request,
+                    true,
+                )
+            } returns UpdateRepositoryResponse(transactionId)
 
             val asyncResult = mockMvc
                 .perform(
                     post("/api/v1/github/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(request().asyncStarted())
                 .andReturn()
 
@@ -274,7 +339,7 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(status().isBadRequest)
         }
 
@@ -287,7 +352,7 @@ class GithubConnectorControllerTest {
                     post("/api/v1/github/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
-                        .with(userJwt),
+                        .with(pmJwt),
                 ).andExpect(status().isBadRequest)
         }
     }

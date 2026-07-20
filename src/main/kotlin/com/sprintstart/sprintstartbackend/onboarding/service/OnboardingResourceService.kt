@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.Get
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.UpdateOnboardingResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingResourceRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -43,6 +44,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException When the user does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding resources for user")
     fun getOnboardingResourcesForMe(authId: String, stepId: UUID): List<GetOnboardingResourcesResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -65,6 +67,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException When the user or step does not exist.
      */
     @Transactional
+    @Tracked("Creating new onboarding resource for user")
     fun createOnboardingResourceForMe(
         authId: String,
         stepId: UUID,
@@ -97,6 +100,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException When the user or resource does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving specific onboarding resource for user")
     fun getOnboardingResourceForMe(authId: String, resourceId: UUID): GetOnboardingResourceResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -118,6 +122,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException When the user or resource does not exist.
      */
     @Transactional
+    @Tracked("Updating onboarding resource for user")
     fun updateOnboardingResourceForMe(
         authId: String,
         resourceId: UUID,
@@ -146,6 +151,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException When the user or resource does not exist.
      */
     @Transactional
+    @Tracked("Deleting onboarding resource for user")
     fun deleteOnboardingResourceForMe(
         authId: String,
         resourceId: UUID,
@@ -174,6 +180,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional
+    @Tracked("Creating new onboarding resource for step for admin")
     fun createOnboardingResourceForStepId(
         stepId: UUID,
         request: CreateOnboardingResourceRequest,
@@ -199,6 +206,7 @@ class OnboardingResourceService(
      * @return A list of resources for the given step.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding resources for admin by step id")
     fun getOnboardingResourcesByStepId(stepId: UUID): List<GetOnboardingResourcesResponse> {
         return onboardingResourceRepository
             .findAllByStepId(stepId)
@@ -213,6 +221,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding resource for admin")
     fun getOnboardingResourceById(resourceId: UUID): GetOnboardingResourceResponse {
         return onboardingResourceRepository
             .findById(resourceId)
@@ -229,6 +238,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
      */
     @Transactional
+    @Tracked("Updating onboarding resource for admin")
     fun updateOnboardingResourceById(
         resourceId: UUID,
         request: UpdateOnboardingResourceRequest,
@@ -251,6 +261,7 @@ class OnboardingResourceService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no resource exists with [resourceId].
      */
     @Transactional
+    @Tracked("Deleting onboarding resource for admin")
     fun deleteOnboardingResourceById(resourceId: UUID) {
         val resource = onboardingResourceRepository
             .findById(resourceId)

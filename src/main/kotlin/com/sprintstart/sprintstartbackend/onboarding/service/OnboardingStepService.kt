@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -48,6 +49,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the user does not exist.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all steps for an onboarding phase")
     fun getOnboardingStepsForMe(authId: String, phaseId: UUID): List<GetOnboardingStepsResponse> {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -71,6 +73,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the user, phase, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Creating a step in an onboarding phase")
     fun createOnboardingStepForMe(
         authId: String,
         phaseId: UUID,
@@ -110,6 +113,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the user or step does not exist.
      */
     @Transactional
+    @Tracked("Retrieving an onboarding step")
     fun getOnboardingStepForMe(authId: String, stepId: UUID): GetOnboardingStepResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -137,6 +141,7 @@ class OnboardingStepService(
      * is finished or skipped.
      */
     @Transactional
+    @Tracked("Starting an onboarding step")
     fun startOnboardingStepForMe(
         authId: String,
         stepId: UUID,
@@ -176,6 +181,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the user, step, or requested position is invalid.
      */
     @Transactional
+    @Tracked("Updating an onboarding step")
     fun updateOnboardingStepForMe(
         authId: String,
         stepId: UUID,
@@ -202,6 +208,7 @@ class OnboardingStepService(
     }
 
     @Transactional
+    @Tracked("Completing an onboarding step")
     fun completeOnboardingStepForMe(
         authId: String,
         stepId: UUID,
@@ -242,6 +249,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the user or step does not exist.
      */
     @Transactional
+    @Tracked("Deleting an onboarding step")
     fun deleteOnboardingStepForMe(authId: String, stepId: UUID) {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -267,6 +275,7 @@ class OnboardingStepService(
      * @return A list of steps for the given phase.
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving all steps for an onboarding phase")
     fun getOnboardingStepsByPhaseId(phaseId: UUID): List<GetOnboardingStepResponse> {
         return onboardingStepRepository
             .findAllByPhaseId(phaseId)
@@ -285,6 +294,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the phase does not exist or the position is invalid.
      */
     @Transactional
+    @Tracked("Creating a step in an onboarding phase")
     fun createOnboardingStepForPhaseId(
         phaseId: UUID,
         request: CreateOnboardingStepRequest,
@@ -318,6 +328,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving an onboarding step")
     fun getOnboardingStepById(stepId: UUID): GetOnboardingStepResponse {
         return onboardingStepRepository
             .findById(stepId)
@@ -337,6 +348,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException When the step does not exist or the position is invalid.
      */
     @Transactional
+    @Tracked("Updating an onboarding step")
     fun updateOnboardingStepById(stepId: UUID, request: UpdateOnboardingStepRequest): UpdateOnboardingStepResponse {
         val step = onboardingStepRepository
             .findById(stepId)
@@ -361,6 +373,7 @@ class OnboardingStepService(
      * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if no step exists with [stepId].
      */
     @Transactional
+    @Tracked("Deleting an onboarding step")
     fun deleteOnboardingStepById(stepId: UUID) {
         val step = onboardingStepRepository
             .findById(stepId)

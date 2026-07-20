@@ -35,7 +35,7 @@ class OnboardingTaskServiceTest {
     private val taskId = UUID.randomUUID()
     private val authId = "auth|test-user"
 
-    private fun makeStep(): OnboardingStep {
+    private fun makeStep(status: StepStatus = StepStatus.WAITING): OnboardingStep {
         val path = OnboardingPath(userId = userId)
         val phase = OnboardingPhase(path = path, position = 0, title = "Phase", description = "Desc")
         return OnboardingStep(
@@ -47,7 +47,7 @@ class OnboardingTaskServiceTest {
             type = StepType.DOCUMENT,
             estimatedMinutes = 30,
             expectedOutcome = "Outcome",
-            status = StepStatus.WAITING,
+            status = status,
         )
     }
 
@@ -122,6 +122,26 @@ class OnboardingTaskServiceTest {
             assertThrows<ResponseStatusException> {
                 service.createOnboardingTaskForMe(authId, stepId, request)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `reopens a finished step when a task is added`() {
+            val step = makeStep(status = StepStatus.FINISHED).apply { completedAt = java.time.Instant.now() }
+            val task = makeTask()
+            val request = CreateOnboardingTaskRequest(position = 0, title = "Task", description = "Desc")
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+            every { onboardingTaskRepository.countByStepId(step.id) } returns 0
+            every {
+                onboardingTaskRepository.findByStepIdAndPositionGreaterThanEqualOrderByPositionDesc(step.id, 0)
+            } returns mutableListOf()
+            every { onboardingTaskRepository.save(any()) } returns task
+
+            service.createOnboardingTaskForMe(authId, stepId, request)
+
+            assertEquals(StepStatus.IN_PROGRESS, step.status)
+            assertEquals(null, step.completedAt)
         }
     }
 
@@ -251,6 +271,25 @@ class OnboardingTaskServiceTest {
             assertThrows<ResponseStatusException> {
                 service.createOnboardingTaskForStepId(stepId, request)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `reopens a finished step when a task is added`() {
+            val step = makeStep(status = StepStatus.FINISHED).apply { completedAt = java.time.Instant.now() }
+            val task = makeTask()
+            val request = CreateOnboardingTaskRequest(position = 0, title = "Task", description = "Desc")
+
+            every { onboardingStepRepository.findById(stepId) } returns Optional.of(step)
+            every { onboardingTaskRepository.countByStepId(step.id) } returns 0
+            every {
+                onboardingTaskRepository.findByStepIdAndPositionGreaterThanEqualOrderByPositionDesc(step.id, 0)
+            } returns mutableListOf()
+            every { onboardingTaskRepository.save(any()) } returns task
+
+            service.createOnboardingTaskForStepId(stepId, request)
+
+            assertEquals(StepStatus.IN_PROGRESS, step.status)
+            assertEquals(null, step.completedAt)
         }
     }
 

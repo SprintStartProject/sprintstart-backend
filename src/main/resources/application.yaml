@@ -11,6 +11,9 @@ sprintstart:
   crypto:
     master-key: ${CRYPTO_MASTER_KEY}
     salt: ${CRYPTO_SALT}
+  upload:
+    directory: uploads
+    max-file-size-bytes: 10485760
 
 spring:
   config:
@@ -38,8 +41,3 @@ spring:
         jwt:
           issuer-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI:http://localhost:8081/auth/realms/sprintstart}
           jwk-set-uri: ${SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI:http://localhost:8081/auth/realms/sprintstart/protocol/openid-connect/certs}
-
-app:
-  upload:
-    directory: uploads
-    max-file-size-bytes: 10485760

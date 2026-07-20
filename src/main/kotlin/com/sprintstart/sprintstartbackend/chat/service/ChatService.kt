@@ -4,12 +4,14 @@ import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
+import com.sprintstart.sprintstartbackend.chat.models.Citation
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiGenerateChatTitleRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiPromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
+import com.sprintstart.sprintstartbackend.chat.models.requests.toAiChatFilters
 import com.sprintstart.sprintstartbackend.chat.models.requests.toAiContextEntry
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
@@ -20,11 +22,19 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
+import com.sprintstart.sprintstartbackend.connectors.overview.external.api.ConnectorOverviewApi
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorDisabledException
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.onEach
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
@@ -33,6 +43,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -41,16 +53,21 @@ import java.util.UUID
 internal class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
+    private val citationRepository: CitationRepository,
+    private val connectorOverviewApi: ConnectorOverviewApi,
     private val chatAiClient: ChatAiClient,
     private val userApi: UserApi,
+    private val artifactLookupService: ArtifactLookupService,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * Retrieves the n latest chats without their messages. N is determined by `request.limit`.
      *
      * This function retrieves the n latest chats, including only their metadata, not the messages.
      * As AI chats can get quite long, loading all chat's messages would take up way too many resources,
      * especially when facing the fact that the user will most likely only open 1 or 2.
-     * For this reason the messages are not included, but can be lazy-loaded using the chat id.
+     * For this reason the messages are not included but can be lazy-loaded using the chat id.
      *
      * @param request The request including the necessary data to calculate the response.
      * @return The [GetChatsResponse] including the chats and their metadata
@@ -58,6 +75,7 @@ internal class ChatService(
      * @see GetChatsResponse
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving last n chats")
     fun getChats(@Valid request: GetChatsRequest): GetChatsResponse {
         val pageable = if (request.limit == null) {
             Pageable.unpaged(Sort.by(Sort.Direction.ASC, "createdAt"))
@@ -83,6 +101,7 @@ internal class ChatService(
      * @see GetChatMessagesRequest
      */
     @Transactional(readOnly = true)
+    @Tracked("Retrieving chat messages")
     fun getChat(chatId: UUID, @Valid request: GetChatMessagesRequest): GetChatMessagesResponse {
         val pageable = if (request.limit == null) {
             Pageable.unpaged(Sort.by(Sort.Direction.ASC, "created_at"))
@@ -107,6 +126,7 @@ internal class ChatService(
      * @see CreateChatRequest
      * @see CreateChatResponse
      */
+    @Tracked("Creating a new chat")
     fun createChat(@Valid request: CreateChatRequest): CreateChatResponse {
         if (!userApi.exists(request.userId)) {
             throw HttpClientErrorException(
@@ -138,6 +158,7 @@ internal class ChatService(
      * @see PromptRequest
      * @see Flow
      */
+    @Tracked("Prompting the AI system with a user prompt")
     suspend fun prompt(@Valid request: PromptRequest): Flow<AiStreamMessage> {
         val chat = chatRepository.findById(request.chatId).orElseThrow {
             HttpClientErrorException(
@@ -167,18 +188,65 @@ internal class ChatService(
             ).map { it.toAiContextEntry() }
             .toList()
 
+        validateSourceSystems(request.filters?.sourceSystems)
+        validateTimestamps(request.filters?.from, request.filters?.to)
+
+        val filters = request.filters?.toAiChatFilters()
+
         messageRepository.save(msg)
 
+        data class PendingCitation(
+            val id: UUID,
+            val artifactId: UUID,
+            val filename: String,
+            val sourceUrl: String?,
+            val startLine: Int?,
+            val startPage: Int?,
+        )
+
         val sb = StringBuilder()
+        val citations = mutableListOf<PendingCitation>()
 
         // Define stream handler
         // - On each token we collect the token and emit it to the controller
+        // - On each citation we resolve filename/sourceUrl (the AI service only sends
+        //   the artifact id + position) so the client sees a complete citation live,
+        //   not only once the chat is reloaded from persisted history
         // - On completion, we store the entire response as msg in db
         return chatAiClient
-            .streamPrompt(AiPromptRequest(request.msg, context))
-            .onEach { msg ->
-                msg.content?.let { sb.append(it) }
-            }.onCompletion { cause ->
+            .streamPrompt(AiPromptRequest(request.msg, context, filters))
+            .map { event ->
+                when (event.type) {
+                    "token" -> {
+                        event.content?.let(sb::append)
+                        event
+                    }
+
+                    "citation" -> {
+                        val artifactId = event.artifactId?.let(::parseUuidOrNull)
+                        val resolved = artifactId?.let(artifactLookupService::resolve)
+                        if (artifactId == null || resolved == null) {
+                            logger.warn("Could not resolve artifact {} for citation", event.artifactId)
+                            null
+                        } else {
+                            citations += PendingCitation(
+                                id = UUID.randomUUID(),
+                                artifactId = artifactId,
+                                filename = resolved.filename,
+                                sourceUrl = resolved.sourceUrl,
+                                startLine = event.startLine,
+                                startPage = event.startPage,
+                            )
+                            event.copy(filename = resolved.filename, sourceUrl = resolved.sourceUrl)
+                        }
+                    }
+
+                    else -> {
+                        event
+                    }
+                }
+            }.filterNotNull()
+            .onCompletion { cause ->
                 if (cause == null) {
                     val msg = ChatMessage(
                         role = ChatRole.ASSISTANT,
@@ -186,10 +254,72 @@ internal class ChatService(
                         content = sb.toString(),
                         createdAt = OffsetDateTime.now(),
                     )
+
                     messageRepository.save(msg)
+
+                    val citationEntities = citations.map { pending ->
+                        Citation(
+                            id = pending.id,
+                            artifactId = pending.artifactId,
+                            filename = pending.filename,
+                            sourceUrl = pending.sourceUrl,
+                            startLine = pending.startLine,
+                            startPage = pending.startPage,
+                            message = msg,
+                        )
+                    }
+
+                    citationRepository.saveAll(citationEntities)
                 } else {
                     println("Stream either got killed or experienced an error: ${cause.message}")
                 }
             }
     }
+
+    /**
+     * Checks if the source systems are valid.
+     *
+     * Checks if all the provided source systems exist and are enabled.
+     *
+     * @param sourceSystems The systems used by the AI to generate responses.
+     */
+    private fun validateSourceSystems(sourceSystems: List<SourceSystem>?) {
+        val connectorsByName = connectorOverviewApi.findAllConnectors().associateBy { it.name }
+
+        sourceSystems?.forEach { sourceSystem ->
+            val connector = connectorsByName[sourceSystem.name]
+                ?: throw ConnectorNotFoundException("Connector '${sourceSystem.name}' not found")
+
+            if (!connector.enabled) {
+                throw ConnectorDisabledException("Connector '${sourceSystem.name}' is disabled")
+            }
+        }
+    }
+
+    /**
+     * Checks if the time stamps are valid.
+     *
+     * Checks if the 'from' timestamp is before the 'to' timestamp.
+     *
+     * @param from The start of the time period transferred to the AI.
+     * @param to The end of the time period transferred to the AI.
+     */
+    private fun validateTimestamps(from: Instant?, to: Instant?) {
+        if (from != null && to != null && to.isBefore(from)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Start time must be before end time.")
+        }
+    }
 }
+
+/**
+ * Parses [value] as a [UUID], or null if it isn't one.
+ *
+ * A malformed citation artifact id from the AI service should degrade that one citation,
+ * not kill the whole chat stream the way [UUID.fromString]'s thrown exception would.
+ */
+private fun parseUuidOrNull(value: String): UUID? =
+    try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        null
+    }

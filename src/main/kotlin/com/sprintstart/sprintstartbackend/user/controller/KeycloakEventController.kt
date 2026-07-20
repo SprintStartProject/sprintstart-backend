@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
-import com.sprintstart.sprintstartbackend.user.model.dto.KeycloakEventRequest
+import com.sprintstart.sprintstartbackend.user.model.request.KeycloakEventRequest
 import com.sprintstart.sprintstartbackend.user.service.KeycloakEventService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse

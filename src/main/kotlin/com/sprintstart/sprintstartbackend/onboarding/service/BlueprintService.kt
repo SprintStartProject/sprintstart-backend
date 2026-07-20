@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.Bl
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.GenerateBlueprintsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.VersionListResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -52,6 +53,7 @@ class BlueprintService(
      * @param scopes The scopes to (re)generate, or `null` to refresh all known scopes.
      * @return The per-scope generation outcomes.
      */
+    @Tracked("Generating onboarding blueprints")
     suspend fun generateBlueprints(scopes: List<String>?): GenerateBlueprintsResponse {
         // The AI service is stateless: pass it the current active blueprints so
         // it can number versions and skip an unchanged corpus.
@@ -82,6 +84,90 @@ class BlueprintService(
                 )
             },
         )
+    }
+
+    /**
+     * Returns the archived (rollback-able) version identifiers retained for [scope].
+     *
+     * @param scope The blueprint scope to list versions for.
+     * @return The scope and its archived version identifiers.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Listing onboarding blueprint versions")
+    fun listVersions(scope: String): VersionListResponse {
+        val versions = blueprintRepository
+            .findAllByScopeAndStatus(scope, BlueprintStatus.ARCHIVED)
+            .map { it.version }
+        if (versions.isEmpty()) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No blueprint found for scope: $scope")
+        }
+        return VersionListResponse(scope = scope, versions = versions)
+    }
+
+    /**
+     * Restores a previously archived blueprint [version] as the new ACTIVE for [scope].
+     *
+     * The current ACTIVE is archived and the archived version is copied into a new
+     * ACTIVE blueprint.
+     *
+     * @param scope The blueprint scope to roll back.
+     * @param version The archived version identifier to restore.
+     * @return The restored, now-active blueprint.
+     * @throws ResponseStatusException 404 if no archived blueprint matches [scope]/[version].
+     */
+    @Transactional
+    @Tracked("Rolling back onboarding blueprint")
+    fun rollback(scope: String, version: String): BlueprintResponse {
+        val archived = blueprintRepository.findByScopeAndStatusAndVersion(scope, BlueprintStatus.ARCHIVED, version)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No version $version for scope: $scope")
+        blueprintRepository
+            .findByScopeAndStatus(scope, BlueprintStatus.ACTIVE)
+            ?.let { it.status = BlueprintStatus.ARCHIVED }
+        val newBlueprint = Blueprint(
+            scope = archived.scope,
+            version = archived.version,
+            status = BlueprintStatus.ACTIVE,
+            corpusFingerprint = archived.corpusFingerprint,
+        )
+        archived.steps.forEach { step ->
+            newBlueprint.steps.add(
+                BlueprintStep(
+                    blueprint = newBlueprint,
+                    stepId = step.stepId,
+                    title = step.title,
+                    description = step.description,
+                    minExperience = step.minExperience,
+                    audience = step.audience,
+                    position = step.position,
+                    requirement = step.requirement,
+                    invariant = step.invariant,
+                ),
+            )
+        }
+        blueprintRepository.save(newBlueprint)
+        blueprintRepository.delete(archived)
+        return newBlueprint.toResponse()
+    }
+
+    /**
+     * Ensures an ACTIVE blueprint exists for each of [scopes], generating the missing
+     * ones on demand. Scopes that already have an ACTIVE blueprint are left untouched.
+     *
+     * @param scopes The scopes that must have an ACTIVE blueprint.
+     */
+    @Tracked("Ensuring an active onboarding blueprints exists for each of given scopes")
+    suspend fun ensureScopesExist(scopes: List<String>) {
+        ensureMutex.withLock {
+            val existing = withContext(Dispatchers.IO) {
+                scopes.filter { scope ->
+                    blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE) != null
+                }
+            }
+            val missing = scopes.toSet() - existing.toSet()
+            if (missing.isNotEmpty()) {
+                generateBlueprints(missing.toList())
+            }
+        }
     }
 
     /**
@@ -129,87 +215,6 @@ class BlueprintService(
         }
             ?: blueprintRepository.findAllByStatus(BlueprintStatus.ACTIVE)
         return active.map { it.toSchema() }
-    }
-
-    /**
-     * Returns the archived (rollback-able) version identifiers retained for [scope].
-     *
-     * @param scope The blueprint scope to list versions for.
-     * @return The scope and its archived version identifiers.
-     */
-    @Transactional(readOnly = true)
-    fun listVersions(scope: String): VersionListResponse {
-        val versions = blueprintRepository
-            .findAllByScopeAndStatus(scope, BlueprintStatus.ARCHIVED)
-            .map { it.version }
-        if (versions.isEmpty()) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No blueprint found for scope: $scope")
-        }
-        return VersionListResponse(scope = scope, versions = versions)
-    }
-
-    /**
-     * Restores a previously archived blueprint [version] as the new ACTIVE for [scope].
-     *
-     * The current ACTIVE is archived and the archived version is copied into a new
-     * ACTIVE blueprint.
-     *
-     * @param scope The blueprint scope to roll back.
-     * @param version The archived version identifier to restore.
-     * @return The restored, now-active blueprint.
-     * @throws ResponseStatusException 404 if no archived blueprint matches [scope]/[version].
-     */
-    @Transactional
-    fun rollback(scope: String, version: String): BlueprintResponse {
-        val archived = blueprintRepository.findByScopeAndStatusAndVersion(scope, BlueprintStatus.ARCHIVED, version)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No version $version for scope: $scope")
-        blueprintRepository
-            .findByScopeAndStatus(scope, BlueprintStatus.ACTIVE)
-            ?.let { it.status = BlueprintStatus.ARCHIVED }
-        val newBlueprint = Blueprint(
-            scope = archived.scope,
-            version = archived.version,
-            status = BlueprintStatus.ACTIVE,
-            corpusFingerprint = archived.corpusFingerprint,
-        )
-        archived.steps.forEach { step ->
-            newBlueprint.steps.add(
-                BlueprintStep(
-                    blueprint = newBlueprint,
-                    stepId = step.stepId,
-                    title = step.title,
-                    description = step.description,
-                    minExperience = step.minExperience,
-                    audience = step.audience,
-                    position = step.position,
-                    requirement = step.requirement,
-                    invariant = step.invariant,
-                ),
-            )
-        }
-        blueprintRepository.save(newBlueprint)
-        blueprintRepository.delete(archived)
-        return newBlueprint.toResponse()
-    }
-
-    /**
-     * Ensures an ACTIVE blueprint exists for each of [scopes], generating the missing
-     * ones on demand. Scopes that already have an ACTIVE blueprint are left untouched.
-     *
-     * @param scopes The scopes that must have an ACTIVE blueprint.
-     */
-    suspend fun ensureScopesExist(scopes: List<String>) {
-        ensureMutex.withLock {
-            val existing = withContext(Dispatchers.IO) {
-                scopes.filter { scope ->
-                    blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE) != null
-                }
-            }
-            val missing = scopes.toSet() - existing.toSet()
-            if (missing.isNotEmpty()) {
-                generateBlueprints(missing.toList())
-            }
-        }
     }
 
     private companion object {

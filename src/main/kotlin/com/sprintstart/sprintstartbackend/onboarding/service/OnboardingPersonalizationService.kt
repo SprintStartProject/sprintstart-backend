@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toSchema
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.toAiScope
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +58,7 @@ class OnboardingPersonalizationService(
      * @throws ResponseStatusException 404 if no user exists for [authId], 400 if the user
      * does not have exactly one project role assigned.
      */
+    @Tracked("Retrieving personalized onboarding path for user")
     fun personalize(authId: String): Flow<OnboardingSseEvent> {
         val profile = userApi
             .getOnboardingProfileByAuthId(authId)

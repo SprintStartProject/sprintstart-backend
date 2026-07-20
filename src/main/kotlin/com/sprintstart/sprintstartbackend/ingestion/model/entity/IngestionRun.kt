@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.entity
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import jakarta.persistence.Column
 import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity
@@ -23,12 +24,16 @@ class IngestionRun(
     @Column(nullable = false)
     var updatedCount: Int = 0,
     @Column(nullable = false)
+    var deletedCount: Int = 0,
+    @Column(nullable = false)
     var failedCount: Int = 0,
     @ElementCollection
     @Column(nullable = false)
     val failedItems: MutableList<FailedArtifact> = mutableListOf(),
+    @ElementCollection
     @Column(nullable = false)
     val artifactIdsToDeindex: MutableList<String> = mutableListOf(),
+    @ElementCollection
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)
     val finishedTypes: MutableSet<FinishedTypes> = mutableSetOf(),
@@ -36,4 +41,8 @@ class IngestionRun(
     @Column(nullable = false)
     var status: IngestionRunStatus,
     var failureReason: String? = null,
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    var aiSyncStatus: AiSyncStatus = AiSyncStatus.PENDING,
+    var aiSyncFailureReason: String? = null,
 )

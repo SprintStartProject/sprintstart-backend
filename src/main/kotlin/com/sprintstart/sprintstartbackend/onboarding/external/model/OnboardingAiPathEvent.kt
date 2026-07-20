@@ -27,6 +27,32 @@ data class PathPhase(
     val description: String? = null,
     val position: Int = 0,
     val steps: List<PathStep> = emptyList(),
+    // Knowledge check generated alongside the phase. Empty questions = degraded/no check.
+    val check: PhaseCheck = PhaseCheck(),
+)
+
+@Serializable
+data class PhaseCheck(
+    val questions: List<AiCheckQuestion> = emptyList(),
+)
+
+@Serializable
+data class AiCheckQuestion(
+    val position: Int = 0,
+    // "MULTIPLE_CHOICE" or "SHORT_TEXT"; unknown values are skipped by the mapper.
+    val type: String,
+    val question: String,
+    val explanation: String? = null,
+    @SerialName("correct_answer")
+    val correctAnswer: String? = null,
+    val options: List<AiCheckOption> = emptyList(),
+)
+
+@Serializable
+data class AiCheckOption(
+    val position: Int = 0,
+    val label: String,
+    val correct: Boolean = false,
 )
 
 @Serializable

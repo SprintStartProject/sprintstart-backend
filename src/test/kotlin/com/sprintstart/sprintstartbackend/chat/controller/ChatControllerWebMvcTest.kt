@@ -13,11 +13,12 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesR
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Nested
@@ -42,6 +43,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -345,9 +347,8 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("token", "The main blocker"),
                 AiStreamMessage(
                     type = "citation",
-                    chunkId = "chunk-1",
-                    filename = "retro.md",
-                    sectionPath = "Retro > Blockers",
+                    artifactId = "artifact-1",
+                    startLine = 12,
                 ),
                 AiStreamMessage("done"),
             )
@@ -376,8 +377,8 @@ class ChatControllerWebMvcTest(
             assertEquals(expected, actual)
             // Wire field names must mirror the AI service contract for the frontend.
             assert(actual.contains("""{"type":"tool_use","name":"retrieve","kind":"tool"}"""))
-            assert(actual.contains(""""chunk_id":"chunk-1""""))
-            assert(actual.contains(""""section_path":"Retro > Blockers""""))
+            assert(actual.contains(""""artifact_id":"artifact-1""""))
+            assert(actual.contains(""""start_line":12"""))
         }
 
         @Test
@@ -442,6 +443,117 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isForbidden)
+        }
+
+        @Test
+        fun `rejects duplicated source filters`() {
+            mockMvc
+                .post("/api/v1/chats/prompt") {
+                    with(userJwt)
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """
+                            {
+                                "chatId": "$chatId",
+                                "msg": "Hello",
+                                "filters": {
+                                    "sourceSystems": [
+                                          "GITHUB",
+                                          "GITHUB"
+                                    ]
+                                }
+                            }
+                        """
+                }.andExpect {
+                    status { isBadRequest() }
+                }
+        }
+
+        @Test
+        fun `rejects future filter dates`() {
+            mockMvc
+                .post("/api/v1/chats/prompt") {
+                    with(userJwt)
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """
+                            {
+                                  "chatId": "$chatId",
+                                  "msg": "Hello",
+                                  "filters": {
+                                        "from": "2050-01-01T00:00:00Z"
+                                  }
+                            }
+                        """
+                }.andExpect {
+                    status { isBadRequest() }
+                }
+        }
+
+        @Test
+        fun `accepts valid chat filters`() {
+            val messages = listOf(
+                AiStreamMessage("done"),
+            )
+
+            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                            """
+                                {
+                                      "chatId": "$chatId",
+                                      "msg": "Hello",
+                                      "filters": {
+                                            "sourceSystems": ["GITHUB"],
+                                            "from": "2026-01-01T00:00:00Z"
+                                      }
+                                }
+                            """,
+                        ),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+
+            coVerify {
+                chatService.prompt(
+                    match {
+                        it.filters?.sourceSystems == listOf(SourceSystem.GITHUB) &&
+                            it.filters?.from == Instant.parse("2026-01-01T00:00:00Z")
+                    },
+                )
+            }
+        }
+
+        @Test
+        fun `accepts prompt without filters`() {
+            coEvery { chatService.prompt(any()) } returns flowOf(AiStreamMessage("done"))
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+
+            coVerify {
+                chatService.prompt(
+                    match { it.filters == null },
+                )
+            }
         }
     }
 }

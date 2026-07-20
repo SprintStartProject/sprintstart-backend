@@ -1,36 +1,38 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchFailedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitFetchedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.github.external.events.commits.GithubCommitsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
-import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionService
-import com.sprintstart.sprintstartbackend.ingestion.service.IngestionStatusService
+import com.sprintstart.sprintstartbackend.ingestion.service.FailedArtifactService
+import com.sprintstart.sprintstartbackend.ingestion.service.GithubIngestionRunService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class GithubCommitListener(
-    private val artifactIngestionService: ArtifactIngestionService,
+    private val githubArtifactProviderService: GithubArtifactProviderService,
     private val githubArtifactMapper: GithubArtifactMapper,
     private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
-    private val ingestionStatusService: IngestionStatusService,
+    private val githubIngestionRunService: GithubIngestionRunService,
+    private val failedArtifactService: FailedArtifactService,
 ) {
     @EventListener
     fun on(
         event: GithubCommitFetchedEvent,
     ) {
-        artifactIngestionService.persistArtifact(githubArtifactMapper.toCommand(event))
+        githubArtifactProviderService.persistArtifact(githubArtifactMapper.toCommand(event))
     }
 
     @EventListener
     fun on(
         event: GithubCommitsFetchCompletedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.COMMITS,
         )
@@ -40,14 +42,14 @@ internal class GithubCommitListener(
     fun on(
         event: GithubCommitFetchFailedEvent,
     ) {
-        artifactIngestionService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event))
+        failedArtifactService.addFailedArtifact(githubArtifactFailedMapper.toCommand(event))
     }
 
     @EventListener
     fun on(
         event: GithubCommitsFetchFailedEvent,
     ) {
-        ingestionStatusService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFinished(
             event.transactionId,
             finishedType = FinishedTypes.COMMITS,
         )

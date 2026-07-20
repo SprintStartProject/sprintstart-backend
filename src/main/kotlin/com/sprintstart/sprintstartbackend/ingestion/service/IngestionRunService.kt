@@ -2,8 +2,10 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunResponse
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * Reads recent ingestion runs for API consumers.
@@ -22,6 +24,8 @@ class IngestionRunService(
      * @return API-ready run summaries including counters and failed items
      * @throws IllegalArgumentException If Spring Data rejects the requested page size.
      */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving recent ingestion runs")
     fun getRecentRuns(
         limit: Int = 10,
     ): List<IngestionRunResponse> =
@@ -39,6 +43,8 @@ class IngestionRunService(
                     failedCount = it.failedCount,
                     failedItems = it.failedItems,
                     status = it.status,
+                    aiSyncStatus = it.aiSyncStatus,
+                    aiSyncFailureReason = it.aiSyncFailureReason,
                 )
             }
 }
