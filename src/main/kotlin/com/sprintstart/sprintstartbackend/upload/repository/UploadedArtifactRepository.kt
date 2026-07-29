@@ -5,9 +5,11 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface UploadedArtifactRepository : JpaRepository<UploadedArtifact, UUID> {
-    fun findByHash(hash: String): UploadedArtifact?
+    fun findByHashAndProjectId(hash: String, projectId: UUID): UploadedArtifact?
 
-    fun findAllByUploaderId(
-        uploaderId: UUID,
+    fun findByIdAndProjectId(id: UUID, projectId: UUID): UploadedArtifact?
+
+    fun findAllByProjectId(
+        projectId: UUID,
     ): List<UploadedArtifact>
 }

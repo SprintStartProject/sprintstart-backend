@@ -25,11 +25,11 @@ import java.security.MessageDigest
 import java.util.UUID
 
 /**
- * Coordinates upload storage, upload metadata persistence, and ingestion lifecycle events.
+ * Coordinates project upload storage, upload metadata persistence, and ingestion events.
  *
- * Each upload or deletion batch gets a transaction id that is reused by ingestion listeners as the
- * ingestion run id. Per-artifact failures are collected into operation outcomes so one bad file
- * can fail without hiding the rest of the batch from the caller.
+ * Uploaded artifacts belong to a project. The authenticated user is recorded as the upload or
+ * deletion actor, but authorization and deduplication are scoped to the target project so all
+ * assigned project users can share the same uploaded resources.
  */
 @Service
 class UploadService(
@@ -42,44 +42,34 @@ class UploadService(
     private val publisher: ApplicationEventPublisher,
 ) {
     /**
-     * Access to the project and existence of the uploader are checked before individual files are
-     * processed. Successful artifacts publish per-file events, while validation or storage failures
-     * are returned as failed upload responses and included in the batch completion event.
+     * Uploads artifacts into a project as the authenticated PM or admin.
      *
-     * The whole batch runs in one transaction and publishes one `UploadStartedEvent` followed by
-     * one `UploadBatchFinishedEvent`. Per-file failures do not abort the batch after access checks
-     * pass; they are represented in both the HTTP response and ingestion outcome set.
+     * The uploader id is resolved from the JWT subject before processing files, so clients cannot
+     * spoof another actor. Project access is checked before validation, storage, repository writes,
+     * or ingestion events are opened. Per-file validation or storage failures are returned as
+     * failed upload responses instead of aborting the whole batch.
      *
-     * @param authId The authenticated user's external auth id used for project access checks.
+     * @param authId The authenticated user's external auth id.
      * @param files The files to process as one upload batch.
      * @param projectId The project that should receive the uploaded artifacts.
-     * @param uploaderId The user recorded as the upload actor and stored on new upload artifacts.
      * @return One response item per input file, including failed items whose upload was skipped.
      * @throws ResponseStatusException `403` when the authenticated user cannot access the project.
-     * @throws ResponseStatusException `404` when the uploader id does not exist.
+     * @throws ResponseStatusException `404` when the authenticated user has no local projection.
      */
     @Transactional
-    @Tracked("Uploading a new batch of artifacts")
+    @Tracked("Uploading a new batch of project artifacts")
     fun upload(
         authId: String,
         files: List<MultipartFile>,
         projectId: UUID,
-        uploaderId: UUID,
     ): List<UploadArtifactResponse> {
+        val uploaderId = resolveCurrentUserId(userApi, authId)
+        requireProjectAccess(userApi, authId, projectId)
+
         val transactionId = UUID.randomUUID()
 
         publisher.publishEvent(UploadStartedEvent(transactionId = transactionId))
 
-        val userInRepo = userApi.getUserByAuthId(authId)
-        if (projectId !in userInRepo.projects.map { it.projectId }) {
-            throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
-        }
-        if (!userApi.exists(uploaderId)) {
-            throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Uploader with id $uploaderId does not exist",
-            )
-        }
         val uploadedArtifacts = mutableSetOf<UploadedArtifact>()
 
         val responses = mutableListOf<UploadArtifactResponse>()
@@ -89,7 +79,6 @@ class UploadService(
         val markdownArtifacts = mutableListOf<Pair<UploadedArtifact, String>>()
 
         files.forEach { file ->
-
             try {
                 val uploadResult = uploadSingle(
                     file = file,
@@ -116,8 +105,7 @@ class UploadService(
                 uploadArtifactOperationOutcomes.add(
                     UploadArtifactOperationOutcome(
                         id = null,
-                        filename = file.originalFilename
-                            ?: "unknown",
+                        filename = file.originalFilename ?: "unknown",
                         status = UploadArtifactStatus.FAILED,
                         error = ex.message,
                     ),
@@ -125,8 +113,7 @@ class UploadService(
                 responses.add(
                     UploadArtifactResponse(
                         id = null,
-                        filename = file.originalFilename
-                            ?: "unknown",
+                        filename = file.originalFilename ?: "unknown",
                         status = "failed",
                         error = ex.message,
                     ),
@@ -136,8 +123,7 @@ class UploadService(
 
         val linkedImages = artifactLinkingService.linkMarkdownImages(
             markdownArtifacts = markdownArtifacts,
-            uploadedArtifactsByFilename =
-            uploadedArtifactsByFilename,
+            uploadedArtifactsByFilename = uploadedArtifactsByFilename,
         )
 
         publisher.publishEvent(
@@ -154,18 +140,23 @@ class UploadService(
     }
 
     /**
-     * Returns persisted uploads for a single uploader.
+     * Returns persisted uploads for a project the authenticated user can access.
      *
-     * @param uploaderId The user whose uploaded artifacts should be listed.
+     * @param authId The authenticated user's external auth id.
+     * @param projectId The project whose uploaded artifacts should be listed.
      * @return Upload list items sorted according to repository default ordering.
+     * @throws ResponseStatusException `403` when the authenticated user cannot access the project.
      */
     @Transactional(readOnly = true)
-    @Tracked("Listing uploads for a single uploader")
+    @Tracked("Listing uploads for a project")
     fun listUploads(
-        uploaderId: UUID,
-    ): List<UploadListItemResponse> =
-        uploadedArtifactRepository
-            .findAllByUploaderId(uploaderId)
+        authId: String,
+        projectId: UUID,
+    ): List<UploadListItemResponse> {
+        requireProjectAccess(userApi, authId, projectId)
+
+        return uploadedArtifactRepository
+            .findAllByProjectId(projectId)
             .map {
                 UploadListItemResponse(
                     id = it.id,
@@ -174,56 +165,38 @@ class UploadService(
                     uploadedAt = it.uploadedAt,
                 )
             }
+    }
 
     /**
-     * Missing artifacts and storage failures are recorded as failed deletion outcomes. Successful
-     * deletions publish per-artifact deletion events before the upload metadata row is removed, so
-     * ingestion listeners can deindex the mirrored artifact.
+     * Deletes artifacts from a project as the authenticated PM or admin.
      *
-     * The deletion batch publishes start and finish events even when every requested artifact
-     * fails. Missing artifacts and storage-delete errors are not thrown to the caller; they are
-     * reported through `UploadBatchDeletionFinishedEvent`.
+     * The remover id is resolved from the JWT subject before deletion starts. Missing artifact ids,
+     * artifact ids from another project, and storage-delete failures are recorded as failed deletion
+     * outcomes and do not abort the rest of the batch.
      *
-     * @param authId The authenticated user's external auth id used for project access checks.
+     * @param authId The authenticated user's external auth id.
      * @param artifactIds The uploaded artifact ids requested for deletion.
-     * @param removerId The user recorded as the deletion actor in ingestion failure metadata.
-     * @param projectId The project used to authorize the deletion request.
+     * @param projectId The project that owns the artifacts being deleted.
      * @throws ResponseStatusException `403` when the authenticated user cannot access the project.
-     * @throws ResponseStatusException `404` when the remover id does not exist.
+     * @throws ResponseStatusException `404` when the authenticated user has no local projection.
      */
     @Transactional
-    @Tracked("Deleting a batch of artifacts")
+    @Tracked("Deleting a batch of project artifacts")
     fun deleteUpload(
         authId: String,
         artifactIds: Set<UUID>,
-        removerId: UUID,
         projectId: UUID,
     ) {
-        val userInRepo = userApi.getUserByAuthId(authId)
-        if (projectId !in userInRepo.projects.map { it.projectId }) {
-            throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
-        }
-        if (!userApi.exists(removerId)) {
-            throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Remover with id $removerId does not exist",
-            )
-        }
+        val removerId = resolveCurrentUserId(userApi, authId)
+        requireProjectAccess(userApi, authId, projectId)
 
         val deleteArtifactOutcomes = mutableSetOf<UploadArtifactOperationOutcome>()
         val transactionId = UUID.randomUUID()
 
-        publisher.publishEvent(
-            UploadStartedEvent(
-                transactionId = transactionId,
-            ),
-        )
+        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId))
 
         artifactIds.forEach { artifactId ->
-            val artifact =
-                uploadedArtifactRepository
-                    .findById(artifactId)
-                    .orElse(null)
+            val artifact = uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId)
             if (artifact == null) {
                 deleteArtifactOutcomes.add(
                     UploadArtifactOperationOutcome(
@@ -245,13 +218,14 @@ class UploadService(
                 deleteArtifactOutcomes.add(
                     UploadArtifactOperationOutcome(
                         id = artifactId,
-                        filename = "unknown",
+                        filename = artifact.filename,
                         status = UploadArtifactStatus.FAILED,
                         error = e.message,
                     ),
                 )
                 return@forEach
             }
+
             publisher.publishEvent(
                 UploadFileDeletedEvent(
                     transactionId = transactionId,
@@ -260,6 +234,7 @@ class UploadService(
             )
             uploadedArtifactRepository.delete(artifact)
         }
+
         publisher.publishEvent(
             UploadBatchDeletionFinishedEvent(
                 transactionId = transactionId,
@@ -272,12 +247,12 @@ class UploadService(
     /**
      * Uploads a single file and processes it for storage and validation.
      *
-     * @param file the file to be uploaded as a `MultipartFile`
-     * @param uploaderId the unique identifier of the uploader as a `UUID`
-     * @param projectId the unique identifier of the related project as a `UUID`
-     * @param transactionId the unique identifier of the transaction as a `UUID`
-     * @param outcomes a mutable set used to track the outcomes of the upload operation
-     * @return an instance of `UploadResult` containing the upload response and artifact details
+     * @param file The file to be uploaded.
+     * @param uploaderId The authenticated user recorded as the upload actor.
+     * @param projectId The project that owns the uploaded artifact.
+     * @param transactionId The upload batch transaction id.
+     * @param outcomes A mutable set used to track upload operation outcomes.
+     * @return The upload response and persisted artifact when one is available.
      */
     private fun uploadSingle(
         file: MultipartFile,
@@ -289,10 +264,9 @@ class UploadService(
         validationService.validate(file)
 
         val bytes = file.bytes
-
         val hash = sha256(bytes)
 
-        val existingArtifact = uploadedArtifactRepository.findByHash(hash)
+        val existingArtifact = uploadedArtifactRepository.findByHashAndProjectId(hash, projectId)
 
         if (existingArtifact != null) {
             outcomes.add(
@@ -315,10 +289,10 @@ class UploadService(
         val artifact = UploadedArtifact(
             filename = file.originalFilename!!,
             hash = hash,
-            mime = file.contentType
-                ?: "application/octet-stream",
+            mime = file.contentType ?: "application/octet-stream",
             storagePath = "",
             uploaderId = uploaderId,
+            projectId = projectId,
         )
 
         val storagePath = storageService.store(file = file, artifactId = artifact.id)
@@ -356,20 +330,31 @@ class UploadService(
             artifact = artifact,
         )
     }
-
-    private fun sha256(bytes: ByteArray): String {
-        val digest =
-            MessageDigest.getInstance("SHA-256")
-
-        return digest
-            .digest(bytes)
-            .joinToString("") {
-                "%02x".format(it)
-            }
-    }
 }
 
 data class UploadResult(
     val response: UploadArtifactResponse,
     val artifact: UploadedArtifact?,
 )
+
+private fun sha256(bytes: ByteArray): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+
+    return digest
+        .digest(bytes)
+        .joinToString("") {
+            "%02x".format(it)
+        }
+}
+
+private fun requireProjectAccess(userApi: UserApi, authId: String, projectId: UUID) {
+    if (!userApi.userHasAccessToProject(authId, projectId)) {
+        throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
+    }
+}
+
+private fun resolveCurrentUserId(userApi: UserApi, authId: String): UUID {
+    return userApi.getUserIdByAuthId(authId).orElseThrow {
+        ResponseStatusException(HttpStatus.NOT_FOUND, "Authenticated user not found")
+    }
+}

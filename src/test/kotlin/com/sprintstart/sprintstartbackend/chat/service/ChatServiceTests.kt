@@ -39,7 +39,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.server.ResponseStatusException
 import java.time.OffsetDateTime
 import java.util.Optional
 import java.util.UUID
@@ -66,6 +68,7 @@ class ChatServiceTests {
     )
 
     private val userId = UUID.randomUUID()
+    private val authId = "auth-user"
 
     @Nested
     inner class GetChats {
@@ -139,6 +142,32 @@ class ChatServiceTests {
             assertEquals(allChats[0].toChatResponse(), result.chats[0])
             assertEquals(allChats[1].toChatResponse(), result.chats[1])
             assertEquals(allChats[2].toChatResponse(), result.chats[2])
+        }
+
+        @Test
+        fun `returns only current user's chats`() {
+            val request = GetChatsRequest(limit = 5)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findAllByUserId(userId, any<Pageable>()) } returns PageImpl(allChats)
+
+            val result = chatService.getChatsForCurrentUser(authId, request)
+
+            assertEquals(5, result.chats.size)
+            assertEquals(allChats[0].toChatResponse(), result.chats[0])
+            verify(exactly = 1) { chatRepository.findAllByUserId(userId, any<Pageable>()) }
+        }
+
+        @Test
+        fun `throws not found when current user cannot be resolved for chat list`() {
+            val request = GetChatsRequest(limit = null)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            val ex = assertFailsWith<ResponseStatusException> {
+                chatService.getChatsForCurrentUser(authId, request)
+            }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+            verify(exactly = 0) { chatRepository.findAllByUserId(any(), any<Pageable>()) }
         }
     }
 
@@ -253,6 +282,36 @@ class ChatServiceTests {
             assertEquals(chatMessages[1].toChatMessageResponse(), result.messages[1])
             assertEquals(chatMessages[2].toChatMessageResponse(), result.messages[2])
         }
+
+        @Test
+        fun `returns current user's chat messages for owned chat`() {
+            val request = GetChatMessagesRequest(limit = null)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chat.id, userId) } returns Optional.of(chat)
+            every {
+                chatMessageRepository.findAllByChat(chat.id, any<Pageable>())
+            } returns PageImpl(chatMessages)
+
+            val result = chatService.getChatForCurrentUser(authId, chat.id, request)
+
+            assertEquals(5, result.messages.size)
+            assertEquals(chatMessages[0].toChatMessageResponse(), result.messages[0])
+            verify(exactly = 1) { chatRepository.findByIdAndUserId(chat.id, userId) }
+        }
+
+        @Test
+        fun `throws not found and does not load messages for foreign chat`() {
+            val request = GetChatMessagesRequest(limit = null)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chat.id, userId) } returns Optional.empty()
+
+            val ex = assertFailsWith<ResponseStatusException> {
+                chatService.getChatForCurrentUser(authId, chat.id, request)
+            }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+            verify(exactly = 0) { chatMessageRepository.findAllByChat(any(), any<Pageable>()) }
+        }
     }
 
     @Nested
@@ -282,11 +341,29 @@ class ChatServiceTests {
 
             verify(exactly = 0) { chatRepository.save(any()) }
         }
+
+        @Test
+        fun `creates chat for current user resolved from auth id`() {
+            val chatSlot = slot<Chat>()
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
+
+            val result = chatService.createChatForCurrentUser(authId)
+
+            assertEquals(userId, chatSlot.captured.userId)
+            assertEquals(chatSlot.captured.id, result.id)
+            verify(exactly = 1) { chatRepository.save(any()) }
+        }
     }
 
     @Nested
     inner class PromptAi {
         private val chatId = UUID.randomUUID()
+
+        private fun mockOwnedChat(chat: Chat) {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chat.id, userId) } returns Optional.of(chat)
+        }
 
         @Test
         fun `emits tokens from ai stream`() = runTest {
@@ -297,7 +374,7 @@ class ChatServiceTests {
                 AiStreamMessage("token", " world"),
                 AiStreamMessage("done"),
             )
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
             every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
@@ -305,7 +382,11 @@ class ChatServiceTests {
             coEvery { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            val result = chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+            val result = chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList()
 
             assertEquals(tokens, result)
         }
@@ -321,7 +402,7 @@ class ChatServiceTests {
                 AiStreamMessage("done"),
             )
             val savedMessages = mutableListOf<ChatMessage>()
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
             every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
@@ -329,7 +410,11 @@ class ChatServiceTests {
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*stream.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            val emitted = chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+            val emitted = chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList()
 
             // The tool_use event is forwarded downstream untouched
             assertEquals(stream, emitted)
@@ -348,7 +433,7 @@ class ChatServiceTests {
                 AiStreamMessage("token", " world"),
             )
             val savedMessages = mutableListOf<ChatMessage>()
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
             every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
@@ -356,7 +441,11 @@ class ChatServiceTests {
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*tokens.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList() // collect to trigger completion
+            chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList() // collect to trigger completion
 
             // First save = user message, second save = AI response
             assertEquals(2, savedMessages.size)
@@ -368,7 +457,7 @@ class ChatServiceTests {
         fun `generates and saves title when chat title is blank`() = runTest {
             val chat = Chat(id = chatId, userId = userId, title = "", createdAt = OffsetDateTime.now())
             val aiPromptRequest = AiPromptRequest("Hello", listOf())
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatRepository.save(any()) } answers { firstArg() }
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
@@ -378,7 +467,11 @@ class ChatServiceTests {
             every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+            chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList()
 
             assertEquals("Sprint planning", chat.title)
             verify { chatRepository.save(chat) }
@@ -387,7 +480,7 @@ class ChatServiceTests {
         @Test
         fun `skips title generation when chat title is not blank`() = runTest {
             val chat = Chat(id = chatId, userId = userId, title = "Existing", createdAt = OffsetDateTime.now())
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
             every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
@@ -395,7 +488,11 @@ class ChatServiceTests {
             every { chatAiClient.streamPrompt(any()) } returns flowOf()
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+            chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList()
 
             coVerify(exactly = 0) { chatAiClient.getChatTitle(any()) }
             verify(exactly = 0) { chatRepository.save(any()) }
@@ -403,17 +500,41 @@ class ChatServiceTests {
 
         @Test
         fun `throws when chat is not found`() = runTest {
-            every { chatRepository.findById(chatId) } returns Optional.empty()
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.empty()
 
-            assertThrows<HttpClientErrorException> {
-                chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello"))
+            val ex = assertFailsWith<ResponseStatusException> {
+                chatService
+                    .promptForCurrentUser(
+                        authId,
+                        PromptRequest(chatId = chatId, msg = "Hello"),
+                    ).toList()
             }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+        }
+
+        @Test
+        fun `throws not found before saving message when current user prompts foreign chat`() = runTest {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.empty()
+
+            val ex = assertFailsWith<ResponseStatusException> {
+                chatService
+                    .promptForCurrentUser(
+                        authId,
+                        PromptRequest(chatId = chatId, msg = "Hello"),
+                    ).toList()
+            }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+            verify(exactly = 0) { chatMessageRepository.save(any()) }
         }
 
         @Test
         fun `does not save ai response when stream errors`() = runTest {
             val chat = Chat(id = chatId, userId = userId, title = "Existing", createdAt = OffsetDateTime.now())
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
             every { connectorConfigurationService.findAllConnectors() } returns emptyList()
@@ -425,7 +546,11 @@ class ChatServiceTests {
 
             // Collect and ignore the error — we're testing the side effect (no AI message saved)
             runCatching {
-                chatService.prompt(PromptRequest(chatId = chatId, msg = "Hello")).toList()
+                chatService
+                    .promptForCurrentUser(
+                        authId,
+                        PromptRequest(chatId = chatId, msg = "Hello"),
+                    ).toList()
             }
 
             // Only the user message should have been saved, not the AI response
@@ -465,7 +590,7 @@ class ChatServiceTests {
             val savedMessages = mutableListOf<ChatMessage>()
             val citationSlot = slot<Iterable<Citation>>()
 
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
             every { citationRepository.saveAll(capture(citationSlot)) } answers { firstArg() }
@@ -478,7 +603,7 @@ class ChatServiceTests {
             coEvery { chatAiClient.streamPrompt(any()) } returns flowOf(*stream.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            val emitted = chatService.prompt(PromptRequest(chatId, "Hello")).toList()
+            val emitted = chatService.promptForCurrentUser(authId, PromptRequest(chatId, "Hello")).toList()
 
             val emittedCitations = emitted.filter { it.type == "citation" }
             assertEquals(2, emittedCitations.size)
@@ -525,7 +650,7 @@ class ChatServiceTests {
 
             val citationSlot = slot<Iterable<Citation>>()
 
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
             every { citationRepository.saveAll(capture(citationSlot)) } answers { firstArg() }
@@ -535,7 +660,7 @@ class ChatServiceTests {
             coEvery { chatAiClient.streamPrompt(any()) } returns flowOf(*stream.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
 
-            val emitted = chatService.prompt(PromptRequest(chatId, "Hello")).toList()
+            val emitted = chatService.promptForCurrentUser(authId, PromptRequest(chatId, "Hello")).toList()
 
             assertEquals(0, emitted.count { it.type == "citation" })
             assertEquals(0, citationSlot.captured.toList().size)
@@ -550,7 +675,7 @@ class ChatServiceTests {
                 createdAt = OffsetDateTime.now(),
             )
 
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
             every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
@@ -576,7 +701,8 @@ class ChatServiceTests {
             )
 
             chatService
-                .prompt(
+                .promptForCurrentUser(
+                    authId,
                     PromptRequest(
                         chatId = chatId,
                         msg = "Hello",
@@ -598,7 +724,7 @@ class ChatServiceTests {
                 createdAt = OffsetDateTime.now(),
             )
 
-            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            mockOwnedChat(chat)
 
             every {
                 chatMessageRepository.findAllByChat(any(), any())
@@ -618,7 +744,8 @@ class ChatServiceTests {
 
             assertFailsWith<ConnectorDisabledException> {
                 chatService
-                    .prompt(
+                    .promptForCurrentUser(
+                        authId,
                         PromptRequest(
                             chatId = chatId,
                             msg = "Hello",

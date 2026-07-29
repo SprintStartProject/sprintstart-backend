@@ -12,6 +12,7 @@ data class UploadedArtifactDto(
     val mime: String,
     val storagePath: String,
     val uploaderId: UUID,
+    val projectId: UUID,
 )
 
 fun UploadedArtifact.toDto() = UploadedArtifactDto(
@@ -22,4 +23,5 @@ fun UploadedArtifact.toDto() = UploadedArtifactDto(
     mime = this.mime,
     storagePath = this.storagePath,
     uploaderId = this.uploaderId,
+    projectId = this.projectId,
 )
