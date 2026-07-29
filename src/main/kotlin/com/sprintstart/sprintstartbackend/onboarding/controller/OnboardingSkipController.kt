@@ -284,7 +284,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/skips")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getAllSkips(): List<GetAllOnboardingSkipsResponse> {
         return onboardingSkipService.getAllSkips()
     }
@@ -309,7 +309,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/users/{userId}/skips")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getAllSkipsByUserId(
         @Parameter(description = "UUID of the user")
         @PathVariable userId: UUID,
@@ -337,7 +337,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/steps/{stepId}/skips")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getSkipsByStepId(
         @Parameter(description = "UUID of the onboarding step")
         @PathVariable stepId: UUID,
@@ -365,7 +365,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/skips/{skipId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getSkipById(
         @Parameter(description = "UUID of the onboarding skip")
         @PathVariable skipId: UUID,
@@ -397,7 +397,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/skips/{skipId}/accept")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun acceptSkipById(
         @Parameter(description = "UUID of the onboarding skip to accept")
         @PathVariable skipId: UUID,
@@ -430,7 +430,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/skips/{skipId}/deny")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun denySkipById(
         @Parameter(description = "UUID of the onboarding skip to deny")
         @PathVariable skipId: UUID,
@@ -461,7 +461,7 @@ class OnboardingSkipAdminController(
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/skips/{skipId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun deleteSkipById(
         @Parameter(description = "UUID of the onboarding skip to delete")
         @PathVariable skipId: UUID,
