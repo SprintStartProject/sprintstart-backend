@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckAttemptsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitPhaseCheckAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.PhaseCheckService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -122,6 +125,76 @@ class PhaseCheckController(
         @Valid @RequestBody request: SubmitPhaseCheckAttemptRequest,
     ): SubmitPhaseCheckAttemptResponse {
         return phaseCheckService.submitPhaseCheckAttemptForMe(jwt.subject, phaseId, request)
+    }
+
+    /**
+     * Returns the authenticated user's open review pool.
+     *
+     * The pool holds questions from earlier phases the user answered incorrectly. They are
+     * asked here instead of inside a later phase's check, where they would be off-topic.
+     * Correct answers are never exposed; those are only included in submit results.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @return The open review questions without correct answers.
+     */
+    @Operation(
+        summary = "Get current user's review check",
+        description = "Returns the questions the authenticated user answered incorrectly in earlier " +
+            "phases and still has to answer correctly once. Correct answers are not exposed; " +
+            "they are only revealed in the submit result.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Review check returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this review check"),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/review-check")
+    @PreAuthorize("hasRole('USER')")
+    fun getReviewCheckForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): GetReviewCheckResponse {
+        return phaseCheckService.getReviewCheckForMe(jwt.subject)
+    }
+
+    /**
+     * Submits answers for the authenticated user's review pool.
+     *
+     * Every correctly answered question leaves the pool permanently; a wrong answer keeps it
+     * open for another try. Answering only part of the pool is allowed. Emptying the pool
+     * after the final phase check was passed completes the onboarding journey.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param request The user's answers.
+     * @return The graded answers including how many questions remain.
+     */
+    @Operation(
+        summary = "Submit current user's review check answers",
+        description = "Grades answers for the review pool. Correctly answered questions are removed " +
+            "from the pool, wrong ones stay open. There is no pass threshold, and answering only " +
+            "some of the open questions is allowed.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "201", description = "Answers graded successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to submit this review check"),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/me/review-check/attempts")
+    @PreAuthorize("hasRole('USER')")
+    fun submitReviewCheckForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Valid @RequestBody request: SubmitReviewCheckRequest,
+    ): SubmitReviewCheckResponse {
+        return phaseCheckService.submitReviewCheckForMe(jwt.subject, request)
     }
 
 //  ========================== Endpoints for admins ==========================
