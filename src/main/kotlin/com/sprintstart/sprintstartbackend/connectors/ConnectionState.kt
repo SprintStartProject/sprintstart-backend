@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.models
+package com.sprintstart.sprintstartbackend.connectors
 
 enum class ConnectionState {
     UPDATING,

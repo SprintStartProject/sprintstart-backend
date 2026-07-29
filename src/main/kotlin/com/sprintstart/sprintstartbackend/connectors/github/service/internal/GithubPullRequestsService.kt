@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
@@ -9,7 +10,6 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.pull
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.models.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException

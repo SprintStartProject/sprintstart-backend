@@ -45,7 +45,7 @@ class IngestionRunLifeCycleService(
      */
     @Transactional
     @Tracked("Starting ingestion run")
-    fun startRun(
+    fun startOrUpdateRun(
         transactionId: UUID,
         sourceSystem: SourceSystem,
         status: IngestionRunStatus,
@@ -63,7 +63,7 @@ class IngestionRunLifeCycleService(
                 sourceInstanceId = sourceInstanceId,
                 sourceInstanceRef = sourceInstanceRef,
                 status = status,
-                failureReason = failureReason,
+                failureReason = failureReason.truncateToDbLimit(),
                 finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null,
                 aiSyncStatus = initialAiSyncStatus,
             )
@@ -71,7 +71,7 @@ class IngestionRunLifeCycleService(
         } else {
             ingestionRun.status = status
             ingestionRun.finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null
-            ingestionRun.failureReason = failureReason
+            ingestionRun.failureReason = failureReason.truncateToDbLimit()
             if (status == IngestionRunStatus.FAILED) {
                 ingestionRun.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
             }
@@ -158,7 +158,21 @@ class IngestionRunLifeCycleService(
     fun markAiSyncFailed(runId: UUID, reason: String?) {
         ingestionRunRepository.findByIdOrNull(runId)?.let { run ->
             run.aiSyncStatus = AiSyncStatus.FAILED
-            run.aiSyncFailureReason = reason
+            run.aiSyncFailureReason = reason.truncateToDbLimit()
         }
     }
+}
+
+private const val FAILURE_REASON_MAX_LENGTH = 255
+
+/**
+ * Truncates the string to the maximum length supported by the database column.
+ *
+ * Failure reasons come from exception messages that can easily exceed the 255 character
+ * limit of the varchar column. This keeps the first 255 characters so the reason is still
+ * useful without failing the persistence layer.
+ */
+private fun String?.truncateToDbLimit(): String? {
+    if (this == null || this.length <= FAILURE_REASON_MAX_LENGTH) return this
+    return this.take(FAILURE_REASON_MAX_LENGTH - 1) + "…"
 }

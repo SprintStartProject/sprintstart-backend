@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
-import com.sprintstart.sprintstartbackend.connectors.github.models.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import org.springframework.stereotype.Service

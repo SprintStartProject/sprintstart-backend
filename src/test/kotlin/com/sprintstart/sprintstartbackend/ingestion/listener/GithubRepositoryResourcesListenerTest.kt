@@ -21,7 +21,7 @@ class GithubRepositoryResourcesListenerTest {
     fun `fetching started event marks run as running and links its repository`() {
         val runId = UUID.randomUUID()
         val repositoryId = UUID.randomUUID()
-        every { ingestionRunLifeCycleService.startRun(any(), any(), any(), any(), any(), any()) } just runs
+        every { ingestionRunLifeCycleService.startOrUpdateRun(any(), any(), any(), any(), any(), any()) } just runs
 
         listener.on(
             GithubRepositoryResourcesFetchingStartedEvent(
@@ -33,7 +33,7 @@ class GithubRepositoryResourcesListenerTest {
         )
 
         verify(exactly = 1) {
-            ingestionRunLifeCycleService.startRun(
+            ingestionRunLifeCycleService.startOrUpdateRun(
                 transactionId = runId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.RUNNING,

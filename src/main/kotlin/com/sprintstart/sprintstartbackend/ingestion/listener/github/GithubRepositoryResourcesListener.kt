@@ -16,7 +16,7 @@ internal class GithubRepositoryResourcesListener(
         event: GithubRepositoryResourcesFetchingStartedEvent,
     ) {
         ingestionRunLifeCycleService
-            .startRun(
+            .startOrUpdateRun(
                 transactionId = event.transactionId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.RUNNING,

@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.models.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubFileSnapshotSharedId
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection

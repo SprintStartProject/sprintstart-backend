@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository

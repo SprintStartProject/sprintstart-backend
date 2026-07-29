@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.models.api.requests
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.ScheduleSpec
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import jakarta.validation.Valid
 
 data class ConfigureRepositoryRequest(

@@ -20,25 +20,25 @@ class IngestionRunLifeCycleServiceTest {
     private val service = IngestionRunLifeCycleService(ingestionRunRepository, publisher)
 
     @Test
-    fun `startRun marks a startup failure as not applicable for AI sync`() {
+    fun `startOrUpdateRun marks a startup failure as not applicable for AI sync`() {
         val transactionId = UUID.randomUUID()
         every { ingestionRunRepository.findById(transactionId) } returns Optional.empty()
         val saved = slot<IngestionRun>()
         every { ingestionRunRepository.save(capture(saved)) } answers { firstArg() }
 
-        service.startRun(transactionId, SourceSystem.GITHUB, IngestionRunStatus.FAILED, "boom")
+        service.startOrUpdateRun(transactionId, SourceSystem.GITHUB, IngestionRunStatus.FAILED, "boom")
 
         assertThat(saved.captured.aiSyncStatus).isEqualTo(AiSyncStatus.NOT_APPLICABLE)
     }
 
     @Test
-    fun `startRun starts a new run as pending AI sync`() {
+    fun `startOrUpdateRun starts a new run as pending AI sync`() {
         val transactionId = UUID.randomUUID()
         every { ingestionRunRepository.findById(transactionId) } returns Optional.empty()
         val saved = slot<IngestionRun>()
         every { ingestionRunRepository.save(capture(saved)) } answers { firstArg() }
 
-        service.startRun(transactionId, SourceSystem.GITHUB, IngestionRunStatus.RUNNING)
+        service.startOrUpdateRun(transactionId, SourceSystem.GITHUB, IngestionRunStatus.RUNNING)
 
         assertThat(saved.captured.aiSyncStatus).isEqualTo(AiSyncStatus.PENDING)
     }

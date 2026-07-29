@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.github.models
 
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpecJpaConverter
 import jakarta.persistence.Column
 import jakarta.persistence.Convert
 import jakarta.persistence.Entity

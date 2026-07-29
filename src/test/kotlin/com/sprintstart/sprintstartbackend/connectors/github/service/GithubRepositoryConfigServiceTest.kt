@@ -4,13 +4,14 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubReposit
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.ScheduleSpec
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConfigureRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.GetRepositoryConfigRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.GetRepositoryConfigResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryConfigNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify

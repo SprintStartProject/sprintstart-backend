@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.models
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import jakarta.persistence.CascadeType
 import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column

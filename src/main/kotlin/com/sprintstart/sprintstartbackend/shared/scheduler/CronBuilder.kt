@@ -1,6 +1,5 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.shared.scheduler
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.ScheduleSpec
 import org.springframework.stereotype.Component
 import java.time.DayOfWeek
 

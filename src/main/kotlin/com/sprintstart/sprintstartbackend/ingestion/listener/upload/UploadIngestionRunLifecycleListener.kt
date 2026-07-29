@@ -27,7 +27,7 @@ internal class UploadIngestionRunLifecycleListener(
         event: UploadStartedEvent,
     ) {
         ingestionRunLifeCycleService
-            .startRun(
+            .startOrUpdateRun(
                 transactionId = event.transactionId,
                 sourceSystem = SourceSystem.UPLOAD,
                 status = IngestionRunStatus.RUNNING,

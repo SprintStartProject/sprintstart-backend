@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.models.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser

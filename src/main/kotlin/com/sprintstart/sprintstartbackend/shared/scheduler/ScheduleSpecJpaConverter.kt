@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.models
+package com.sprintstart.sprintstartbackend.shared.scheduler
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule

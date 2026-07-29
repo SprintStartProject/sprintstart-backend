@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.models
+package com.sprintstart.sprintstartbackend.shared.scheduler
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
