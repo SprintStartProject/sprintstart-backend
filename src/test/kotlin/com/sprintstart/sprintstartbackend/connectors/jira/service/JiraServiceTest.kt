@@ -181,6 +181,26 @@ class JiraServiceTest {
         }
 
         @Test
+        fun `should connect new instance with default as source enabled`() {
+            runTest {
+                val expectedNextSyncAt = java.time.Instant.now()
+                val credential = jiraCredential(request.userEmail, request.tokenName)
+                every { instanceRepository.findById(request.url) } returns Optional.empty()
+                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+                every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns expectedNextSyncAt
+                every { instanceRepository.save(any()) } answers { firstArg() }
+                every { configRepository.save(any()) } answers { firstArg() }
+                val transactionId = service.connectInstanceIfNeeded(request)
+
+                assertThat(transactionId).isNotNull()
+                verify { configRepository.save(any()) }
+                verify { instanceRepository.save(match { it.sourceEnabled }) }
+            }
+        }
+
+        @Test
         fun `should throw when credentials not found`() {
             runTest {
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
