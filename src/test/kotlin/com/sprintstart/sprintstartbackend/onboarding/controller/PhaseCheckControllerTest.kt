@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestio
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitCheckAnswerRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.CheckAnswerResultResponse
@@ -306,6 +307,40 @@ class PhaseCheckControllerTest(
                     .content(objectMapper.writeValueAsString(request)),
             ).andExpect(status().isOk)
 
+        verify(exactly = 1) { phaseCheckService.replacePhaseCheck(phaseId, request) }
+    }
+
+    @Test
+    fun `replacePhaseCheck should pass existing question and option ids through to the service`() {
+        val questionId = UUID.randomUUID()
+        val optionId = UUID.randomUUID()
+        val request = UpdatePhaseCheckRequest(
+            questions = listOf(
+                UpdateCheckQuestionRequest(
+                    id = questionId,
+                    position = 0,
+                    type = CheckQuestionType.MULTIPLE_CHOICE,
+                    question = "kept?",
+                    options = listOf(
+                        UpdateCheckOptionRequest(id = optionId, position = 0, label = "yes", correct = true),
+                        UpdateCheckOptionRequest(position = 1, label = "no", correct = false),
+                    ),
+                ),
+            ),
+        )
+        every { phaseCheckService.replacePhaseCheck(phaseId, request) } returns
+            GetPhaseCheckResponse(phaseId, emptyList())
+
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/phases/$phaseId/checks")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+
+        // The IDs have to survive deserialization: without them the service recreates every
+        // question, which orphans the members' review pool entries.
         verify(exactly = 1) { phaseCheckService.replacePhaseCheck(phaseId, request) }
     }
 

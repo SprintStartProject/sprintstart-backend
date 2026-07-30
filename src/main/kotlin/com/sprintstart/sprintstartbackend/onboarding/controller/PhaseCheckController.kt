@@ -234,8 +234,13 @@ class PhaseCheckController(
     /**
      * Replaces the knowledge check questions of a phase.
      *
-     * All existing questions are replaced by the submitted ones. Stored attempts
-     * remain untouched as history.
+     * The submitted questions become the new check: questions sent with the ID of an existing
+     * one are updated in place and keep that ID, questions without a known ID are created, and
+     * questions the request omits are deleted along with any review pool entries referencing
+     * them. Options are matched by ID the same way. Sending existing IDs back matters — a
+     * recreated question loses the review pool entries and attempt answers pointing at it.
+     *
+     * Stored attempts remain untouched as history.
      *
      * @param phaseId Identifier of the phase whose check should be replaced.
      * @param request The new check questions.
@@ -243,8 +248,11 @@ class PhaseCheckController(
      */
     @Operation(
         summary = "Replace phase knowledge check",
-        description = "Replaces all knowledge check questions of the phase. Multiple choice questions need " +
-            "at least 2 options and 1 correct option; short text questions need a correctAnswer.",
+        description = "Replaces the knowledge check questions of the phase. Questions and options sent " +
+            "with the ID of an existing entry are updated in place and keep that ID; entries without a " +
+            "known ID are created, and entries the request omits are deleted together with any review " +
+            "pool items referencing them. Multiple choice questions need at least 2 options and 1 " +
+            "correct option; short text questions need a correctAnswer.",
     )
     @ApiResponses(
         value = [

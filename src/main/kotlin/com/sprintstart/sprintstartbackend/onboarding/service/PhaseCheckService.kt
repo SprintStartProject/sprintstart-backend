@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitCheckAnswerRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.CheckAnswerResultResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckAttemptsResponse
@@ -171,7 +172,7 @@ class PhaseCheckService(
             requiredPercent = PASS_PERCENT,
             phaseCheckSummary = phase.toCheckSummaryResponse(),
             nextPhaseUnlocked = passed && phase.stepsCompleted() && phase.hasNextPhase(),
-            openReviewCount = phaseCheckReviewItemRepository.countByUserIdAndResolvedFalse(userId).toInt(),
+            openReviewCount = phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId).toInt(),
             onboardingCompleted = onboardingCompleted,
             results = results,
         )
@@ -230,7 +231,7 @@ class PhaseCheckService(
         return SubmitReviewCheckResponse(
             answeredCount = results.size,
             correctCount = results.count { it.correct },
-            remainingCount = phaseCheckReviewItemRepository.countByUserIdAndResolvedFalse(userId).toInt(),
+            remainingCount = phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId).toInt(),
             onboardingCompleted = completeOnboardingIfFinished(userId),
             results = results,
         )
@@ -253,11 +254,18 @@ class PhaseCheckService(
     }
 
     /**
-     * Replaces all knowledge check questions of a phase.
+     * Replaces the knowledge check questions of a phase, keeping the identity of the
+     * questions that survive the edit.
      *
-     * Existing questions are removed and the submitted questions become the new
-     * check. Submitted attempts are kept as history; their answers reference the
-     * old question IDs.
+     * Questions carrying a known [UpdateCheckQuestionRequest.id] are updated in place;
+     * everything else in the request is created, and questions the request no longer
+     * mentions are deleted. Identity is preserved rather than recreating the whole check,
+     * because review pool items and stored attempt answers reference questions by plain
+     * UUID: recreating a question the editor never touched would orphan its history and
+     * silently drop it from every user's review pool.
+     *
+     * An unknown ID is treated as a new question, so an editor working from a stale copy
+     * of a check someone else already changed still saves instead of failing.
      *
      * @param phaseId Identifier of the phase whose check should be replaced.
      * @param request The new check questions.
@@ -272,31 +280,29 @@ class PhaseCheckService(
 
         validateQuestions(request)
 
-        phase.checkQuestions.clear()
-        request.questions.sortedBy { it.position }.forEach { questionRequest ->
-            val question = PhaseCheckQuestion(
-                phase = phase,
-                position = questionRequest.position,
-                type = questionRequest.type,
-                question = questionRequest.question,
-                explanation = questionRequest.explanation,
-                correctAnswer = questionRequest.correctAnswer
-                    .takeIf { questionRequest.type == CheckQuestionType.SHORT_TEXT },
-            )
-            if (questionRequest.type == CheckQuestionType.MULTIPLE_CHOICE) {
-                questionRequest.options.sortedBy { it.position }.forEach { optionRequest ->
-                    question.options += PhaseCheckOption(
-                        question = question,
-                        position = optionRequest.position,
-                        label = optionRequest.label,
-                        correct = optionRequest.correct,
-                    )
-                }
+        val existingById = phase.checkQuestions.associateBy { it.id }
+        val keptIds = request.questions
+            .mapNotNull { it.id }
+            .filter { it in existingById }
+            .toSet()
+        val removedIds = existingById.keys - keptIds
+
+        phase.checkQuestions.removeIf { it.id in removedIds }
+        request.questions.forEach { questionRequest ->
+            val existing = questionRequest.id?.let { existingById[it] }
+            if (existing == null) {
+                phase.checkQuestions += questionRequest.toNewQuestion(phase)
+            } else {
+                existing.applyFrom(questionRequest)
             }
-            phase.checkQuestions += question
         }
 
-        return onboardingPhaseRepository.save(phase).toCheckResponse()
+        val response = onboardingPhaseRepository.save(phase).toCheckResponse()
+
+        // After the questions are persisted, so the cleanup below sees the deletions.
+        discardReviewItemsFor(removedIds)
+
+        return response
     }
 
     /**
@@ -347,6 +353,87 @@ class PhaseCheckService(
     }
 
 //  ========================== Helper Methods ==========================
+
+    /** Builds a brand new check question, including its options for multiple choice. */
+    private fun UpdateCheckQuestionRequest.toNewQuestion(phase: OnboardingPhase): PhaseCheckQuestion {
+        val created = PhaseCheckQuestion(
+            phase = phase,
+            position = position,
+            type = type,
+            question = question,
+            explanation = explanation,
+            correctAnswer = correctAnswer.takeIf { type == CheckQuestionType.SHORT_TEXT },
+        )
+        created.applyOptionsFrom(this)
+        return created
+    }
+
+    /** Updates an existing question in place, so its ID — and with it its history — survives. */
+    private fun PhaseCheckQuestion.applyFrom(request: UpdateCheckQuestionRequest) {
+        position = request.position
+        type = request.type
+        question = request.question
+        explanation = request.explanation
+        correctAnswer = request.correctAnswer.takeIf { request.type == CheckQuestionType.SHORT_TEXT }
+        applyOptionsFrom(request)
+    }
+
+    /**
+     * Merges a question's options the same way questions themselves are merged: known IDs are
+     * updated, unknown ones created, and options the request dropped are deleted. Stored attempt
+     * answers reference the selected options by UUID, so an untouched option must keep its ID.
+     *
+     * A question that is no longer multiple choice loses all of its options.
+     */
+    private fun PhaseCheckQuestion.applyOptionsFrom(request: UpdateCheckQuestionRequest) {
+        if (request.type != CheckQuestionType.MULTIPLE_CHOICE) {
+            options.clear()
+            return
+        }
+
+        val existingById = options.associateBy { it.id }
+        val keptIds = request.options
+            .mapNotNull { it.id }
+            .filter { it in existingById }
+            .toSet()
+
+        options.removeIf { it.id !in keptIds }
+        request.options.forEach { optionRequest ->
+            val existing = optionRequest.id?.let { existingById[it] }
+            if (existing == null) {
+                options += PhaseCheckOption(
+                    question = this,
+                    position = optionRequest.position,
+                    label = optionRequest.label,
+                    correct = optionRequest.correct,
+                )
+            } else {
+                existing.position = optionRequest.position
+                existing.label = optionRequest.label
+                existing.correct = optionRequest.correct
+            }
+        }
+    }
+
+    /**
+     * Drops every review item pointing at a deleted question and re-checks the onboarding of
+     * the users who owned them.
+     *
+     * Without the cleanup the items would linger unanswerable: nothing can resolve a question
+     * that no longer exists, and the pool listing hides them, so the user would be blocked by
+     * something neither they nor a reviewer can see. Completion has to be re-evaluated right
+     * here for the same reason — a user whose last open item this removes has nothing left to
+     * submit that would ever trigger the check again.
+     */
+    private fun discardReviewItemsFor(questionIds: Set<UUID>) {
+        if (questionIds.isEmpty()) return
+
+        val items = phaseCheckReviewItemRepository.findAllByQuestionIdIn(questionIds)
+        if (items.isEmpty()) return
+
+        phaseCheckReviewItemRepository.deleteAll(items)
+        items.map { it.userId }.distinct().forEach { completeOnboardingIfFinished(it) }
+    }
 
     /** Renders a user's open review pool, tagging each question with the phase it came from. */
     private fun buildReviewCheckResponse(userId: UUID): GetReviewCheckResponse {
@@ -575,7 +662,7 @@ class PhaseCheckService(
      * @return true when the user counts as onboarded, false while anything is still open.
      */
     private fun completeOnboardingIfFinished(userId: UUID): Boolean {
-        if (phaseCheckReviewItemRepository.countByUserIdAndResolvedFalse(userId) > 0) return false
+        if (phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId) > 0) return false
 
         val lastCheckPhase = onboardingPhaseRepository
             .findAllByPathUserId(userId)
