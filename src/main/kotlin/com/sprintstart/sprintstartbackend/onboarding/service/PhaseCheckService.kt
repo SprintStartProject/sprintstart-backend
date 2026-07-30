@@ -188,12 +188,7 @@ class PhaseCheckService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding review check")
     fun getReviewCheckForMe(authId: String): GetReviewCheckResponse {
-        val userId = resolveUserId(authId)
-        val questions = loadOpenReviewQuestions(userId).map { (_, question) ->
-            question.toForUserResponse().copy(review = true, reviewSourcePhaseTitle = question.phase.title)
-        }
-
-        return GetReviewCheckResponse(openCount = questions.size, questions = questions)
+        return buildReviewCheckResponse(resolveUserId(authId))
     }
 
     /**
@@ -330,7 +325,37 @@ class PhaseCheckService(
         )
     }
 
+    /**
+     * Returns a user's open review pool so admins, PMs, or HR can see which questions
+     * still block that user from finishing onboarding.
+     *
+     * Correct answers stay hidden here, exactly as for the user themselves; reviewers who
+     * need them can load the phase check for editing.
+     *
+     * @param userId Identifier of the user whose review pool should be loaded.
+     * @return The user's open review questions.
+     * @throws ResponseStatusException When the user does not exist.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding review check")
+    fun getReviewCheckForUser(userId: UUID): GetReviewCheckResponse {
+        if (!userApi.exists(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
+
+        return buildReviewCheckResponse(userId)
+    }
+
 //  ========================== Helper Methods ==========================
+
+    /** Renders a user's open review pool, tagging each question with the phase it came from. */
+    private fun buildReviewCheckResponse(userId: UUID): GetReviewCheckResponse {
+        val questions = loadOpenReviewQuestions(userId).map { (_, question) ->
+            question.toForUserResponse().copy(review = true, reviewSourcePhaseTitle = question.phase.title)
+        }
+
+        return GetReviewCheckResponse(openCount = questions.size, questions = questions)
+    }
 
     /**
      * Resolves the user ID corresponding to the provided authentication ID.

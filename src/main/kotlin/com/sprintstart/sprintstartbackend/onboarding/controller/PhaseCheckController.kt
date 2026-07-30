@@ -267,6 +267,40 @@ class PhaseCheckController(
     }
 
     /**
+     * Returns a user's open review pool.
+     *
+     * Lets admins, PMs, and HR see which earlier questions a user still has to answer
+     * correctly — the second condition, next to passing the final phase check, for
+     * counting as onboarded.
+     *
+     * @param userId Identifier of the user whose review pool should be returned.
+     * @return The user's open review questions, without correct answers.
+     */
+    @Operation(
+        summary = "Get a user's review check",
+        description = "Returns the questions the user answered incorrectly in earlier phases and still " +
+            "has to answer correctly, so admins, PMs, or HR can see what is left before the user " +
+            "counts as onboarded.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Review check returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this review check"),
+            ApiResponse(responseCode = "404", description = "No user found with the given ID"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/users/{userId}/review-check")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getReviewCheckForUser(
+        @Parameter(description = "UUID of the user whose review pool should be returned")
+        @PathVariable userId: UUID,
+    ): GetReviewCheckResponse {
+        return phaseCheckService.getReviewCheckForUser(userId)
+    }
+
+    /**
      * Returns all submitted knowledge check attempts of a user for one phase.
      *
      * Allows admins, PMs, and HR to review a user's check results including the

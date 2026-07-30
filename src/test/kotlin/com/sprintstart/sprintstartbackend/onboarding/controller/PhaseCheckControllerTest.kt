@@ -342,6 +342,26 @@ class PhaseCheckControllerTest(
     }
 
     @Test
+    fun `getReviewCheckForUser should return 200 for admins`() {
+        every { phaseCheckService.getReviewCheckForUser(userId) } returns
+            GetReviewCheckResponse(openCount = 0, questions = emptyList())
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/users/$userId/review-check").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.openCount").value(0))
+
+        verify(exactly = 1) { phaseCheckService.getReviewCheckForUser(userId) }
+    }
+
+    @Test
+    fun `getReviewCheckForUser should return 403 for a plain user`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/users/$userId/review-check").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
     fun `getPhaseCheckAttemptsForUser should return 403 for a plain user`() {
         mockMvc
             .perform(get("/api/v1/onboarding/users/$userId/phases/$phaseId/checks/attempts").with(userJwt))

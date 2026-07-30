@@ -907,6 +907,33 @@ class PhaseCheckServiceTest {
         }
 
         @Test
+        fun `returns another user's pool for reviewers without exposing answers`() {
+            val path = makePath(0)
+            val sourcePhase = path.phases.single()
+            val question = addMcQuestion(sourcePhase, 0)
+            givenOpenReviewPool(reviewItemFor(question) to question)
+            every { userApi.exists(userId) } returns true
+
+            val result = service.getReviewCheckForUser(userId)
+
+            assertEquals(1, result.openCount)
+            val pooled = result.questions.single()
+            assertEquals(question.id, pooled.id)
+            assertTrue(pooled.review)
+            assertEquals("P0", pooled.reviewSourcePhaseTitle)
+            // Reviewers get the same shape as the user, whose option type carries no
+            // correct flag at all — answers stay behind the separate editing endpoint.
+            assertEquals(2, pooled.options.size)
+        }
+
+        @Test
+        fun `throws 404 when loading the pool of an unknown user`() {
+            every { userApi.exists(userId) } returns false
+
+            assertThrows<ResponseStatusException> { service.getReviewCheckForUser(userId) }
+        }
+
+        @Test
         fun `resolves a correctly answered question and leaves a wrong one open`() {
             val path = makePath(0)
             val sourcePhase = path.phases.single()
