@@ -39,7 +39,7 @@ internal class JiraInstance(
     @Column(name = "jira_project_key", nullable = false)
     var jiraProjectKeys: MutableSet<String> = mutableSetOf(),
     @Column(name = "source_enabled", nullable = false)
-    var sourceEnabled: Boolean = false,
+    var sourceEnabled: Boolean = true,
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     var status: ConnectionState = ConnectionState.UP_TO_DATE,

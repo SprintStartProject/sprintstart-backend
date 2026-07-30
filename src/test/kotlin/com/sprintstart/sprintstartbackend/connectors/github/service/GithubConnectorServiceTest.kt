@@ -150,6 +150,17 @@ class GithubConnectorServiceTest {
         }
 
         @Test
+        fun `connectRepositoryIfExists saves config with default as source enabled`() = testScope.runTest {
+            stubSuccessfulConnect()
+
+            service.connectRepositoryIfExists("auth-id", connectRequest())
+
+            coVerify {
+                repoConnectionRepository.save(match { it.sourceEnabled })
+            }
+        }
+
+        @Test
         fun `connectRepositoryIfExists launches all background ingestion jobs`() = testScope.runTest {
             stubSuccessfulConnect()
 
