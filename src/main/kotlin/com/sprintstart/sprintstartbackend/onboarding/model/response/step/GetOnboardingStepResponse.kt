@@ -17,6 +17,7 @@ data class GetOnboardingStepResponse(
     val description: String,
     val type: StepType,
     val estimatedMinutes: Int,
+    val isAiAssisted: Boolean,
     val expectedOutcomes: List<String> = emptyList(),
     val tasks: List<GetOnboardingTasksResponse>,
     val resources: List<GetOnboardingResourcesResponse>,

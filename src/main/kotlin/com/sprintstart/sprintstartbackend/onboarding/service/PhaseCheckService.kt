@@ -164,6 +164,11 @@ class PhaseCheckService(
 
         if (passed) {
             applyCarryOver(phase, userId, ownQuestions, reviewPairs, graded)
+            // Passing the path's final knowledge check completes the whole onboarding
+            // journey: promote the user so the onboarding UI is hidden for them.
+            if (phase.isLastCheckPhase()) {
+                userApi.markOnboardingCompleted(userId)
+            }
         }
 
         return SubmitPhaseCheckAttemptResponse(
@@ -436,6 +441,17 @@ class PhaseCheckService(
      */
     private fun OnboardingPhase.hasNextPhase(): Boolean {
         return path.phases.any { it.position > this.position }
+    }
+
+    /**
+     * Whether this phase carries the path's final knowledge check, i.e. no later phase
+     * (higher position) has its own check. Passing this phase's check therefore
+     * completes the entire onboarding journey.
+     *
+     * @return true if no subsequent phase has a knowledge check, false otherwise.
+     */
+    private fun OnboardingPhase.isLastCheckPhase(): Boolean {
+        return path.phases.none { it.position > this.position && it.checkQuestions.isNotEmpty() }
     }
 
     /**

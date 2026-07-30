@@ -13,8 +13,8 @@ import java.util.UUID
     name = "uploaded_artifact",
     uniqueConstraints = [
         UniqueConstraint(
-            name = "uk_uploaded_artifact_hash",
-            columnNames = ["hash"],
+            name = "uk_uploaded_artifact_project_hash",
+            columnNames = ["project_id", "hash"],
         ),
     ],
 )
@@ -33,4 +33,6 @@ class UploadedArtifact(
     var storagePath: String,
     @Column(name = "uploader_id", nullable = false)
     var uploaderId: UUID,
+    @Column(name = "project_id", nullable = false)
+    var projectId: UUID,
 )

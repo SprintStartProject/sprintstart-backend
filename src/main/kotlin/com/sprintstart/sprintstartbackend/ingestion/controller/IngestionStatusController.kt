@@ -28,10 +28,14 @@ class IngestionStatusController(
 ) {
     @GetMapping
     @Operation(
-        summary = "Get latest ingestion status per source",
+        summary = "Get latest ingestion status per source (deprecated)",
         description =
             "Returns one status row per exposed source system using the latest known run, " +
-                "including aggregate counters and recorded failed items.",
+                "including aggregate counters and recorded failed items. " +
+                "Deprecated: this collapses every connected repository into a single row, which " +
+                "misreports projects with more than one repository. Use " +
+                "GET /api/v1/ingestion-sources/status for per-source-instance health instead.",
+        deprecated = true,
     )
     @ApiResponses(
         value = [

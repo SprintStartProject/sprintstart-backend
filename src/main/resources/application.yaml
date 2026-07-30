@@ -4,9 +4,7 @@ sprintstart:
     base-url: ${SPRINTSTART_AI_BASE_URL:http://host.docker.internal:8000}
   github:
     cache-path: ${REPO_CACHE_PATH:${java.io.tmpdir}/repos}
-    base-url: "https://api.github.com/graphql"
-    repo-base-url: "https://api.github.com/repos"
-    token: ${GITHUB_PAT}
+    base-url: "https://api.github.com"
     cron: "0 2 * * 1" # Every Monday night at 2:00 am
   crypto:
     master-key: ${CRYPTO_MASTER_KEY}
@@ -30,7 +28,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update # create-drop
-    show-sql: true
+    show-sql: false
   mvc:
     async:
       request-timeout: 600000

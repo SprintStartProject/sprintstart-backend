@@ -136,6 +136,7 @@ class OnboardingSkipControllerTest(
         title = "Step 1",
         description = "desc",
         estimatedMinutes = 15,
+        isAiAssisted = true,
         expectedOutcome = "Outcome",
         status = StepStatus.WAITING,
         completedAt = null,

@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import jakarta.persistence.criteria.JoinType
 import jakarta.persistence.criteria.Predicate
@@ -31,6 +32,7 @@ import java.util.UUID
 @Service
 class UserApiService(
     private val userRepository: UserRepository,
+    private val projectRepository: ProjectRepository,
 ) : UserApi {
     /**
      * Checks whether a user with the given identifier exists.
@@ -164,7 +166,31 @@ class UserApiService(
         }
 
     /**
+     * Marks the given user's onboarding as completed.
+     *
+     * Idempotent: when the user is already flagged nothing is written. The change is
+     * flushed by the surrounding transaction on the managed entity.
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @throws NoSuchElementException if no user is found with the provided identifier.
+     */
+    @Transactional
+    @Tracked("Marking user onboarding as completed")
+    override fun markOnboardingCompleted(userId: UUID) {
+        val user = userRepository.findById(userId).orElseThrow {
+            NoSuchElementException("User with id $userId not found")
+        }
+        if (!user.hasCompletedOnboarding) {
+            user.hasCompletedOnboarding = true
+        }
+    }
+
+    /**
      * Determines whether a user with the given authentication identifier has access to the specified project.
+     *
+     * Access is granted to admins, to members of the project, and to the project's assigned manager.
+     * Managers are covered explicitly rather than relying on their membership row, so a manager
+     * never loses access to a project they are responsible for.
      *
      * @param authId The external authentication identifier of the user.
      * @param projectId The unique identifier of the project to check access for.
@@ -178,7 +204,13 @@ class UserApiService(
         if (Role.ADMIN in user.roles) {
             return true
         }
+        if (projectId in user.projects.map { it.id }) {
+            return true
+        }
 
-        return projectId in user.projects.map { it.id }
+        return projectRepository
+            .findManagerAuthId(projectId)
+            .map { it == authId }
+            .orElse(false)
     }
 }

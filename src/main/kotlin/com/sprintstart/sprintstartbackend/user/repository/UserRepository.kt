@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.repository
 
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
@@ -24,6 +25,11 @@ interface UserRepository :
     fun findLockedById(id: UUID): Optional<User>
 
     fun existsByAuthId(authId: String): Boolean
+
+    @Query(
+        "select distinct u from User u join u.roles r where r in :roles order by u.username",
+    )
+    fun findAllByRoleIn(roles: Collection<Role>): List<User>
 
     @Query("select u.id from User u where u.authId = :authId")
     fun findIdByAuthId(authId: String): Optional<UUID>

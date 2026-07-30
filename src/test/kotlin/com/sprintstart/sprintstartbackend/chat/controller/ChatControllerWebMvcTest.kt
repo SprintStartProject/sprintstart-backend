@@ -84,9 +84,15 @@ class ChatControllerWebMvcTest(
 
     private val chatId: UUID = UUID.randomUUID()
     private val userId: UUID = UUID.randomUUID()
+    private val authId = "auth-user"
 
     private val userJwt = jwt()
+        .jwt { it.subject(authId) }
         .authorities(SimpleGrantedAuthority("ROLE_USER"))
+
+    private val adminJwt = jwt()
+        .jwt { it.subject(authId) }
+        .authorities(SimpleGrantedAuthority("ROLE_ADMIN"))
 
     private val noUserRoleJwt = jwt()
         .authorities(SimpleGrantedAuthority("ROLE_NONE"))
@@ -103,10 +109,12 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 200 with valid request`() {
             val request = GetChatsRequest(limit = 5)
-            every { chatService.getChats(request) } returns GetChatsResponse(chats = listOf(sampleChatResponse))
+            every {
+                chatService.getChatsForCurrentUser(authId, request)
+            } returns GetChatsResponse(chats = listOf(sampleChatResponse))
 
             mockMvc
-                .get("/api/v1/chats?limit=5") {
+                .get("/api/v1/chats/me?limit=5") {
                     with(userJwt)
                 }.andExpect {
                     status { isOk() }
@@ -119,23 +127,24 @@ class ChatControllerWebMvcTest(
         fun `returns 200 with null limit (retrieve all)`() {
             val request = GetChatsRequest(limit = null)
             val chat = ChatResponse(chatId, "Sprint Planning", userId, OffsetDateTime.now())
-            every { chatService.getChats(request) } returns GetChatsResponse(chats = listOf(chat))
+            every {
+                chatService.getChatsForCurrentUser(authId, request)
+            } returns GetChatsResponse(chats = listOf(chat))
 
             mockMvc
-                .get("/api/v1/chats") {
+                .get("/api/v1/chats/me") {
                     with(userJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = objectMapper.writeValueAsString(request)
                 }.andExpect {
                     status { isOk() }
-                    jsonPath("$.chats") { chat }
+                    jsonPath("$.chats[0].id") { value(chatId.toString()) }
+                    jsonPath("$.chats[0].title") { value("Sprint Planning") }
                 }
         }
 
         @Test
         fun `returns 400 when limit is less than 1`() {
             mockMvc
-                .get("/api/v1/chats?limit=-5") {
+                .get("/api/v1/chats/me?limit=-5") {
                     with(userJwt)
                 }.andExpect {
                     status { isBadRequest() }
@@ -145,17 +154,41 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 401 when not authenticated`() {
             mockMvc
-                .get("/api/v1/chats")
+                .get("/api/v1/chats/me")
                 .andExpect { status { isUnauthorized() } }
         }
 
         @Test
         fun `returns 403 when authenticated with wrong role`() {
             mockMvc
-                .get("/api/v1/chats") {
+                .get("/api/v1/chats/me") {
                     with(noUserRoleJwt)
                 }.andExpect {
                     status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit all-chats endpoint rejects normal user`() {
+            mockMvc
+                .get("/api/v1/chats") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit all-chats endpoint allows admin`() {
+            val request = GetChatsRequest(limit = 5)
+            every { chatService.getChats(request) } returns GetChatsResponse(chats = listOf(sampleChatResponse))
+
+            mockMvc
+                .get("/api/v1/chats?limit=5") {
+                    with(adminJwt)
+                }.andExpect {
+                    status { isOk() }
+                    jsonPath("$.chats[0].id") { value(chatId.toString()) }
                 }
         }
     }
@@ -165,12 +198,14 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 200 with valid request`() {
             val request = GetChatMessagesRequest(limit = 20)
-            every { chatService.getChat(chatId, request) } returns GetChatMessagesResponse(
+            every {
+                chatService.getChatForCurrentUser(authId, chatId, request)
+            } returns GetChatMessagesResponse(
                 messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
-                .get("/api/v1/chats/$chatId?limit=20") {
+                .get("/api/v1/chats/me/$chatId?limit=20") {
                     with(userJwt)
                 }.andExpect {
                     status { isOk() }
@@ -182,15 +217,15 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 200 with null limit`() {
             val request = GetChatMessagesRequest(limit = null)
-            every { chatService.getChat(chatId, request) } returns GetChatMessagesResponse(
+            every {
+                chatService.getChatForCurrentUser(authId, chatId, request)
+            } returns GetChatMessagesResponse(
                 messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
-                .get("/api/v1/chats/$chatId") {
+                .get("/api/v1/chats/me/$chatId") {
                     with(userJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = objectMapper.writeValueAsString(request)
                 }.andExpect {
                     status { isOk() }
                     jsonPath("$.messages[0].content") { value("Hello") }
@@ -201,7 +236,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 400 when limit is less than 1`() {
             mockMvc
-                .get("/api/v1/chats/$chatId?limit=0") {
+                .get("/api/v1/chats/me/$chatId?limit=0") {
                     with(userJwt)
                 }.andExpect {
                     status { isBadRequest() }
@@ -211,10 +246,8 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 400 when id path variable is not a valid UUID`() {
             mockMvc
-                .get("/api/v1/chats/not-a-uuid") {
+                .get("/api/v1/chats/me/not-a-uuid") {
                     with(userJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = objectMapper.writeValueAsString(GetChatMessagesRequest(limit = null))
                 }.andExpect {
                     status { isBadRequest() }
                 }
@@ -223,15 +256,25 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 401 when not authenticated`() {
             mockMvc
-                .get("/api/v1/chats/$chatId")
+                .get("/api/v1/chats/me/$chatId")
                 .andExpect { status { isUnauthorized() } }
         }
 
         @Test
         fun `returns 403 when authenticated with wrong role`() {
             mockMvc
-                .get("/api/v1/chats/$chatId") {
+                .get("/api/v1/chats/me/$chatId") {
                     with(noUserRoleJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit chat messages endpoint rejects normal user`() {
+            mockMvc
+                .get("/api/v1/chats/$chatId") {
+                    with(userJwt)
                 }.andExpect {
                     status { isForbidden() }
                 }
@@ -242,12 +285,37 @@ class ChatControllerWebMvcTest(
     inner class CreateChat {
         @Test
         fun `returns 201 with valid request`() {
+            every { chatService.createChatForCurrentUser(authId) } returns CreateChatResponse(id = chatId)
+
+            mockMvc
+                .post("/api/v1/chats/me") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isCreated() }
+                    jsonPath("$.id") { value(chatId.toString()) }
+                }
+        }
+
+        @Test
+        fun `explicit create endpoint rejects normal user`() {
+            mockMvc
+                .post("/api/v1/chats") {
+                    with(userJwt)
+                    contentType = MediaType.APPLICATION_JSON
+                    content = objectMapper.writeValueAsString(CreateChatRequest(userId = userId))
+                }.andExpect {
+                    status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit create endpoint allows admin`() {
             val request = CreateChatRequest(userId = userId)
             every { chatService.createChat(request) } returns CreateChatResponse(id = chatId)
 
             mockMvc
                 .post("/api/v1/chats") {
-                    with(userJwt)
+                    with(adminJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content = objectMapper.writeValueAsString(request)
                 }.andExpect {
@@ -257,36 +325,10 @@ class ChatControllerWebMvcTest(
         }
 
         @Test
-        fun `returns 400 when userId is missing from body`() {
-            mockMvc
-                .post("/api/v1/chats") {
-                    with(userJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = "{}"
-                }.andExpect {
-                    status { isBadRequest() }
-                }
-        }
-
-        @Test
-        fun `returns 400 when userId is not a valid UUID string`() {
-            mockMvc
-                .post("/api/v1/chats") {
-                    with(userJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = """{"userId": "not-a-uuid"}"""
-                }.andExpect {
-                    status { isBadRequest() }
-                }
-        }
-
-        @Test
         fun `returns 401 when not authenticated`() {
             mockMvc
-                .post("/api/v1/chats") {
-                    contentType = MediaType.APPLICATION_JSON
-                    content = objectMapper.writeValueAsString(CreateChatRequest(userId = userId))
-                }.andExpect {
+                .post("/api/v1/chats/me")
+                .andExpect {
                     status { isUnauthorized() }
                 }
         }
@@ -294,10 +336,8 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 403 when authenticated with wrong role`() {
             mockMvc
-                .post("/api/v1/chats") {
+                .post("/api/v1/chats/me") {
                     with(noUserRoleJwt)
-                    contentType = MediaType.APPLICATION_JSON
-                    content = objectMapper.writeValueAsString(CreateChatRequest(userId = userId))
                 }.andExpect {
                     status { isForbidden() }
                 }
@@ -313,11 +353,11 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
+            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
-                    post("/api/v1/chats/prompt")
+                    post("/api/v1/chats/me/prompt")
                         .with(userJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""{"chatId": "$chatId", "msg": "Test msg"}"""),
@@ -352,11 +392,11 @@ class ChatControllerWebMvcTest(
                 ),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
+            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
-                    post("/api/v1/chats/prompt")
+                    post("/api/v1/chats/me/prompt")
                         .with(userJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""{"chatId": "$chatId", "msg": "Test msg"}"""),
@@ -384,7 +424,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 400 when msg is blank`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     with(userJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content = """{"chatId": "$chatId", "msg": ""}"""
@@ -396,7 +436,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 400 when chatId is missing`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     with(userJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content = """{"msg": "Hello"}"""
@@ -408,7 +448,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 400 when chatId is not a valid UUID`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     with(userJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content = """{"chatId": "bad-id", "msg": "Hello"}"""
@@ -420,7 +460,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `returns 401 when not authenticated`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     contentType = MediaType.APPLICATION_JSON
                     content = """{"chatId": "$chatId", "msg": "Hello"}"""
                 }.andExpect {
@@ -432,7 +472,7 @@ class ChatControllerWebMvcTest(
         fun `returns 403 when authenticated with wrong role`() {
             val asyncResult = mockMvc
                 .perform(
-                    post("/api/v1/chats/prompt")
+                    post("/api/v1/chats/me/prompt")
                         .with(noUserRoleJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
@@ -448,7 +488,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `rejects duplicated source filters`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     with(userJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content =
@@ -472,7 +512,7 @@ class ChatControllerWebMvcTest(
         @Test
         fun `rejects future filter dates`() {
             mockMvc
-                .post("/api/v1/chats/prompt") {
+                .post("/api/v1/chats/me/prompt") {
                     with(userJwt)
                     contentType = MediaType.APPLICATION_JSON
                     content =
@@ -496,11 +536,11 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("done"),
             )
 
-            coEvery { chatService.prompt(any()) } returns flowOf(*messages.toTypedArray())
+            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
-                    post("/api/v1/chats/prompt")
+                    post("/api/v1/chats/me/prompt")
                         .with(userJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(
@@ -523,7 +563,8 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.prompt(
+                chatService.promptForCurrentUser(
+                    authId,
                     match {
                         it.filters?.sourceSystems == listOf(SourceSystem.GITHUB) &&
                             it.filters?.from == Instant.parse("2026-01-01T00:00:00Z")
@@ -534,11 +575,11 @@ class ChatControllerWebMvcTest(
 
         @Test
         fun `accepts prompt without filters`() {
-            coEvery { chatService.prompt(any()) } returns flowOf(AiStreamMessage("done"))
+            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(AiStreamMessage("done"))
 
             val asyncResult = mockMvc
                 .perform(
-                    post("/api/v1/chats/prompt")
+                    post("/api/v1/chats/me/prompt")
                         .with(userJwt)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
@@ -550,7 +591,8 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.prompt(
+                chatService.promptForCurrentUser(
+                    authId,
                     match { it.filters == null },
                 )
             }

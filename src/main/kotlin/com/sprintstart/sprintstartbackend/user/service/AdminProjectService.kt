@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
@@ -36,6 +37,7 @@ class AdminProjectService(
     private val userRepository: UserRepository,
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
+    private val githubRepositoryApi: GithubRepositoryApi,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -45,7 +47,7 @@ class AdminProjectService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving all projects")
     fun getAllProjects(): List<AdminProjectListResponse> {
-        val projects = projectRepository.findAll()
+        val projects = projectRepository.findAllWithManager()
         if (projects.isEmpty()) {
             return emptyList()
         }
@@ -138,7 +140,9 @@ class AdminProjectService(
     /**
      * Deletes a project and its local user assignments.
      *
-     * Connected-source records are owned by their connector modules and are not deleted here.
+     * Connected-source records are owned by their connector modules and are not deleted here, but
+     * the project link is removed from all GitHub repository connections (via the GitHub module
+     * API) so no connection keeps referencing a project that no longer exists.
      *
      * @param id Project identifier.
      * @return Deletion confirmation DTO.
@@ -150,6 +154,7 @@ class AdminProjectService(
         val project = findProject(id)
         val assignments = assignmentRepository.findAllByProjectId(project.id)
         assignmentRepository.deleteAll(assignments)
+        githubRepositoryApi.removeProjectFromAllRepositories(project.id)
         projectRepository.delete(project)
 
         return DeleteProjectResponse(id = id)
@@ -219,7 +224,14 @@ class AdminProjectService(
     @Transactional
     @Tracked("Removing project user")
     fun removeUser(projectId: UUID, userId: UUID) {
-        findProject(projectId)
+        val project = findProject(projectId)
+        if (project.manager?.id == userId) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "User with id $userId manages project with id $projectId. Clear the project manager first.",
+            )
+        }
+
         val assignment = assignmentRepository.findByProjectIdAndUserId(projectId, userId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,

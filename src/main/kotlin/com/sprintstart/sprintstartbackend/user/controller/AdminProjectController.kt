@@ -3,11 +3,14 @@ package com.sprintstart.sprintstartbackend.user.controller
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.request.project.CreateAdminProjectRequest
 import com.sprintstart.sprintstartbackend.user.model.request.project.PatchAdminProjectRequest
+import com.sprintstart.sprintstartbackend.user.model.request.project.SetProjectManagerRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectListResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.DeleteProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectManagerResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
+import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
@@ -23,11 +26,13 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
+import io.swagger.v3.oas.annotations.parameters.RequestBody as SwaggerRequestBody
 
 /**
  * REST API for administrative project management.
@@ -44,6 +49,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/admin/projects")
 class AdminProjectController(
     private val adminProjectService: AdminProjectService,
+    private val projectManagerService: ProjectManagerService,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -120,7 +126,7 @@ class AdminProjectController(
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMIN')")
     fun createProject(
-        @io.swagger.v3.oas.annotations.parameters.RequestBody(
+        @SwaggerRequestBody(
             description = "Project metadata to create.",
             required = true,
             content = [Content(schema = Schema(implementation = CreateAdminProjectRequest::class))],
@@ -160,7 +166,7 @@ class AdminProjectController(
     fun patchProject(
         @Parameter(description = "UUID of the project to patch")
         @PathVariable projectId: UUID,
-        @io.swagger.v3.oas.annotations.parameters.RequestBody(
+        @SwaggerRequestBody(
             description = "Project fields to update.",
             required = true,
             content = [Content(schema = Schema(implementation = PatchAdminProjectRequest::class))],
@@ -258,7 +264,7 @@ class AdminProjectController(
     fun assignUsers(
         @Parameter(description = "UUID of the project receiving users")
         @PathVariable projectId: UUID,
-        @io.swagger.v3.oas.annotations.parameters.RequestBody(
+        @SwaggerRequestBody(
             description = "User IDs to assign to the project.",
             required = true,
             content = [Content(schema = Schema(implementation = AssignProjectUsersRequest::class))],
@@ -300,5 +306,99 @@ class AdminProjectController(
         @PathVariable userId: UUID,
     ) {
         adminProjectService.removeUser(projectId, userId)
+    }
+
+    /**
+     * Assigns the project manager responsible for a project.
+     *
+     * A project has at most one manager, so an existing assignment is replaced. Only administrators
+     * may change manager assignments; project managers cannot reassign themselves or others.
+     *
+     * @param projectId Project identifier.
+     * @param request Manager assignment payload.
+     * @return The updated project.
+     */
+    @Operation(
+        summary = "Set project manager",
+        description = "Assigns the single project manager of a project, replacing any existing assignment.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Project manager assigned successfully"),
+            ApiResponse(responseCode = "400", description = "User does not hold the PM or ADMIN role"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to assign project managers"),
+            ApiResponse(responseCode = "404", description = "Project or user not found"),
+        ],
+    )
+    @PutMapping("/{projectId}/manager")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
+    fun setManager(
+        @Parameter(description = "UUID of the project")
+        @PathVariable projectId: UUID,
+        @SwaggerRequestBody(
+            description = "Identifier of the user to assign as project manager.",
+            required = true,
+            content = [Content(schema = Schema(implementation = SetProjectManagerRequest::class))],
+        )
+        @Valid
+        @RequestBody
+        request: SetProjectManagerRequest,
+    ): AdminProjectDetailResponse {
+        return projectManagerService.setManager(projectId, request)
+    }
+
+    /**
+     * Removes the manager assignment from a project.
+     *
+     * @param projectId Project identifier.
+     */
+    @Operation(
+        summary = "Clear project manager",
+        description = "Removes the manager assignment from a project without changing member assignments.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Project manager cleared successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to clear project managers"),
+            ApiResponse(responseCode = "404", description = "Project not found"),
+        ],
+    )
+    @DeleteMapping("/{projectId}/manager")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
+    fun clearManager(
+        @Parameter(description = "UUID of the project")
+        @PathVariable projectId: UUID,
+    ) {
+        projectManagerService.clearManager(projectId)
+    }
+
+    /**
+     * Returns all users eligible to be assigned as a project manager.
+     *
+     * Mapped below a literal `candidates` segment so the path cannot be confused with the
+     * `GET /{id}` project lookup.
+     *
+     * @return Users holding the PM or ADMIN role.
+     */
+    @Operation(
+        summary = "Get project manager candidates",
+        description = "Returns all users that may be assigned as a project manager.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Candidates returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to list candidates"),
+        ],
+    )
+    @GetMapping("/candidates/managers")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
+    fun getManagerCandidates(): List<ProjectManagerResponse> {
+        return projectManagerService.getManagerCandidates()
     }
 }

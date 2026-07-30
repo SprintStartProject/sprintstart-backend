@@ -33,6 +33,8 @@ class OnboardingStep(
     var description: String,
     @Column(nullable = true)
     var type: StepType,
+    @Column(name = "is_ai_assisted", nullable = false, columnDefinition = "boolean not null default true")
+    var aiAssisted: Boolean = true,
     @Column(nullable = true)
     var estimatedMinutes: Int,
     @OneToMany(

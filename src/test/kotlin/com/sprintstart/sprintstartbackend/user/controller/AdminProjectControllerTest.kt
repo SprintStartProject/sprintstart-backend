@@ -7,13 +7,16 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.request.project.CreateAdminProjectRequest
 import com.sprintstart.sprintstartbackend.user.model.request.project.PatchAdminProjectRequest
+import com.sprintstart.sprintstartbackend.user.model.request.project.SetProjectManagerRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectListResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.DeleteProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectManagerResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserSummaryResponse
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
+import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
 import io.mockk.every
 import io.mockk.just
 import io.mockk.runs
@@ -33,6 +36,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delet
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -51,6 +55,9 @@ class AdminProjectControllerTest(
     private lateinit var adminProjectService: AdminProjectService
 
     @MockkBean
+    private lateinit var projectManagerService: ProjectManagerService
+
+    @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
     private val adminJwt = jwt().authorities(
@@ -58,6 +65,10 @@ class AdminProjectControllerTest(
         SimpleGrantedAuthority("ROLE_ADMIN"),
     )
     private val userJwt = jwt().authorities(SimpleGrantedAuthority("ROLE_USER"))
+    private val pmJwt = jwt().authorities(
+        SimpleGrantedAuthority("ROLE_USER"),
+        SimpleGrantedAuthority("ROLE_PM"),
+    )
 
     @Test
     fun `getAllProjects returns projects for admins`() {
@@ -360,12 +371,137 @@ class AdminProjectControllerTest(
         verify(exactly = 1) { adminProjectService.removeUser(projectId, userId) }
     }
 
+    @Test
+    fun `setManager assigns the project manager`() {
+        val projectId = UUID.randomUUID()
+        val managerId = UUID.randomUUID()
+        val request = SetProjectManagerRequest(managerUserId = managerId)
+        every { projectManagerService.setManager(projectId, request) } returns projectDetailResponse(
+            id = projectId,
+            manager = managerResponse(id = managerId),
+        )
+
+        mockMvc
+            .perform(
+                put("/api/v1/admin/projects/$projectId/manager")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.manager.id").value(managerId.toString()))
+            .andExpect(jsonPath("$.manager.username").value("erika.musterfrau"))
+
+        verify(exactly = 1) { projectManagerService.setManager(projectId, request) }
+    }
+
+    @Test
+    fun `setManager returns 400 when the user cannot manage projects`() {
+        val projectId = UUID.randomUUID()
+        val request = SetProjectManagerRequest(managerUserId = UUID.randomUUID())
+        every { projectManagerService.setManager(projectId, request) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST)
+
+        mockMvc
+            .perform(
+                put("/api/v1/admin/projects/$projectId/manager")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 1) { projectManagerService.setManager(projectId, request) }
+    }
+
+    @Test
+    fun `setManager rejects project managers`() {
+        val projectId = UUID.randomUUID()
+        val request = SetProjectManagerRequest(managerUserId = UUID.randomUUID())
+
+        mockMvc
+            .perform(
+                put("/api/v1/admin/projects/$projectId/manager")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectManagerService.setManager(any(), any()) }
+    }
+
+    @Test
+    fun `clearManager returns 204 with no body`() {
+        val projectId = UUID.randomUUID()
+        every { projectManagerService.clearManager(projectId) } just runs
+
+        mockMvc
+            .perform(delete("/api/v1/admin/projects/$projectId/manager").with(adminJwt))
+            .andExpect(status().isNoContent)
+            .andExpect(content().string(""))
+
+        verify(exactly = 1) { projectManagerService.clearManager(projectId) }
+    }
+
+    @Test
+    fun `clearManager rejects project managers`() {
+        val projectId = UUID.randomUUID()
+
+        mockMvc
+            .perform(delete("/api/v1/admin/projects/$projectId/manager").with(pmJwt))
+            .andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectManagerService.clearManager(any()) }
+    }
+
+    @Test
+    fun `getManagerCandidates returns eligible users`() {
+        val managerId = UUID.randomUUID()
+        every { projectManagerService.getManagerCandidates() } returns listOf(managerResponse(id = managerId))
+
+        mockMvc
+            .perform(get("/api/v1/admin/projects/candidates/managers").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(managerId.toString()))
+
+        verify(exactly = 1) { projectManagerService.getManagerCandidates() }
+    }
+
+    @Test
+    fun `getManagerCandidates rejects project managers`() {
+        mockMvc
+            .perform(get("/api/v1/admin/projects/candidates/managers").with(pmJwt))
+            .andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectManagerService.getManagerCandidates() }
+    }
+
+    @Test
+    fun `project lifecycle endpoints reject project managers`() {
+        val projectId = UUID.randomUUID()
+        val request = CreateAdminProjectRequest(name = "SprintStart Frontend")
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/projects")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        mockMvc
+            .perform(delete("/api/v1/admin/projects/$projectId").with(pmJwt))
+            .andExpect(status().isForbidden)
+
+        verify(exactly = 0) { adminProjectService.createProject(any()) }
+        verify(exactly = 0) { adminProjectService.deleteProject(any()) }
+    }
+
     private fun projectListResponse(
         id: UUID = UUID.randomUUID(),
     ) = AdminProjectListResponse(
         id = id,
         name = "SprintStart Frontend",
         description = "Frontend web application",
+        manager = managerResponse(),
         sources = listOf(sourceResponse()),
         users = listOf(
             ProjectUserSummaryResponse(
@@ -379,12 +515,24 @@ class AdminProjectControllerTest(
     private fun projectDetailResponse(
         id: UUID = UUID.randomUUID(),
         description: String = "Frontend web application",
+        manager: ProjectManagerResponse? = managerResponse(),
     ) = AdminProjectDetailResponse(
         id = id,
         name = "SprintStart Frontend",
         description = description,
+        manager = manager,
         sources = listOf(sourceResponse()),
         users = listOf(projectUserResponse()),
+    )
+
+    private fun managerResponse(
+        id: UUID = UUID.randomUUID(),
+    ) = ProjectManagerResponse(
+        id = id,
+        username = "erika.musterfrau",
+        email = "erika.musterfrau@example.com",
+        firstName = "Erika",
+        lastName = "Musterfrau",
     )
 
     private fun sourceResponse() = ProjectSourceResponse(

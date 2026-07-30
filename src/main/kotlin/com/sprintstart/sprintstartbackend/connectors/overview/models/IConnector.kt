@@ -56,7 +56,7 @@ interface IConnector {
      * @param projectId The project whose sources should be retrieved.
      * @return a list of sources linked to the project.
      */
-    fun getSources(projectId: UUID): List<ConnectorSource> = getSources()
+    fun getSources(projectId: UUID): List<ConnectorSource>
 
     /**
      * Method signature for patching a connector source.

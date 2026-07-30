@@ -12,6 +12,7 @@ data class CreateOnboardingStepResponse(
     val description: String,
     val type: StepType,
     val estimatedMinutes: Int,
+    val isAiAssisted: Boolean,
     val expectedOutcome: String,
     val status: StepStatus,
 )

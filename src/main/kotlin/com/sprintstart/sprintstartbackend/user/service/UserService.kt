@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnab
 import com.sprintstart.sprintstartbackend.user.model.response.project.MyProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
@@ -29,6 +30,7 @@ import java.util.UUID
 @Service
 class UserService(
     private val userRepository: UserRepository,
+    private val projectRepository: ProjectRepository,
     private val eventPublisher: ApplicationEventPublisher,
     private val keycloakAdminClient: KeycloakAdminClient,
 ) {
@@ -184,6 +186,10 @@ class UserService(
     /**
      * Deletes a user by UUID.
      *
+     * Projects managed by the user are left without a manager rather than being deleted. Clearing
+     * the manager foreign key first is required because the user row is removed with a native
+     * delete, which no cascade or `ON DELETE SET NULL` rule applies to.
+     *
      * @param id Identifier of the user to delete.
      * @throws ResponseStatusException When no user exists for the given ID.
      */
@@ -195,6 +201,7 @@ class UserService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id: $id not found") }
 
         keycloakAdminClient.deleteUser(authId)
+        projectRepository.clearManagerForUser(id)
         userRepository.deleteRolesByUserId(id)
         userRepository.deleteProjectionById(id)
     }

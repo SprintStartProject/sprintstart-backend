@@ -85,4 +85,17 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findFirstIngestedAt(
         @Param("component") component: String,
     ): Instant?
+
+    /**
+     * Counts stored artifacts belonging to a GitHub component.
+     *
+     * The component is an `owner/repo` string; artifact source ids have the form
+     * `github:owner/repo:TYPE:...`, so they are matched by prefix (mirroring [findFirstIngestedAt]).
+     */
+    @Query(
+        "SELECT COUNT(a) FROM Artifact a WHERE a.sourceId LIKE CONCAT('github:', :component, ':%')",
+    )
+    fun countByComponent(
+        @Param("component") component: String,
+    ): Long
 }

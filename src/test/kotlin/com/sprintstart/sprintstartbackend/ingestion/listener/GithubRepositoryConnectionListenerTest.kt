@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -16,12 +17,16 @@ import java.util.UUID
 
 class GithubRepositoryConnectionListenerTest {
     private val ingestionRunLifeCycleService = mockk<IngestionRunLifeCycleService>()
-    private val listener = GithubRepositoryConnectionListener(ingestionRunLifeCycleService)
+    private val githubRepositoryApi = mockk<GithubRepositoryApi>()
+    private val listener =
+        GithubRepositoryConnectionListener(ingestionRunLifeCycleService, githubRepositoryApi)
 
     @Test
-    fun `initiated event starts connected github run`() {
+    fun `initiated event starts connected github run with resolved repository metadata`() {
         val runId = UUID.randomUUID()
-        every { ingestionRunLifeCycleService.startRun(any(), any(), any(), any()) } just runs
+        val repositoryId = UUID.randomUUID()
+        every { ingestionRunLifeCycleService.startOrUpdateRun(any(), any(), any(), any(), any(), any()) } just runs
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("owner", "repo") } returns repositoryId
 
         listener.on(
             GithubRepositoryConnectionInitiatedEvent(
@@ -32,19 +37,21 @@ class GithubRepositoryConnectionListenerTest {
         )
 
         verify(exactly = 1) {
-            ingestionRunLifeCycleService.startRun(
+            ingestionRunLifeCycleService.startOrUpdateRun(
                 transactionId = runId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.CONNECTED,
-                failureReason = null,
+                sourceInstanceId = repositoryId,
+                sourceInstanceRef = "owner/repo",
             )
         }
     }
 
     @Test
-    fun `failed initiation event starts failed github run`() {
+    fun `failed initiation event starts failed github run and leaves repository id null when unknown`() {
         val runId = UUID.randomUUID()
-        every { ingestionRunLifeCycleService.startRun(any(), any(), any(), any()) } just runs
+        every { ingestionRunLifeCycleService.startOrUpdateRun(any(), any(), any(), any(), any(), any()) } just runs
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("owner", "repo") } returns null
 
         listener.on(
             GithubRepositoryConnectionInitiationFailedEvent(
@@ -56,11 +63,13 @@ class GithubRepositoryConnectionListenerTest {
         )
 
         verify(exactly = 1) {
-            ingestionRunLifeCycleService.startRun(
+            ingestionRunLifeCycleService.startOrUpdateRun(
                 transactionId = runId,
                 sourceSystem = SourceSystem.GITHUB,
                 status = IngestionRunStatus.FAILED,
                 failureReason = "Token rejected",
+                sourceInstanceId = null,
+                sourceInstanceRef = "owner/repo",
             )
         }
     }

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.github.models.api.responses
 
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.github.models.ScheduleSpec
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import java.time.Instant
 import java.util.UUID
 

@@ -27,7 +27,6 @@ class SourceClientTest {
             ai = com.sprintstart.sprintstartbackend.AiConfig(baseUrl = baseUrl),
             github = com.sprintstart.sprintstartbackend.GithubConfig(
                 baseUrl = "https://github.example.com",
-                repoBaseUrl = "https://repo.example.com",
                 cron = "0 0 * * *",
             ),
             crypto = com.sprintstart.sprintstartbackend.CryptoConfig(

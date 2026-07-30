@@ -17,6 +17,16 @@ class IngestionRun(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val sourceSystem: SourceSystem,
+    // Connector-neutral reference to the concrete source instance this run belongs to. Kept
+    // generic (not GitHub-specific) so the entity stays abstract across connectors (GitHub, Jira,
+    // upload, ...). Nullable because some sources (for example UPLOAD) have no instance, and older
+    // runs predate these columns.
+    // For GitHub, sourceInstanceId is the repository connection id.
+    var sourceInstanceId: UUID? = null,
+    // Denormalized, human-readable label of the source instance (for GitHub: "owner/name"). Stored
+    // on the run so its history stays readable even if the instance is later decoupled or deleted,
+    // and to avoid an extra lookup when listing runs.
+    var sourceInstanceRef: String? = null,
     val startedAt: Instant = Instant.now(),
     var finishedAt: Instant? = null,
     @Column(nullable = false)

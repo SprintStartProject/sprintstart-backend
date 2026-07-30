@@ -13,6 +13,7 @@ data class UpdateOnboardingStepResponse(
     val title: String,
     val description: String,
     val estimatedMinutes: Int,
+    val isAiAssisted: Boolean,
     val expectedOutcome: String,
     val status: StepStatus,
     val startedAt: Instant? = null,

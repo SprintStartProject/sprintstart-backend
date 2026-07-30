@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.KeycloakAdminClient
 import com.sprintstart.sprintstartbackend.user.service.UserService
@@ -15,6 +16,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -28,9 +30,15 @@ import java.util.UUID
 // Todo: update this test with error paths
 class UserServiceTest {
     private val userRepository: UserRepository = mockk()
+    private val projectRepository: ProjectRepository = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk()
     private val keycloakAdminClient: KeycloakAdminClient = mockk()
-    private val userService = UserService(userRepository, eventPublisher, keycloakAdminClient)
+    private val userService = UserService(
+        userRepository,
+        projectRepository,
+        eventPublisher,
+        keycloakAdminClient,
+    )
 
     @Test
     fun `getMe returns extended user response`() {
@@ -173,6 +181,7 @@ class UserServiceTest {
         val user = user(authId = "auth-1", username = "alice")
         every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
         every { keycloakAdminClient.deleteUser("auth-1") } just runs
+        every { projectRepository.clearManagerForUser(user.id) } returns 0
         every { userRepository.deleteRolesByUserId(user.id) } returns 1
         every { userRepository.deleteProjectionById(user.id) } returns 1
 
@@ -185,10 +194,28 @@ class UserServiceTest {
     }
 
     @Test
+    fun `deleteAdminUserById clears managed projects before removing the user row`() {
+        val user = user(authId = "auth-1", username = "alice")
+        every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
+        every { keycloakAdminClient.deleteUser("auth-1") } just runs
+        every { projectRepository.clearManagerForUser(user.id) } returns 2
+        every { userRepository.deleteRolesByUserId(user.id) } returns 1
+        every { userRepository.deleteProjectionById(user.id) } returns 1
+
+        userService.deleteAdminUserById(user.id)
+
+        verifyOrder {
+            projectRepository.clearManagerForUser(user.id)
+            userRepository.deleteProjectionById(user.id)
+        }
+    }
+
+    @Test
     fun `deleteAdminUserById ignores local projection already deleted by Keycloak event`() {
         val user = user(authId = "auth-1", username = "alice")
         every { userRepository.findAuthIdById(user.id) } returns Optional.of("auth-1")
         every { keycloakAdminClient.deleteUser("auth-1") } just runs
+        every { projectRepository.clearManagerForUser(user.id) } returns 0
         every { userRepository.deleteRolesByUserId(user.id) } returns 0
         every { userRepository.deleteProjectionById(user.id) } returns 0
 

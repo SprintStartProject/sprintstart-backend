@@ -48,5 +48,16 @@ interface UserApi {
      */
     fun getOnboardingProfileByAuthId(authId: String): Optional<UserOnboardingProfile>
 
+    /**
+     * Marks the given user's onboarding as completed.
+     *
+     * Idempotent: a no-op when the user is already flagged. Used to promote a user
+     * once they pass the final onboarding knowledge check so the onboarding UI can be
+     * hidden for them.
+     *
+     * @param userId Internal SprintStart user identifier.
+     */
+    fun markOnboardingCompleted(userId: UUID)
+
     fun userHasAccessToProject(authId: String, projectId: UUID): Boolean
 }

@@ -97,6 +97,7 @@ private fun PathStep.toEntity(phase: OnboardingPhase, index: Int): OnboardingSte
         title = this.title,
         description = this.description ?: "",
         type = StepType.TASK,
+        aiAssisted = true,
         estimatedMinutes = 0,
         expectedOutcome = this.description ?: "",
         status = StepStatus.WAITING,

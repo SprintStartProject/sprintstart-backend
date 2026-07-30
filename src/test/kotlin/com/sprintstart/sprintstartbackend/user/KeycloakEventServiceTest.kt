@@ -4,12 +4,14 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.KeycloakEventRequest
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.KeycloakEventService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
@@ -17,8 +19,9 @@ import java.util.Optional
 
 class KeycloakEventServiceTest {
     private val userRepository: UserRepository = mockk(relaxed = true)
+    private val projectRepository: ProjectRepository = mockk(relaxed = true)
     private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
-    private val service = KeycloakEventService(userRepository, eventPublisher)
+    private val service = KeycloakEventService(userRepository, projectRepository, eventPublisher)
 
     @Test
     fun `realm role mapping event replaces local permission groups with event role snapshot`() {
@@ -135,6 +138,38 @@ class KeycloakEventServiceTest {
         )
 
         verify(exactly = 0) { userRepository.delete(any<User>()) }
+    }
+
+    @Test
+    fun `user delete event clears managed projects before deleting the user`() {
+        val user = User(
+            authId = "auth-1",
+            username = "alice",
+            email = "alice@mail.de",
+            firstname = "Alice",
+            lastname = "Developer",
+        )
+        every { userRepository.findLockedByAuthId("auth-1") } returns Optional.of(user)
+
+        service.handleEvent(
+            KeycloakEventRequest(
+                source = "keycloak",
+                resourceType = "USER",
+                eventType = "DELETE",
+                realmId = "sprintstart",
+                authId = "auth-1",
+                username = null,
+                email = null,
+                firstName = null,
+                lastName = null,
+                realmRoles = emptySet(),
+            ),
+        )
+
+        verifyOrder {
+            projectRepository.clearManagerForUser(user.id)
+            userRepository.delete(user)
+        }
     }
 
     @Test

@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.connectors.github
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubIssuesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubPrSearchResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubSinglePrResponse
@@ -51,7 +53,7 @@ class GithubClient(
      * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized
      */
     suspend fun repositoryExists(repository: GithubRepositoryConnection): Boolean {
-        val baseUrl = applicationConfig.github.repoBaseUrl
+        val baseUrl = applicationConfig.github.baseUrl + "/repos"
         return try {
             webClient
                 .get()
@@ -87,47 +89,6 @@ class GithubClient(
             fetchAllIssuesSince(repository, sinceTimestamp)
         } else {
             fetchAllIssues(repository)
-        }
-    }
-
-    /**
-     * Fetches all issues from a GitHub repository.
-     *
-     * This method retrieves all the issues for the specified repository, traversing through
-     * paginated results to collect all available issues.
-     *
-     * @param repository the repository to fetch issues from.
-     * @return a list of issues associated with the specified repository.
-     */
-    private suspend fun fetchAllIssues(repository: GithubRepositoryConnection): List<Issue> {
-        val query = queryLoader.load("github/graphql/100-issues.graphql")
-
-        return doFetchAll<Issue, GithubIssuesResponse>(query, repository.user.token) { cursor ->
-            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor)
-        }
-    }
-
-    /**
-     * Fetches all issues from a GitHub repository updated since a specific timestamp.
-     *
-     * This method retrieves all the issues for the specified repository that have been updated
-     * on or after the given timestamp. It traverses through paginated results to collect all
-     * available issues.
-     *
-     * @param repository the repository to fetch issues from.
-     * @param sinceTimestamp an ISO 8601 formatted timestamp string. Only issues updated
-     * after this timestamp will be fetched.
-     * @return a list of issues associated with the specified repository that have been updated
-     * since the given timestamp.
-     */
-    private suspend fun fetchAllIssuesSince(
-        repository: GithubRepositoryConnection,
-        sinceTimestamp: String,
-    ): List<Issue> {
-        val query = queryLoader.load("github/graphql/issues-since.graphql")
-
-        return doFetchAll<Issue, GithubIssuesResponse>(query, repository.user.token) { cursor ->
-            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor, "since" to sinceTimestamp)
         }
     }
 
@@ -177,6 +138,104 @@ class GithubClient(
     }
 
     /**
+     * Discovers repositories of a given GitHub organization.
+     *
+     * This method fetches the list of repositories belonging to the specified GitHub organization by
+     * querying the GitHub API. Authentication is performed using the provided personal access token (PAT).
+     *
+     * @param org the name of the GitHub organization whose repositories are to be discovered.
+     * @param token the personal access token (PAT) used for authenticating the request to the GitHub API.
+     * @return a [DiscoverRepositoriesResponse] object containing the list of repositories belonging to the
+     * organization.
+     * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status
+     * code.
+     */
+    suspend fun discoverRepositoriesOfOrg(
+        org: String,
+        token: String,
+        page: Int,
+        pageSize: Int,
+    ): DiscoverRepositoriesResponse {
+        val uri = "${applicationConfig.github.baseUrl}/orgs/$org/repos?per_page=$pageSize&page=${page + 1}"
+        return discoverRepositories(uri, token)
+    }
+
+    /**
+     * Discovers repositories of a given GitHub user.
+     *
+     * This method queries the GitHub API to fetch repositories associated with the specified user.
+     * Authentication is performed using the provided personal access token (PAT).
+     *
+     * @param user the username of the GitHub user whose repositories are to be discovered.
+     * @param token the personal access token (PAT) used to authenticate the request to the GitHub API.
+     * @param page the zero-based index of the page to fetch.
+     * @param pageSize the number of repositories to fetch per page.
+     * @return a [DiscoverRepositoriesResponse] object containing the list of repositories belonging to the user.
+     * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status
+     * code.
+     */
+    suspend fun discoverRepositoriesOfUser(
+        user: String,
+        token: String,
+        page: Int,
+        pageSize: Int,
+    ): DiscoverRepositoriesResponse {
+        val uri = "${applicationConfig.github.baseUrl}/users/$user/repos?per_page=$pageSize&page=${page + 1}"
+        return discoverRepositories(uri, token)
+    }
+
+    private suspend fun discoverRepositories(uri: String, token: String): DiscoverRepositoriesResponse {
+        val result = webClient
+            .get()
+            .uri(uri)
+            .header("Authorization", "Bearer $token")
+            .sync()
+            .perform<Array<DiscoveredRepository>>()
+        return DiscoverRepositoriesResponse(result.toList())
+    }
+
+    /**
+     * Fetches all issues from a GitHub repository.
+     *
+     * This method retrieves all the issues for the specified repository, traversing through
+     * paginated results to collect all available issues.
+     *
+     * @param repository the repository to fetch issues from.
+     * @return a list of issues associated with the specified repository.
+     */
+    private suspend fun fetchAllIssues(repository: GithubRepositoryConnection): List<Issue> {
+        val query = queryLoader.load("github/graphql/100-issues.graphql")
+
+        return doFetchAll<Issue, GithubIssuesResponse>(query, repository.user.token) { cursor ->
+            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor)
+        }
+    }
+
+    /**
+     * Fetches all issues from a GitHub repository updated since a specific timestamp.
+     *
+     * This method retrieves all the issues for the specified repository that have been updated
+     * on or after the given timestamp. It traverses through paginated results to collect all
+     * available issues.
+     *
+     * @param repository the repository to fetch issues from.
+     * @param sinceTimestamp an ISO 8601 formatted timestamp string. Only issues updated
+     * after this timestamp will be fetched.
+     * @return a list of issues associated with the specified repository that have been updated
+     * since the given timestamp.
+     */
+    private suspend fun fetchAllIssuesSince(
+        repository: GithubRepositoryConnection,
+        sinceTimestamp: String,
+    ): List<Issue> {
+        val query = queryLoader.load("github/graphql/issues-since.graphql")
+
+        return doFetchAll<Issue, GithubIssuesResponse>(query, repository.user.token) { cursor ->
+            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor, "since" to sinceTimestamp)
+        }
+    }
+
+    /**
      * Fetches a single pull request from a GitHub repository.
      *
      * This method queries the GitHub API to retrieve details of a specific pull request
@@ -204,7 +263,7 @@ class GithubClient(
 
         val response = webClient
             .post()
-            .uri(applicationConfig.github.baseUrl)
+            .uri(applicationConfig.github.baseUrl + "/graphql")
             .header("Authorization", "Bearer ${repository.user.token}")
             .header("Content-Type", "application/json")
             .rawBody(objectMapper.writeValueAsString(body))
@@ -243,7 +302,7 @@ class GithubClient(
 
             val response = webClient
                 .post()
-                .uri(applicationConfig.github.baseUrl)
+                .uri(applicationConfig.github.baseUrl + "/graphql")
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "application/json")
                 .rawBody(objectMapper.writeValueAsString(body))

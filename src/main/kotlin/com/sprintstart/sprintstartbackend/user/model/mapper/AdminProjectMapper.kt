@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignmen
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectListResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectManagerResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserSummaryResponse
@@ -18,8 +20,33 @@ fun Project.toAdminListResponse(
         id = id,
         name = name,
         description = description,
+        manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.user.toSummaryResponse() },
+    )
+}
+
+/**
+ * Maps a project to the compact representation used for manageable-project lists.
+ *
+ * @param memberCount Number of users assigned to the project.
+ */
+fun Project.toManagedResponse(memberCount: Int): ManagedProjectResponse {
+    return ManagedProjectResponse(
+        id = id,
+        name = name,
+        description = description,
+        memberCount = memberCount,
+    )
+}
+
+fun User.toManagerResponse(): ProjectManagerResponse {
+    return ProjectManagerResponse(
+        id = id,
+        username = username,
+        email = email,
+        firstName = firstname,
+        lastName = lastname,
     )
 }
 
@@ -31,6 +58,7 @@ fun Project.toAdminDetailResponse(
         id = id,
         name = name,
         description = description,
+        manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.toProjectUserResponse() },
     )

@@ -21,10 +21,13 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.PhaseCheckAttemp
 import com.sprintstart.sprintstartbackend.onboarding.repository.PhaseCheckQuestionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.PhaseCheckReviewItemRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -85,6 +88,9 @@ class PhaseCheckServiceTest {
         every { phaseCheckQuestionRepository.findAllById(any()) } returns mutableListOf()
         every { phaseCheckAttemptRepository.findAllByPhaseIdAndUserIdOrderByCreatedAtDesc(any(), any()) } returns
             mutableListOf()
+        // Default: promoting the user on onboarding completion is a no-op side effect.
+        // Tests that assert on it verify the call explicitly.
+        every { userApi.markOnboardingCompleted(any()) } just Runs
     }
 
     private fun makePath(vararg phasePositions: Int): OnboardingPath {
@@ -298,6 +304,83 @@ class PhaseCheckServiceTest {
             val result = service.submitPhaseCheckAttemptForMe(authId, phaseId, request)
 
             assertFalse(result.passed)
+        }
+
+        @Test
+        fun `marks onboarding completed when the final knowledge check is passed`() {
+            // Single-phase path: passing its check is the last check -> user is promoted.
+            val phase = makePhaseWithCheck()
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPhaseRepository.findByIdAndPathUserId(phaseId, userId) } returns Optional.of(phase)
+            every { phaseCheckAttemptRepository.save(any()) } answers { firstArg() }
+
+            val request = SubmitPhaseCheckAttemptRequest(
+                answers = listOf(
+                    SubmitCheckAnswerRequest(mcQuestionId(phase), selectedOptionIds = listOf(correctOptionId(phase))),
+                    SubmitCheckAnswerRequest(textQuestionId(phase), textAnswer = "gradlew bootRun"),
+                ),
+            )
+
+            val result = service.submitPhaseCheckAttemptForMe(authId, phaseId, request)
+
+            assertTrue(result.passed)
+            verify(exactly = 1) { userApi.markOnboardingCompleted(userId) }
+        }
+
+        @Test
+        fun `does not mark onboarding completed when a later phase still has a check`() {
+            // Path with two phases both carrying a check; passing the first is not the last check.
+            val path = makePath(0, 1)
+            val phase = path.phases.first { it.position == 0 }
+            val laterPhase = path.phases.first { it.position == 1 }
+            listOf(phase, laterPhase).forEach { p ->
+                val mc = PhaseCheckQuestion(
+                    phase = p,
+                    position = 0,
+                    type = CheckQuestionType.MULTIPLE_CHOICE,
+                    question = "q",
+                )
+                mc.options += PhaseCheckOption(question = mc, position = 0, label = "ok", correct = true)
+                mc.options += PhaseCheckOption(question = mc, position = 1, label = "no", correct = false)
+                p.checkQuestions += mc
+            }
+            val firstQuestion = phase.checkQuestions.first()
+            val correct = firstQuestion.options.first { it.correct }
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPhaseRepository.findByIdAndPathUserId(phase.id, userId) } returns Optional.of(phase)
+            every { phaseCheckAttemptRepository.save(any()) } answers { firstArg() }
+
+            val request = SubmitPhaseCheckAttemptRequest(
+                answers = listOf(
+                    SubmitCheckAnswerRequest(firstQuestion.id, selectedOptionIds = listOf(correct.id)),
+                ),
+            )
+
+            val result = service.submitPhaseCheckAttemptForMe(authId, phase.id, request)
+
+            assertTrue(result.passed)
+            verify(exactly = 0) { userApi.markOnboardingCompleted(any()) }
+        }
+
+        @Test
+        fun `does not mark onboarding completed when the final check is failed`() {
+            val phase = makePhaseWithCheck()
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPhaseRepository.findByIdAndPathUserId(phaseId, userId) } returns Optional.of(phase)
+            every { phaseCheckAttemptRepository.save(any()) } answers { firstArg() }
+
+            val request = SubmitPhaseCheckAttemptRequest(
+                answers = listOf(
+                    SubmitCheckAnswerRequest(mcQuestionId(phase), selectedOptionIds = listOf(correctOptionId(phase))),
+                    SubmitCheckAnswerRequest(textQuestionId(phase), textAnswer = "wrong"),
+                ),
+            )
+
+            val result = service.submitPhaseCheckAttemptForMe(authId, phaseId, request)
+
+            assertFalse(result.passed)
+            verify(exactly = 0) { userApi.markOnboardingCompleted(any()) }
         }
 
         @Test

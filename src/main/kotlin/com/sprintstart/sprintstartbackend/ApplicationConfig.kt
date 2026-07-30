@@ -43,15 +43,12 @@ data class AiConfig(
  * sprintstart:
  *     github:
  *         base-url: ...
- *         repo-base-url: ...
  *         cron: ...
  * ´´´
  */
 data class GithubConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
-    @get:JsonProperty("repo-base-url")
-    val repoBaseUrl: String,
     @get:JsonProperty("cron")
     val cron: String,
 )

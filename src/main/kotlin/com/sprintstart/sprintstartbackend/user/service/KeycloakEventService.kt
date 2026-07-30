@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.KeycloakEventRequest
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -24,6 +25,7 @@ import org.springframework.web.server.ResponseStatusException
 @Service
 class KeycloakEventService(
     private val userRepository: UserRepository,
+    private val projectRepository: ProjectRepository,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -135,12 +137,17 @@ class KeycloakEventService(
     /**
      * Deletes the user identified by the Keycloak auth ID.
      *
+     * Projects managed by the user are left without a manager rather than being deleted. Clearing
+     * the manager foreign key first is required because otherwise the `Project.manager` constraint
+     * blocks the user deletion.
+     *
      * @param request Delete event payload.
      */
     @Tracked("Deleting user")
     fun deleteUser(request: KeycloakEventRequest) {
         val user = userRepository.findLockedByAuthId(request.authId).orElse(null) ?: return
 
+        projectRepository.clearManagerForUser(user.id)
         userRepository.delete(user)
     }
 
