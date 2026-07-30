@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.springframework.security.oauth2.jwt.Jwt
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -44,6 +45,12 @@ class ChatControllerUnitTest {
 
     private val chatId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
+    private val authId = "auth-user"
+    private val jwt = Jwt
+        .withTokenValue("token")
+        .header("alg", "none")
+        .subject(authId)
+        .build()
 
     private val sampleChatResponse = ChatResponse(
         id = chatId,
@@ -133,12 +140,12 @@ class ChatControllerUnitTest {
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.prompt(request) } returns flowOf(*tokens.toTypedArray())
+            coEvery { chatService.promptForCurrentUser(authId, request) } returns flowOf(*tokens.toTypedArray())
 
-            val result = controller.prompt(request).toList()
+            val result = controller.promptMyChat(request, jwt).toList()
 
             assertEquals(tokens, result)
-            coVerify(exactly = 1) { chatService.prompt(request) }
+            coVerify(exactly = 1) { chatService.promptForCurrentUser(authId, request) }
         }
     }
 
@@ -160,14 +167,14 @@ class ChatControllerUnitTest {
         )
 
         coEvery {
-            chatService.prompt(request)
+            chatService.promptForCurrentUser(authId, request)
         } returns flowOf(*tokens.toTypedArray())
 
-        val result = controller.prompt(request).toList()
+        val result = controller.promptMyChat(request, jwt).toList()
 
         assertEquals(tokens, result)
         coVerify(exactly = 1) {
-            chatService.prompt(request)
+            chatService.promptForCurrentUser(authId, request)
         }
     }
 }

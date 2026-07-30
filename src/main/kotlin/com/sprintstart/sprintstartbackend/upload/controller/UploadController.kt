@@ -30,21 +30,30 @@ import java.util.UUID
 class UploadController(
     private val uploadService: UploadService,
 ) {
-    @Operation(summary = "Upload markdown artifacts")
+    /**
+     * Uploads artifacts into a project as the authenticated user.
+     *
+     * The uploader id is resolved from the JWT subject and the service checks project access before
+     * processing files, so clients cannot upload under another actor or into a foreign project.
+     *
+     * @param files Files to upload.
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param request Upload metadata containing the target project.
+     * @return One response item per input file.
+     */
+    @Operation(summary = "Upload artifacts to a project")
     @ApiResponses(
         value = [
-            ApiResponse(
-                responseCode = "200",
-                description = "Upload processed",
-            ),
+            ApiResponse(responseCode = "200", description = "Upload processed"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "403", description = "Insufficient role or project access"),
+            ApiResponse(responseCode = "404", description = "Authenticated user not found"),
         ],
     )
     @PostMapping(
         consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
     )
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun upload(
         @RequestPart("files")
         files: List<MultipartFile>,
@@ -59,37 +68,66 @@ class UploadController(
             authId = jwt.subject,
             files = files,
             projectId = request.projectId,
-            uploaderId = request.uploaderId,
         )
 
         return ResponseEntity.ok(response)
     }
 
+    /**
+     * Lists artifacts that belong to a project the authenticated user can access.
+     *
+     * Project access is checked in the service before upload metadata is returned.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param projectId Project whose artifacts should be listed.
+     * @return Artifacts uploaded into the requested project.
+     */
+    @Operation(summary = "List project uploads")
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "200", description = "Upload processed"),
+            ApiResponse(responseCode = "200", description = "Uploads returned"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "403", description = "Insufficient role or project access"),
         ],
     )
     @GetMapping
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun listUploads(
-        @RequestParam uploaderId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal
+        jwt: Jwt,
+        @RequestParam projectId: UUID,
     ): ResponseEntity<List<UploadListItemResponse>> =
         ResponseEntity.ok(
-            uploadService.listUploads(uploaderId),
+            uploadService.listUploads(
+                authId = jwt.subject,
+                projectId = projectId,
+            ),
         )
 
+    /**
+     * Deletes artifacts from a project as the authenticated user.
+     *
+     * The remover id is resolved from the JWT subject. Artifact ids outside the requested project
+     * are treated as missing and are not deleted.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param request Deletion metadata containing artifact ids and the target project.
+     * @return No content when the deletion batch has been processed.
+     */
+    @Operation(summary = "Delete project uploads")
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "204", description = "Deleted Artifact"),
+            ApiResponse(responseCode = "204", description = "Deletion batch processed"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "403", description = "Insufficient role or project access"),
+            ApiResponse(responseCode = "404", description = "Authenticated user not found"),
         ],
     )
-    @DeleteMapping("/{artifactId}")
-    @PreAuthorize("hasRole('USER')")
+    @DeleteMapping(
+        consumes = [MediaType.MULTIPART_FORM_DATA_VALUE],
+    )
+    @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun deleteUploads(
         @Parameter(hidden = true)
         @AuthenticationPrincipal
@@ -100,9 +138,8 @@ class UploadController(
     ): ResponseEntity<Void> {
         uploadService.deleteUpload(
             authId = jwt.subject,
-            request.artifactIds,
-            request.removerId,
-            request.projectId,
+            artifactIds = request.artifactIds,
+            projectId = request.projectId,
         )
 
         return ResponseEntity
