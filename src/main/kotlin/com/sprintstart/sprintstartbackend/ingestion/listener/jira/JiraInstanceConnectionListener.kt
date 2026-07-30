@@ -21,6 +21,7 @@ internal class JiraInstanceConnectionListener(
             transactionId = event.transactionId,
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.CONNECTED,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 
@@ -39,6 +40,7 @@ internal class JiraInstanceConnectionListener(
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.FAILED,
             failureReason = event.reason,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 }

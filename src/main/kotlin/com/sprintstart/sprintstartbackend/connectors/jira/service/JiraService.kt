@@ -89,7 +89,9 @@ internal class JiraService(
     @Tracked("Connecting Jira Cloud instance if not already connected")
     suspend fun connectInstanceIfNeeded(request: ConnectJiraInstanceRequest): UUID {
         val transactionId = UUID.randomUUID()
-        eventPublisher.publishEvent(JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName))
+        eventPublisher.publishEvent(
+            JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName, request.url),
+        )
 
         val instance = instanceRepository.findById(request.url)
 
@@ -137,14 +139,14 @@ internal class JiraService(
             .findById(JiraCredentialsId(request.userEmail, request.tokenName))
             .orElseThrow {
                 eventPublisher.publishEvent(
-                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials"),
+                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
                 )
                 JiraCredentialNotFoundException(request.userEmail, request.tokenName)
             }
 
         if (!jiraClient.checkInstanceCapabilities(request.url)) {
             eventPublisher.publishEvent(
-                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Instance is not available"),
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Instance is not available", request.url),
             )
             throw JiraInstanceUnavailableException(request.url)
         }
@@ -153,7 +155,7 @@ internal class JiraService(
             jiraClient.searchProjects(request.url, credentials)
         } catch (e: Exception) {
             eventPublisher.publishEvent(
-                JiraInstanceConnectionInitiationFailedEvent(transactionId, e.message ?: "Unknown error"),
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, e.message ?: "Unknown error", request.url),
             )
             throw e
         }

@@ -23,9 +23,11 @@ internal class JiraIssueListener(
 ) {
     @EventListener
     fun on(event: JiraResourceFetchingStartedEvent) {
-        ingestionRunLifeCycleService.updateRunStatus(
+        ingestionRunLifeCycleService.startOrUpdateRun(
             transactionId = event.transactionId,
+            sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.RUNNING,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 
@@ -46,6 +48,7 @@ internal class JiraIssueListener(
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.FAILED,
             failureReason = event.reason,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 

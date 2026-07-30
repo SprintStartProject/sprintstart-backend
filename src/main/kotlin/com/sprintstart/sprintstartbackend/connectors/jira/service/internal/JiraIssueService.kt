@@ -67,7 +67,7 @@ internal class JiraIssueService(
         projectKey: String,
         transactionId: UUID,
     ) {
-        val credentials = fetchCredentials(credentialsId, transactionId)
+        val credentials = fetchCredentials(credentialsId, transactionId, instance.instanceUrl)
         val issues = fetchIssues(instance.instanceUrl, credentials, "project=\"$projectKey\"", transactionId) ?: return
 
         if (issues.isEmpty()) {
@@ -140,7 +140,7 @@ internal class JiraIssueService(
     ): List<JiraIssueResponse> {
         val instance = instanceRepository.findById(instanceUrl).orElse(null) ?: return emptyList()
         val credentialsId = JiraCredentialsId(instance.updateCredentialUserEmail, instance.updateCredentialName)
-        val credentials = fetchCredentials(credentialsId, transactionId)
+        val credentials = fetchCredentials(credentialsId, transactionId, instanceUrl)
 
         val jql = buildString {
             append("project in (${instance.jiraProjectKeys.joinToString(", ") { "\"$it\"" }}) ")
@@ -169,7 +169,9 @@ internal class JiraIssueService(
     ): List<JiraIssueResponse>? = try {
         jiraClient.searchIssues(instanceUrl, credentials, jql)
     } catch (e: Exception) {
-        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error"))
+        eventPublisher.publishEvent(
+            JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instanceUrl),
+        )
         throw e
     }
 
@@ -186,8 +188,9 @@ internal class JiraIssueService(
     private fun fetchCredentials(
         credentialsId: JiraCredentialsId,
         transactionId: UUID,
+        instanceUrl: String,
     ): JiraCredential = credentialsRepository.findById(credentialsId).orElse(null) ?: run {
-        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials"))
+        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials", instanceUrl))
         throw JiraCredentialNotFoundException(credentialsId.userEmail, credentialsId.name)
     }
 
