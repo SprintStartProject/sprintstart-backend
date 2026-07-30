@@ -98,4 +98,19 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countByComponent(
         @Param("component") component: String,
     ): Long
+
+    /**
+     * Counts stored artifacts belonging to a Jira instance.
+     *
+     * Jira issue artifacts store their web URL as `{instanceUrl}/browse/{key}`, so they are matched
+     * by that prefix -- the Jira counterpart to [countByComponent] for GitHub.
+     */
+    @Query(
+        "SELECT COUNT(a) FROM Artifact a " +
+            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.JIRA " +
+            "AND a.sourceUrl LIKE CONCAT(:instanceUrl, '/browse/%')",
+    )
+    fun countJiraArtifactsByInstanceUrl(
+        @Param("instanceUrl") instanceUrl: String,
+    ): Long
 }
