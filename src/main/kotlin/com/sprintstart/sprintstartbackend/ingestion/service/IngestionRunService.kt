@@ -145,11 +145,6 @@ class IngestionRunService(
         )
     }
 
-    @Transactional(readOnly = true)
-    @Tracked("Retrieving ingestion run")
-    fun findRunByTransactionId(transactionId: UUID): IngestionRun? =
-        ingestionRunRepository.findByIdOrNull(transactionId)
-
     private fun resolveProjectSources(projectId: UUID): ProjectSources =
         ProjectSources(
             repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),

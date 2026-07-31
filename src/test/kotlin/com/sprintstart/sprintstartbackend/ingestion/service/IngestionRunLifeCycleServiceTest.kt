@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -8,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepos
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
@@ -59,6 +61,36 @@ class IngestionRunLifeCycleServiceTest {
         every { ingestionRunRepository.findById(runId) } returns Optional.empty()
 
         service.markAiSyncSucceeded(runId)
+    }
+
+    @Test
+    fun `finishRun by id loads the managed run so its terminal status is persisted`() {
+        // Regression guard: the Jira listeners used to finish a detached entity
+        // loaded in a separate read-only transaction, so the run stayed
+        // in-progress. The id overload must load the run here and complete it.
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.JIRA,
+            status = IngestionRunStatus.CONNECTED,
+            aiSyncStatus = AiSyncStatus.PENDING,
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id)
+
+        assertThat(run.status).isEqualTo(IngestionRunStatus.COMPLETED)
+        assertThat(run.finishedAt).isNotNull()
+        verify { publisher.publishEvent(RunFinishedEvent(run.id)) }
+    }
+
+    @Test
+    fun `finishRun by id is a no-op when the run is missing`() {
+        val runId = UUID.randomUUID()
+        every { ingestionRunRepository.findById(runId) } returns Optional.empty()
+
+        service.finishRun(runId)
+
+        verify(exactly = 0) { publisher.publishEvent(any()) }
     }
 
     @Test
