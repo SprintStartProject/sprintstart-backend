@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraC
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -102,6 +103,23 @@ internal class JiraExceptionHandler {
     fun handleCredentialAlreadyExists(ex: JiraCredentialAlreadyExistsException): ResponseEntity<ErrorResponse> =
         ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(ex.message))
+
+    /**
+     * Handles exceptions of type `JiraNoAccessibleProjectsException` by returning a response with
+     * HTTP status `422 Unprocessable Entity` and an error body containing the exception message.
+     *
+     * The instance is reachable but the credentials expose no browsable project, so the request is
+     * well-formed yet cannot be fulfilled — distinct from an unreachable instance (`502`) or a
+     * missing credential (`404`).
+     *
+     * @param ex The exception instance describing the instance without accessible projects.
+     * @return A `ResponseEntity` with status `422 Unprocessable Entity` and an `ErrorResponse` body.
+     */
+    @ExceptionHandler(JiraNoAccessibleProjectsException::class)
+    fun handleNoAccessibleProjects(ex: JiraNoAccessibleProjectsException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.UNPROCESSABLE_ENTITY)
             .body(ErrorResponse(ex.message))
 }
 

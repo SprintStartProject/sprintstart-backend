@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initia
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.toDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInsta
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
@@ -160,6 +162,8 @@ internal class JiraService(
             throw e
         }
 
+        requireAccessibleProjects(projects, transactionId, request.url)
+
         val projectKeys = projects.map { it.key }
         val instance = JiraInstance(
             instanceUrl = request.url,
@@ -188,5 +192,36 @@ internal class JiraService(
         }
 
         return transactionId
+    }
+
+    /**
+     * Fails the connection when the project search yielded nothing to ingest.
+     *
+     * Jira Cloud answers `/rest/api/3/project/search` with `200` and an empty list when the request
+     * is unauthenticated or the account cannot browse any project, so an empty result means invalid
+     * credentials or missing permissions rather than a transient error. Storing an empty project-key
+     * set would leave the instance connected but ingesting nothing forever, so the connect is failed
+     * with a clear reason instead.
+     *
+     * @param projects The projects returned by the search.
+     * @param transactionId The current connection transaction id.
+     * @param url The Jira instance URL being connected.
+     * @throws JiraNoAccessibleProjectsException when [projects] is empty.
+     */
+    private fun requireAccessibleProjects(
+        projects: List<JiraProjectResponse>,
+        transactionId: UUID,
+        url: String,
+    ) {
+        if (projects.isNotEmpty()) return
+
+        eventPublisher.publishEvent(
+            JiraInstanceConnectionInitiationFailedEvent(
+                transactionId,
+                "No accessible Jira projects for the provided credentials",
+                url,
+            ),
+        )
+        throw JiraNoAccessibleProjectsException(url)
     }
 }

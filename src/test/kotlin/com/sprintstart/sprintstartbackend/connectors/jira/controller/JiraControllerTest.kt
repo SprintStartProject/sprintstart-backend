@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraC
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraService
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraUpdateService
@@ -296,6 +297,25 @@ class JiraControllerTest {
             mockMvc
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isBadGateway)
+        }
+
+        @Test
+        fun `should return 422 when no accessible projects`() {
+            coEvery { service.connectInstanceIfNeeded(request) } throws
+                JiraNoAccessibleProjectsException(request.url)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/jira/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(adminJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isUnprocessableContent)
         }
 
         @Test

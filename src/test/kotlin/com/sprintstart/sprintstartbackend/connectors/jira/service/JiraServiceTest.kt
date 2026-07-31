@@ -5,10 +5,12 @@ import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraCredential
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
+import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
@@ -162,7 +164,8 @@ class JiraServiceTest {
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
                 every { credentialsRepository.findById(any()) } returns Optional.of(credential)
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
-                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
                 every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns expectedNextSyncAt
                 every { instanceRepository.save(any()) } answers { firstArg() }
                 every { configRepository.save(any()) } answers { firstArg() }
@@ -188,7 +191,8 @@ class JiraServiceTest {
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
                 every { credentialsRepository.findById(any()) } returns Optional.of(credential)
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
-                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
                 every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns expectedNextSyncAt
                 every { instanceRepository.save(any()) } answers { firstArg() }
                 every { configRepository.save(any()) } answers { firstArg() }
@@ -227,13 +231,32 @@ class JiraServiceTest {
         }
 
         @Test
-        fun `should set instance status to UP_TO_DATE after connecting`() {
+        fun `should throw when no projects are accessible`() {
             runTest {
                 val credential = jiraCredential(request.userEmail, request.tokenName)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
                 every { credentialsRepository.findById(any()) } returns Optional.of(credential)
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
                 coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+
+                assertThrowsSuspend<JiraNoAccessibleProjectsException> {
+                    service.connectInstanceIfNeeded(request)
+                }
+
+                // The instance must not be persisted when there is nothing to ingest.
+                verify(exactly = 0) { instanceRepository.save(any()) }
+            }
+        }
+
+        @Test
+        fun `should set instance status to UP_TO_DATE after connecting`() {
+            runTest {
+                val credential = jiraCredential(request.userEmail, request.tokenName)
+                every { instanceRepository.findById(request.url) } returns Optional.empty()
+                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
                 every { instanceRepository.save(any()) } answers { firstArg() }
                 every { configRepository.save(any()) } answers { firstArg() }
                 service.connectInstanceIfNeeded(request)
