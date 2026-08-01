@@ -111,7 +111,7 @@ internal class JiraService(
      */
     @Transactional
     @Tracked("Connecting Jira Cloud instance if not already connected")
-    suspend fun connectInstanceIfNeeded(request: ConnectJiraInstanceRequest): UUID {
+    suspend fun connectInstanceIfNeeded(authId: String, request: ConnectJiraInstanceRequest): UUID {
         val transactionId = UUID.randomUUID()
         eventPublisher.publishEvent(
             JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName, request.url),
@@ -126,7 +126,7 @@ internal class JiraService(
             return transactionId
         }
 
-        return connectNewInstance(request, transactionId)
+        return connectNewInstance(authId, request, transactionId)
     }
 
     /**
@@ -156,11 +156,12 @@ internal class JiraService(
      * @throws Exception If an error occurs during retrieval of project details or subsequent steps.
      */
     private suspend fun connectNewInstance(
+        authId: String,
         request: ConnectJiraInstanceRequest,
         transactionId: UUID,
     ): UUID {
         val credentials = credentialsRepository
-            .findById(JiraCredentialsId(request.userEmail, request.tokenName))
+            .findById(JiraCredentialsId(authId, request.tokenName))
             .orElseThrow {
                 eventPublisher.publishEvent(
                     JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
@@ -195,7 +196,8 @@ internal class JiraService(
             jiraProjectKeys = projectKeys.toMutableSet(),
             status = ConnectionState.UP_TO_DATE,
             updateCredentialName = request.tokenName,
-            updateCredentialUserEmail = request.userEmail,
+            updateCredentialUserEmail = credentials.userEmail,
+            updateCredentialAuthId = authId,
         )
         val config = JiraInstanceConfig(instance = instance)
         config.nextSyncAt = jiraInstanceConfigService.calculateNextSyncAt(config.schedule)
@@ -208,7 +210,7 @@ internal class JiraService(
         applicationScope.launch {
             jiraIssueService.searchAndIngestAllIssuesOfProjects(
                 instance,
-                JiraCredentialsId(request.userEmail, request.tokenName),
+                JiraCredentialsId(authId, request.tokenName),
                 transactionId,
             )
         }

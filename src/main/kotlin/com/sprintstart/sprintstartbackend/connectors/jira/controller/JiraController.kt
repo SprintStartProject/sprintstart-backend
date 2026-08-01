@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.Upd
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraService
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraUpdateService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -14,6 +15,8 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -103,8 +106,11 @@ internal class JiraController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PostMapping("/connect")
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
-    suspend fun connectInstance(@RequestBody @Valid request: ConnectJiraInstanceRequest): ResponseEntity<Unit> {
-        service.connectInstanceIfNeeded(request)
+    suspend fun connectInstance(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @RequestBody @Valid request: ConnectJiraInstanceRequest,
+    ): ResponseEntity<Unit> {
+        service.connectInstanceIfNeeded(jwt.subject, request)
         return ResponseEntity.accepted().build()
     }
 

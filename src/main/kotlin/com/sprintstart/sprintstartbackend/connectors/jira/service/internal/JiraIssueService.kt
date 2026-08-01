@@ -139,7 +139,7 @@ internal class JiraIssueService(
         transactionId: UUID,
     ): List<JiraIssueResponse> {
         val instance = instanceRepository.findById(instanceUrl).orElse(null) ?: return emptyList()
-        val credentialsId = JiraCredentialsId(instance.updateCredentialUserEmail, instance.updateCredentialName)
+        val credentialsId = JiraCredentialsId(instance.updateCredentialAuthId, instance.updateCredentialName)
         val credentials = fetchCredentials(credentialsId, transactionId, instanceUrl)
 
         val jql = buildString {
@@ -191,7 +191,7 @@ internal class JiraIssueService(
         instanceUrl: String,
     ): JiraCredential = credentialsRepository.findById(credentialsId).orElse(null) ?: run {
         eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials", instanceUrl))
-        throw JiraCredentialNotFoundException(credentialsId.userEmail, credentialsId.name)
+        throw JiraCredentialNotFoundException(credentialsId.authId, credentialsId.name)
     }
 
     /**
