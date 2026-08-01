@@ -79,6 +79,28 @@ internal class JiraService(
     }
 
     /**
+     * Removes a project's link to a connected Jira instance.
+     *
+     * Mirrors the GitHub connector's "remove from project": the instance and its ingested artifacts
+     * are kept and can be re-linked later — only the project association is dropped, so the instance
+     * stops appearing among that project's sources. Removing the last project leaves the instance
+     * connected but unassigned rather than deleting it (avoiding a destructive cascade).
+     *
+     * @param instanceUrl The URL of the Jira instance to unlink.
+     * @param projectId The project whose association should be removed.
+     * @throws JiraInstanceNotConnectedException when the instance is unknown.
+     */
+    @Transactional
+    @Tracked("Removing a project from a Jira instance")
+    fun removeInstanceFromProject(instanceUrl: String, projectId: UUID) {
+        val instance = instanceRepository.findById(instanceUrl).orElseThrow {
+            JiraInstanceNotConnectedException(instanceUrl)
+        }
+        instance.projectIds.remove(projectId)
+        instanceRepository.save(instance)
+    }
+
+    /**
      * Connects a Jira Cloud instance if it is not already connected. If an instance is found for the provided
      * URL, it ensures that the specified project is added to the instance. Otherwise, it creates and connects
      * a new Jira Cloud instance.

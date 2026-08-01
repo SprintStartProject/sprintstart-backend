@@ -127,6 +127,35 @@ class JiraServiceTest {
     }
 
     @Nested
+    inner class RemoveInstanceFromProject {
+        @Test
+        fun `should drop the project association and keep the instance`() {
+            val projectId = UUID.randomUUID()
+            val otherProject = UUID.randomUUID()
+            val instance = jiraInstance(
+                instanceUrl = "https://acme.atlassian.net",
+                projectIds = mutableSetOf(projectId, otherProject),
+            )
+            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every { instanceRepository.save(instance) } answers { firstArg() }
+
+            service.removeInstanceFromProject(instance.instanceUrl, projectId)
+
+            assertThat(instance.projectIds).containsExactly(otherProject)
+            verify { instanceRepository.save(instance) }
+        }
+
+        @Test
+        fun `should throw when the instance is unknown`() {
+            every { instanceRepository.findById("unknown") } returns Optional.empty()
+
+            assertFailsWith<JiraInstanceNotConnectedException> {
+                service.removeInstanceFromProject("unknown", UUID.randomUUID())
+            }
+        }
+    }
+
+    @Nested
     inner class ConnectInstanceIfNeeded {
         private val request = ConnectJiraInstanceRequest(
             displayName = "Test Instance",

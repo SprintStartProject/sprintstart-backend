@@ -20,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.junit5.MockKExtension
+import io.mockk.verify
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -33,6 +34,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -374,6 +376,39 @@ class JiraControllerTest {
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
                 .andExpect(jsonPath("$[0].transactionId").value(response.transactionId.toString()))
+        }
+    }
+
+    @Nested
+    inner class RemoveInstanceFromProject {
+        @Test
+        fun `should return 204 and unlink the instance from the project`() {
+            val projectId = UUID.randomUUID()
+            every {
+                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+            } returns Unit
+
+            mockMvc
+                .perform(
+                    delete("/api/v1/jira/instances/project")
+                        .param("instanceUrl", "https://jira.example.com/")
+                        .param("projectId", projectId.toString())
+                        .with(adminJwt),
+                ).andExpect(status().isNoContent)
+
+            verify {
+                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+            }
+        }
+
+        @Test
+        fun `should return 401 when not authenticated`() {
+            mockMvc
+                .perform(
+                    delete("/api/v1/jira/instances/project")
+                        .param("instanceUrl", "https://jira.example.com/")
+                        .param("projectId", UUID.randomUUID().toString()),
+                ).andExpect(status().isUnauthorized)
         }
     }
 }
