@@ -11,6 +11,7 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -18,7 +19,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith
 
@@ -44,8 +44,12 @@ class JiraUpdateServiceTest {
             val instance2 = jiraInstance(instanceUrl = "https://jira2.example.com")
             every { instanceRepository.findAll() } returns listOf(instance1, instance2)
             coEvery { issueService.updateInstance(any<JiraInstance>(), any<UUID>()) } just Awaits
-            every { instanceRepository.findById(instance1.instanceUrl) } returns Optional.of(instance1)
-            every { instanceRepository.findById(instance2.instanceUrl) } returns Optional.of(instance2)
+            every {
+                instanceRepository.findByInstanceUrlWithCollections(instance1.instanceUrl)
+            } returns instance1
+            every {
+                instanceRepository.findByInstanceUrlWithCollections(instance2.instanceUrl)
+            } returns instance2
             every { instanceRepository.save(any()) } answers { firstArg() }
 
             val result = service.updateAllJiraInstances()
@@ -60,7 +64,9 @@ class JiraUpdateServiceTest {
         @Test
         fun `should launch update when performUpdate is true`() {
             val instance = jiraInstance()
-            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every {
+                instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl)
+            } returns instance
             coEvery { issueService.updateInstance(instance, any()) } just Awaits
             every { instanceRepository.save(any()) } answers { firstArg() }
 
@@ -71,9 +77,28 @@ class JiraUpdateServiceTest {
         }
 
         @Test
+        fun `should load the instance with its lazy collections initialized`() {
+            // Regression: the update runs on a background coroutine without a Hibernate session,
+            // so the instance must be loaded with jiraProjectKeys/projectIds eagerly fetched to
+            // avoid a LazyInitializationException crashing the run.
+            val instance = jiraInstance()
+            every {
+                instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl)
+            } returns instance
+            coEvery { issueService.updateInstance(instance, any()) } just Awaits
+            every { instanceRepository.save(any()) } answers { firstArg() }
+
+            service.updateJiraInstance(instance.instanceUrl, true)
+
+            verify { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) }
+        }
+
+        @Test
         fun `should check for updates when performUpdate is false`() {
             val instance = jiraInstance()
-            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every {
+                instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl)
+            } returns instance
             coEvery { issueService.checkInstanceForUpdates(instance, any<UUID>()) } just Awaits
 
             val result = service.updateJiraInstance(instance.instanceUrl, false)
@@ -84,7 +109,7 @@ class JiraUpdateServiceTest {
 
         @Test
         fun `should throw when instance not connected`() {
-            every { instanceRepository.findById("unknown") } returns Optional.empty()
+            every { instanceRepository.findByInstanceUrlWithCollections("unknown") } returns null
 
             assertFailsWith<JiraInstanceNotConnectedException> { service.updateJiraInstance("unknown", true) }
         }

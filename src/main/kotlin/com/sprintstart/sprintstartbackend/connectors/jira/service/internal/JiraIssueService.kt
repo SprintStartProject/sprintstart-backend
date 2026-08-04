@@ -138,7 +138,10 @@ internal class JiraIssueService(
         instanceUrl: String,
         transactionId: UUID,
     ): List<JiraIssueResponse> {
-        val instance = instanceRepository.findById(instanceUrl).orElse(null) ?: return emptyList()
+        // Eagerly fetch the lazy collections: this runs on a background coroutine with no
+        // Hibernate session, so reading jiraProjectKeys below on a detached instance would throw
+        // LazyInitializationException.
+        val instance = instanceRepository.findByInstanceUrlWithCollections(instanceUrl) ?: return emptyList()
         val credentialsId = JiraCredentialsId(instance.updateCredentialAuthId, instance.updateCredentialName)
         val credentials = fetchCredentials(credentialsId, transactionId, instanceUrl)
 
