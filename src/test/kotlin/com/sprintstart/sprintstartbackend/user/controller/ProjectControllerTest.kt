@@ -5,12 +5,14 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
+import com.sprintstart.sprintstartbackend.user.model.request.project.TransferProjectUserRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
+import com.sprintstart.sprintstartbackend.user.service.ProjectMembershipService
 import io.mockk.every
 import io.mockk.just
 import io.mockk.runs
@@ -58,6 +60,9 @@ class ProjectControllerTest(
     @MockkBean
     private lateinit var projectManagerService: ProjectManagerService
 
+    @MockkBean
+    private lateinit var projectMembershipService: ProjectMembershipService
+
     @MockkBean(name = "projectAuth")
     private lateinit var projectAuth: ProjectAuthorization
 
@@ -65,6 +70,7 @@ class ProjectControllerTest(
     private lateinit var jwtDecoder: JwtDecoder
 
     private val managedProjectId: UUID = UUID.randomUUID()
+    private val otherManagedProjectId: UUID = UUID.randomUUID()
     private val foreignProjectId: UUID = UUID.randomUUID()
 
     private val pmJwt = jwt().authorities(
@@ -80,6 +86,7 @@ class ProjectControllerTest(
     @BeforeEach
     fun setUpAuthorization() {
         every { projectAuth.canManageProject(any(), managedProjectId) } returns true
+        every { projectAuth.canManageProject(any(), otherManagedProjectId) } returns true
         every { projectAuth.canManageProject(any(), foreignProjectId) } returns false
         every { projectAuth.canAccessProject(any(), managedProjectId) } returns true
         every { projectAuth.canAccessProject(any(), foreignProjectId) } returns false
@@ -255,6 +262,80 @@ class ProjectControllerTest(
             .andExpect(status().isConflict)
 
         verify(exactly = 1) { adminProjectService.removeUser(managedProjectId, userId) }
+    }
+
+    @Test
+    fun `transferUser moves a user into a managed project`() {
+        val userId = UUID.randomUUID()
+        val request = TransferProjectUserRequest(userId = userId, sourceProjectId = otherManagedProjectId)
+        every {
+            projectMembershipService.transferUser(any(), false, managedProjectId, request)
+        } returns listOf(projectUserResponse(id = userId))
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$managedProjectId/users/transfer")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(userId.toString()))
+
+        verify(exactly = 1) { projectMembershipService.transferUser(any(), false, managedProjectId, request) }
+    }
+
+    @Test
+    fun `transferUser rejects a target project the caller does not manage`() {
+        val request = TransferProjectUserRequest(
+            userId = UUID.randomUUID(),
+            sourceProjectId = managedProjectId,
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$foreignProjectId/users/transfer")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectMembershipService.transferUser(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `transferUser rejects a source project the caller does not manage`() {
+        val request = TransferProjectUserRequest(
+            userId = UUID.randomUUID(),
+            sourceProjectId = foreignProjectId,
+        )
+        every { projectMembershipService.transferUser(any(), false, managedProjectId, request) } throws
+            ResponseStatusException(HttpStatus.FORBIDDEN)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$managedProjectId/users/transfer")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `transferUser returns 409 when the user manages the source project`() {
+        val request = TransferProjectUserRequest(
+            userId = UUID.randomUUID(),
+            sourceProjectId = otherManagedProjectId,
+        )
+        every { projectMembershipService.transferUser(any(), false, managedProjectId, request) } throws
+            ResponseStatusException(HttpStatus.CONFLICT)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$managedProjectId/users/transfer")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isConflict)
     }
 
     private fun managedProjectResponse() = ManagedProjectResponse(
