@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintSchema
 import com.sprintstart.sprintstartbackend.onboarding.external.model.GeneratedBlueprint
+import com.sprintstart.sprintstartbackend.onboarding.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Blueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStep
@@ -24,6 +25,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
+import java.util.UUID
 
 @Service
 class BlueprintService(
@@ -50,17 +52,22 @@ class BlueprintService(
      * persisted. The AI call runs outside any transaction to avoid pinning a DB
      * connection for its duration.
      *
+     * @param projectId The project to generate for. Scope names are bare here and are
+     * qualified with the project on the way to the AI service.
      * @param scopes The scopes to (re)generate, or `null` to refresh all known scopes.
-     * @return The per-scope generation outcomes.
+     * @return The per-scope generation outcomes, carrying bare scope names.
      */
     @Tracked("Generating onboarding blueprints")
-    suspend fun generateBlueprints(scopes: List<String>?): GenerateBlueprintsResponse {
+    suspend fun generateBlueprints(
+        projectId: UUID,
+        scopes: List<String>?,
+    ): GenerateBlueprintsResponse {
         // The AI service is stateless: pass it the current active blueprints so
         // it can number versions and skip an unchanged corpus.
         val active = withContext(Dispatchers.IO) {
-            readTxTemplate.execute { loadActiveSchemas(scopes) }.orEmpty()
+            readTxTemplate.execute { loadActiveSchemas(projectId, scopes) }.orEmpty()
         }
-        val response = onboardingAiClient.generateBlueprints(scopes, active)
+        val response = onboardingAiClient.generateBlueprints(projectId, scopes, active)
         withContext(Dispatchers.IO) {
             txTemplate.executeWithoutResult {
                 for (outcome in response.outcomes) {
@@ -70,7 +77,7 @@ class BlueprintService(
                     // reviewed — it is never silently activated — and
                     // `unchanged`/`skipped` carry no blueprint.
                     if (generated != null && outcome.status in ACTIVATABLE_STATUSES) {
-                        activate(generated)
+                        activate(projectId, generated)
                     }
                 }
             }
@@ -78,7 +85,8 @@ class BlueprintService(
         return GenerateBlueprintsResponse(
             outcomes = response.outcomes.map { outcome ->
                 BlueprintOutcomeResponse(
-                    scope = outcome.scope,
+                    // The AI answers with the qualified scope; callers deal in bare names.
+                    scope = BlueprintScope.bare(outcome.scope),
                     status = outcome.status,
                     message = outcome.notes.firstOrNull(),
                 )
@@ -89,14 +97,15 @@ class BlueprintService(
     /**
      * Returns the archived (rollback-able) version identifiers retained for [scope].
      *
+     * @param projectId The project the scope belongs to.
      * @param scope The blueprint scope to list versions for.
      * @return The scope and its archived version identifiers.
      */
     @Transactional(readOnly = true)
     @Tracked("Listing onboarding blueprint versions")
-    fun listVersions(scope: String): VersionListResponse {
+    fun listVersions(projectId: UUID, scope: String): VersionListResponse {
         val versions = blueprintRepository
-            .findAllByScopeAndStatus(scope, BlueprintStatus.ARCHIVED)
+            .findAllByProjectIdAndScopeAndStatus(projectId, scope, BlueprintStatus.ARCHIVED)
             .map { it.version }
         if (versions.isEmpty()) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No blueprint found for scope: $scope")
@@ -110,6 +119,7 @@ class BlueprintService(
      * The current ACTIVE is archived and the archived version is copied into a new
      * ACTIVE blueprint.
      *
+     * @param projectId The project the scope belongs to.
      * @param scope The blueprint scope to roll back.
      * @param version The archived version identifier to restore.
      * @return The restored, now-active blueprint.
@@ -117,17 +127,19 @@ class BlueprintService(
      */
     @Transactional
     @Tracked("Rolling back onboarding blueprint")
-    fun rollback(scope: String, version: String): BlueprintResponse {
-        val archived = blueprintRepository.findByScopeAndStatusAndVersion(scope, BlueprintStatus.ARCHIVED, version)
+    fun rollback(projectId: UUID, scope: String, version: String): BlueprintResponse {
+        val archived = blueprintRepository
+            .findByProjectIdAndScopeAndStatusAndVersion(projectId, scope, BlueprintStatus.ARCHIVED, version)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No version $version for scope: $scope")
         blueprintRepository
-            .findByScopeAndStatus(scope, BlueprintStatus.ACTIVE)
+            .findByProjectIdAndScopeAndStatus(projectId, scope, BlueprintStatus.ACTIVE)
             ?.let { it.status = BlueprintStatus.ARCHIVED }
         val newBlueprint = Blueprint(
             scope = archived.scope,
             version = archived.version,
             status = BlueprintStatus.ACTIVE,
             corpusFingerprint = archived.corpusFingerprint,
+            projectId = projectId,
         )
         archived.steps.forEach { step ->
             newBlueprint.steps.add(
@@ -153,19 +165,21 @@ class BlueprintService(
      * Ensures an ACTIVE blueprint exists for each of [scopes], generating the missing
      * ones on demand. Scopes that already have an ACTIVE blueprint are left untouched.
      *
+     * @param projectId The project the scopes belong to.
      * @param scopes The scopes that must have an ACTIVE blueprint.
      */
     @Tracked("Ensuring an active onboarding blueprints exists for each of given scopes")
-    suspend fun ensureScopesExist(scopes: List<String>) {
+    suspend fun ensureScopesExist(projectId: UUID, scopes: List<String>) {
         ensureMutex.withLock {
             val existing = withContext(Dispatchers.IO) {
                 scopes.filter { scope ->
-                    blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE) != null
+                    blueprintRepository
+                        .findByProjectIdAndScopeAndStatus(projectId, scope, BlueprintStatus.ACTIVE) != null
                 }
             }
             val missing = scopes.toSet() - existing.toSet()
             if (missing.isNotEmpty()) {
-                generateBlueprints(missing.toList())
+                generateBlueprints(projectId, missing.toList())
             }
         }
     }
@@ -173,17 +187,22 @@ class BlueprintService(
     /**
      * Given an onboarding path blueprint generated by the AI, this function 'activates' it by saving it in the db.
      *
+     * @param projectId The project the blueprint was generated for.
      * @param generated [GeneratedBlueprint] The generated blueprint.
      */
-    private fun activate(generated: GeneratedBlueprint) {
+    private fun activate(projectId: UUID, generated: GeneratedBlueprint) {
+        // The AI answers with the project-qualified scope; the bare name is what gets
+        // stored, so the scope stays usable as a path segment.
+        val scope = BlueprintScope.bare(generated.scope)
         blueprintRepository
-            .findByScopeAndStatus(generated.scope, BlueprintStatus.ACTIVE)
+            .findByProjectIdAndScopeAndStatus(projectId, scope, BlueprintStatus.ACTIVE)
             ?.let { it.status = BlueprintStatus.ARCHIVED }
         val blueprint = Blueprint(
-            scope = generated.scope,
+            scope = scope,
             version = generated.version,
             status = BlueprintStatus.ACTIVE,
             corpusFingerprint = generated.provenance?.corpusFingerprint,
+            projectId = projectId,
         )
         generated.steps.forEachIndexed { index, step ->
             blueprint.steps.add(
@@ -207,13 +226,14 @@ class BlueprintService(
      * Loads the ACTIVE blueprints for the given [scopes] (or all scopes when `null`)
      * and maps them to the wire schema sent to the AI service.
      *
+     * @param projectId The project whose blueprints to load.
      * @param scopes A list of scopes
      */
-    private fun loadActiveSchemas(scopes: List<String>?): List<BlueprintSchema> {
+    private fun loadActiveSchemas(projectId: UUID, scopes: List<String>?): List<BlueprintSchema> {
         val active = scopes?.mapNotNull {
-            blueprintRepository.findByScopeAndStatus(it, BlueprintStatus.ACTIVE)
+            blueprintRepository.findByProjectIdAndScopeAndStatus(projectId, it, BlueprintStatus.ACTIVE)
         }
-            ?: blueprintRepository.findAllByStatus(BlueprintStatus.ACTIVE)
+            ?: blueprintRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
         return active.map { it.toSchema() }
     }
 

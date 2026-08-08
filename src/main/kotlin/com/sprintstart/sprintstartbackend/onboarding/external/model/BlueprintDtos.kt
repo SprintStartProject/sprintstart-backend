@@ -3,8 +3,14 @@ package com.sprintstart.sprintstartbackend.onboarding.external.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * @property projectId The project to generate for. Bare scope names ("global", "area:backend") are
+ * qualified with it by the AI service, so the generated blueprints come back carrying
+ * `project:<projectId>|<scope>`.
+ */
 @Serializable
 data class GenerateBlueprintsRequest(
+    val projectId: String,
     val scopes: List<String>? = null,
     val active: List<BlueprintSchema> = emptyList(),
 )
