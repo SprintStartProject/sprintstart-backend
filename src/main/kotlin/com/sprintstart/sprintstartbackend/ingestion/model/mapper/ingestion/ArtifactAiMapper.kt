@@ -3,11 +3,13 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper.ingestion
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactAiIngestRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 @Component
 class ArtifactAiMapper {
     fun toIngestRequest(artifact: Artifact) = ArtifactAiIngestRequest(
         artifactId = artifact.id.toString(),
+        projectIds = artifact.projectIds.map(UUID::toString),
         sourceSystem = artifact.sourceSystem,
         sourceId = artifact.sourceId,
         sourceUrl = artifact.sourceUrl,

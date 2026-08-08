@@ -15,10 +15,17 @@ internal data class GetChatsResponse(
     val chats: List<ChatResponse>,
 )
 
+/**
+ * @property projectId The project this chat is scoped to, or `null` for chats created before
+ * project scoping existed. Clients must resolve a chat's citations against *this* project rather
+ * than whichever project is currently selected — otherwise switching projects makes the citations
+ * of older chats resolve against the wrong corpus.
+ */
 internal data class ChatResponse(
     val id: UUID,
     val title: String,
     val userId: UUID,
+    val projectId: UUID?,
     val createdAt: OffsetDateTime,
 )
 
@@ -27,6 +34,7 @@ internal fun Chat.toChatResponse(): ChatResponse {
         id = this.id,
         title = this.title,
         userId = this.userId,
+        projectId = this.projectId,
         createdAt = this.createdAt,
     )
 }

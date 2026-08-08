@@ -99,7 +99,13 @@ internal class ChatService(
     @Tracked("Retrieving current user's last n chats")
     fun getChatsForCurrentUser(authId: String, @Valid request: GetChatsRequest): GetChatsResponse {
         val userId = resolveCurrentUserId(userApi, authId)
-        val chats = chatRepository.findAllByUserId(userId, chatPageableFor(request.limit))
+        val pageable = chatPageableFor(request.limit)
+        // Scoped to the requested project so the sidebar follows the project switcher. Chats
+        // predating project scoping have no project and therefore appear in no list; they remain
+        // readable through `GET /chats/me/{id}`.
+        val chats = request.projectId
+            ?.let { chatRepository.findAllByUserIdAndProjectId(userId, it, pageable) }
+            ?: chatRepository.findAllByUserId(userId, pageable)
         val chatResponses: List<ChatResponse> = chats.stream().map { it.toChatResponse() }.toList()
         return GetChatsResponse(chatResponses)
     }
@@ -168,6 +174,7 @@ internal class ChatService(
 
         val chat = Chat(
             userId = request.userId,
+            projectId = request.projectId,
             createdAt = OffsetDateTime.now(),
         )
 
@@ -182,14 +189,17 @@ internal class ChatService(
      * cannot create chats under another user's id.
      *
      * @param authId External authentication identifier from the authenticated JWT.
+     * @param projectId The project the chat is scoped to; the caller's access to it is verified by
+     * the controller before this is reached.
      * @return The newly created chat id.
      * @throws ResponseStatusException `404` when the authenticated user has no local projection.
      */
     @Tracked("Creating a new chat for the current user")
-    fun createChatForCurrentUser(authId: String): CreateChatResponse {
+    fun createChatForCurrentUser(authId: String, projectId: UUID): CreateChatResponse {
         val userId = resolveCurrentUserId(userApi, authId)
         val chat = Chat(
             userId = userId,
+            projectId = projectId,
             createdAt = OffsetDateTime.now(),
         )
 
@@ -219,6 +229,14 @@ internal class ChatService(
         chat: Chat,
         request: PromptRequest,
     ): Flow<AiStreamMessage> {
+        // Chats created before project scoping existed have no project, and there is no honest way
+        // to infer one. The AI service requires a scope, so those chats stay readable but cannot be
+        // prompted — surfaced as a 409 rather than a silently empty answer.
+        val projectId = chat.projectId ?: throw ResponseStatusException(
+            HttpStatus.CONFLICT,
+            "Chat ${chat.id} predates project scoping and cannot be prompted. Start a new chat.",
+        )
+
         val msg = ChatMessage(
             role = ChatRole.USER,
             chat = chat,
@@ -267,7 +285,7 @@ internal class ChatService(
         //   not only once the chat is reloaded from persisted history
         // - On completion, we store the entire response as msg in db
         return chatAiClient
-            .streamPrompt(AiPromptRequest(request.msg, context, filters))
+            .streamPrompt(AiPromptRequest(request.msg, context, projectId.toString(), filters))
             .map { event ->
                 when (event.type) {
                     "token" -> {

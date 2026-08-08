@@ -46,6 +46,7 @@ class ChatControllerUnitTest {
     private val chatId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
     private val authId = "auth-user"
+    private val projectId: UUID = UUID.randomUUID()
     private val jwt = Jwt
         .withTokenValue("token")
         .header("alg", "none")
@@ -56,6 +57,7 @@ class ChatControllerUnitTest {
         id = chatId,
         title = "Sprint planning",
         userId = userId,
+        projectId = projectId,
         createdAt = OffsetDateTime.now(),
     )
 
@@ -119,7 +121,7 @@ class ChatControllerUnitTest {
     inner class CreateChat {
         @Test
         fun `delegates to service and returns new chat id unchanged`() {
-            val request = CreateChatRequest(userId = userId)
+            val request = CreateChatRequest(userId = userId, projectId = projectId)
             val expected = CreateChatResponse(id = chatId)
             every { chatService.createChat(request) } returns expected
 
