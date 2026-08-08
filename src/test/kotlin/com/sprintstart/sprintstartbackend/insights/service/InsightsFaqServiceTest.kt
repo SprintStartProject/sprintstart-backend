@@ -33,6 +33,7 @@ import java.util.UUID
 
 class InsightsFaqServiceTest {
     private val faqGroupRepository = mockk<FaqGroupRepository>()
+    private val projectId: UUID = UUID.randomUUID()
     private val insightsAiClient = mockk<InsightsAiClient>()
     private val chatQuestionApi = mockk<ChatQuestionApi>()
     private val aiFaqGroupMapper = AiFaqGroupMapper()
@@ -63,9 +64,9 @@ class InsightsFaqServiceTest {
     @Test
     fun `getFaqOverview maps groups and exposes the document reference as the id`() {
         val group = buildGroup()
-        every { faqGroupRepository.findAllByOrderByOccurrenceCountDesc() } returns listOf(group)
+        every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns listOf(group)
 
-        val overview = service.getFaqOverview()
+        val overview = service.getFaqOverview(projectId)
 
         assertEquals(1, overview.groups.size)
         val summary = overview.groups.first()
@@ -79,9 +80,9 @@ class InsightsFaqServiceTest {
     @Test
     fun `getFaqGroup maps questions and answering documents`() {
         val group = buildGroup()
-        every { faqGroupRepository.findById(group.id) } returns Optional.of(group)
+        every { faqGroupRepository.findByIdAndProjectId(group.id, projectId) } returns Optional.of(group)
 
-        val detail = service.getFaqGroup(group.id)
+        val detail = service.getFaqGroup(projectId, group.id)
 
         assertEquals(group.id, detail.groupId)
         assertEquals(14, detail.count)
@@ -93,10 +94,10 @@ class InsightsFaqServiceTest {
     @Test
     fun `getFaqGroup throws 404 when the group does not exist`() {
         val missingId = UUID.randomUUID()
-        every { faqGroupRepository.findById(missingId) } returns Optional.empty()
+        every { faqGroupRepository.findByIdAndProjectId(missingId, projectId) } returns Optional.empty()
 
         val exception = assertThrows<ResponseStatusException> {
-            service.getFaqGroup(missingId)
+            service.getFaqGroup(projectId, missingId)
         }
         assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
     }
@@ -119,15 +120,16 @@ class InsightsFaqServiceTest {
                 ),
             ),
         )
-        every { chatQuestionApi.getAllUserQuestions() } returns
+        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns
             listOf(ChatQuestion(id = UUID.randomUUID(), text = "How do I get VPN access?"))
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns aiResponse
-        every { faqGroupRepository.deleteAll() } just Runs
+        every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
+        every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
         val savedSlot = slot<List<FaqGroup>>()
         every { faqGroupRepository.saveAll(capture(savedSlot)) } answers { savedSlot.captured.toMutableList() }
 
-        val result = service.refreshFaqGroups()
+        val result = service.refreshFaqGroups(projectId)
 
         assertEquals(1, result.groupCount)
 
@@ -143,21 +145,22 @@ class InsightsFaqServiceTest {
 
         coVerify(exactly = 1) { insightsAiClient.groupFaqQuestions(any()) }
         verifyOrder {
-            faqGroupRepository.deleteAll()
+            faqGroupRepository.deleteAllByProjectId(projectId)
             faqGroupRepository.saveAll(any<List<FaqGroup>>())
         }
     }
 
     @Test
     fun `refreshFaqGroups clears the cache even when the AI returns no groups`() = runTest {
-        every { chatQuestionApi.getAllUserQuestions() } returns emptyList()
+        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns emptyList()
         coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(groups = emptyList())
-        every { faqGroupRepository.deleteAll() } just Runs
+        every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
+        every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
         every { faqGroupRepository.saveAll(any<List<FaqGroup>>()) } answers { mutableListOf() }
 
-        val result = service.refreshFaqGroups()
+        val result = service.refreshFaqGroups(projectId)
 
         assertEquals(0, result.groupCount)
-        verify(exactly = 1) { faqGroupRepository.deleteAll() }
+        verify(exactly = 1) { faqGroupRepository.deleteAllByProjectId(projectId) }
     }
 }

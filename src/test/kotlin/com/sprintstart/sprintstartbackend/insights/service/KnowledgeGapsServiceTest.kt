@@ -35,6 +35,7 @@ import java.util.UUID
 
 class KnowledgeGapsServiceTest {
     private val knowledgeGapRepository = mockk<KnowledgeGapRepository>()
+    private val projectId: UUID = UUID.randomUUID()
     private val componentOwnerRepository = mockk<ComponentOwnerRepository>()
     private val knowledgeGapsAiClient = mockk<KnowledgeGapsAiClient>()
     private val aiKnowledgeGapMapper = AiKnowledgeGapMapper()
@@ -84,11 +85,11 @@ class KnowledgeGapsServiceTest {
         val lowGap = buildGap("frontend-portal", KnowledgeGapSeverity.LOW)
         val highB = buildGap("payment-service", KnowledgeGapSeverity.HIGH)
         val highA = buildGap("auth-service", KnowledgeGapSeverity.HIGH)
-        every { knowledgeGapRepository.findAll() } returns listOf(lowGap, highB, highA)
+        every { knowledgeGapRepository.findAllByProjectId(projectId) } returns listOf(lowGap, highB, highA)
         every { componentOwnerRepository.findAllByComponentIn(any()) } returns emptyList()
         every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
 
-        val overview = service.getKnowledgeGaps()
+        val overview = service.getKnowledgeGaps(projectId)
 
         assertEquals(
             listOf("auth-service", "payment-service", "frontend-portal"),
@@ -102,14 +103,14 @@ class KnowledgeGapsServiceTest {
         gap.missingTypes.addAll(listOf("runbook", "adr"))
         gap.presentTypes.add("readme")
         val userId = UUID.randomUUID()
-        every { knowledgeGapRepository.findById(gap.id) } returns Optional.of(gap)
+        every { knowledgeGapRepository.findByIdAndProjectId(gap.id, projectId) } returns Optional.of(gap)
         every { componentOwnerRepository.findAllByComponentIn(listOf("auth-service")) } returns
             listOf(ComponentOwner(component = "auth-service", userId = userId))
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(buildUser(userId, "Backend Developer"))
         every { artifactIngestionApi.getFirstIngestedAt("auth-service") } returns
             Instant.parse("2025-01-10T00:00:00Z")
 
-        val detail = service.getKnowledgeGap(gap.id)
+        val detail = service.getKnowledgeGap(projectId, gap.id)
 
         assertEquals("auth-service", detail.component)
         assertEquals(listOf("runbook", "adr"), detail.missingTypes)
@@ -125,11 +126,11 @@ class KnowledgeGapsServiceTest {
     @Test
     fun `getKnowledgeGap returns empty owners when the component has none`() {
         val gap = buildGap("auth-service", KnowledgeGapSeverity.HIGH)
-        every { knowledgeGapRepository.findById(gap.id) } returns Optional.of(gap)
+        every { knowledgeGapRepository.findByIdAndProjectId(gap.id, projectId) } returns Optional.of(gap)
         every { componentOwnerRepository.findAllByComponentIn(listOf("auth-service")) } returns emptyList()
         every { artifactIngestionApi.getFirstIngestedAt("auth-service") } returns null
 
-        val detail = service.getKnowledgeGap(gap.id)
+        val detail = service.getKnowledgeGap(projectId, gap.id)
 
         assertTrue(detail.owners.isEmpty())
     }
@@ -137,10 +138,10 @@ class KnowledgeGapsServiceTest {
     @Test
     fun `getKnowledgeGap throws 404 when the gap does not exist`() {
         val missingId = UUID.randomUUID()
-        every { knowledgeGapRepository.findById(missingId) } returns Optional.empty()
+        every { knowledgeGapRepository.findByIdAndProjectId(missingId, projectId) } returns Optional.empty()
 
         val exception = assertThrows<ResponseStatusException> {
-            service.getKnowledgeGap(missingId)
+            service.getKnowledgeGap(projectId, missingId)
         }
         assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
     }
@@ -180,11 +181,12 @@ class KnowledgeGapsServiceTest {
             ),
         )
         coEvery { knowledgeGapsAiClient.detectKnowledgeGaps(any()) } returns aiResponse
-        every { knowledgeGapRepository.deleteAll() } just Runs
+        every { knowledgeGapRepository.deleteAllByProjectId(projectId) } just Runs
+        every { knowledgeGapRepository.deleteAllByProjectIdIsNull() } just Runs
         val savedSlot = slot<List<KnowledgeGap>>()
         every { knowledgeGapRepository.saveAll(capture(savedSlot)) } answers { savedSlot.captured.toMutableList() }
 
-        val result = service.refreshKnowledgeGaps()
+        val result = service.refreshKnowledgeGaps(projectId)
 
         assertEquals(1, result.gapCount)
         val persisted = savedSlot.captured.first()

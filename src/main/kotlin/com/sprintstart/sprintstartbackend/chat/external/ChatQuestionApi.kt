@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.external
 
+import java.util.UUID
+
 /**
  * Exported chat-module API for other backend modules.
  *
@@ -8,9 +10,14 @@ package com.sprintstart.sprintstartbackend.chat.external
  */
 interface ChatQuestionApi {
     /**
-     * Returns every user-authored question across all chats.
+     * Returns every user-authored question asked in one project's chats.
      *
      * Only messages with the user role are returned; assistant and system messages are excluded.
+     * Scoped to a project because the FAQ insights built from these questions are shown per
+     * project — an unscoped list would surface one project's questions in another's panel.
+     * Chats predating project scoping carry no project and are therefore excluded.
+     *
+     * @param projectId The project whose chats to collect questions from.
      */
-    fun getAllUserQuestions(): List<ChatQuestion>
+    fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion>
 }

@@ -41,13 +41,13 @@ class KnowledgeGapsService(
     private val artifactIngestionApi: ArtifactIngestionApi,
 ) {
     /**
-     * Returns all cached knowledge gaps, most severe first and then by component name.
+     * Returns the project's cached knowledge gaps, most severe first and then by component name.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving all knowledge gaps")
-    fun getKnowledgeGaps(): KnowledgeGapsOverviewResponse {
+    fun getKnowledgeGaps(projectId: UUID): KnowledgeGapsOverviewResponse {
         val gaps = knowledgeGapRepository
-            .findAll()
+            .findAllByProjectId(projectId)
             .sortedWith(compareBy({ it.severity.ordinal }, { it.component }))
         val components = gaps.map { it.component }.distinct()
         val ownersByComponent = resolveOwners(components)
@@ -62,8 +62,10 @@ class KnowledgeGapsService(
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving specific knowledge gap")
-    fun getKnowledgeGap(gapId: UUID): KnowledgeGapResponse {
-        val gap = knowledgeGapRepository.findById(gapId).orElseThrow {
+    fun getKnowledgeGap(projectId: UUID, gapId: UUID): KnowledgeGapResponse {
+        // Scoped rather than fetched by id alone: a gap from another project must read as
+        // "not found", not as a permission error that confirms it exists.
+        val gap = knowledgeGapRepository.findByIdAndProjectId(gapId, projectId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge gap with id $gapId not found")
         }
         val owners = resolveOwners(listOf(gap.component))[gap.component] ?: emptyList()
@@ -104,11 +106,16 @@ class KnowledgeGapsService(
      *   if the AI service does not return a classification result.
      */
     @Tracked("Refreshing knowledge gaps")
-    suspend fun refreshKnowledgeGaps(): RefreshKnowledgeGapsResponse {
-        val aiResponse = knowledgeGapsAiClient.detectKnowledgeGaps(AiKnowledgeGapsRequest())
-        val gaps: List<KnowledgeGap> = aiResponse.gaps.map { aiKnowledgeGapMapper.toEntity(it) }
+    suspend fun refreshKnowledgeGaps(projectId: UUID): RefreshKnowledgeGapsResponse {
+        val aiResponse = knowledgeGapsAiClient.detectKnowledgeGaps(
+            AiKnowledgeGapsRequest(projectId = projectId.toString()),
+        )
+        val gaps: List<KnowledgeGap> = aiResponse.gaps.map { aiKnowledgeGapMapper.toEntity(it, projectId) }
 
-        knowledgeGapRepository.deleteAll()
+        knowledgeGapRepository.deleteAllByProjectId(projectId)
+        // Rows from before insights were project-scoped belong to no project and would otherwise
+        // linger forever, since every read is now scoped.
+        knowledgeGapRepository.deleteAllByProjectIdIsNull()
         knowledgeGapRepository.saveAll(gaps)
 
         return RefreshKnowledgeGapsResponse(gapCount = gaps.size)

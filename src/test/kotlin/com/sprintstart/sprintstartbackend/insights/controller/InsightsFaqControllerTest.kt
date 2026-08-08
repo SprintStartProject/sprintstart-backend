@@ -10,10 +10,12 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOvervie
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqQuestionResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshFaqResponse
 import com.sprintstart.sprintstartbackend.insights.service.InsightsFaqService
+import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -43,9 +45,23 @@ class InsightsFaqControllerTest(
 ) {
     @MockkBean
     private lateinit var insightsFaqService: InsightsFaqService
+    private val projectId: UUID = UUID.randomUUID()
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
+
+    /**
+     * Referenced by name from the @PreAuthorize expressions on every endpoint; the web slice does
+     * not load it on its own. Access to the fixture project is granted by default so the role
+     * checks remain what the role tests exercise.
+     */
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
+
+    @BeforeEach
+    fun grantProjectAccess() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns true
+    }
 
     private val groupId = UUID.randomUUID()
 
@@ -89,36 +105,36 @@ class InsightsFaqControllerTest(
 
     @Test
     fun `getFaqOverview should return 200 and groups for a PM`() {
-        every { insightsFaqService.getFaqOverview() } returns buildOverview()
+        every { insightsFaqService.getFaqOverview(projectId) } returns buildOverview()
 
         mockMvc
-            .perform(get("/api/v1/insights/faq").with(pmJwt))
+            .perform(get("/api/v1/insights/faq?projectId=$projectId").with(pmJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { insightsFaqService.getFaqOverview() }
+        verify(exactly = 1) { insightsFaqService.getFaqOverview(projectId) }
     }
 
     @Test
     fun `getFaqOverview should return 200 for an admin`() {
-        every { insightsFaqService.getFaqOverview() } returns buildOverview()
+        every { insightsFaqService.getFaqOverview(projectId) } returns buildOverview()
 
         mockMvc
-            .perform(get("/api/v1/insights/faq").with(adminJwt))
+            .perform(get("/api/v1/insights/faq?projectId=$projectId").with(adminJwt))
             .andExpect(status().isOk)
     }
 
     @Test
     fun `getFaqOverview should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/insights/faq"))
+            .perform(get("/api/v1/insights/faq?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `getFaqOverview should return 403 for a non-PM role`() {
         mockMvc
-            .perform(get("/api/v1/insights/faq").with(userJwt))
+            .perform(get("/api/v1/insights/faq?projectId=$projectId").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -126,37 +142,37 @@ class InsightsFaqControllerTest(
 
     @Test
     fun `getFaqGroup should return 200 and detail for a PM`() {
-        every { insightsFaqService.getFaqGroup(groupId) } returns buildDetail()
+        every { insightsFaqService.getFaqGroup(projectId, groupId) } returns buildDetail()
 
         mockMvc
-            .perform(get("/api/v1/insights/faq/$groupId").with(pmJwt))
+            .perform(get("/api/v1/insights/faq/$groupId?projectId=$projectId").with(pmJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { insightsFaqService.getFaqGroup(groupId) }
+        verify(exactly = 1) { insightsFaqService.getFaqGroup(projectId, groupId) }
     }
 
     @Test
     fun `getFaqGroup should return 404 when the group does not exist`() {
-        every { insightsFaqService.getFaqGroup(groupId) } throws
+        every { insightsFaqService.getFaqGroup(projectId, groupId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "FAQ group with id $groupId not found")
 
         mockMvc
-            .perform(get("/api/v1/insights/faq/$groupId").with(pmJwt))
+            .perform(get("/api/v1/insights/faq/$groupId?projectId=$projectId").with(pmJwt))
             .andExpect(status().isNotFound)
     }
 
     @Test
     fun `getFaqGroup should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/insights/faq/$groupId"))
+            .perform(get("/api/v1/insights/faq/$groupId?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `getFaqGroup should return 403 for a non-PM role`() {
         mockMvc
-            .perform(get("/api/v1/insights/faq/$groupId").with(userJwt))
+            .perform(get("/api/v1/insights/faq/$groupId?projectId=$projectId").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -164,10 +180,10 @@ class InsightsFaqControllerTest(
 
     @Test
     fun `refreshFaqGroups should return 200 and the group count for a PM`() {
-        coEvery { insightsFaqService.refreshFaqGroups() } returns RefreshFaqResponse(groupCount = 3)
+        coEvery { insightsFaqService.refreshFaqGroups(projectId) } returns RefreshFaqResponse(groupCount = 3)
 
         val asyncResult = mockMvc
-            .perform(post("/api/v1/insights/faq/refresh").with(pmJwt))
+            .perform(post("/api/v1/insights/faq/refresh?projectId=$projectId").with(pmJwt))
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -176,13 +192,13 @@ class InsightsFaqControllerTest(
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { insightsFaqService.refreshFaqGroups() }
+        coVerify(exactly = 1) { insightsFaqService.refreshFaqGroups(projectId) }
     }
 
     @Test
     fun `refreshFaqGroups should return 401 when not authenticated`() {
         mockMvc
-            .perform(post("/api/v1/insights/faq/refresh"))
+            .perform(post("/api/v1/insights/faq/refresh?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
@@ -191,7 +207,7 @@ class InsightsFaqControllerTest(
         // The endpoint is a coroutine handler, so the security denial surfaces through the async
         // dispatch rather than on the initial response.
         val asyncResult = mockMvc
-            .perform(post("/api/v1/insights/faq/refresh").with(userJwt))
+            .perform(post("/api/v1/insights/faq/refresh?projectId=$projectId").with(userJwt))
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -199,6 +215,6 @@ class InsightsFaqControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
 
-        coVerify(exactly = 0) { insightsFaqService.refreshFaqGroups() }
+        coVerify(exactly = 0) { insightsFaqService.refreshFaqGroups(projectId) }
     }
 }

@@ -52,9 +52,13 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    fun getKnowledgeGaps(): KnowledgeGapsOverviewResponse {
-        return knowledgeGapsService.getKnowledgeGaps()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    fun getKnowledgeGaps(
+        @RequestParam projectId: UUID,
+    ): KnowledgeGapsOverviewResponse {
+        return knowledgeGapsService.getKnowledgeGaps(projectId)
     }
 
     /**
@@ -74,11 +78,14 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/{gapId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
     fun getKnowledgeGap(
+        @RequestParam projectId: UUID,
         @PathVariable gapId: UUID,
     ): KnowledgeGapResponse {
-        return knowledgeGapsService.getKnowledgeGap(gapId)
+        return knowledgeGapsService.getKnowledgeGap(projectId, gapId)
     }
 
     /**
@@ -98,9 +105,13 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/refresh")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    suspend fun refreshKnowledgeGaps(): RefreshKnowledgeGapsResponse {
-        return knowledgeGapsService.refreshKnowledgeGaps()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    suspend fun refreshKnowledgeGaps(
+        @RequestParam projectId: UUID,
+    ): RefreshKnowledgeGapsResponse {
+        return knowledgeGapsService.refreshKnowledgeGaps(projectId)
     }
 
     /**
@@ -119,8 +130,16 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/component-owners")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
+    // It does not reach the service: component ownership is keyed by component name alone and is
+    // not yet project-partitioned, so two projects sharing a component name share its owners.
+    // Scoping ComponentOwner is deliberately left out of #166 §4.
+    @Suppress("UnusedParameter")
     fun getComponentOwners(
+        @RequestParam projectId: UUID,
         @RequestParam component: String,
     ): List<KnowledgeGapOwnerResponse> {
         return knowledgeGapsService.getComponentOwners(component)
@@ -143,8 +162,16 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PutMapping("/component-owners")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
+    // It does not reach the service: component ownership is keyed by component name alone and is
+    // not yet project-partitioned, so two projects sharing a component name share its owners.
+    // Scoping ComponentOwner is deliberately left out of #166 §4.
+    @Suppress("UnusedParameter")
     fun setComponentOwners(
+        @RequestParam projectId: UUID,
         @Valid @RequestBody request: SetComponentOwnersRequest,
     ): List<KnowledgeGapOwnerResponse> {
         return knowledgeGapsService.setComponentOwners(request)

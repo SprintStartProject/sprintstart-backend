@@ -41,4 +41,13 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
      * @return All messages authored in the given role.
      */
     fun findAllByRole(role: ChatRole): List<ChatMessage>
+
+    /**
+     * Messages authored in [role] within the chats of one project. Chats without a project
+     * — created before project scoping — match nothing.
+     *
+     * @param role The role to filter messages by.
+     * @param projectId The project the owning chat belongs to.
+     */
+    fun findAllByRoleAndChatProjectId(role: ChatRole, projectId: UUID): List<ChatMessage>
 }

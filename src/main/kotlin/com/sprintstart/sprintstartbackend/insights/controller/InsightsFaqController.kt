@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
@@ -46,9 +47,13 @@ class InsightsFaqController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    fun getFaqOverview(): FaqOverviewResponse {
-        return insightsFaqService.getFaqOverview()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    fun getFaqOverview(
+        @RequestParam projectId: UUID,
+    ): FaqOverviewResponse {
+        return insightsFaqService.getFaqOverview(projectId)
     }
 
     /**
@@ -68,11 +73,14 @@ class InsightsFaqController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/{groupId}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
     fun getFaqGroup(
+        @RequestParam projectId: UUID,
         @PathVariable groupId: UUID,
     ): FaqDetailResponse {
-        return insightsFaqService.getFaqGroup(groupId)
+        return insightsFaqService.getFaqGroup(projectId, groupId)
     }
 
     /**
@@ -92,8 +100,12 @@ class InsightsFaqController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/refresh")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    suspend fun refreshFaqGroups(): RefreshFaqResponse {
-        return insightsFaqService.refreshFaqGroups()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    suspend fun refreshFaqGroups(
+        @RequestParam projectId: UUID,
+    ): RefreshFaqResponse {
+        return insightsFaqService.refreshFaqGroups(projectId)
     }
 }

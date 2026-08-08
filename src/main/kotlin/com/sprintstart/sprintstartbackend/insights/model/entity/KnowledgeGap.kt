@@ -26,6 +26,11 @@ import java.util.UUID
 class KnowledgeGap(
     @Id
     val id: UUID = UUID.randomUUID(),
+    // The project this gap was detected for. Nullable only for cache rows written
+    // before insights were project-scoped; those are invisible to every project and
+    // are cleared by the next refresh.
+    @Column(name = "project_id")
+    val projectId: UUID? = null,
     @Column(nullable = false)
     val component: String,
     @ElementCollection
