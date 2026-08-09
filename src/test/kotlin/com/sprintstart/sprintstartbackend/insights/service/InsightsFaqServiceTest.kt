@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
@@ -39,12 +40,17 @@ class InsightsFaqServiceTest {
     private val aiFaqGroupMapper = AiFaqGroupMapper()
     private val faqResponseMapper = FaqResponseMapper()
 
+    // Relaxed: TransactionTemplate only needs a manager to hand it a status; the callback
+    // runs inline either way.
+    private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
+
     private val service = InsightsFaqService(
         faqGroupRepository = faqGroupRepository,
         insightsAiClient = insightsAiClient,
         chatQuestionApi = chatQuestionApi,
         aiFaqGroupMapper = aiFaqGroupMapper,
         faqResponseMapper = faqResponseMapper,
+        transactionManager = transactionManager,
     )
 
     private fun buildGroup(): FaqGroup {

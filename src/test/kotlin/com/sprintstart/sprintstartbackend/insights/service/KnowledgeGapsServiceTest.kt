@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.Optional
@@ -43,6 +44,10 @@ class KnowledgeGapsServiceTest {
     private val userApi = mockk<UserApi>()
     private val artifactIngestionApi = mockk<ArtifactIngestionApi>()
 
+    // Relaxed: TransactionTemplate only needs a manager to hand it a status; the callback
+    // runs inline either way.
+    private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
+
     private val service = KnowledgeGapsService(
         knowledgeGapRepository = knowledgeGapRepository,
         componentOwnerRepository = componentOwnerRepository,
@@ -51,6 +56,7 @@ class KnowledgeGapsServiceTest {
         knowledgeGapResponseMapper = knowledgeGapResponseMapper,
         userApi = userApi,
         artifactIngestionApi = artifactIngestionApi,
+        transactionManager = transactionManager,
     )
 
     private fun buildGap(
