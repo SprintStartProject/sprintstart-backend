@@ -355,10 +355,19 @@ internal class ChatService(
      * @param sourceSystems The systems used by the AI to generate responses.
      */
     private fun validateSourceSystems(sourceSystems: List<SourceSystem>?) {
-        val connectorsByName = connectorOverviewApi.findAllConnectors().associateBy { it.name }
+        if (sourceSystems.isNullOrEmpty()) return
 
-        sourceSystems?.forEach { sourceSystem ->
-            val connector = connectorsByName[sourceSystem.name]
+        // Keyed by connector *id* ("github", "jira"), not by `name` — that field holds the display
+        // name ("Github Repository Connector"), so matching it against the SourceSystem enum
+        // constant could never succeed and every source filter failed with "connector not found".
+        val connectorsById = connectorOverviewApi.findAllConnectors().associateBy { it.id.lowercase() }
+
+        sourceSystems.forEach { sourceSystem ->
+            // Uploads are not a connector: they have no configuration to enable or disable and are
+            // always available, so there is nothing to look up.
+            if (sourceSystem == SourceSystem.UPLOAD) return@forEach
+
+            val connector = connectorsById[sourceSystem.name.lowercase()]
                 ?: throw ConnectorNotFoundException("Connector '${sourceSystem.name}' not found")
 
             if (!connector.enabled) {

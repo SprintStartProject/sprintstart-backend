@@ -758,7 +758,9 @@ class ChatServiceTests {
             } returns listOf(
                 ConnectorDto(
                     id = "github",
-                    name = "GITHUB",
+                    // The real display name: this is what ConnectorConfigurationService puts in
+                    // `name`, and matching the SourceSystem enum against it is what used to fail.
+                    name = "Github Repository Connector",
                     enabled = true,
                     firstConfiguredAt = null,
                     lastConfiguredAt = null,
@@ -801,7 +803,9 @@ class ChatServiceTests {
             } returns listOf(
                 ConnectorDto(
                     id = "github",
-                    name = "GITHUB",
+                    // The real display name: this is what ConnectorConfigurationService puts in
+                    // `name`, and matching the SourceSystem enum against it is what used to fail.
+                    name = "Github Repository Connector",
                     enabled = false,
                     firstConfiguredAt = null,
                     lastConfiguredAt = null,
