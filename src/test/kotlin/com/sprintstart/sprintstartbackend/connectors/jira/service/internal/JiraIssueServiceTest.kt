@@ -67,7 +67,7 @@ class JiraIssueServiceTest {
         fun `should set status to UP_TO_DATE when no new issues`() = runTest {
             val instance = jiraInstance()
             val credential = jiraCredential()
-            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
             every { credentialsRepository.findById(any()) } returns Optional.of(credential)
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns emptyList()
             every { instanceRepository.save(any()) } answers { firstArg() }
@@ -83,7 +83,7 @@ class JiraIssueServiceTest {
             val instance = jiraInstance()
             val credential = jiraCredential()
             val issue = mockk<JiraIssueResponse>()
-            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
             every { credentialsRepository.findById(any()) } returns Optional.of(credential)
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns listOf(issue)
             every { instanceRepository.save(any()) } answers { firstArg() }
@@ -100,7 +100,7 @@ class JiraIssueServiceTest {
         fun `should set status to UP_TO_DATE after processing empty updates`() = runTest {
             val instance = jiraInstance()
             val credential = jiraCredential()
-            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
             every { credentialsRepository.findById(any()) } returns Optional.of(credential)
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns emptyList()
             every { instanceRepository.save(any()) } answers { firstArg() }

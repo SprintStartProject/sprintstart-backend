@@ -99,11 +99,33 @@ class IngestionRunLifeCycleService(
     }
 
     /**
+     * Finishes the run identified by [transactionId], loading it **inside this transaction** so the
+     * terminal-status change is dirty-checked and flushed.
+     *
+     * Listeners that only hold the run id (Jira's connection-completed and resource-fetching-complete
+     * events) must use this overload instead of loading the run in a separate read-only transaction
+     * and passing the resulting *detached* entity to [finishRun]: a detached entity's mutations are
+     * never persisted, which left Jira runs stuck in-progress (`CONNECTED`, `finishedAt = null`) even
+     * though AI sync had already been dispatched and marked succeeded.
+     *
+     * @param transactionId The ingestion run id to finish. No-op when the run is unknown.
+     */
+    @Transactional
+    @Tracked("Finishing ingestion run")
+    fun finishRun(transactionId: UUID) {
+        val run = ingestionRunRepository.findByIdOrNull(transactionId) ?: return
+        finishRun(run)
+    }
+
+    /**
      * Applies the shared terminal-status rule for all source systems.
      *
      * A run with failures is `PARTIAL` when at least one artifact was ingested, updated, or deleted;
      * otherwise it is `FAILED`. Fully failed runs do not publish `RunFinishedEvent`, because there
      * is nothing for the AI sync layer to ingest or deindex.
+     *
+     * The [run] must be a managed entity from the calling transaction; callers that only have the
+     * run id must use [finishRun] with the id so the mutation is actually persisted.
      *
      * @param run The managed ingestion run entity whose terminal status should be calculated.
      */

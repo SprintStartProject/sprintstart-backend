@@ -8,22 +8,33 @@ import java.util.UUID
 
 @Schema(
     description =
-        "Ingestion health for a single connected source instance (for GitHub, one connected " +
-            "repository). Combines the connection's current status with the counters of its latest " +
-            "run and the total number of stored artifacts for the instance.",
+        "Ingestion health for a single connected source instance (for GitHub one connected " +
+            "repository, for Jira one connected instance). Combines the connection's current status " +
+            "with the counters of its latest run and the total number of stored artifacts for the " +
+            "instance.",
 )
 data class SourceInstanceIngestionStatusResponse(
-    @field:Schema(description = "Source system the connected instance belongs to, for example GITHUB.")
+    @field:Schema(description = "Source system the connected instance belongs to, for example GITHUB or JIRA.")
     val sourceSystem: SourceSystem,
-    @field:Schema(description = "Stable identifier of the source instance, for example \"owner/name\".")
+    @field:Schema(
+        description =
+            "Stable, connector-neutral identifier of the source instance. For GitHub \"owner/name\", " +
+                "for Jira the instance URL.",
+    )
     val sourceId: String,
-    @field:Schema(description = "Id of the connected repository this status row belongs to.")
-    val repositoryId: UUID,
-    @field:Schema(description = "Owner of the connected repository.")
-    val owner: String,
-    @field:Schema(description = "Name of the connected repository.")
-    val name: String,
-    @field:Schema(description = "Web URL of the connected repository.")
+    @field:Schema(
+        description =
+            "Human-readable label of the source instance. For GitHub \"owner/name\", for Jira the " +
+                "instance display name.",
+    )
+    val displayName: String,
+    @field:Schema(description = "Id of the connected repository (GitHub only); null for other source systems.")
+    val repositoryId: UUID? = null,
+    @field:Schema(description = "Owner of the connected repository (GitHub only); null for other source systems.")
+    val owner: String? = null,
+    @field:Schema(description = "Name of the connected repository (GitHub only); null for other source systems.")
+    val name: String? = null,
+    @field:Schema(description = "Web URL of the source instance (GitHub repository URL, or Jira instance URL).")
     val sourceUrl: String,
     @field:Schema(
         description =

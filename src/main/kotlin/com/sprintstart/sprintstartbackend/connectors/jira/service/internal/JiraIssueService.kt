@@ -50,6 +50,8 @@ internal class JiraIssueService(
         instance.jiraProjectKeys.forEach {
             searchAndIngestAllIssuesOfProject(instance, credentialsId, it, transactionId)
         }
+
+        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**
@@ -67,7 +69,7 @@ internal class JiraIssueService(
         projectKey: String,
         transactionId: UUID,
     ) {
-        val credentials = fetchCredentials(credentialsId, transactionId)
+        val credentials = fetchCredentials(credentialsId, transactionId, instance.instanceUrl)
         val issues = fetchIssues(instance.instanceUrl, credentials, "project=\"$projectKey\"", transactionId) ?: return
 
         if (issues.isEmpty()) {
@@ -125,6 +127,8 @@ internal class JiraIssueService(
 
         instance.status = ConnectionState.UP_TO_DATE
         instanceRepository.save(instance)
+
+        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**
@@ -138,9 +142,12 @@ internal class JiraIssueService(
         instanceUrl: String,
         transactionId: UUID,
     ): List<JiraIssueResponse> {
-        val instance = instanceRepository.findById(instanceUrl).orElse(null) ?: return emptyList()
-        val credentialsId = JiraCredentialsId(instance.updateCredentialUserEmail, instance.updateCredentialName)
-        val credentials = fetchCredentials(credentialsId, transactionId)
+        // Eagerly fetch the lazy collections: this runs on a background coroutine with no
+        // Hibernate session, so reading jiraProjectKeys below on a detached instance would throw
+        // LazyInitializationException.
+        val instance = instanceRepository.findByInstanceUrlWithCollections(instanceUrl) ?: return emptyList()
+        val credentialsId = JiraCredentialsId(instance.updateCredentialAuthId, instance.updateCredentialName)
+        val credentials = fetchCredentials(credentialsId, transactionId, instanceUrl)
 
         val jql = buildString {
             append("project in (${instance.jiraProjectKeys.joinToString(", ") { "\"$it\"" }}) ")
@@ -169,7 +176,9 @@ internal class JiraIssueService(
     ): List<JiraIssueResponse>? = try {
         jiraClient.searchIssues(instanceUrl, credentials, jql)
     } catch (e: Exception) {
-        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error"))
+        eventPublisher.publishEvent(
+            JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instanceUrl),
+        )
         throw e
     }
 
@@ -186,9 +195,10 @@ internal class JiraIssueService(
     private fun fetchCredentials(
         credentialsId: JiraCredentialsId,
         transactionId: UUID,
+        instanceUrl: String,
     ): JiraCredential = credentialsRepository.findById(credentialsId).orElse(null) ?: run {
-        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials"))
-        throw JiraCredentialNotFoundException(credentialsId.userEmail, credentialsId.name)
+        eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials", instanceUrl))
+        throw JiraCredentialNotFoundException(credentialsId.authId, credentialsId.name)
     }
 
     /**
@@ -226,8 +236,6 @@ internal class JiraIssueService(
                 ),
             )
         }
-
-        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**

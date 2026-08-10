@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunResponse
@@ -32,6 +33,7 @@ import java.util.UUID
 class IngestionRunService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val jiraInstanceApi: JiraInstanceApi,
 ) {
     /**
      * Returns the newest ingestion runs first.
@@ -73,8 +75,11 @@ class IngestionRunService(
      * @param page The 1-based page number to return.
      * @param size The maximum number of runs to include in one page.
      * @param sourceSystem Optional source-system filter, for example GITHUB.
-     * @param repositoryId Optional connected-repository filter.
-     * @param projectId Optional project filter, resolved via the project's connected repositories.
+     * @param repositoryId Optional connected-repository filter (GitHub, matched on the UUID instance id).
+     * @param sourceRef Optional source-instance filter matched on the connector-neutral reference
+     * (for Jira the instance URL).
+     * @param projectId Optional project filter, resolved via the project's connected repositories and
+     * Jira instances.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -88,23 +93,37 @@ class IngestionRunService(
         size: Int,
         sourceSystem: SourceSystem? = null,
         repositoryId: UUID? = null,
+        sourceRef: String? = null,
         projectId: UUID? = null,
         status: IngestionRunStatus? = null,
         since: Instant? = null,
     ): IngestionRunPageResponse {
-        val projectRepositoryIds: List<UUID>? = projectId?.let { resolveProjectRepositoryIds(it) }
+        val projectSources: ProjectSources? = projectId?.let { resolveProjectSources(it) }
 
         val specification =
             Specification<IngestionRun> { root, _, cb ->
                 val predicates = mutableListOf<Predicate>()
                 sourceSystem?.let { predicates.add(cb.equal(root.get<SourceSystem>("sourceSystem"), it)) }
                 repositoryId?.let { predicates.add(cb.equal(root.get<UUID>("sourceInstanceId"), it)) }
+                sourceRef?.let { predicates.add(cb.equal(root.get<String>("sourceInstanceRef"), it)) }
                 status?.let { predicates.add(cb.equal(root.get<IngestionRunStatus>("status"), it)) }
                 since?.let { predicates.add(cb.greaterThanOrEqualTo(root.get<Instant>("startedAt"), it)) }
-                projectRepositoryIds?.let { ids ->
-                    // An empty set means the project has no connected repositories, so no run matches.
+                projectSources?.let { sources ->
+                    val matches = buildList {
+                        if (sources.repositoryIds.isNotEmpty()) {
+                            add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
+                        }
+                        if (sources.jiraRefs.isNotEmpty()) {
+                            add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
+                        }
+                    }
+                    // An empty project (no connected sources at all) matches no run.
                     predicates.add(
-                        if (ids.isEmpty()) cb.disjunction() else root.get<UUID>("sourceInstanceId").`in`(ids),
+                        when (matches.size) {
+                            0 -> cb.disjunction()
+                            1 -> matches.single()
+                            else -> cb.or(matches[0], matches[1])
+                        },
                     )
                 }
                 if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
@@ -126,13 +145,16 @@ class IngestionRunService(
         )
     }
 
-    @Transactional(readOnly = true)
-    @Tracked("Retrieving ingestion run")
-    fun findRunByTransactionId(transactionId: UUID): IngestionRun? =
-        ingestionRunRepository.findByIdOrNull(transactionId)
+    private fun resolveProjectSources(projectId: UUID): ProjectSources =
+        ProjectSources(
+            repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
+            jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
+        )
 
-    private fun resolveProjectRepositoryIds(projectId: UUID): List<UUID> =
-        githubRepositoryApi.getRepositoryIdsByProject(projectId)
+    private data class ProjectSources(
+        val repositoryIds: List<UUID>,
+        val jiraRefs: List<String>,
+    )
 }
 
 /**

@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -17,10 +19,16 @@ import java.util.UUID
 
 class IngestionSourceStatusServiceTest {
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
+    private val jiraInstanceApi = mockk<JiraInstanceApi>()
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val service =
-        IngestionSourceStatusService(githubRepositoryApi, ingestionRunRepository, artifactRepository)
+        IngestionSourceStatusService(
+            githubRepositoryApi,
+            jiraInstanceApi,
+            ingestionRunRepository,
+            artifactRepository,
+        )
 
     @Test
     fun `maps connected repository with its latest run counters and snapshot timestamps`() {
@@ -52,6 +60,7 @@ class IngestionSourceStatusServiceTest {
             aiSyncStatus = AiSyncStatus.SUCCEEDED,
         )
         every { githubRepositoryApi.getSourceInstances(null) } returns listOf(instance)
+        every { jiraInstanceApi.getSourceInstances(null) } returns emptyList()
         every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns run
         every { artifactRepository.countByComponent("SprintStartProject/sprintstart-frontend") } returns 128
 
@@ -59,6 +68,7 @@ class IngestionSourceStatusServiceTest {
 
         assertThat(response.sourceSystem).isEqualTo(SourceSystem.GITHUB)
         assertThat(response.sourceId).isEqualTo("SprintStartProject/sprintstart-frontend")
+        assertThat(response.displayName).isEqualTo("SprintStartProject/sprintstart-frontend")
         assertThat(response.repositoryId).isEqualTo(repositoryId)
         assertThat(response.owner).isEqualTo("SprintStartProject")
         assertThat(response.name).isEqualTo("sprintstart-frontend")
@@ -90,6 +100,7 @@ class IngestionSourceStatusServiceTest {
             lastPullRequestsSyncAt = null,
         )
         every { githubRepositoryApi.getSourceInstances(null) } returns listOf(instance)
+        every { jiraInstanceApi.getSourceInstances(null) } returns emptyList()
         every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns null
         every { artifactRepository.countByComponent("owner/repo") } returns 0
 
@@ -121,6 +132,7 @@ class IngestionSourceStatusServiceTest {
             lastPullRequestsSyncAt = null,
         )
         every { githubRepositoryApi.getSourceInstances(projectId) } returns listOf(instance)
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
         every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns null
         every { artifactRepository.countByComponent("owner/repo") } returns 5
 
@@ -129,5 +141,55 @@ class IngestionSourceStatusServiceTest {
         assertThat(response.repositoryId).isEqualTo(repositoryId)
         assertThat(response.connectionStatus).isEqualTo("OUT_OF_DATE")
         assertThat(response.artifactCount).isEqualTo(5)
+    }
+
+    @Test
+    fun `maps connected jira instance with its latest run counters and artifact count`() {
+        val instanceUrl = "https://acme.atlassian.net"
+        val instance = JiraSourceInstanceDto(
+            instanceUrl = instanceUrl,
+            displayName = "ACME Jira",
+            status = "CONNECTED",
+            enabled = true,
+            lastUpdate = Instant.parse("2026-07-06T09:00:00Z"),
+            jiraProjectKeys = setOf("ACME", "OPS"),
+        )
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.JIRA,
+            sourceInstanceRef = instanceUrl,
+            startedAt = Instant.parse("2026-07-06T10:00:00Z"),
+            ingestedCount = 12,
+            updatedCount = 4,
+            deletedCount = 2,
+            failedCount = 1,
+            status = IngestionRunStatus.PARTIAL,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(null) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(null) } returns listOf(instance)
+        every { ingestionRunRepository.findFirstBySourceInstanceRefOrderByStartedAtDesc(instanceUrl) } returns run
+        every { artifactRepository.countJiraArtifactsByInstanceUrl(instanceUrl) } returns 57
+
+        val response = service.getStatusPerSourceInstance().single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.JIRA)
+        assertThat(response.sourceId).isEqualTo(instanceUrl)
+        assertThat(response.displayName).isEqualTo("ACME Jira")
+        assertThat(response.repositoryId).isNull()
+        assertThat(response.owner).isNull()
+        assertThat(response.name).isNull()
+        assertThat(response.sourceUrl).isEqualTo(instanceUrl)
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(12)
+        assertThat(response.updatedCount).isEqualTo(4)
+        assertThat(response.deletedCount).isEqualTo(2)
+        assertThat(response.failedCount).isEqualTo(1)
+        assertThat(response.artifactCount).isEqualTo(57)
+        assertThat(response.lastIssuesSyncAt).isEqualTo(instance.lastUpdate)
+        assertThat(response.lastCommitsSyncAt).isNull()
+        assertThat(response.lastPullRequestsSyncAt).isNull()
     }
 }

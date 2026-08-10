@@ -6,14 +6,12 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initia
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
-import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 @Component
 internal class JiraInstanceConnectionListener(
     private val ingestionRunLifeCycleService: IngestionRunLifeCycleService,
-    private val ingestionRunService: IngestionRunService,
 ) {
     @EventListener
     fun on(event: JiraInstanceConnectionInitiatedEvent) {
@@ -21,15 +19,13 @@ internal class JiraInstanceConnectionListener(
             transactionId = event.transactionId,
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.CONNECTED,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 
     @EventListener
     fun on(event: JiraInstanceConnectionCompletedEvent) {
-        val ingestionRun = ingestionRunService.findRunByTransactionId(event.transactionId)
-            ?: return
-
-        ingestionRunLifeCycleService.finishRun(ingestionRun)
+        ingestionRunLifeCycleService.finishRun(event.transactionId)
     }
 
     @EventListener
@@ -39,6 +35,7 @@ internal class JiraInstanceConnectionListener(
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.FAILED,
             failureReason = event.reason,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 }

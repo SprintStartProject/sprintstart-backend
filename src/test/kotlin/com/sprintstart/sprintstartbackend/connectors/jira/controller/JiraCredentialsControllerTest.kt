@@ -54,7 +54,7 @@ class JiraCredentialsControllerTest {
         @Test
         fun `should return 204 when authenticated as ADMIN`() {
             val request = AddCredentialRequest("user@example.com", "token", "secret")
-            every { service.addCredentials(request) } returns Unit
+            every { service.addCredentials("admin-id", request) } returns Unit
 
             mockMvc
                 .perform(
@@ -64,7 +64,7 @@ class JiraCredentialsControllerTest {
                         .with(adminJwt),
                 ).andExpect(status().isNoContent)
 
-            verify { service.addCredentials(request) }
+            verify { service.addCredentials("admin-id", request) }
         }
 
         @Test
@@ -92,7 +92,7 @@ class JiraCredentialsControllerTest {
     inner class GetCredentialsOfUser {
         @Test
         fun `should return 200 with credentials`() {
-            every { service.getCredentialsOfUser("user@example.com") } returns listOf(
+            every { service.getCredentialsOfUser("admin-id") } returns listOf(
                 JiraCredentialsDto(
                     "user@example.com",
                     "token",
@@ -101,10 +101,7 @@ class JiraCredentialsControllerTest {
 
             mockMvc
                 .perform(
-                    get(
-                        "/api/v1/jira/credentials/{userEmail}",
-                        "user@example.com",
-                    ).with(adminJwt),
+                    get("/api/v1/jira/credentials").with(adminJwt),
                 ).andExpect(status().isOk)
                 .andExpect(jsonPath("$[0].userEmail").value("user@example.com"))
         }
@@ -115,7 +112,7 @@ class JiraCredentialsControllerTest {
         @Test
         fun `should return 204 when credential removed`() {
             val request = DeleteJiraCredentialRequest("user@example.com", "token")
-            every { service.removeCredential(request) } returns Unit
+            every { service.removeCredential("admin-id", request) } returns Unit
 
             mockMvc
                 .perform(
@@ -132,7 +129,9 @@ class JiraCredentialsControllerTest {
         @Test
         fun `should return 200 with updated credential`() {
             val request = ChangeJiraCredentialNameRequest("user@example.com", "token", "newToken")
-            every { service.changeCredentialName(request) } returns JiraCredentialsDto("user@example.com", "newToken")
+            every {
+                service.changeCredentialName("admin-id", request)
+            } returns JiraCredentialsDto("user@example.com", "newToken")
 
             mockMvc
                 .perform(
@@ -150,7 +149,9 @@ class JiraCredentialsControllerTest {
         @Test
         fun `should return 200 with updated credential`() {
             val request = ChangeJiraCredentialTokenRequest("user@example.com", "token", "newSecret")
-            every { service.changeCredentialToken(request) } returns JiraCredentialsDto("user@example.com", "token")
+            every {
+                service.changeCredentialToken("admin-id", request)
+            } returns JiraCredentialsDto("user@example.com", "token")
 
             mockMvc
                 .perform(
