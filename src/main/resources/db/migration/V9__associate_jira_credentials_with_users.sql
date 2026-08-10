@@ -26,7 +26,7 @@ ALTER TABLE jira_instances
 UPDATE jira_instances i
 SET update_credential_auth_id = c.auth_id
 FROM jira_credentials c
-WHERE c.user_email = i.update_credential_user_email
+WHERE LOWER(c.user_email) = LOWER(i.update_credential_user_email)
   AND c.name = i.update_credential_name;
 
 UPDATE jira_instances

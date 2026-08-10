@@ -38,6 +38,13 @@ internal class JiraInstanceApiService(
     override fun getInstanceRefsByProject(projectId: UUID): List<String> =
         instanceRepository.findByProjectId(projectId).map { it.instanceUrl }
 
+    @Transactional
+    override fun removeProjectFromAllInstances(projectId: UUID) {
+        val instances = instanceRepository.findByProjectId(projectId)
+        instances.forEach { it.projectIds.remove(projectId) }
+        instanceRepository.saveAll(instances)
+    }
+
     private fun JiraInstance.toSourceInstanceDto(): JiraSourceInstanceDto =
         JiraSourceInstanceDto(
             instanceUrl = instanceUrl,

@@ -46,7 +46,9 @@ internal class JiraUpdateService(
             throw e
         }
 
-        eventPublisher.publishEvent(JiraResourceFetchingStartedEvent(transactionId, instanceUrl))
+        if (performUpdate) {
+            eventPublisher.publishEvent(JiraResourceFetchingStartedEvent(transactionId, instanceUrl))
+        }
 
         applicationScope.launch {
             if (performUpdate) {

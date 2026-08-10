@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
@@ -34,12 +35,14 @@ class AdminProjectServiceTest {
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
+    private val jiraInstanceApi: JiraInstanceApi = mockk()
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
         assignmentRepository = assignmentRepository,
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
+        jiraInstanceApi = jiraInstanceApi,
     )
 
     @Test
@@ -427,6 +430,7 @@ class AdminProjectServiceTest {
         every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
         every { assignmentRepository.deleteAll(capture(deletedAssignments)) } just runs
         every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
 
         val result = service.deleteProject(project.id)
@@ -434,6 +438,7 @@ class AdminProjectServiceTest {
         assertThat(result.deleted).isTrue()
         assertThat(deletedAssignments.captured.toList()).containsExactly(assignment)
         verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
+        verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
     }
 

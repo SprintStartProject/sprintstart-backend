@@ -33,4 +33,15 @@ interface JiraInstanceApi {
      * @return The connected instance URLs, empty when the project has no Jira connections.
      */
     fun getInstanceRefsByProject(projectId: UUID): List<String>
+
+    /**
+     * Removes a project from every Jira instance linked to it.
+     *
+     * Called when a project is deleted so no instance keeps referencing a project that no longer
+     * exists. The instances themselves are kept. Idempotent: a project with no linked instances is a
+     * no-op. Mirrors the GitHub connector's `removeProjectFromAllRepositories`.
+     *
+     * @param projectId The project to unlink from all Jira instances.
+     */
+    fun removeProjectFromAllInstances(projectId: UUID)
 }

@@ -205,8 +205,6 @@ internal class JiraService(
         instanceRepository.save(instance)
         configRepository.save(config)
 
-        eventPublisher.publishEvent(JiraInstanceConnectionCompletedEvent(transactionId))
-
         applicationScope.launch {
             jiraIssueService.searchAndIngestAllIssuesOfProjects(
                 instance,

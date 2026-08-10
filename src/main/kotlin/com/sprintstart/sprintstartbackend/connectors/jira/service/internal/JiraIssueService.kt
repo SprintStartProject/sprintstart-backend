@@ -50,6 +50,8 @@ internal class JiraIssueService(
         instance.jiraProjectKeys.forEach {
             searchAndIngestAllIssuesOfProject(instance, credentialsId, it, transactionId)
         }
+
+        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**
@@ -125,6 +127,8 @@ internal class JiraIssueService(
 
         instance.status = ConnectionState.UP_TO_DATE
         instanceRepository.save(instance)
+
+        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**
@@ -232,8 +236,6 @@ internal class JiraIssueService(
                 ),
             )
         }
-
-        eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
     }
 
     /**
