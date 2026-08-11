@@ -1,14 +1,12 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
-import com.sprintstart.sprintstartbackend.user.model.request.project.TransferProjectUserRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
-import com.sprintstart.sprintstartbackend.user.service.ProjectMembershipService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
@@ -36,15 +34,11 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody as SwaggerRequestBod
 /**
  * REST API for project-manager-scoped project management.
  *
- * Project managers use these endpoints to map users to the projects they are responsible for and
- * to move them between those projects. Access is decided per project by [ProjectAuthorization]: a
- * manager may only act on projects they are assigned to, while administrators may act on any
- * project. Project lifecycle operations (create, delete) and manager assignment stay
- * administrator-only and live on [AdminProjectController].
- *
- * The move exists next to assign and remove rather than on top of them: doing it in one request
- * keeps a manager from dropping their last mapping to a user and losing sight of them halfway
- * through. The UI therefore offers only the move; the two single-sided routes remain available.
+ * Project managers use these endpoints to map users to the projects they are responsible for.
+ * Access is decided per project by [ProjectAuthorization]: a manager may only act on projects they
+ * are assigned to, while administrators may act on any project. Project lifecycle operations
+ * (create, delete) and manager assignment stay administrator-only and live on
+ * [AdminProjectController].
  */
 @Tag(
     name = "Projects",
@@ -55,7 +49,6 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody as SwaggerRequestBod
 class ProjectController(
     private val adminProjectService: AdminProjectService,
     private val projectManagerService: ProjectManagerService,
-    private val projectMembershipService: ProjectMembershipService,
     private val projectAuth: ProjectAuthorization,
 ) {
     /**
@@ -214,56 +207,5 @@ class ProjectController(
         @PathVariable userId: UUID,
     ) {
         adminProjectService.removeUser(projectId, userId)
-    }
-    /**
-     * Moves a user from another managed project into this project.
-     *
-     * Both projects are checked: the route guard covers the target, the service covers the source.
-     * The move is atomic, which is why project managers get this endpoint instead of a plain
-     * removal — removing a user would drop the only mapping that makes them visible to their
-     * manager. Outright removal stays administrator-only on [AdminProjectController].
-     *
-     * @param projectId Identifier of the project receiving the user.
-     * @param request Identifiers of the user and of the project the user is moved out of.
-     * @param jwt Authenticated principal.
-     * @return The assigned-user list of the target project after the move.
-     */
-    @Operation(
-        summary = "Transfer project user",
-        description = "Moves one user from a project the caller manages into another project the caller manages.",
-    )
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "200", description = "User transferred successfully"),
-            ApiResponse(responseCode = "400", description = "Invalid request body or identical projects"),
-            ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Caller does not manage both projects"),
-            ApiResponse(responseCode = "404", description = "Project not found or user not assigned to the source"),
-            ApiResponse(responseCode = "409", description = "User manages the source project"),
-        ],
-    )
-    @PostMapping("/{projectId}/users/transfer")
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
-    fun transferUser(
-        @Parameter(description = "UUID of the project receiving the user")
-        @PathVariable projectId: UUID,
-        @SwaggerRequestBody(
-            description = "User to move and the project to move them out of.",
-            required = true,
-            content = [Content(schema = Schema(implementation = TransferProjectUserRequest::class))],
-        )
-        @Valid
-        @RequestBody
-        request: TransferProjectUserRequest,
-        @AuthenticationPrincipal jwt: Jwt,
-        authentication: Authentication,
-    ): List<ProjectUserResponse> {
-        return projectMembershipService.transferUser(
-            authId = jwt.subject,
-            isAdmin = projectAuth.isAdmin(authentication),
-            targetProjectId = projectId,
-            request = request,
-        )
     }
 }
