@@ -70,16 +70,25 @@ internal class ArtifactSummaryService(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact $artifactId not found in project $projectId")
         }
 
+        val targetArtifactId = resolveIngestionArtifactId(artifactId)
         val currentHash = resolveHash(artifactId)
 
         val cached = currentHash?.let { hash ->
-            artifactSummaryRepository.findById(artifactId).orElse(null)?.takeIf { it.sourceHash == hash }
+            artifactSummaryRepository.findById(targetArtifactId).orElse(null)?.takeIf { it.sourceHash == hash }
         }
         if (cached != null) {
             return cachedSummaryStream(cached)
         }
 
-        return generateAndCacheStream(artifactId, currentHash)
+        return generateAndCacheStream(targetArtifactId, currentHash)
+    }
+
+    private fun resolveIngestionArtifactId(artifactId: UUID): UUID {
+        return try {
+            artifactIngestionApiService.findArtifactById(artifactId)?.id ?: artifactId
+        } catch (_: Exception) {
+            artifactId
+        }
     }
 
     /**

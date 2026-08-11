@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.toDto
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.stereotype.Service
@@ -39,24 +40,44 @@ internal class ArtifactIngestionApiService(
     @Transactional(readOnly = true)
     @Tracked("Checking if artifact exists")
     override fun exists(artifactId: UUID): Boolean {
-        return artifactRepository.existsById(artifactId)
+        return try {
+            artifactRepository.existsById(artifactId) || (artifactRepository.findBySourceId(artifactId.toString()) != null)
+        } catch (_: Exception) {
+            artifactRepository.existsById(artifactId)
+        }
     }
 
     @Transactional(readOnly = true)
     @Tracked("Checking if artifact exists in project")
     override fun existsInProject(projectId: UUID, artifactId: UUID): Boolean {
-        return artifactRepository.findById(artifactId).map { it.projectIds.contains(projectId) }.orElse(false)
+        return findArtifact(artifactId)?.projectIds?.contains(projectId) ?: false
     }
 
     @Transactional(readOnly = true)
     @Tracked("Retrieving hash of artifact")
     override fun getHash(artifactId: UUID): String? {
-        return artifactRepository.findById(artifactId).orElse(null)?.hash
+        return findArtifact(artifactId)?.hash
     }
 
     @Transactional(readOnly = true)
     @Tracked("Retrieving artifact by id")
     override fun findArtifactById(artifactId: UUID): ArtifactDto? {
-        return artifactRepository.findById(artifactId).map { it.toDto() }.orElse(null)
+        return findArtifact(artifactId)?.toDto()
+    }
+
+    private fun findArtifact(artifactId: UUID): Artifact? {
+        val byId = try {
+            artifactRepository.findById(artifactId).orElse(null)
+        } catch (_: Exception) {
+            null
+        }
+        if (byId != null) {
+            return byId
+        }
+        return try {
+            artifactRepository.findBySourceId(artifactId.toString())
+        } catch (_: Exception) {
+            null
+        }
     }
 }
