@@ -17,6 +17,11 @@ data class SubmitPhaseCheckAttemptResponse(
     val requiredPercent: Int,
     val phaseCheckSummary: PhaseCheckSummaryResponse,
     val nextPhaseUnlocked: Boolean,
+    // Questions still waiting in the review pool after this attempt, including any collected
+    // from it. Passing the final phase check does not finish onboarding while this is > 0.
+    val openReviewCount: Int = 0,
+    // True when this attempt completed the entire onboarding journey.
+    val onboardingCompleted: Boolean = false,
     val results: List<CheckAnswerResultResponse>,
 )
 
