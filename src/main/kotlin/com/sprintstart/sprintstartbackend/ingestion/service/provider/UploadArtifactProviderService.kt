@@ -56,7 +56,11 @@ class UploadArtifactProviderService(
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
             IngestionRunNotFoundException(command.ingestionRunId)
         }
-        val targetId = try { UUID.fromString(command.sourceId) } catch (_: IllegalArgumentException) { UUID.randomUUID() }
+        val targetId = try {
+            UUID.fromString(command.sourceId)
+        } catch (_: IllegalArgumentException) {
+            UUID.randomUUID()
+        }
         artifact = Artifact(
             id = targetId,
             sourceSystem = command.sourceSystem,

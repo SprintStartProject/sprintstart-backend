@@ -41,7 +41,8 @@ internal class ArtifactIngestionApiService(
     @Tracked("Checking if artifact exists")
     override fun exists(artifactId: UUID): Boolean {
         return try {
-            artifactRepository.existsById(artifactId) || (artifactRepository.findBySourceId(artifactId.toString()) != null)
+            artifactRepository.existsById(artifactId) ||
+                (artifactRepository.findBySourceId(artifactId.toString()) != null)
         } catch (_: Exception) {
             artifactRepository.existsById(artifactId)
         }
