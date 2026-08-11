@@ -85,6 +85,7 @@ class OnboardingSkipControllerTest(
 
     private val userJwt = jwtWithSubject(authId, "USER")
     private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
+    private val pmJwt = jwtWithSubject("test-pm-auth-id", "USER", "PM")
     private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
 
     private fun buildCreateRequest() = CreateOnboardingSkipRequest(
@@ -360,6 +361,34 @@ class OnboardingSkipControllerTest(
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
         verify(exactly = 1) { onboardingSkipService.acceptSkipById(skipId, request) }
+    }
+
+    @Test
+    fun `acceptSkipById should return 200 for PM role`() {
+        val request = buildReviewRequest()
+        every { onboardingSkipService.acceptSkipById(skipId, request) } returns buildReviewResponse(SkipStatus.ACCEPTED)
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/onboarding/skips/$skipId/accept")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `denySkipById should return 200 for PM role`() {
+        val request = buildReviewRequest()
+        every { onboardingSkipService.denySkipById(skipId, request) } returns buildReviewResponse(SkipStatus.DENIED)
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/onboarding/skips/$skipId/deny")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
     }
 
     @Test

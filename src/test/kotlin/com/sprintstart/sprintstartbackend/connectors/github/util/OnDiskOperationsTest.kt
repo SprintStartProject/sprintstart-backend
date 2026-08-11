@@ -95,7 +95,11 @@ class OnDiskOperationsTest {
             val subDir = Files.createTempDirectory(tempDir, "subdir")
             val command = if (isWindows) listOf("cmd.exe", "/c", "cd") else listOf("pwd")
             val result = OnDiskOperations.exec(subDir, ProcessBuilder(command))
-            assertThat(result.trim()).isEqualTo(subDir.toAbsolutePath().toString())
+            // `toRealPath` rather than `toAbsolutePath`: the child process reports
+            // the physical directory, and on macOS the temp directory sits under
+            // `/var`, which is a symlink to `/private/var`. Comparing the
+            // unresolved path fails there while passing on Linux and CI.
+            assertThat(result.trim()).isEqualTo(subDir.toRealPath().toString())
         }
     }
 
