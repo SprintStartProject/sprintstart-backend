@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
@@ -38,6 +39,7 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val jiraInstanceApi: JiraInstanceApi,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -141,8 +143,8 @@ class AdminProjectService(
      * Deletes a project and its local user assignments.
      *
      * Connected-source records are owned by their connector modules and are not deleted here, but
-     * the project link is removed from all GitHub repository connections (via the GitHub module
-     * API) so no connection keeps referencing a project that no longer exists.
+     * the project link is removed from all GitHub repository connections and Jira instances (via the
+     * respective module APIs) so no connection keeps referencing a project that no longer exists.
      *
      * @param id Project identifier.
      * @return Deletion confirmation DTO.
@@ -155,6 +157,7 @@ class AdminProjectService(
         val assignments = assignmentRepository.findAllByProjectId(project.id)
         assignmentRepository.deleteAll(assignments)
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
+        jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
 
         return DeleteProjectResponse(id = id)

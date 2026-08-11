@@ -233,7 +233,7 @@ internal class JiraClient(
      * @return A string representation of the Basic Authorization header.
      */
     private fun JiraCredential.basicAuthorizationHeader(): String {
-        val credentials = "${this.id.userEmail.trim()}:${this.authToken.trim()}"
+        val credentials = "${this.userEmail.trim()}:${this.authToken.trim()}"
         val encoded = Base64.getEncoder().encodeToString(credentials.toByteArray(Charsets.UTF_8))
         return "Basic $encoded"
     }

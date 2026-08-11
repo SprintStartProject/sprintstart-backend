@@ -68,6 +68,17 @@ class ConnectorConfigurationServiceTest {
         }
 
         @Test
+        fun `should insert missing connector config with default as source enabled`() {
+            every { repository.findAll() } returns emptyList()
+            every { repository.findById("github") } returns Optional.empty()
+            every { repository.save(any()) } returns mockk()
+
+            service.ensureAllConnectorsHaveConfig()
+
+            verify { repository.save(match { it.enabled }) }
+        }
+
+        @Test
         fun `should not insert when config already exists in db via findById race`() {
             val existingConfig = ConnectorConfiguration(id = "github")
             every { repository.findAll() } returns emptyList()

@@ -11,8 +11,8 @@ internal interface JiraCredentialsRepository : JpaRepository<JiraCredential, Jir
     @Query(
         """
         SELECT c FROM JiraCredential c
-        WHERE c.id.userEmail = :userEmail
+        WHERE c.id.authId = :authId
         """,
     )
-    fun findAllByUserEmail(userEmail: String): List<JiraCredential>
+    fun findAllByAuthId(authId: String): List<JiraCredential>
 }

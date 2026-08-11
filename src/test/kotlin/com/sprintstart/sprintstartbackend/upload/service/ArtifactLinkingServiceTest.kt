@@ -156,5 +156,6 @@ class ArtifactLinkingServiceTest {
             mime = mime,
             storagePath = "/tmp/$filename",
             uploaderId = UUID.randomUUID(),
+            projectId = UUID.randomUUID(),
         )
 }
