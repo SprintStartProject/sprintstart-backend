@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactDto
+import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactSourceScope
 import com.sprintstart.sprintstartbackend.ingestion.external.model.toDto
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -11,10 +12,10 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Service implementation of the ingestion metadata API used by other modules.
+ * Service implementation of the ingestion API used by other modules.
  *
- * A small read-only adapter over the artifact repository; it does not touch the ingestion write
- * path or expose internal ingestion entities.
+ * A small adapter over the artifact repository. It exposes read operations and source reuse
+ * linking without exposing internal ingestion entities or repositories to other modules.
  */
 @Service
 internal class ArtifactIngestionApiService(
@@ -46,6 +47,26 @@ internal class ArtifactIngestionApiService(
     @Tracked("Checking if artifact exists in project")
     override fun existsInProject(projectId: UUID, artifactId: UUID): Boolean {
         return artifactRepository.findById(artifactId).map { it.projectIds.contains(projectId) }.orElse(false)
+    }
+
+    @Transactional
+    @Tracked("Linking existing source artifacts to project")
+    override fun linkExistingSourceArtifacts(sourceScope: ArtifactSourceScope, projectId: UUID): Int {
+        val sourceIdPrefix = sourceScope.sourceIdPrefix?.takeIf { it.isNotBlank() }
+        val sourceUrlPrefix = sourceScope.sourceUrlPrefix?.takeIf { it.isNotBlank() }
+        require(sourceIdPrefix != null || sourceUrlPrefix != null) {
+            "Artifact source scope must include a source id prefix or source URL prefix"
+        }
+
+        val artifacts = artifactRepository.findAllBySourceScope(
+            sourceSystem = sourceScope.sourceSystem,
+            sourceIdPrefix = sourceIdPrefix,
+            sourceUrlPrefix = sourceUrlPrefix,
+        )
+        artifacts.forEach { artifact ->
+            artifact.addProjectId(projectId)
+        }
+        return artifacts.size
     }
 
     @Transactional(readOnly = true)

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.connectors.github.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnectionResult
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
@@ -102,7 +103,7 @@ class GithubConnectorControllerTest {
                     "mockId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns GithubRepositoryConnectionResult(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
@@ -117,6 +118,7 @@ class GithubConnectorControllerTest {
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
                 .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+                .andExpect(jsonPath("$.wasReused").value(false))
         }
 
         @Test
@@ -134,7 +136,7 @@ class GithubConnectorControllerTest {
                     "adminId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns GithubRepositoryConnectionResult(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
@@ -149,6 +151,67 @@ class GithubConnectorControllerTest {
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
                 .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+                .andExpect(jsonPath("$.wasReused").value(false))
+        }
+
+        @Test
+        fun `should return only reuse flag and transaction id when connection is reused`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+            val expectedTransactionId = UUID.randomUUID()
+            coEvery {
+                githubConnectorService.connectRepositoryIfExists("mockId", request)
+            } returns GithubRepositoryConnectionResult(expectedTransactionId, wasReused = true)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+                .andExpect(jsonPath("$.wasReused").value(true))
+                .andExpect(jsonPath("$.projectIds").doesNotExist())
+                .andExpect(jsonPath("$.repositoryId").doesNotExist())
+                .andExpect(jsonPath("$.owner").doesNotExist())
+                .andExpect(jsonPath("$.name").doesNotExist())
+        }
+
+        @Test
+        fun `should return privacy-safe 403 when caller cannot access target project`() {
+            val request = ConnectRepositoryRequest(
+                owner = "private-owner",
+                name = "private-repository",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+            coEvery {
+                githubConnectorService.connectRepositoryIfExists("mockId", request)
+            } throws ProjectAccessDeniedException(projectId)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isForbidden)
+                .andExpect(jsonPath("$.message").value("No access to project with id $projectId"))
         }
 
         @Test

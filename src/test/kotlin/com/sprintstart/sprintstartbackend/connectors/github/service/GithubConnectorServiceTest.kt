@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.SourceNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConfigRepository
@@ -38,7 +39,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith
@@ -58,13 +58,12 @@ class GithubConnectorServiceTest {
     private val githubClient = mockk<GithubClient>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val userApi = mockk<UserApi>()
+    private val projectAccessGuard = mockk<GithubProjectAccessGuard>(relaxed = true)
 
     private lateinit var service: GithubConnectorService
 
     @BeforeEach
     fun setUp() {
-        every { userApi.userHasAccessToProject(any(), any()) } returns true
-
         service = GithubConnectorService(
             applicationScope = testScope,
             repoConnectionRepository = repoConnectionRepository,
@@ -77,19 +76,28 @@ class GithubConnectorServiceTest {
             githubClient = githubClient,
             eventPublisher = eventPublisher,
             userApi = userApi,
+            projectAccessGuard = projectAccessGuard,
         )
     }
 
     @Nested
     inner class ConnectRepositoryIfExists {
         @Test
-        fun `connectRepositoryIfExists throws ResponseStatusException when user has no project access`() =
+        fun `connectRepositoryIfExists checks project access before reading source state`() =
             runTest {
-                every { userApi.userHasAccessToProject("mock-id", testProjectId) } returns false
+                every {
+                    projectAccessGuard.requireProjectAccess("mock-id", testProjectId)
+                } throws ProjectAccessDeniedException(testProjectId)
 
-                assertFailsWith<ResponseStatusException> {
+                assertFailsWith<ProjectAccessDeniedException> {
                     service.connectRepositoryIfExists("mock-id", connectRequest())
                 }
+
+                verify(exactly = 0) { userApi.getUserIdByAuthId(any()) }
+                verify(exactly = 0) { githubUserRepository.findById(any()) }
+                verify(exactly = 0) { eventPublisher.publishEvent(any()) }
+                coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
+                verify(exactly = 0) { repoConnectionRepository.save(any()) }
             }
 
         @Test
@@ -123,10 +131,11 @@ class GithubConnectorServiceTest {
         fun `connectRepositoryIfExists returns a transactionId when repo exists`() = testScope.runTest {
             stubSuccessfulConnect()
 
-            val transactionId = service.connectRepositoryIfExists("auth-id", connectRequest())
+            val result = service.connectRepositoryIfExists("auth-id", connectRequest())
 
-            assertThat(transactionId).isNotNull()
-            assertThat(transactionId).isInstanceOf(UUID::class.java)
+            assertThat(result.transactionId).isNotNull()
+            assertThat(result.transactionId).isInstanceOf(UUID::class.java)
+            assertThat(result.wasReused).isFalse()
         }
 
         @Test

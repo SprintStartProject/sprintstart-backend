@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -16,6 +17,27 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
     fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
+
+    /**
+     * Returns artifacts matching a reusable source scope.
+     *
+     * Callers can match by source id prefix, source URL prefix, or both. The service layer is
+     * responsible for ensuring at least one prefix is supplied.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a
+            FROM Artifact a
+            WHERE a.sourceSystem = :sourceSystem
+                AND (:sourceIdPrefix IS NULL OR a.sourceId LIKE CONCAT(:sourceIdPrefix, '%'))
+                AND (:sourceUrlPrefix IS NULL OR a.sourceUrl LIKE CONCAT(:sourceUrlPrefix, '%'))
+        """,
+    )
+    fun findAllBySourceScope(
+        @Param("sourceSystem") sourceSystem: SourceSystem,
+        @Param("sourceIdPrefix") sourceIdPrefix: String?,
+        @Param("sourceUrlPrefix") sourceUrlPrefix: String?,
+    ): List<Artifact>
 
     /**
      * Returns one artifact page limited to artifacts linked to the given project.

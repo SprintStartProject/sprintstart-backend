@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.init
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnectionResult
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
@@ -32,10 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
-import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
@@ -68,8 +67,8 @@ class GithubRepositoryConnectionOrchestrator(
     ): ConnectRepositoriesResponse {
         val transactionIdsByRepoIds = mutableMapOf<String, UUID>() // "owner/name" -> transactionId
         request.repositories.forEach {
-            val transactionId = connectorService.connectRepositoryIfExists(authId, it)
-            transactionIdsByRepoIds["${it.owner}/${it.name}"] = transactionId
+            val result = connectorService.connectRepositoryIfExists(authId, it)
+            transactionIdsByRepoIds["${it.owner}/${it.name}"] = result.transactionId
         }
         return ConnectRepositoriesResponse(transactionIdsByRepoIds)
     }
@@ -94,6 +93,7 @@ class GithubConnectorService(
     private val githubClient: GithubClient,
     private val eventPublisher: ApplicationEventPublisher,
     private val userApi: UserApi,
+    private val projectAccessGuard: GithubProjectAccessGuard,
 ) {
     /**
      * Retrieves all 'sources' in the connector overview sense.
@@ -194,17 +194,17 @@ class GithubConnectorService(
      *
      * @param authId The authenticated user subject used to resolve PAT ownership and project access.
      * @param request The request containing repository owner/name, PAT alias, and target project.
-     * @return A UUID representing the transaction ID assigned to this connection operation.
+     * @return The connection result containing its transaction ID and whether reuse occurred.
      * @throws IllegalStateException If on one of the processed file resources, the GitHub api
      * returns malformed responses.
      */
     @Tracked("Connecting GitHub repository")
     @Transactional
-    suspend fun connectRepositoryIfExists(authId: String, request: ConnectRepositoryRequest): UUID {
-        if (!userApi.userHasAccessToProject(authId, request.projectId)) {
-            throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
-        }
-
+    suspend fun connectRepositoryIfExists(
+        authId: String,
+        request: ConnectRepositoryRequest,
+    ): GithubRepositoryConnectionResult {
+        projectAccessGuard.requireProjectAccess(authId, request.projectId)
         val transactionId = UUID.randomUUID()
         val userId = userApi.getUserIdByAuthId(authId).orElseThrow { UserWithAuthIdNotFoundException(authId) }
 
@@ -240,7 +240,11 @@ class GithubConnectorService(
             throw ex
         }
 
-        return connectRepository(repoConnection, transactionId)
+        val connectedTransactionId = connectRepository(repoConnection, transactionId)
+        return GithubRepositoryConnectionResult(
+            transactionId = connectedTransactionId,
+            wasReused = false,
+        )
     }
 
     /**

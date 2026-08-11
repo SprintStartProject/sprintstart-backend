@@ -1,15 +1,16 @@
 package com.sprintstart.sprintstartbackend.ingestion.external
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactDto
+import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactSourceScope
 import java.time.Instant
 import java.util.UUID
 
 /**
  * Exported ingestion-module API for other backend modules.
  *
- * Exposes read-only ingestion metadata about a component without leaking the ingestion module's
- * internal entities. Other modules should depend on this interface instead of querying the
- * ingestion repositories directly.
+ * Exposes ingestion metadata and source-artifact linking operations without leaking the
+ * ingestion module's internal entities. Other modules should depend on this interface instead of
+ * querying the ingestion repositories directly.
  */
 interface ArtifactIngestionApi {
     /**
@@ -41,6 +42,15 @@ interface ArtifactIngestionApi {
      * Returns whether the artifact exists and belongs to the specified project.
      */
     fun existsInProject(projectId: UUID, artifactId: UUID): Boolean
+
+    /**
+     * Links already-ingested artifacts for [sourceScope] to [projectId].
+     *
+     * The operation does not create artifacts or re-ingest content. It only adds the project to
+     * each matching artifact's project set and is safe to call repeatedly for the same source and
+     * project. The return value is the number of artifacts matched by the source scope.
+     */
+    fun linkExistingSourceArtifacts(sourceScope: ArtifactSourceScope, projectId: UUID): Int
 
     /**
      * Finds and retrieves an artifact by its unique identifier.

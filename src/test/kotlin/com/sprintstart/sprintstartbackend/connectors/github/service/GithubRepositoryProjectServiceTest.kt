@@ -4,7 +4,6 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubReposit
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -17,8 +16,8 @@ import java.util.UUID
 
 class GithubRepositoryProjectServiceTest {
     private val githubRepositoryConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
-    private val userApi = mockk<UserApi>()
-    private val service = GithubRepositoryProjectService(githubRepositoryConnectionRepository, userApi)
+    private val projectAccessGuard = mockk<GithubProjectAccessGuard>(relaxed = true)
+    private val service = GithubRepositoryProjectService(githubRepositoryConnectionRepository, projectAccessGuard)
 
     private val authId = "auth-subject"
 
@@ -28,7 +27,6 @@ class GithubRepositoryProjectServiceTest {
         val existingProjectId = UUID.randomUUID()
         val newProjectId = UUID.randomUUID()
         val connection = connection(mutableSetOf(existingProjectId))
-        every { userApi.userHasAccessToProject(authId, newProjectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
         val saved = slot<GithubRepositoryConnection>()
         every { githubRepositoryConnectionRepository.save(capture(saved)) } answers { firstArg() }
@@ -44,7 +42,6 @@ class GithubRepositoryProjectServiceTest {
         val repositoryId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
         val connection = connection(mutableSetOf(projectId))
-        every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
         every { githubRepositoryConnectionRepository.save(any()) } answers { firstArg() }
 
@@ -57,11 +54,14 @@ class GithubRepositoryProjectServiceTest {
     fun `rejects with forbidden when the caller has no access to the target project`() {
         val repositoryId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
-        every { userApi.userHasAccessToProject(authId, projectId) } returns false
+        every {
+            projectAccessGuard.requireProjectAccess(authId, projectId)
+        } throws ProjectAccessDeniedException(projectId)
 
         assertThatThrownBy { service.addProjectToRepository(authId, repositoryId, projectId) }
             .isInstanceOf(ProjectAccessDeniedException::class.java)
 
+        verify(exactly = 0) { githubRepositoryConnectionRepository.findById(any()) }
         verify(exactly = 0) { githubRepositoryConnectionRepository.save(any()) }
     }
 
@@ -69,7 +69,6 @@ class GithubRepositoryProjectServiceTest {
     fun `returns not found when the repository connection does not exist`() {
         val repositoryId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
-        every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.empty()
 
         assertThatThrownBy { service.addProjectToRepository(authId, repositoryId, projectId) }
@@ -82,7 +81,6 @@ class GithubRepositoryProjectServiceTest {
         val keptProjectId = UUID.randomUUID()
         val removedProjectId = UUID.randomUUID()
         val connection = connection(mutableSetOf(keptProjectId, removedProjectId))
-        every { userApi.userHasAccessToProject(authId, removedProjectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
         val saved = slot<GithubRepositoryConnection>()
         every { githubRepositoryConnectionRepository.save(capture(saved)) } answers { firstArg() }
@@ -99,7 +97,6 @@ class GithubRepositoryProjectServiceTest {
         val existingProjectId = UUID.randomUUID()
         val notLinkedProjectId = UUID.randomUUID()
         val connection = connection(mutableSetOf(existingProjectId))
-        every { userApi.userHasAccessToProject(authId, notLinkedProjectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
         every { githubRepositoryConnectionRepository.save(any()) } answers { firstArg() }
 
@@ -112,11 +109,14 @@ class GithubRepositoryProjectServiceTest {
     fun `remove rejects with forbidden when the caller has no access to the target project`() {
         val repositoryId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
-        every { userApi.userHasAccessToProject(authId, projectId) } returns false
+        every {
+            projectAccessGuard.requireProjectAccess(authId, projectId)
+        } throws ProjectAccessDeniedException(projectId)
 
         assertThatThrownBy { service.removeProjectFromRepository(authId, repositoryId, projectId) }
             .isInstanceOf(ProjectAccessDeniedException::class.java)
 
+        verify(exactly = 0) { githubRepositoryConnectionRepository.findById(any()) }
         verify(exactly = 0) { githubRepositoryConnectionRepository.save(any()) }
     }
 
@@ -124,7 +124,6 @@ class GithubRepositoryProjectServiceTest {
     fun `remove returns not found when the repository connection does not exist`() {
         val repositoryId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
-        every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.empty()
 
         assertThatThrownBy { service.removeProjectFromRepository(authId, repositoryId, projectId) }

@@ -217,9 +217,11 @@ internal class GithubConnectorController(
         value = [
             ApiResponse(
                 responseCode = "202",
-                description = "Repository connection accepted - Initialization jobs started",
+                description = "Repository connection accepted or existing connection reused",
             ),
             ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the target project"),
             ApiResponse(responseCode = "404", description = "Repository not found"),
         ],
     )
@@ -234,8 +236,13 @@ internal class GithubConnectorController(
         @RequestBody
         request: ConnectRepositoryRequest,
     ): ResponseEntity<ConnectRepositoryResponse> {
-        val transactionId = githubConnectorService.connectRepositoryIfExists(jwt.subject, request)
-        return ResponseEntity.accepted().body(ConnectRepositoryResponse(transactionId))
+        val result = githubConnectorService.connectRepositoryIfExists(jwt.subject, request)
+        return ResponseEntity.accepted().body(
+            ConnectRepositoryResponse(
+                transactionId = result.transactionId,
+                wasReused = result.wasReused,
+            ),
+        )
     }
 
     /**

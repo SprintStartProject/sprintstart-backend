@@ -1,10 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -20,7 +18,7 @@ import java.util.UUID
 @Service
 class GithubRepositoryProjectService(
     private val githubRepositoryConnectionRepository: GithubRepositoryConnectionRepository,
-    private val userApi: UserApi,
+    private val projectAccessGuard: GithubProjectAccessGuard,
 ) {
     /**
      * Adds a project to an already-connected repository, without fetching or re-ingesting anything.
@@ -38,10 +36,7 @@ class GithubRepositoryProjectService(
     @Transactional
     @Tracked("Linking GitHub repository to an additional project")
     fun addProjectToRepository(authId: String, repositoryId: UUID, projectId: UUID): Set<UUID> {
-        if (!userApi.userHasAccessToProject(authId, projectId)) {
-            throw ProjectAccessDeniedException(projectId)
-        }
-
+        projectAccessGuard.requireProjectAccess(authId, projectId)
         val connection = githubRepositoryConnectionRepository.findById(repositoryId).orElseThrow {
             RepositoryNotFoundException("", "", "Repository connection with id $repositoryId not found")
         }
@@ -68,10 +63,7 @@ class GithubRepositoryProjectService(
     @Transactional
     @Tracked("Unlinking GitHub repository from a project")
     fun removeProjectFromRepository(authId: String, repositoryId: UUID, projectId: UUID): Set<UUID> {
-        if (!userApi.userHasAccessToProject(authId, projectId)) {
-            throw ProjectAccessDeniedException(projectId)
-        }
-
+        projectAccessGuard.requireProjectAccess(authId, projectId)
         val connection = githubRepositoryConnectionRepository.findById(repositoryId).orElseThrow {
             RepositoryNotFoundException("", "", "Repository connection with id $repositoryId not found")
         }
