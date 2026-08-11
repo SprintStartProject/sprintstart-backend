@@ -68,23 +68,32 @@ class OnboardingPersonalizationService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "User must have exactly one project role assigned")
         }
 
+        // Retrieval, blueprint selection and the generated path are all scoped to one project.
+        // With several assignments there is no basis for picking one, and picking wrongly would
+        // build the path from a corpus the user should not be onboarded against.
+        val projectId = profile.projectIds.singleOrNull()
+            ?: throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "User must be assigned to exactly one project to generate an onboarding path",
+            )
+
         val scope = profile.projectRoles.single().toAiScope()
         val skills = profile.skills.map { SkillAssessmentSchema(name = it.name, level = it.level.lowercase()) }
         val requiredScopes = listOf("global", "area:$scope")
 
         return flow {
-            blueprintService.ensureScopesExist(requiredScopes)
+            blueprintService.ensureScopesExist(projectId, requiredScopes)
 
             val blueprints = withContext(Dispatchers.IO) {
                 txTemplate.execute {
                     onboardingPathRepository.deleteByUserId(profile.id)
-                    loadActiveBlueprints(requiredScopes)
+                    loadActiveBlueprints(projectId, requiredScopes)
                 }
             }
 
             emitAll(
                 onboardingAiClient
-                    .generatePath(scope, skills, blueprints)
+                    .generatePath(projectId, scope, skills, blueprints)
                     .map { event -> event.toSseEvent(profile.id) },
             )
         }.catch { e ->
@@ -128,11 +137,12 @@ class OnboardingPersonalizationService(
      * service consumes. Scopes without an ACTIVE blueprint are skipped. Must be called
      * within a transaction so each blueprint's lazy steps can be read.
      *
+     * @param projectId The project whose blueprints to load.
      * @param scopes A list of scopes to load active blueprints from.
      */
-    private fun loadActiveBlueprints(scopes: List<String>): List<BlueprintSchema> =
+    private fun loadActiveBlueprints(projectId: UUID, scopes: List<String>): List<BlueprintSchema> =
         scopes
             .mapNotNull { scope ->
-                blueprintRepository.findByScopeAndStatus(scope, BlueprintStatus.ACTIVE)
+                blueprintRepository.findByProjectIdAndScopeAndStatus(projectId, scope, BlueprintStatus.ACTIVE)
             }.map { it.toSchema() }
 }

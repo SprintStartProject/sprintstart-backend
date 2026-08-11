@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.util.UUID
 
 /**
  * Service implementation of the chat API used by other modules.
@@ -18,11 +19,11 @@ import org.springframework.transaction.annotation.Transactional
 internal class ChatQuestionApiService(
     private val messageRepository: ChatMessageRepository,
 ) : ChatQuestionApi {
-    @Tracked("Retrieving all user questions")
+    @Tracked("Retrieving user questions for a project")
     @Transactional(readOnly = true)
-    override fun getAllUserQuestions(): List<ChatQuestion> {
+    override fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion> {
         return messageRepository
-            .findAllByRole(ChatRole.USER)
+            .findAllByRoleAndChatProjectId(ChatRole.USER, projectId)
             .map { ChatQuestion(id = it.id, text = it.content) }
     }
 }

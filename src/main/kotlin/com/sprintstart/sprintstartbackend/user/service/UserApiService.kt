@@ -148,6 +148,7 @@ class UserApiService(
         userRepository.findByAuthId(authId).map { user ->
             UserOnboardingProfile(
                 id = user.id,
+                projectIds = user.projects.map { it.id }.toSet(),
                 projectRoles = user.projectRoles.map { role ->
                     ProjectRoleDto(
                         roleId = role.id,

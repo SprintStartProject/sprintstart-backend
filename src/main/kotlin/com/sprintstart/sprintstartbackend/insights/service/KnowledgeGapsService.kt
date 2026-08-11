@@ -18,7 +18,9 @@ import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
@@ -39,15 +41,24 @@ class KnowledgeGapsService(
     private val knowledgeGapResponseMapper: KnowledgeGapResponseMapper,
     private val userApi: UserApi,
     private val artifactIngestionApi: ArtifactIngestionApi,
+    transactionManager: PlatformTransactionManager,
 ) {
+    // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
+    // transaction of their own — unlike the inherited deleteAll() — so without this the delete
+    // threw TransactionRequiredException as soon as there was anything to delete, which is why
+    // the first refresh of a project appeared to work and every later one failed. Wrapping both
+    // also makes the swap atomic: a failure in between would otherwise leave the panel empty.
+    // @Transactional cannot be used here, the method is suspend.
+    private val txTemplate = TransactionTemplate(transactionManager)
+
     /**
-     * Returns all cached knowledge gaps, most severe first and then by component name.
+     * Returns the project's cached knowledge gaps, most severe first and then by component name.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving all knowledge gaps")
-    fun getKnowledgeGaps(): KnowledgeGapsOverviewResponse {
+    fun getKnowledgeGaps(projectId: UUID): KnowledgeGapsOverviewResponse {
         val gaps = knowledgeGapRepository
-            .findAll()
+            .findAllByProjectId(projectId)
             .sortedWith(compareBy({ it.severity.ordinal }, { it.component }))
         val components = gaps.map { it.component }.distinct()
         val ownersByComponent = resolveOwners(components)
@@ -62,8 +73,10 @@ class KnowledgeGapsService(
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving specific knowledge gap")
-    fun getKnowledgeGap(gapId: UUID): KnowledgeGapResponse {
-        val gap = knowledgeGapRepository.findById(gapId).orElseThrow {
+    fun getKnowledgeGap(projectId: UUID, gapId: UUID): KnowledgeGapResponse {
+        // Scoped rather than fetched by id alone: a gap from another project must read as
+        // "not found", not as a permission error that confirms it exists.
+        val gap = knowledgeGapRepository.findByIdAndProjectId(gapId, projectId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge gap with id $gapId not found")
         }
         val owners = resolveOwners(listOf(gap.component))[gap.component] ?: emptyList()
@@ -104,12 +117,19 @@ class KnowledgeGapsService(
      *   if the AI service does not return a classification result.
      */
     @Tracked("Refreshing knowledge gaps")
-    suspend fun refreshKnowledgeGaps(): RefreshKnowledgeGapsResponse {
-        val aiResponse = knowledgeGapsAiClient.detectKnowledgeGaps(AiKnowledgeGapsRequest())
-        val gaps: List<KnowledgeGap> = aiResponse.gaps.map { aiKnowledgeGapMapper.toEntity(it) }
+    suspend fun refreshKnowledgeGaps(projectId: UUID): RefreshKnowledgeGapsResponse {
+        val aiResponse = knowledgeGapsAiClient.detectKnowledgeGaps(
+            AiKnowledgeGapsRequest(projectId = projectId.toString()),
+        )
+        val gaps: List<KnowledgeGap> = aiResponse.gaps.map { aiKnowledgeGapMapper.toEntity(it, projectId) }
 
-        knowledgeGapRepository.deleteAll()
-        knowledgeGapRepository.saveAll(gaps)
+        txTemplate.executeWithoutResult {
+            knowledgeGapRepository.deleteAllByProjectId(projectId)
+            // Rows from before insights were project-scoped belong to no project and would
+            // otherwise linger forever, since every read is now scoped.
+            knowledgeGapRepository.deleteAllByProjectIdIsNull()
+            knowledgeGapRepository.saveAll(gaps)
+        }
 
         return RefreshKnowledgeGapsResponse(gapCount = gaps.size)
     }

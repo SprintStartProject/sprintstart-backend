@@ -11,5 +11,6 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AiKnowledgeGapsRequest(
+    val projectId: String,
     val limit: Int? = null,
 )

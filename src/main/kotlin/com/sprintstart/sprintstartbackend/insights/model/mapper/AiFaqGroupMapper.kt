@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 /**
  * Builds persistable [FaqGroup] aggregates from AI grouping results.
@@ -14,8 +15,9 @@ import org.springframework.stereotype.Component
  */
 @Component
 class AiFaqGroupMapper {
-    fun toEntity(aiGroup: AiFaqGroup): FaqGroup {
+    fun toEntity(aiGroup: AiFaqGroup, projectId: UUID): FaqGroup {
         val group = FaqGroup(
+            projectId = projectId,
             question = aiGroup.question,
             occurrenceCount = aiGroup.count,
         )

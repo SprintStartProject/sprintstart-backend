@@ -33,4 +33,17 @@ class Blueprint(
     @OneToMany(mappedBy = "blueprint", cascade = [CascadeType.ALL], orphanRemoval = true)
     @OrderBy("position ASC")
     val steps: MutableList<BlueprintStep> = mutableListOf(),
+    /**
+     * The project this blueprint was generated for.
+     *
+     * Stored as a column rather than folded into [scope] because the scope is a path segment in
+     * the blueprint routes. Nullable only for blueprints generated before project separation:
+     * those are never selected for a path, since their steps came from an unscoped corpus. They
+     * have to be regenerated per project.
+     *
+     * Intentionally has no default — every construction site must state the project explicitly,
+     * so a new blueprint cannot silently end up unscoped and therefore unusable.
+     */
+    @Column(name = "project_id")
+    val projectId: UUID?,
 )

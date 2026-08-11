@@ -50,8 +50,10 @@ class OnboardingPersonalizationServiceTest {
 
     private val userId = UUID.randomUUID()
     private val authId = "auth|test-user"
+    private val projectId: UUID = UUID.randomUUID()
     private val profile = UserOnboardingProfile(
         id = userId,
+        projectIds = setOf(projectId),
         projectRoles = listOf(
             ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
         ),
@@ -70,7 +72,8 @@ class OnboardingPersonalizationServiceTest {
 
         @Test
         fun `throws 400 when user has no project role assigned`() {
-            val profileWithNoRoles = UserOnboardingProfile(id = userId, projectRoles = emptyList())
+            val profileWithNoRoles =
+                UserOnboardingProfile(id = userId, projectIds = setOf(projectId), projectRoles = emptyList())
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileWithNoRoles)
 
             val ex = assertThrows<ResponseStatusException> { service.personalize(authId) }
@@ -82,6 +85,7 @@ class OnboardingPersonalizationServiceTest {
         fun `throws 400 when user has more than one project role assigned`() {
             val profileWithTwoRoles = UserOnboardingProfile(
                 id = userId,
+                projectIds = setOf(projectId),
                 projectRoles = listOf(
                     ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
                     ProjectRoleDto(roleId = UUID.randomUUID(), name = "Frontend", description = "Frontend work"),
@@ -97,67 +101,95 @@ class OnboardingPersonalizationServiceTest {
         @Test
         fun `calls ensureScopesExist with global and area derived from project role`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(listOf("global", "area:backend")) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, listOf("global", "area:backend")) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "done"),
             )
 
             service.personalize(authId).toList()
 
-            coVerify(exactly = 1) { blueprintService.ensureScopesExist(listOf("global", "area:backend")) }
+            coVerify(exactly = 1) { blueprintService.ensureScopesExist(projectId, listOf("global", "area:backend")) }
         }
 
         @Test
         fun `loads active blueprints after ensuring they exist`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "done"),
             )
 
             service.personalize(authId).toList()
 
             verify(exactly = 1) {
-                blueprintRepository.findByScopeAndStatus("global", BlueprintStatus.ACTIVE)
+                blueprintRepository.findByProjectIdAndScopeAndStatus(projectId, "global", BlueprintStatus.ACTIVE)
             }
             verify(exactly = 1) {
-                blueprintRepository.findByScopeAndStatus("area:backend", BlueprintStatus.ACTIVE)
+                blueprintRepository.findByProjectIdAndScopeAndStatus(projectId, "area:backend", BlueprintStatus.ACTIVE)
             }
         }
 
         @Test
         fun `passes active blueprints to AI client`() = runTest {
-            val bp = Blueprint(scope = "global", version = "1", status = BlueprintStatus.ACTIVE)
+            val bp = Blueprint(scope = "global", version = "1", status = BlueprintStatus.ACTIVE, projectId = projectId)
             val blueprintSlot = slot<List<BlueprintSchema>>()
 
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus("global", BlueprintStatus.ACTIVE) } returns bp
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
             every {
-                blueprintRepository.findByScopeAndStatus("area:backend", BlueprintStatus.ACTIVE)
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    "global",
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                bp
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(projectId, "area:backend", BlueprintStatus.ACTIVE)
             } returns null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
             every {
-                onboardingAiClient.generatePath(any(), any(), capture(blueprintSlot))
+                onboardingAiClient.generatePath(any(), any(), any(), capture(blueprintSlot))
             } returns flowOf(OnboardingAiPathEvent(type = "done"))
 
             service.personalize(authId).toList()
 
             assertEquals(1, blueprintSlot.captured.size)
-            assertEquals("global", blueprintSlot.captured[0].scope)
+            assertEquals("project:$projectId|global", blueprintSlot.captured[0].scope)
         }
 
         @Test
         fun `maps stage events from AI client`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "stage", name = "retrieve", detail = "Retrieving documents"),
                 OnboardingAiPathEvent(type = "done"),
             )
@@ -174,10 +206,17 @@ class OnboardingPersonalizationServiceTest {
         @Test
         fun `maps error events from AI client`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "error", message = "LLM unavailable"),
             )
 
@@ -192,10 +231,17 @@ class OnboardingPersonalizationServiceTest {
         fun `maps path event and persists the generated path`() = runTest {
             val path = OnboardingPath(workingArea = "backend")
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "path", path = path),
             )
             every { onboardingPathRepository.save(any()) } answers { firstArg() }
@@ -211,10 +257,17 @@ class OnboardingPersonalizationServiceTest {
         @Test
         fun `deletes existing path before generating new one`() = runTest {
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
-            coEvery { blueprintService.ensureScopesExist(any()) } just runs
-            every { blueprintRepository.findByScopeAndStatus(any(), BlueprintStatus.ACTIVE) } returns null
+            coEvery { blueprintService.ensureScopesExist(projectId, any()) } just runs
+            every {
+                blueprintRepository.findByProjectIdAndScopeAndStatus(
+                    projectId,
+                    any(),
+                    BlueprintStatus.ACTIVE,
+                )
+            } returns
+                null
             every { onboardingPathRepository.deleteByUserId(userId) } just runs
-            every { onboardingAiClient.generatePath(any(), any(), any()) } returns flowOf(
+            every { onboardingAiClient.generatePath(any(), any(), any(), any()) } returns flowOf(
                 OnboardingAiPathEvent(type = "done"),
             )
 

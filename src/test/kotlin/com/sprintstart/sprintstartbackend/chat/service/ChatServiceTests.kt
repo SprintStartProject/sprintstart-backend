@@ -69,15 +69,16 @@ class ChatServiceTests {
 
     private val userId = UUID.randomUUID()
     private val authId = "auth-user"
+    private val projectId = UUID.randomUUID()
 
     @Nested
     inner class GetChats {
         private val allChats = listOf(
-            Chat(UUID.randomUUID(), "First", userId, OffsetDateTime.now()),
-            Chat(UUID.randomUUID(), "Second", userId, OffsetDateTime.now()),
-            Chat(UUID.randomUUID(), "Third", userId, OffsetDateTime.now()),
-            Chat(UUID.randomUUID(), "Fourth", userId, OffsetDateTime.now()),
-            Chat(UUID.randomUUID(), "Fifth", userId, OffsetDateTime.now()),
+            Chat(UUID.randomUUID(), "First", userId, OffsetDateTime.now(), projectId),
+            Chat(UUID.randomUUID(), "Second", userId, OffsetDateTime.now(), projectId),
+            Chat(UUID.randomUUID(), "Third", userId, OffsetDateTime.now(), projectId),
+            Chat(UUID.randomUUID(), "Fourth", userId, OffsetDateTime.now(), projectId),
+            Chat(UUID.randomUUID(), "Fifth", userId, OffsetDateTime.now(), projectId),
         )
 
         @Test
@@ -173,7 +174,7 @@ class ChatServiceTests {
 
     @Nested
     inner class GetChat {
-        private val chat = Chat(UUID.randomUUID(), "Some test chat", userId, OffsetDateTime.now())
+        private val chat = Chat(UUID.randomUUID(), "Some test chat", userId, OffsetDateTime.now(), projectId)
         private val chatMessages = listOf(
             ChatMessage(
                 UUID.randomUUID(),
@@ -318,7 +319,7 @@ class ChatServiceTests {
     inner class CreateChat {
         @Test
         fun `creates chat with correct userId and returns its id`() {
-            val request = CreateChatRequest(userId = userId)
+            val request = CreateChatRequest(userId = userId, projectId = projectId)
             val chatSlot = slot<Chat>()
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
             every { userApi.exists(any()) } returns true
@@ -332,7 +333,7 @@ class ChatServiceTests {
 
         @Test
         fun `throws exception when creating chat with incorrect userId`() {
-            val request = CreateChatRequest(userId = userId)
+            val request = CreateChatRequest(userId = userId, projectId = projectId)
             val chatSlot = slot<Chat>()
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
             every { userApi.exists(any()) } returns false
@@ -348,9 +349,10 @@ class ChatServiceTests {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
 
-            val result = chatService.createChatForCurrentUser(authId)
+            val result = chatService.createChatForCurrentUser(authId, projectId)
 
             assertEquals(userId, chatSlot.captured.userId)
+            assertEquals(projectId, chatSlot.captured.projectId)
             assertEquals(chatSlot.captured.id, result.id)
             verify(exactly = 1) { chatRepository.save(any()) }
         }
@@ -366,9 +368,39 @@ class ChatServiceTests {
         }
 
         @Test
+        fun `rejects a chat that has no project instead of prompting unscoped`() = runTest {
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Chat from before project scoping",
+                createdAt = OffsetDateTime.now(),
+                projectId = null,
+            )
+            mockOwnedChat(chat)
+
+            val error = assertFailsWith<ResponseStatusException> {
+                chatService
+                    .promptForCurrentUser(authId, PromptRequest(chatId = chatId, msg = "Hello"))
+                    .toList()
+            }
+
+            assertEquals(HttpStatus.CONFLICT, error.statusCode)
+            // The AI service is never reached: an unscoped request would be answered from an
+            // empty corpus, which reads as "the assistant knows nothing" rather than an error.
+            coVerify(exactly = 0) { chatAiClient.streamPrompt(any()) }
+            verify(exactly = 0) { chatMessageRepository.save(any()) }
+        }
+
+        @Test
         fun `emits tokens from ai stream`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
-            val aiPromptRequest = AiPromptRequest("Hello", listOf())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
+            val aiPromptRequest = AiPromptRequest("Hello", listOf(), projectId.toString())
             val tokens = listOf(
                 AiStreamMessage("token", "Hello"),
                 AiStreamMessage("token", " world"),
@@ -393,8 +425,14 @@ class ChatServiceTests {
 
         @Test
         fun `forwards tool_use events without accumulating them into the saved message`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
-            val aiPromptRequest = AiPromptRequest("Hello", listOf())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
+            val aiPromptRequest = AiPromptRequest("Hello", listOf(), projectId.toString())
             val stream = listOf(
                 AiStreamMessage(type = "tool_use", name = "retrieve", kind = "tool"),
                 AiStreamMessage("token", "Hello"),
@@ -426,8 +464,14 @@ class ChatServiceTests {
 
         @Test
         fun `saves ai response as message on stream completion`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "Existing title", createdAt = OffsetDateTime.now())
-            val aiPromptRequest = AiPromptRequest("Hello", listOf())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
+            val aiPromptRequest = AiPromptRequest("Hello", listOf(), projectId.toString())
             val tokens = listOf(
                 AiStreamMessage("token", "Hello"),
                 AiStreamMessage("token", " world"),
@@ -455,8 +499,14 @@ class ChatServiceTests {
 
         @Test
         fun `generates and saves title when chat title is blank`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "", createdAt = OffsetDateTime.now())
-            val aiPromptRequest = AiPromptRequest("Hello", listOf())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
+            val aiPromptRequest = AiPromptRequest("Hello", listOf(), projectId.toString())
             mockOwnedChat(chat)
             every { chatRepository.save(any()) } answers { firstArg() }
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
@@ -479,7 +529,13 @@ class ChatServiceTests {
 
         @Test
         fun `skips title generation when chat title is not blank`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "Existing", createdAt = OffsetDateTime.now())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
             mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
@@ -533,7 +589,13 @@ class ChatServiceTests {
 
         @Test
         fun `does not save ai response when stream errors`() = runTest {
-            val chat = Chat(id = chatId, userId = userId, title = "Existing", createdAt = OffsetDateTime.now())
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
             mockOwnedChat(chat)
             every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
             every { chatMessageRepository.save(any()) } answers { firstArg() }
@@ -564,6 +626,7 @@ class ChatServiceTests {
                 userId = userId,
                 title = "Existing title",
                 createdAt = OffsetDateTime.now(),
+                projectId = projectId,
             )
 
             val artifactId1 = UUID.randomUUID()
@@ -637,6 +700,7 @@ class ChatServiceTests {
                 userId = userId,
                 title = "Existing title",
                 createdAt = OffsetDateTime.now(),
+                projectId = projectId,
             )
             val unknownArtifactId = UUID.randomUUID()
 
@@ -673,6 +737,7 @@ class ChatServiceTests {
                 userId = userId,
                 title = "Existing",
                 createdAt = OffsetDateTime.now(),
+                projectId = projectId,
             )
 
             mockOwnedChat(chat)
@@ -693,7 +758,9 @@ class ChatServiceTests {
             } returns listOf(
                 ConnectorDto(
                     id = "github",
-                    name = "GITHUB",
+                    // The real display name: this is what ConnectorConfigurationService puts in
+                    // `name`, and matching the SourceSystem enum against it is what used to fail.
+                    name = "Github Repository Connector",
                     enabled = true,
                     firstConfiguredAt = null,
                     lastConfiguredAt = null,
@@ -722,6 +789,7 @@ class ChatServiceTests {
                 userId = userId,
                 title = "Existing",
                 createdAt = OffsetDateTime.now(),
+                projectId = projectId,
             )
 
             mockOwnedChat(chat)
@@ -735,7 +803,9 @@ class ChatServiceTests {
             } returns listOf(
                 ConnectorDto(
                     id = "github",
-                    name = "GITHUB",
+                    // The real display name: this is what ConnectorConfigurationService puts in
+                    // `name`, and matching the SourceSystem enum against it is what used to fail.
+                    name = "Github Repository Connector",
                     enabled = false,
                     firstConfiguredAt = null,
                     lastConfiguredAt = null,

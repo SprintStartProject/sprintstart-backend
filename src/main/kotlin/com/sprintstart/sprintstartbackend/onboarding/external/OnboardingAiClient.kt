@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URI
+import java.util.UUID
 
 @Component
 class OnboardingAiClient(
@@ -29,12 +30,15 @@ class OnboardingAiClient(
      * personalize against. Malformed SSE chunks are logged and skipped rather than
      * terminating the stream.
      *
+     * @param projectId The project the path is generated for; blueprints from other projects are
+     * ignored by the AI service.
      * @param workingArea The user's working area scope (e.g. `backend`).
      * @param skills The user's leveled skill assessments; lets proficiency drive personalization.
      * @param blueprints The active blueprints the AI should personalize; empty yields a generic path.
      * @return A cold [Flow] of [OnboardingAiPathEvent]s emitted as generation progresses.
      */
     fun generatePath(
+        projectId: UUID,
         workingArea: String,
         skills: List<SkillAssessmentSchema> = emptyList(),
         blueprints: List<BlueprintSchema> = emptyList(),
@@ -44,6 +48,7 @@ class OnboardingAiClient(
             .uri(uri("/api/v1/onboarding/path"))
             .body(
                 GenerateOnboardingPathRequest(
+                    projectId = projectId.toString(),
                     workingArea = workingArea,
                     skills = skills,
                     blueprints = blueprints,
@@ -64,11 +69,13 @@ class OnboardingAiClient(
      * drives version numbering and lets the job skip an unchanged corpus. A non-2xx
      * response is wrapped in an [OnboardingAiException] carrying the upstream status/body.
      *
+     * @param projectId The project to generate for; bare scope names are qualified with it.
      * @param scopes The scopes to (re)generate, or `null` to refresh all known scopes.
      * @param active The backend's currently-active blueprints for the requested scopes.
      * @return The per-scope generation outcomes returned by the AI service.
      */
     suspend fun generateBlueprints(
+        projectId: UUID,
         scopes: List<String>?,
         active: List<BlueprintSchema> = emptyList(),
     ): GenerateBlueprintsResponse =
@@ -76,8 +83,13 @@ class OnboardingAiClient(
             webClient
                 .post()
                 .uri(uri("/api/v1/onboarding/blueprints/generate"))
-                .body(GenerateBlueprintsRequest(scopes = scopes, active = active))
-                .sync()
+                .body(
+                    GenerateBlueprintsRequest(
+                        projectId = projectId.toString(),
+                        scopes = scopes,
+                        active = active,
+                    ),
+                ).sync()
                 .perform<GenerateBlueprintsResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             val msg = "Failed to generate blueprints (HTTP ${e.statusCode}): ${e.body}"

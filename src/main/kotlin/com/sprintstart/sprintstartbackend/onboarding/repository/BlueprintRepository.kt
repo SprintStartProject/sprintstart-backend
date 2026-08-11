@@ -5,12 +5,26 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStatu
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
+/**
+ * All lookups are project-scoped: a blueprint belongs to exactly one project, and one generated
+ * before project separation (`projectId == null`) must never be reached through these queries —
+ * its steps came from an unscoped corpus.
+ */
 interface BlueprintRepository : JpaRepository<Blueprint, UUID> {
-    fun findAllByStatus(status: BlueprintStatus): List<Blueprint>
+    fun findAllByProjectIdAndStatus(projectId: UUID, status: BlueprintStatus): List<Blueprint>
 
-    fun findByScopeAndStatus(scope: String, status: BlueprintStatus): Blueprint?
+    fun findByProjectIdAndScopeAndStatus(projectId: UUID, scope: String, status: BlueprintStatus): Blueprint?
 
-    fun findAllByScopeAndStatus(scope: String, status: BlueprintStatus): List<Blueprint>
+    fun findAllByProjectIdAndScopeAndStatus(
+        projectId: UUID,
+        scope: String,
+        status: BlueprintStatus,
+    ): List<Blueprint>
 
-    fun findByScopeAndStatusAndVersion(scope: String, status: BlueprintStatus, version: String): Blueprint?
+    fun findByProjectIdAndScopeAndStatusAndVersion(
+        projectId: UUID,
+        scope: String,
+        status: BlueprintStatus,
+        version: String,
+    ): Blueprint?
 }

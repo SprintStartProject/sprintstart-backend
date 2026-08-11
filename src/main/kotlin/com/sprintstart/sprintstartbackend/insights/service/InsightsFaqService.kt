@@ -13,7 +13,9 @@ import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
@@ -31,15 +33,24 @@ class InsightsFaqService(
     private val chatQuestionApi: ChatQuestionApi,
     private val aiFaqGroupMapper: AiFaqGroupMapper,
     private val faqResponseMapper: FaqResponseMapper,
+    transactionManager: PlatformTransactionManager,
 ) {
+    // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
+    // transaction of their own — unlike the inherited deleteAll() — so without this the delete
+    // threw TransactionRequiredException as soon as there was anything to delete, which is why
+    // the first refresh of a project appeared to work and every later one failed. Wrapping both
+    // also makes the swap atomic: a failure in between would otherwise leave the panel empty.
+    // @Transactional cannot be used here, the method is suspend.
+    private val txTemplate = TransactionTemplate(transactionManager)
+
     /**
-     * Returns all cached recurring-question groups, most frequently asked first.
+     * Returns the project's cached recurring-question groups, most frequently asked first.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving FAQ overview")
-    fun getFaqOverview(): FaqOverviewResponse {
+    fun getFaqOverview(projectId: UUID): FaqOverviewResponse {
         return faqResponseMapper.toOverviewResponse(
-            faqGroupRepository.findAllByOrderByOccurrenceCountDesc(),
+            faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId),
         )
     }
 
@@ -50,8 +61,10 @@ class InsightsFaqService(
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving FAQ group")
-    fun getFaqGroup(groupId: UUID): FaqDetailResponse {
-        val group = faqGroupRepository.findById(groupId).orElseThrow {
+    fun getFaqGroup(projectId: UUID, groupId: UUID): FaqDetailResponse {
+        // Scoped rather than fetched by id alone, so a group from another project reads as
+        // "not found" instead of leaking its existence.
+        val group = faqGroupRepository.findByIdAndProjectId(groupId, projectId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "FAQ group with id $groupId not found")
         }
         return faqResponseMapper.toDetailResponse(group)
@@ -67,16 +80,24 @@ class InsightsFaqService(
      *   if the AI service does not return a grouping result.
      */
     @Tracked("Refreshing FAQ groups")
-    suspend fun refreshFaqGroups(): RefreshFaqResponse {
+    suspend fun refreshFaqGroups(projectId: UUID): RefreshFaqResponse {
+        // Only this project's questions: the panel is per project, and mixing them would show one
+        // project's questions — and the documents answering them — in another's dashboard.
         val questions = chatQuestionApi
-            .getAllUserQuestions()
+            .getUserQuestionsForProject(projectId)
             .map { AiFaqQuestion(id = it.id.toString(), text = it.text) }
 
-        val aiResponse = insightsAiClient.groupFaqQuestions(AiFaqGroupingRequest(questions))
-        val groups = aiResponse.groups.map { aiFaqGroupMapper.toEntity(it) }
+        val aiResponse = insightsAiClient.groupFaqQuestions(
+            AiFaqGroupingRequest(projectId = projectId.toString(), questions = questions),
+        )
+        val groups = aiResponse.groups.map { aiFaqGroupMapper.toEntity(it, projectId) }
 
-        faqGroupRepository.deleteAll()
-        faqGroupRepository.saveAll(groups)
+        txTemplate.executeWithoutResult {
+            faqGroupRepository.deleteAllByProjectId(projectId)
+            // Rows from before insights were project-scoped are unreachable through the scoped reads.
+            faqGroupRepository.deleteAllByProjectIdIsNull()
+            faqGroupRepository.saveAll(groups)
+        }
 
         return RefreshFaqResponse(groupCount = groups.size)
     }

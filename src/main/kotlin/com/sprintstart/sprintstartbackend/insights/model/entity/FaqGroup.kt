@@ -21,6 +21,9 @@ import java.util.UUID
 class FaqGroup(
     @Id
     val id: UUID = UUID.randomUUID(),
+    // See KnowledgeGap.projectId — same lifecycle, same nullability reason.
+    @Column(name = "project_id")
+    val projectId: UUID? = null,
     @Column(nullable = false, columnDefinition = "TEXT")
     val question: String,
     @Column(nullable = false)

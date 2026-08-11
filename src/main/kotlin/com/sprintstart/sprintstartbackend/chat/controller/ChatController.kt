@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.controller
 
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
+import com.sprintstart.sprintstartbackend.chat.models.requests.CreateMyChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.PromptRequest
@@ -89,13 +90,14 @@ internal class ChatController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/me")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('USER') and @projectAuth.canAccessProject(authentication, #projectId)")
     fun getMyChats(
         @RequestParam @Min(1) limit: Int?,
+        @RequestParam projectId: UUID,
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): GetChatsResponse {
-        val request = GetChatsRequest(limit = limit)
+        val request = GetChatsRequest(limit = limit, projectId = projectId)
         return chatService.getChatsForCurrentUser(jwt.subject, request)
     }
 
@@ -200,12 +202,13 @@ internal class ChatController(
     )
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/me")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('USER') and @projectAuth.canAccessProject(authentication, #request.projectId)")
     fun createMyChat(
+        @Valid @RequestBody request: CreateMyChatRequest,
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): CreateChatResponse {
-        return chatService.createChatForCurrentUser(jwt.subject)
+        return chatService.createChatForCurrentUser(jwt.subject, request.projectId)
     }
 
     /**
