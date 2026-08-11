@@ -5,4 +5,5 @@ import java.util.UUID
 data class JiraResourceFetchingFailedEvent(
     val transactionId: UUID,
     val reason: String,
+    val instanceUrl: String,
 )

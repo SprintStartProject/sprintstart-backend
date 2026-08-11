@@ -28,12 +28,16 @@ internal class JiraCredentialsService(
      * and token name already exists.
      */
     @Tracked("Storing a new Jira credential")
-    fun addCredentials(request: AddCredentialRequest) {
-        if (credentialsRepository.existsById(JiraCredentialsId(request.userEmail, request.tokenName))) {
+    fun addCredentials(authId: String, request: AddCredentialRequest) {
+        if (credentialsRepository.existsById(JiraCredentialsId(authId, request.tokenName))) {
             throw JiraCredentialAlreadyExistsException(request.userEmail, request.tokenName)
         }
 
-        val credentials = JiraCredential(JiraCredentialsId(request.userEmail, request.tokenName), request.authToken)
+        val credentials = JiraCredential(
+            id = JiraCredentialsId(authId, request.tokenName),
+            authToken = request.authToken,
+            userEmail = request.userEmail,
+        )
         credentialsRepository.save(credentials)
     }
 
@@ -45,8 +49,8 @@ internal class JiraCredentialsService(
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving Jira credentials of a user")
-    fun getCredentialsOfUser(userEmail: String): List<JiraCredentialsDto> =
-        credentialsRepository.findAllByUserEmail(userEmail).map { it.toDto() }
+    fun getCredentialsOfUser(authId: String): List<JiraCredentialsDto> =
+        credentialsRepository.findAllByAuthId(authId).map { it.toDto() }
 
     /**
      * Removes a Jira credential associated with the specified user email and token name.
@@ -57,12 +61,12 @@ internal class JiraCredentialsService(
      * @throws JiraCredentialNotFoundException If no credential matches the provided email and token name.
      */
     @Tracked("Removing Jira credentials")
-    fun removeCredential(request: DeleteJiraCredentialRequest) {
-        if (!credentialsRepository.existsById(JiraCredentialsId(request.userEmail, request.tokenName))) {
+    fun removeCredential(authId: String, request: DeleteJiraCredentialRequest) {
+        if (!credentialsRepository.existsById(JiraCredentialsId(authId, request.tokenName))) {
             throw JiraCredentialNotFoundException(request.userEmail, request.tokenName)
         }
 
-        credentialsRepository.deleteById(JiraCredentialsId(request.userEmail, request.tokenName))
+        credentialsRepository.deleteById(JiraCredentialsId(authId, request.tokenName))
     }
 
     /**
@@ -75,9 +79,9 @@ internal class JiraCredentialsService(
      * @throws JiraCredentialNotFoundException If no credential matches the provided email and current name.
      */
     @Tracked("Changing Jira credential name")
-    fun changeCredentialName(request: ChangeJiraCredentialNameRequest): JiraCredentialsDto {
+    fun changeCredentialName(authId: String, request: ChangeJiraCredentialNameRequest): JiraCredentialsDto {
         val credential = credentialsRepository
-            .findById(JiraCredentialsId(request.userEmail, request.oldName))
+            .findById(JiraCredentialsId(authId, request.oldName))
             .orElseThrow {
                 throw JiraCredentialNotFoundException(request.userEmail, request.oldName)
             }
@@ -97,9 +101,9 @@ internal class JiraCredentialsService(
      * @throws JiraCredentialNotFoundException If no credential matches the provided email and token name.
      */
     @Tracked("Changing Jira credential name")
-    fun changeCredentialToken(request: ChangeJiraCredentialTokenRequest): JiraCredentialsDto {
+    fun changeCredentialToken(authId: String, request: ChangeJiraCredentialTokenRequest): JiraCredentialsDto {
         val credential = credentialsRepository
-            .findById(JiraCredentialsId(request.userEmail, request.tokenName))
+            .findById(JiraCredentialsId(authId, request.tokenName))
             .orElseThrow {
                 throw JiraCredentialNotFoundException(request.userEmail, request.tokenName)
             }

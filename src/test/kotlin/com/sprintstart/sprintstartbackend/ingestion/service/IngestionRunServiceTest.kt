@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -29,7 +30,8 @@ import java.util.UUID
 class IngestionRunServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
-    private val service = IngestionRunService(ingestionRunRepository, githubRepositoryApi)
+    private val jiraInstanceApi = mockk<JiraInstanceApi>()
+    private val service = IngestionRunService(ingestionRunRepository, githubRepositoryApi, jiraInstanceApi)
 
     @Test
     fun `getRecentRuns returns empty list when repository has no runs`() {
@@ -172,6 +174,7 @@ class IngestionRunServiceTest {
         val projectId = UUID.randomUUID()
         val repositoryId = UUID.randomUUID()
         every { githubRepositoryApi.getRepositoryIdsByProject(projectId) } returns listOf(repositoryId)
+        every { jiraInstanceApi.getInstanceRefsByProject(projectId) } returns emptyList()
         val emptyPage: Page<IngestionRun> = PageImpl(emptyList(), PageRequest.of(0, 20), 0)
         every { ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>()) } returns emptyPage
 
@@ -180,5 +183,54 @@ class IngestionRunServiceTest {
         verify(exactly = 1) { githubRepositoryApi.getRepositoryIdsByProject(projectId) }
         assertThat(response.items).isEmpty()
         assertThat(response.page.totalElements).isEqualTo(0)
+    }
+
+    @Test
+    fun `getRuns resolves projectId to connected github repositories and jira instances`() {
+        val projectId = UUID.randomUUID()
+        val repositoryId = UUID.randomUUID()
+        val jiraRef = "https://acme.atlassian.net"
+        val jiraRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.JIRA,
+            sourceInstanceRef = jiraRef,
+            startedAt = Instant.parse("2024-01-01T00:00:00Z"),
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getRepositoryIdsByProject(projectId) } returns listOf(repositoryId)
+        every { jiraInstanceApi.getInstanceRefsByProject(projectId) } returns listOf(jiraRef)
+        every {
+            ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>())
+        } returns PageImpl(listOf(jiraRun), PageRequest.of(0, 20), 1)
+
+        val response = service.getRuns(page = 1, size = 20, projectId = projectId)
+
+        verify(exactly = 1) { githubRepositoryApi.getRepositoryIdsByProject(projectId) }
+        verify(exactly = 1) { jiraInstanceApi.getInstanceRefsByProject(projectId) }
+        assertThat(response.items).hasSize(1)
+        assertThat(response.items.single().sourceId).isEqualTo(jiraRef)
+    }
+
+    @Test
+    fun `getRuns filters by sourceRef without resolving project sources`() {
+        val jiraRef = "https://acme.atlassian.net"
+        val jiraRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.JIRA,
+            sourceInstanceRef = jiraRef,
+            startedAt = Instant.parse("2024-01-01T00:00:00Z"),
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every {
+            ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>())
+        } returns PageImpl(listOf(jiraRun), PageRequest.of(0, 20), 1)
+
+        val response = service.getRuns(page = 1, size = 20, sourceRef = jiraRef)
+
+        verify(exactly = 0) { githubRepositoryApi.getRepositoryIdsByProject(any()) }
+        verify(exactly = 0) { jiraInstanceApi.getInstanceRefsByProject(any()) }
+        assertThat(response.items.single().sourceId).isEqualTo(jiraRef)
     }
 }

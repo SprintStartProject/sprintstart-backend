@@ -16,12 +16,14 @@ internal class JiraCredential(
     @Convert(converter = SymmetricEncryptedStringConverter::class)
     @Column(name = "auth_token", nullable = false, columnDefinition = "TEXT")
     var authToken: String,
+    @Column(name = "user_email", nullable = false)
+    var userEmail: String,
 )
 
 @Embeddable
 internal class JiraCredentialsId(
-    @Column(name = "user_email")
-    var userEmail: String,
+    @Column(name = "auth_id", nullable = false)
+    var authId: String,
     @Column(nullable = false)
     var name: String,
 )

@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initia
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.toDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInsta
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
@@ -77,6 +79,28 @@ internal class JiraService(
     }
 
     /**
+     * Removes a project's link to a connected Jira instance.
+     *
+     * Mirrors the GitHub connector's "remove from project": the instance and its ingested artifacts
+     * are kept and can be re-linked later — only the project association is dropped, so the instance
+     * stops appearing among that project's sources. Removing the last project leaves the instance
+     * connected but unassigned rather than deleting it (avoiding a destructive cascade).
+     *
+     * @param instanceUrl The URL of the Jira instance to unlink.
+     * @param projectId The project whose association should be removed.
+     * @throws JiraInstanceNotConnectedException when the instance is unknown.
+     */
+    @Transactional
+    @Tracked("Removing a project from a Jira instance")
+    fun removeInstanceFromProject(instanceUrl: String, projectId: UUID) {
+        val instance = instanceRepository.findById(instanceUrl).orElseThrow {
+            JiraInstanceNotConnectedException(instanceUrl)
+        }
+        instance.projectIds.remove(projectId)
+        instanceRepository.save(instance)
+    }
+
+    /**
      * Connects a Jira Cloud instance if it is not already connected. If an instance is found for the provided
      * URL, it ensures that the specified project is added to the instance. Otherwise, it creates and connects
      * a new Jira Cloud instance.
@@ -87,9 +111,11 @@ internal class JiraService(
      */
     @Transactional
     @Tracked("Connecting Jira Cloud instance if not already connected")
-    suspend fun connectInstanceIfNeeded(request: ConnectJiraInstanceRequest): UUID {
+    suspend fun connectInstanceIfNeeded(authId: String, request: ConnectJiraInstanceRequest): UUID {
         val transactionId = UUID.randomUUID()
-        eventPublisher.publishEvent(JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName))
+        eventPublisher.publishEvent(
+            JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName, request.url),
+        )
 
         val instance = instanceRepository.findById(request.url)
 
@@ -100,7 +126,7 @@ internal class JiraService(
             return transactionId
         }
 
-        return connectNewInstance(request, transactionId)
+        return connectNewInstance(authId, request, transactionId)
     }
 
     /**
@@ -130,21 +156,22 @@ internal class JiraService(
      * @throws Exception If an error occurs during retrieval of project details or subsequent steps.
      */
     private suspend fun connectNewInstance(
+        authId: String,
         request: ConnectJiraInstanceRequest,
         transactionId: UUID,
     ): UUID {
         val credentials = credentialsRepository
-            .findById(JiraCredentialsId(request.userEmail, request.tokenName))
+            .findById(JiraCredentialsId(authId, request.tokenName))
             .orElseThrow {
                 eventPublisher.publishEvent(
-                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials"),
+                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
                 )
                 JiraCredentialNotFoundException(request.userEmail, request.tokenName)
             }
 
         if (!jiraClient.checkInstanceCapabilities(request.url)) {
             eventPublisher.publishEvent(
-                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Instance is not available"),
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Instance is not available", request.url),
             )
             throw JiraInstanceUnavailableException(request.url)
         }
@@ -153,10 +180,12 @@ internal class JiraService(
             jiraClient.searchProjects(request.url, credentials)
         } catch (e: Exception) {
             eventPublisher.publishEvent(
-                JiraInstanceConnectionInitiationFailedEvent(transactionId, e.message ?: "Unknown error"),
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, e.message ?: "Unknown error", request.url),
             )
             throw e
         }
+
+        requireAccessibleProjects(projects, transactionId, request.url)
 
         val projectKeys = projects.map { it.key }
         val instance = JiraInstance(
@@ -167,7 +196,8 @@ internal class JiraService(
             jiraProjectKeys = projectKeys.toMutableSet(),
             status = ConnectionState.UP_TO_DATE,
             updateCredentialName = request.tokenName,
-            updateCredentialUserEmail = request.userEmail,
+            updateCredentialUserEmail = credentials.userEmail,
+            updateCredentialAuthId = authId,
         )
         val config = JiraInstanceConfig(instance = instance)
         config.nextSyncAt = jiraInstanceConfigService.calculateNextSyncAt(config.schedule)
@@ -175,16 +205,45 @@ internal class JiraService(
         instanceRepository.save(instance)
         configRepository.save(config)
 
-        eventPublisher.publishEvent(JiraInstanceConnectionCompletedEvent(transactionId))
-
         applicationScope.launch {
             jiraIssueService.searchAndIngestAllIssuesOfProjects(
                 instance,
-                JiraCredentialsId(request.userEmail, request.tokenName),
+                JiraCredentialsId(authId, request.tokenName),
                 transactionId,
             )
         }
 
         return transactionId
+    }
+
+    /**
+     * Fails the connection when the project search yielded nothing to ingest.
+     *
+     * Jira Cloud answers `/rest/api/3/project/search` with `200` and an empty list when the request
+     * is unauthenticated or the account cannot browse any project, so an empty result means invalid
+     * credentials or missing permissions rather than a transient error. Storing an empty project-key
+     * set would leave the instance connected but ingesting nothing forever, so the connect is failed
+     * with a clear reason instead.
+     *
+     * @param projects The projects returned by the search.
+     * @param transactionId The current connection transaction id.
+     * @param url The Jira instance URL being connected.
+     * @throws JiraNoAccessibleProjectsException when [projects] is empty.
+     */
+    private fun requireAccessibleProjects(
+        projects: List<JiraProjectResponse>,
+        transactionId: UUID,
+        url: String,
+    ) {
+        if (projects.isNotEmpty()) return
+
+        eventPublisher.publishEvent(
+            JiraInstanceConnectionInitiationFailedEvent(
+                transactionId,
+                "No accessible Jira projects for the provided credentials",
+                url,
+            ),
+        )
+        throw JiraNoAccessibleProjectsException(url)
     }
 }
