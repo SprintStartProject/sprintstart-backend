@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.toDto
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -40,12 +41,8 @@ internal class ArtifactIngestionApiService(
     @Transactional(readOnly = true)
     @Tracked("Checking if artifact exists")
     override fun exists(artifactId: UUID): Boolean {
-        return try {
-            artifactRepository.existsById(artifactId) ||
-                (artifactRepository.findBySourceId(artifactId.toString()) != null)
-        } catch (_: Exception) {
-            artifactRepository.existsById(artifactId)
-        }
+        return artifactRepository.existsById(artifactId) ||
+            (artifactRepository.findBySourceId(artifactId.toString()) != null)
     }
 
     @Transactional(readOnly = true)
@@ -67,18 +64,7 @@ internal class ArtifactIngestionApiService(
     }
 
     private fun findArtifact(artifactId: UUID): Artifact? {
-        val byId = try {
-            artifactRepository.findById(artifactId).orElse(null)
-        } catch (_: Exception) {
-            null
-        }
-        if (byId != null) {
-            return byId
-        }
-        return try {
-            artifactRepository.findBySourceId(artifactId.toString())
-        } catch (_: Exception) {
-            null
-        }
+        return artifactRepository.findByIdOrNull(artifactId)
+            ?: artifactRepository.findBySourceId(artifactId.toString())
     }
 }

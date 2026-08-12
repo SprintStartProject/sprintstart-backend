@@ -84,11 +84,7 @@ internal class ArtifactSummaryService(
     }
 
     private fun resolveIngestionArtifactId(artifactId: UUID): UUID {
-        return try {
-            artifactIngestionApiService.findArtifactById(artifactId)?.id ?: artifactId
-        } catch (_: Exception) {
-            artifactId
-        }
+        return artifactIngestionApiService.findArtifactById(artifactId)?.id ?: artifactId
     }
 
     /**
