@@ -3,9 +3,11 @@ package com.sprintstart.sprintstartbackend.user.controller
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.request.AssignProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.SetProjectRoleTrackRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -78,6 +80,39 @@ class ProjectRoleController(
     }
 
     /**
+     * Points a project role at an onboarding track, deciding what onboarding means for its people.
+     *
+     * @param roleId The role to configure.
+     * @param request The track key, or null/blank to clear it.
+     * @return The updated project role.
+     */
+    @Operation(
+        summary = "Set a project role's onboarding track",
+        description =
+            "Decides what onboarding means for people in this role: what counts as their work " +
+                "and what it is called. A null or blank key clears it, resolving to the default " +
+                "track. Track keys come from GET /api/v1/onboarding/tracks.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Onboarding track updated"),
+            ApiResponse(responseCode = "400", description = "Unknown onboarding track"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role not found"),
+        ],
+    )
+    @PutMapping("/projectRoles/{roleId}/onboarding-track")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    fun setOnboardingTrack(
+        @PathVariable roleId: UUID,
+        @RequestBody request: SetProjectRoleTrackRequest,
+    ): ProjectRole {
+        return projectRoleService.setOnboardingTrack(roleId, request.onboardingTrackKey)
+    }
+
+    /**
      * Deletes a project role by its ID.
      *
      * @param roleId The UUID of the project role to delete.
@@ -101,53 +136,96 @@ class ProjectRoleController(
     }
 
     /**
-     * Assigns a project role to a user.
+     * The roles a user holds on one project.
      *
+     * @param projectId The UUID of the project.
+     * @param userId The UUID of the user.
+     * @return The roles held there; 404 when the user is not on that project.
+     */
+    @Operation(
+        summary = "Roles a user holds on a project",
+        description = "What this person does on this project, which is where roles are held.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Roles returned"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "The user is not assigned to that project"),
+        ],
+    )
+    @GetMapping("/projects/{projectId}/users/{userId}/project-roles")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getRolesForUserOnProject(
+        @Parameter(description = "UUID of the project") @PathVariable projectId: UUID,
+        @Parameter(description = "UUID of the user") @PathVariable userId: UUID,
+    ): List<ProjectRoleSummary> = projectRoleService.getRolesForUserOnProject(userId, projectId)
+
+    /**
+     * Gives a user a project role, on one project.
+     *
+     * The project is in the path rather than the body because it is not optional: a role is held
+     * *on a project*, so there is no meaningful call without one.
+     *
+     * @param projectId The UUID of the project the role is held on.
      * @param userId The UUID of the user.
      * @param request The request containing the role ID to assign.
      */
-    @Operation(summary = "Assign role to user", description = "Assigns a specific project role to a user.")
+    @Operation(
+        summary = "Assign role to user on a project",
+        description = "Gives a user a project role on one project. They must already be assigned to it.",
+    )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Role assigned to user successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role"),
-            ApiResponse(responseCode = "404", description = "User or Project role not found"),
+            ApiResponse(
+                responseCode = "404",
+                description = "Project role not found, or the user is not assigned to that project",
+            ),
         ],
     )
-    @PostMapping("/users/{userId}/project-roles")
+    @PostMapping("/projects/{projectId}/users/{userId}/project-roles")
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun assignRoleToUser(
+        @Parameter(description = "UUID of the project") @PathVariable projectId: UUID,
         @Parameter(description = "UUID of the user") @PathVariable userId: UUID,
         @RequestBody request: AssignProjectRoleRequest,
     ) {
-        projectRoleService.assignRoleToUser(userId, request.roleId)
+        projectRoleService.assignRoleToUser(userId, projectId, request.roleId)
     }
 
     /**
-     * Unassigns a project role from a user.
+     * Takes a project role off a user, on one project, leaving what they hold elsewhere alone.
      *
+     * @param projectId The UUID of the project the role is held on.
      * @param userId The UUID of the user.
      * @param roleId The UUID of the project role to remove.
      */
-    @Operation(summary = "Unassign role from user", description = "Removes a specific project role from a user.")
+    @Operation(
+        summary = "Unassign role from user on a project",
+        description = "Removes a project role from a user on one project only.",
+    )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Role removed from user successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role"),
-            ApiResponse(responseCode = "404", description = "User not found"),
+            ApiResponse(responseCode = "404", description = "The user is not assigned to that project"),
         ],
     )
-    @DeleteMapping("/users/{userId}/project-roles/{roleId}")
+    @DeleteMapping("/projects/{projectId}/users/{userId}/project-roles/{roleId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun unassignRoleFromUser(
+        @Parameter(description = "UUID of the project") @PathVariable projectId: UUID,
         @Parameter(description = "UUID of the user") @PathVariable userId: UUID,
         @Parameter(description = "UUID of the project role to remove") @PathVariable roleId: UUID,
     ) {
-        projectRoleService.unassignRoleFromUser(userId, roleId)
+        projectRoleService.unassignRoleFromUser(userId, projectId, roleId)
     }
 
     /**
