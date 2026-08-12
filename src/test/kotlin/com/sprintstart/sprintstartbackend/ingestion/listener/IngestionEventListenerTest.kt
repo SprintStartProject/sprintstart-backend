@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
+import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunAiSyncStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import io.mockk.coEvery
@@ -20,29 +21,34 @@ class IngestionEventListenerTest {
     private val testScope = TestScope()
     private val runArtifactsIngestionService = mockk<RunArtifactsIngestionService>()
     private val ingestionRunLifeCycleService = mockk<IngestionRunLifeCycleService>(relaxed = true)
+    private val ingestionRunAiSyncStatusService = mockk<IngestionRunAiSyncStatusService>(relaxed = true)
 
     private val listener = IngestionEventListener(
         runArtifactsIngestionService,
         ingestionRunLifeCycleService,
+        ingestionRunAiSyncStatusService,
         testScope,
     )
 
     @Test
-    fun `handleRunFinished marks the run as synced when the AI sync succeeds`() {
+    fun `handleRunFinished deindexes deleted artifacts and rolls up the run status`() {
         val runId = UUID.randomUUID()
-        coEvery { runArtifactsIngestionService.ingestRunArtifacts(runId) } just runs
+        coEvery { runArtifactsIngestionService.deindexRunArtifacts(runId) } just runs
 
         listener.handleRunFinished(RunFinishedEvent(runId))
         testScope.advanceUntilIdle()
 
-        coVerify(exactly = 1) { runArtifactsIngestionService.ingestRunArtifacts(runId) }
-        verify(exactly = 1) { ingestionRunLifeCycleService.markAiSyncSucceeded(runId) }
+        coVerify(exactly = 1) { runArtifactsIngestionService.deindexRunArtifacts(runId) }
+        // Indexing is no longer triggered here -- the drainer already handled it during the crawl,
+        // so the run's status is derived from its artifacts rather than declared a success.
+        verify(exactly = 1) { ingestionRunAiSyncStatusService.recompute(runId) }
+        verify(exactly = 0) { ingestionRunLifeCycleService.markAiSyncSucceeded(any()) }
     }
 
     @Test
     fun `handleRunFinished records the failure instead of losing it silently`() {
         val runId = UUID.randomUUID()
-        coEvery { runArtifactsIngestionService.ingestRunArtifacts(runId) } throws
+        coEvery { runArtifactsIngestionService.deindexRunArtifacts(runId) } throws
             IllegalStateException("AI service unreachable")
 
         listener.handleRunFinished(RunFinishedEvent(runId))
@@ -51,6 +57,7 @@ class IngestionEventListenerTest {
         verify(exactly = 1) {
             ingestionRunLifeCycleService.markAiSyncFailed(runId, "AI service unreachable")
         }
-        verify(exactly = 0) { ingestionRunLifeCycleService.markAiSyncSucceeded(any()) }
+        // A failed deindex must not be overwritten by the roll-up in the same pass.
+        verify(exactly = 0) { ingestionRunAiSyncStatusService.recompute(any()) }
     }
 }

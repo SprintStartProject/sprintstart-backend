@@ -31,7 +31,7 @@ class OnboardingFeedbackController(
     private val onboardingFeedbackService: OnboardingFeedbackService,
 ) {
     /**
-     * Retrieves all user feedback for all onboarding path steps.
+     * Retrieves all user feedback for all module pages.
      */
     @Operation(summary = "Get all onboarding feedbacks", description = "Get all onboarding feedbacks")
     @ApiResponses(
@@ -53,38 +53,41 @@ class OnboardingFeedbackController(
     }
 
     /**
-     * Retrieves all user feedback given on a given onboarding path step.
+     * Retrieves all user feedback given on a given module page.
      */
-    @Operation(summary = "Get feedback for step", description = "Retrieve all feedback for a given onboarding step")
+    @Operation(
+        summary = "Get feedback for a module page",
+        description = "Retrieve all feedback for a given module page",
+    )
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "200", description = "Successfully retrieved all feedbacks for this step"),
+            ApiResponse(responseCode = "200", description = "Successfully retrieved all feedbacks for this page"),
             ApiResponse(responseCode = "401", description = "Unauthorized to access this resource"),
             ApiResponse(responseCode = "403", description = "Forbidden to access this resource"),
-            ApiResponse(responseCode = "404", description = "Step with given ID not found"),
+            ApiResponse(responseCode = "404", description = "Module page with given ID not found"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @GetMapping("/steps/{stepId}/feedback")
+    @GetMapping("/module-pages/{pageId}/feedback")
     @PreAuthorize("hasRole('USER')")
-    fun getFeedbackByStepIdForMe(
+    fun getFeedbackByPageIdForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable stepId: UUID,
+        @PathVariable pageId: UUID,
     ): List<GetOnboardingFeedbackResponse> {
-        return onboardingFeedbackService.getFeedbackByStepIdForMe(jwt.subject, stepId)
+        return onboardingFeedbackService.getFeedbackByPageIdForMe(jwt.subject, pageId)
     }
 
     /**
-     * Allows the addition of user feedback on a given onboarding step.
+     * Allows the addition of user feedback on a given module page.
      */
-    @Operation(summary = "Add feedback for step", description = "Adds new feedback for a given onboarding step")
+    @Operation(summary = "Add feedback for a module page", description = "Adds new feedback for a given module page")
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "200", description = "Successfully added feedback for this step"),
+            ApiResponse(responseCode = "200", description = "Successfully added feedback for this page"),
             ApiResponse(responseCode = "401", description = "Unauthorized to access this resource"),
             ApiResponse(responseCode = "403", description = "Forbidden to access this resource"),
-            ApiResponse(responseCode = "404", description = "Step with given ID not found"),
+            ApiResponse(responseCode = "404", description = "Module page with given ID not found"),
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
@@ -110,7 +113,7 @@ class OnboardingFeedbackAdminController(
      */
     @Operation(
         summary = "Retrieve all feedbacks",
-        description = "Get all onboarding path step feedbacks from all users",
+        description = "Get all module page feedbacks from all users",
     )
     @ApiResponses(
         value = [
@@ -121,7 +124,7 @@ class OnboardingFeedbackAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/feedback")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("hasRole('ADMIN')")
     fun getAllFeedback(): List<GetAdminOnboardingFeedbackResponse> {
         return onboardingFeedbackService.getAllFeedback()
     }
@@ -151,27 +154,27 @@ class OnboardingFeedbackAdminController(
     }
 
     /**
-     * Retrieves all user feedback given on a specific onboarding path step.
+     * Retrieves all user feedback given on a specific module page.
      */
     @Operation(
-        summary = "Get all feedback on a step",
-        description = "Retrieves all user feedback on a given onboarding path step",
+        summary = "Get all feedback on a module page",
+        description = "Retrieves all user feedback on a given module page",
     )
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "200", description = "Successfully retrieved all feedbacks for this step"),
+            ApiResponse(responseCode = "200", description = "Successfully retrieved all feedbacks for this page"),
             ApiResponse(responseCode = "401", description = "Unauthorized to access this resource"),
             ApiResponse(responseCode = "403", description = "Forbidden to access this resource"),
-            ApiResponse(responseCode = "404", description = "Step with given ID not found"),
+            ApiResponse(responseCode = "404", description = "Module page with given ID not found"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @GetMapping("/steps/{stepId}/feedback")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    fun getAllFeedbackByStepId(
-        @PathVariable stepId: UUID,
+    @GetMapping("/module-pages/{pageId}/feedback")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun getAllFeedbackByPageId(
+        @PathVariable pageId: UUID,
     ): List<GetAdminOnboardingFeedbackResponse> {
-        return onboardingFeedbackService.getAllFeedbackByStepId(stepId)
+        return onboardingFeedbackService.getAllFeedbackByPageId(pageId)
     }
 
     /**

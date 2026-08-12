@@ -5,7 +5,7 @@ import java.util.UUID
 
 data class GetOnboardingFeedbackResponse(
     val id: UUID,
-    val stepId: UUID?,
+    val pageId: UUID?,
     val helpful: Boolean?,
     val comment: String,
     val createdAt: Instant,

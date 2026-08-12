@@ -42,8 +42,22 @@ class JiraArtifactProviderService(
 
         val existing = artifactRepository.findBySourceId(command.issueId)
         if (existing != null) {
+            // Jira issues carry no hash, so they are overwritten on every re-fetch. The AI index
+            // only cares when the embedded text actually moved -- re-queuing every issue on every
+            // crawl would keep the whole backlog permanently pending.
+            if (existing.title != command.summary || existing.content != command.description) {
+                existing.markAiSyncPending(runId)
+            }
             existing.title = command.summary
             existing.content = command.description
+            // Refreshed unconditionally, like GitHub's: a ticket moving to Done shifts no text, so
+            // gating this on the content check above would leave finished work in the starter-work
+            // pool until somebody happened to edit its description.
+            existing.state = command.toState()
+            // Refreshed with the state, and for the same reason: a ticket being picked up or
+            // handed back moves no text either, and starter work that somebody has since taken
+            // must stop being offered.
+            existing.hasAssignee = command.toHasAssignee()
             existing.addProjectIds(command.projectIds)
             existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
             val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
@@ -65,12 +79,17 @@ class JiraArtifactProviderService(
             content = command.description,
             mime = null,
             language = null,
+            state = command.toState(),
+            hasAssignee = command.toHasAssignee(),
             projectIdsInternal = command.projectIds.toMutableSet(),
             ingestionRun = ingestionRun,
             createdAtSource = command.createdAt,
             updatedAtSource = command.updatedAt,
             hash = null,
             metadata = artifactMetadataJsonMapper.toJson(command.toMetadata()),
+            // A new artifact is PENDING by default; the run id is what lets the run's derived
+            // AI-sync status see it still owes an embedding.
+            aiSyncRunId = runId,
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++

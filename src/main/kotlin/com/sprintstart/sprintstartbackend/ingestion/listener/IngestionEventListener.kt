@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
+import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunAiSyncStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import kotlinx.coroutines.CoroutineScope
@@ -14,19 +15,26 @@ import org.springframework.transaction.event.TransactionalEventListener
 class IngestionEventListener(
     private val runArtifactsIngestionService: RunArtifactsIngestionService,
     private val ingestionRunLifeCycleService: IngestionRunLifeCycleService,
+    private val ingestionRunAiSyncStatusService: IngestionRunAiSyncStatusService,
     private val applicationScope: CoroutineScope,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Handles a completed ingestion run event by scheduling artifact synchronization with the AI service.
+     * Finishes a run's AI-side work: flushes its deindex list and rolls up its sync status.
      *
-     * Runs on a fire-and-forget coroutine, so nothing upstream awaits this -- the run's
-     * `aiSyncStatus` is the only place this outcome is recorded. Without the explicit
-     * catch here, a failed sync would previously vanish into [applicationScope]'s
-     * uncaught-exception handling with no link back to the run it belonged to.
+     * Indexing is *not* triggered here any more -- artifacts are synced incrementally while the
+     * crawl is still running (see [com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiSyncService]),
+     * so most of a run's content is already searchable by the time this fires. What is left is the
+     * part that cannot be tracked per artifact, because the rows are gone: deletions.
      *
-     * @param event The run-finished event containing the ingestion run id to synchronize.
+     * Runs on a fire-and-forget coroutine, so nothing upstream awaits this. A failed deindex is
+     * recorded on the run itself, otherwise it would vanish into [applicationScope]'s
+     * uncaught-exception handling with no link back to the run it belonged to. The status roll-up
+     * runs otherwise, so a run whose artifacts are still queued keeps reporting `PENDING` rather
+     * than being frozen at whatever the previous write left behind.
+     *
+     * @param event The run-finished event containing the ingestion run id.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun handleRunFinished(
@@ -34,12 +42,13 @@ class IngestionEventListener(
     ) {
         applicationScope.launch {
             try {
-                runArtifactsIngestionService.ingestRunArtifacts(event.runId)
-                ingestionRunLifeCycleService.markAiSyncSucceeded(event.runId)
+                runArtifactsIngestionService.deindexRunArtifacts(event.runId)
             } catch (e: Exception) {
-                logger.error("AI sync failed for ingestion run {}", event.runId, e)
+                logger.error("AI deindex failed for ingestion run {}", event.runId, e)
                 ingestionRunLifeCycleService.markAiSyncFailed(event.runId, e.message)
+                return@launch
             }
+            ingestionRunAiSyncStatusService.recompute(event.runId)
         }
     }
 }

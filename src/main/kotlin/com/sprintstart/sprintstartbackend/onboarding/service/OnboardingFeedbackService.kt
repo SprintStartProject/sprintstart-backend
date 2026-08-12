@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.ModulePage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingFeedback
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAdminGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
@@ -8,8 +9,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.feedback.Crea
 import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.GetAdminOnboardingFeedbackResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.GetOnboardingFeedbackResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.ReadOnboardingFeedbackResponse
+import com.sprintstart.sprintstartbackend.onboarding.repository.ModulePageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingFeedbackRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
@@ -21,8 +22,9 @@ import java.util.UUID
 @Service
 class OnboardingFeedbackService(
     private val onboardingFeedbackRepository: OnboardingFeedbackRepository,
-    private val onboardingStepRepository: OnboardingStepRepository,
+    private val modulePageRepository: ModulePageRepository,
     private val userApi: UserApi,
+    private val contentQualityService: ContentQualityService,
 ) {
 //  ========================== Methods for users ==========================
 
@@ -43,50 +45,50 @@ class OnboardingFeedbackService(
     }
 
     /**
-     * Retrieves all feedback by this user for a given onboarding path step.
+     * Retrieves this user's feedback on one module page.
      *
      * @param authId The id of the user to filter feedback for.
-     * @param stepId The id of the step to retrieve feedback for.
-     * @throws ResponseStatusException (not found) if user or step with given id could not be found.
+     * @param pageId The module page to retrieve feedback for.
+     * @throws ResponseStatusException (not found) if the user or page could not be found.
      */
     @Transactional(readOnly = true)
-    @Tracked("Retrieving all feedback this user for a specific step")
-    fun getFeedbackByStepIdForMe(authId: String, stepId: UUID): List<GetOnboardingFeedbackResponse> {
+    @Tracked("Retrieving all feedback this user left on a specific module page")
+    fun getFeedbackByPageIdForMe(authId: String, pageId: UUID): List<GetOnboardingFeedbackResponse> {
         val userId = getUserId(authId)
-        ensureUserOwnsStep(userId, stepId)
+        findPage(pageId)
 
         return onboardingFeedbackRepository
-            .findAllByStepIdAndUserIdOrderByCreatedAtAsc(stepId, userId)
+            .findAllByPageIdAndUserIdOrderByCreatedAtAsc(pageId, userId)
             .map { it.toGetResponse() }
     }
 
     /**
-     * Adds new feedback for a given user on a onboarding path step.
+     * Records this user's feedback, optionally about one module page.
      *
-     * @param authId The id of the user which wants to add this feedback
+     * The page is shared, so "this didn't help" accumulates across every hire who read it -- which
+     * is what makes the content-quality loop worth running at all.
+     *
+     * @param authId The id of the user leaving the feedback.
      * @param request [CreateOnboardingFeedbackRequest] The feedback information.
-     * @throws ResponseStatusException (not found) if user or step with given id could not be found.
+     * @throws ResponseStatusException (not found) if the user or page could not be found.
      */
     @Transactional
     @Tracked("Adding feedback for this user")
     fun createFeedbackForMe(authId: String, request: CreateOnboardingFeedbackRequest): GetOnboardingFeedbackResponse {
         val userId = getUserId(authId)
-        val step = request.stepId?.let { stepId -> ensureUserOwnsStep(userId, stepId) }
+        val page = request.pageId?.let { findPage(it) }
 
-        val feedback = OnboardingFeedback(
-            userId = userId,
-            step = step,
-            helpful = request.helpful,
-            message = request.message,
+        val feedback = onboardingFeedbackRepository.save(
+            OnboardingFeedback(
+                userId = userId,
+                page = page,
+                helpful = request.helpful,
+                message = request.message,
+            ),
         )
 
-        // Persist exactly once: via the owning step's cascade when a step is set,
-        // otherwise directly. Doing both (collection add + save) attaches two
-        // instances with the same assigned UUID and throws NonUniqueObjectException.
-        if (step != null) {
-            step.feedback.add(feedback)
-        } else {
-            onboardingFeedbackRepository.save(feedback)
+        if (page != null && feedback.helpful == false) {
+            contentQualityService.checkAndTriggerRegeneration(page)
         }
 
         return feedback.toGetResponse()
@@ -124,20 +126,20 @@ class OnboardingFeedbackService(
     }
 
     /**
-     * Retrieves all feedbacks provided for a specific step.
+     * Retrieves everybody's feedback on one module page.
      *
-     * @param stepId The id of the step to query feedbacks for.
-     * @throws ResponseStatusException (not found) if step with given id could not be found.
+     * @param pageId The module page to query feedback for.
+     * @throws ResponseStatusException (not found) if no page with that id exists.
      */
     @Transactional(readOnly = true)
-    @Tracked("Retrieving all feedback for a specific step")
-    fun getAllFeedbackByStepId(stepId: UUID): List<GetAdminOnboardingFeedbackResponse> {
-        if (!onboardingStepRepository.existsById(stepId)) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId")
+    @Tracked("Retrieving all feedback for a specific module page")
+    fun getAllFeedbackByPageId(pageId: UUID): List<GetAdminOnboardingFeedbackResponse> {
+        if (!modulePageRepository.existsById(pageId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No module page found with id: $pageId")
         }
 
         return onboardingFeedbackRepository
-            .findAllByStepIdOrderByCreatedAtAsc(stepId)
+            .findAllByPageIdOrderByCreatedAtAsc(pageId)
             .map { it.toAdminGetResponse() }
     }
 
@@ -176,14 +178,13 @@ class OnboardingFeedbackService(
     }
 
     /**
-     * Checks if a given step is owned by a specific user.
+     * Resolves a module page. There is no per-user ownership check to make: the page is shared, so
+     * anyone who can read the module can say whether it helped.
      *
-     * @param userId The id of the owning user.
-     * @param stepId The id of the owned step.
-     * @throws ResponseStatusException (not found) if the step couldn't be found.
+     * @throws ResponseStatusException (not found) if no page with that id exists.
      */
-    private fun ensureUserOwnsStep(userId: UUID, stepId: UUID) =
-        onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+    private fun findPage(pageId: UUID): ModulePage =
+        modulePageRepository
+            .findById(pageId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No module page found with id: $pageId") }
 }

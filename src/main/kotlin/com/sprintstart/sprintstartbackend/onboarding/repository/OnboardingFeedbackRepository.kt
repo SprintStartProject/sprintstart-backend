@@ -10,9 +10,11 @@ interface OnboardingFeedbackRepository : JpaRepository<OnboardingFeedback, UUID>
 
     fun findAllByUserIdOrderByCreatedAtAsc(userId: UUID): MutableList<OnboardingFeedback>
 
-    fun findAllByStepIdOrderByCreatedAtAsc(stepId: UUID): MutableList<OnboardingFeedback>
+    fun findAllByPageIdOrderByCreatedAtAsc(pageId: UUID): MutableList<OnboardingFeedback>
 
-    fun findAllByStepIdAndUserIdOrderByCreatedAtAsc(stepId: UUID, userId: UUID): MutableList<OnboardingFeedback>
+    fun findAllByPageIdAndUserIdOrderByCreatedAtAsc(pageId: UUID, userId: UUID): MutableList<OnboardingFeedback>
 
     fun findByIdAndUserId(id: UUID, userId: UUID): Optional<OnboardingFeedback>
+
+    fun countByPageIdAndHelpfulFalse(pageId: UUID): Long
 }

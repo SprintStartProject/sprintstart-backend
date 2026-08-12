@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user
 
+import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
@@ -9,6 +10,8 @@ import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserReque
 import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import com.sprintstart.sprintstartbackend.user.service.GithubLoginService
+import com.sprintstart.sprintstartbackend.user.service.JiraDisplayNameService
 import com.sprintstart.sprintstartbackend.user.service.KeycloakAdminClient
 import com.sprintstart.sprintstartbackend.user.service.UserService
 import io.mockk.every
@@ -24,6 +27,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -33,11 +37,15 @@ class UserServiceTest {
     private val projectRepository: ProjectRepository = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk()
     private val keycloakAdminClient: KeycloakAdminClient = mockk()
+    private val githubLoginService = GithubLoginService(userRepository)
+    private val jiraDisplayNameService = JiraDisplayNameService(userRepository)
     private val userService = UserService(
         userRepository,
         projectRepository,
         eventPublisher,
         keycloakAdminClient,
+        githubLoginService,
+        jiraDisplayNameService,
     )
 
     @Test
@@ -45,6 +53,7 @@ class UserServiceTest {
         val user = user(authId = "auth-1", username = "alice")
         val jwt = mockk<Jwt>()
         every { jwt.subject } returns "auth-1"
+        every { jwt.claims } returns emptyMap()
         user.roles.add(Role.USER)
         every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
 
@@ -60,6 +69,7 @@ class UserServiceTest {
     fun `getMe should provision JIT when user missing`() {
         val jwt = mockk<Jwt>()
         every { jwt.subject } returns "missing"
+        every { jwt.claims } returns emptyMap()
         every { jwt.getClaimAsString("preferred_username") } returns "missingUser"
         every { jwt.getClaimAsString("email") } returns "missing@test.com"
         every { jwt.getClaimAsString("given_name") } returns "Missing"
@@ -254,6 +264,49 @@ class UserServiceTest {
         val ex = assertThrows<ResponseStatusException> { userService.getMyProjects("missing") }
 
         assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+    }
+
+    /**
+     * The verdict is stored by the arrival evidence check and read by nothing else, so without this
+     * it is a field one side writes and no side ever shows — the shape this workspace has shipped
+     * repeatedly. What it buys is the profile being able to say "we could not find that account"
+     * *before* a typo silently stops crediting work the hire really did.
+     */
+    @Test
+    fun `getMe carries the GitHub login verdict to the caller`() {
+        val user = user(authId = "auth-1", username = "alice")
+        val checkedAt = Instant.now()
+        user.githubLogin = "octocat"
+        user.githubLoginVerification = GithubLoginVerification.NOT_FOUND
+        user.githubLoginVerifiedAt = checkedAt
+        val jwt = mockk<Jwt>()
+        every { jwt.subject } returns "auth-1"
+        every { jwt.claims } returns emptyMap()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userService.getMe(jwt)
+
+        assertThat(result.githubLoginVerification).isEqualTo(GithubLoginVerification.NOT_FOUND)
+        assertThat(result.githubLoginVerifiedAt).isEqualTo(checkedAt)
+    }
+
+    /**
+     * Null is "nobody has an answer" — never checked, or checked and GitHub would not say. A client
+     * that saw a `NOT_FOUND` here would tell somebody their perfectly good username does not exist.
+     */
+    @Test
+    fun `an unchecked login reports no verdict rather than a negative one`() {
+        val user = user(authId = "auth-1", username = "alice")
+        user.githubLogin = "octocat"
+        val jwt = mockk<Jwt>()
+        every { jwt.subject } returns "auth-1"
+        every { jwt.claims } returns emptyMap()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        val result = userService.getMe(jwt)
+
+        assertThat(result.githubLoginVerification).isNull()
+        assertThat(result.githubLoginVerifiedAt).isNull()
     }
 
     @Test

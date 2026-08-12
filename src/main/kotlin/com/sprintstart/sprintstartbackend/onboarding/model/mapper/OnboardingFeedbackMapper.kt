@@ -8,7 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.feedback.Rea
 fun OnboardingFeedback.toGetResponse(): GetOnboardingFeedbackResponse {
     return GetOnboardingFeedbackResponse(
         id = this.id,
-        stepId = this.step?.id,
+        pageId = this.page?.id,
         helpful = this.helpful,
         comment = this.message,
         createdAt = this.createdAt,
@@ -19,8 +19,10 @@ fun OnboardingFeedback.toAdminGetResponse(): GetAdminOnboardingFeedbackResponse 
     return GetAdminOnboardingFeedbackResponse(
         id = this.id,
         userId = this.userId,
-        stepId = this.step?.id,
-        stepTitle = this.step?.title,
+        pageId = this.page?.id,
+        pageTitle = this.page?.title,
+        moduleId = this.page?.module?.id,
+        competencyKey = this.page?.module?.competencyKey,
         message = this.message,
         read = this.read,
         createdAt = this.createdAt,

@@ -16,23 +16,7 @@ val HTTP_SUCCESS_RANGE = 200..299
  * Inject this bean into any Spring component or module-level wrapper that needs to
  * make outbound requests. Never construct it manually.
  *
- * ### Example
- * ```kotlin
- * val body: MyResponse = webClient
- *     .post()
- *     .uri("https://api.example.com/resource")
- *     .header("Authorization", "Bearer $token")
- *     .body(myRequest)
- *     .sync()
- *     .perform<MyResponse>()
- * ```
- *
- * ### Module wrappers
- * For each bounded context (chat, uploads, connectors, ...) create a thin wrapper that
- * takes [WebClient] as a constructor dependency and exposes domain-typed suspend
- * functions. The wrapper owns URI construction and request/response mapping;
- * [WebClient] owns transport only. See [com.sprintstart.sprintstartbackend.chat.ChatAiClient]
- * for a reference implementation.
+ * ⚠️ Transport only: a module's own client owns URI construction and request/response mapping.
  */
 @Component
 class WebClient(

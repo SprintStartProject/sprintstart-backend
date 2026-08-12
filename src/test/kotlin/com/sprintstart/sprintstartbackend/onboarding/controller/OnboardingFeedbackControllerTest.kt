@@ -41,7 +41,8 @@ class OnboardingFeedbackControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
-    private val stepId = UUID.randomUUID()
+    private val pageId = UUID.randomUUID()
+    private val moduleId = UUID.randomUUID()
     private val feedbackId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
 
@@ -72,18 +73,20 @@ class OnboardingFeedbackControllerTest(
 
     private fun buildGetFeedbackResponse() = GetOnboardingFeedbackResponse(
         id = feedbackId,
-        stepId = stepId,
+        pageId = pageId,
         helpful = true,
-        comment = "Great step!",
+        comment = "Great page!",
         createdAt = Instant.now(),
     )
 
     private fun buildGetAdminFeedbackResponse() = GetAdminOnboardingFeedbackResponse(
         id = feedbackId,
         userId = userId,
-        stepId = stepId,
-        stepTitle = "Step",
-        message = "Great step!",
+        pageId = pageId,
+        pageTitle = "How it works",
+        moduleId = moduleId,
+        competencyKey = "deploy-runbook",
+        message = "Great page!",
         read = false,
         createdAt = Instant.now(),
     )
@@ -94,9 +97,9 @@ class OnboardingFeedbackControllerTest(
     )
 
     private fun buildCreateRequest() = CreateOnboardingFeedbackRequest(
-        stepId = stepId,
+        pageId = pageId,
         helpful = true,
-        message = "Great step!",
+        message = "Great page!",
     )
 
     // ========================== User endpoints ==========================
@@ -128,29 +131,29 @@ class OnboardingFeedbackControllerTest(
     }
 
     @Test
-    fun `getFeedbackByStepIdForMe should return 200 and list`() {
-        every { onboardingFeedbackService.getFeedbackByStepIdForMe(authId, stepId) } returns
+    fun `getFeedbackByPageIdForMe should return 200 and list`() {
+        every { onboardingFeedbackService.getFeedbackByPageIdForMe(authId, pageId) } returns
             listOf(buildGetFeedbackResponse())
 
         mockMvc
-            .perform(get("/api/v1/onboarding/me/steps/$stepId/feedback").with(userJwt))
+            .perform(get("/api/v1/onboarding/me/module-pages/$pageId/feedback").with(userJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        io.mockk.verify(exactly = 1) { onboardingFeedbackService.getFeedbackByStepIdForMe(authId, stepId) }
+        io.mockk.verify(exactly = 1) { onboardingFeedbackService.getFeedbackByPageIdForMe(authId, pageId) }
     }
 
     @Test
-    fun `getFeedbackByStepIdForMe should return 401 when not authenticated`() {
+    fun `getFeedbackByPageIdForMe should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/me/steps/$stepId/feedback"))
+            .perform(get("/api/v1/onboarding/me/module-pages/$pageId/feedback"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
-    fun `getFeedbackByStepIdForMe should return 403 when authenticated with wrong role`() {
+    fun `getFeedbackByPageIdForMe should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/onboarding/me/steps/$stepId/feedback").with(noUserRoleJwt))
+            .perform(get("/api/v1/onboarding/me/module-pages/$pageId/feedback").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -258,29 +261,29 @@ class OnboardingFeedbackControllerTest(
     }
 
     @Test
-    fun `getAllFeedbackByStepId should return 200 and list`() {
-        every { onboardingFeedbackService.getAllFeedbackByStepId(stepId) } returns
+    fun `getAllFeedbackByPageId should return 200 and list`() {
+        every { onboardingFeedbackService.getAllFeedbackByPageId(pageId) } returns
             listOf(buildGetAdminFeedbackResponse())
 
         mockMvc
-            .perform(get("/api/v1/admin/onboarding/steps/$stepId/feedback").with(adminJwt))
+            .perform(get("/api/v1/admin/onboarding/module-pages/$pageId/feedback").with(adminJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        io.mockk.verify(exactly = 1) { onboardingFeedbackService.getAllFeedbackByStepId(stepId) }
+        io.mockk.verify(exactly = 1) { onboardingFeedbackService.getAllFeedbackByPageId(pageId) }
     }
 
     @Test
-    fun `getAllFeedbackByStepId should return 401 when not authenticated`() {
+    fun `getAllFeedbackByPageId should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/admin/onboarding/steps/$stepId/feedback"))
+            .perform(get("/api/v1/admin/onboarding/module-pages/$pageId/feedback"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
-    fun `getAllFeedbackByStepId should return 403 when authenticated with wrong role`() {
+    fun `getAllFeedbackByPageId should return 403 when authenticated with wrong role`() {
         mockMvc
-            .perform(get("/api/v1/admin/onboarding/steps/$stepId/feedback").with(userJwt))
+            .perform(get("/api/v1/admin/onboarding/module-pages/$pageId/feedback").with(userJwt))
             .andExpect(status().isForbidden)
     }
 

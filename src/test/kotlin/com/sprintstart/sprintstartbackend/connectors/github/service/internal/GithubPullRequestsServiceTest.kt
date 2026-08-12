@@ -358,5 +358,8 @@ class GithubPullRequestsServiceTest {
         reviews = null,
         comments = null,
         reviewThreads = null,
+        statusCheckRollup = null,
+        files = null,
+        commits = null,
     )
 }

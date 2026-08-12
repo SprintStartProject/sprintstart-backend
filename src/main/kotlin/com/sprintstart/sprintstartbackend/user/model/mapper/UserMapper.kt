@@ -19,7 +19,11 @@ fun User.toGetResponse(): GetUserResponse =
         permissionGroup = this.effectivePermissionGroup(),
         enabled = this.enabled,
         profileIcon = this.profileIcon,
-        hasCompletedOnboarding = this.hasCompletedOnboarding,
+        githubLogin = this.githubLogin,
+        githubLoginSource = this.githubLoginSource,
+        githubLoginVerification = this.githubLoginVerification,
+        githubLoginVerifiedAt = this.githubLoginVerifiedAt,
+        jiraDisplayName = this.jiraDisplayName,
     )
 
 fun User.effectivePermissionGroup(): Role {

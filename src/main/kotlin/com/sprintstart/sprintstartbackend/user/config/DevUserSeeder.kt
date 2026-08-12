@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.config
 
-import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
-import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -20,20 +18,22 @@ import java.util.UUID
  * before being used in production environments.
  *
  * @property userRepository Repository used to check for and persist user entities.
- * @property projectRoleRepository Repository used to find or create the dev user's project role.
  */
 @Component
 @ConditionalOnProperty(prefix = "sprintstart.dev-user", name = ["enabled"], havingValue = "true")
 class DevUserSeeder(
     private val userRepository: UserRepository,
-    private val projectRoleRepository: ProjectRoleRepository,
 ) : ApplicationRunner {
     /**
      * Runs the development user seeding logic after the application context has started.
      *
      * A fixed UUID is used to make the default user deterministic across application starts.
-     * If no user with this UUID exists, a new default user is created and stored with a
-     * "Backend Developer" project role so it has a usable onboarding scope.
+     * If no user with this UUID exists, a new default user is created.
+     *
+     * It is seeded with **no project role**, which is not an omission: roles are held per project,
+     * and this user is on no project. Giving it one would need a dev project to hang the assignment
+     * off, and inventing one here would put fixture data in front of anybody who enables this flag.
+     * Assign the user to a project and set a role there — that is now the only way roles exist.
      *
      * @param args Application startup arguments provided by Spring Boot.
      */
@@ -41,11 +41,6 @@ class DevUserSeeder(
         val defaultUserId = UUID.fromString("00000000-0000-0000-0000-000000000001")
 
         if (!userRepository.existsById(defaultUserId)) {
-            val defaultRole = projectRoleRepository.findByName("Backend Developer")
-                ?: projectRoleRepository.save(
-                    ProjectRole(name = "Backend Developer", description = "Builds and maintains backend services"),
-                )
-
             userRepository.save(
                 User(
                     id = defaultUserId,
@@ -54,7 +49,6 @@ class DevUserSeeder(
                     email = "dev.user@sprintstart.de",
                     firstname = "Default",
                     lastname = "User",
-                    projectRoles = mutableSetOf(defaultRole),
                 ),
             )
         }
