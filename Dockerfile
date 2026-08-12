@@ -1,22 +1,14 @@
-#FROM eclipse-temurin:21
-#RUN addgroup --system spring && adduser --system --ingroup spring spring
-#USER spring:spring
-#ARG JAR_FILE=build/libs/*-SNAPSHOT.jar
-#COPY ${JAR_FILE} app.jar
-#ENTRYPOINT ["java","-jar","/app.jar"]
-
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 
 COPY gradlew .
-RUN sed -i 's/\r$//' gradlew
+RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
 COPY gradle gradle
 COPY build.gradle.kts settings.gradle.kts ./
 COPY src src
 
-RUN chmod +x gradlew
-RUN ./gradlew bootJar --no-daemon
+RUN --mount=type=cache,target=/root/.gradle ./gradlew bootJar --no-daemon
 
 
 FROM eclipse-temurin:21-jre
