@@ -5,6 +5,7 @@ import java.util.UUID
 data class GetBlueprintCheckOptionResponse(
     val id: UUID,
     val blueprintCheckQuestionId: UUID,
+    val revision: Long,
     val position: Int,
     val label: String,
     val correct: Boolean,

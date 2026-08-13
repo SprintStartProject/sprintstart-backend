@@ -6,6 +6,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.util.UUID
 
 @Entity
@@ -16,6 +17,9 @@ class BlueprintResource(
     @ManyToOne
     @JoinColumn(name = "blueprint_step_id", nullable = false)
     val blueprintStep: BlueprintStep,
+    @Column(nullable = false)
+    @Version
+    var revision: Long = 0,
     @Column(nullable = false)
     var title: String,
     @Column(nullable = false)

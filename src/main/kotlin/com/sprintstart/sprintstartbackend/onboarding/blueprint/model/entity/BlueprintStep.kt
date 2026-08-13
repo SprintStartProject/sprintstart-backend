@@ -10,6 +10,7 @@ import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.util.UUID
 
 @Entity
@@ -20,6 +21,9 @@ data class BlueprintStep(
     @ManyToOne
     @JoinColumn(name = "blueprint_phase_id", nullable = false)
     val blueprintPhase: BlueprintPhase,
+    @Column(nullable = false)
+    @Version
+    var revision: Long = 0,
     @Column(nullable = false)
     var position: Int,
     @Column(nullable = false)

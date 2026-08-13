@@ -67,6 +67,13 @@ class BlueprintTaskService(
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
 
+        if (blueprintTask.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint task has been modified by another request. Please reload and try again.",
+            )
+        }
+
         shiftTasksBetween(blueprintTask, request)
 
         blueprintTask.position = request.position

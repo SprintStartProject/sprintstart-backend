@@ -9,6 +9,7 @@ fun BlueprintStep.toGetResponse(): GetBlueprintStepResponse {
     return GetBlueprintStepResponse(
         id = this.id,
         blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,
@@ -25,6 +26,7 @@ fun BlueprintStep.toCreateResponse(): CreateBlueprintStepResponse {
     return CreateBlueprintStepResponse(
         id = this.id,
         blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,
@@ -41,6 +43,7 @@ fun BlueprintStep.toUpdateResponse(): UpdateBlueprintStepResponse {
     return UpdateBlueprintStepResponse(
         id = this.id,
         blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,

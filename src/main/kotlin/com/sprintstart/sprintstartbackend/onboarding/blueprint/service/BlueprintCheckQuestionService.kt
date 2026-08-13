@@ -91,6 +91,13 @@ class BlueprintCheckQuestionService(
             .findById(questionId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
 
+        if (question.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint check question has been modified by another request. Please reload and try again.",
+            )
+        }
+
         shiftQuestionsBetween(question, request)
 
         question.position = request.position

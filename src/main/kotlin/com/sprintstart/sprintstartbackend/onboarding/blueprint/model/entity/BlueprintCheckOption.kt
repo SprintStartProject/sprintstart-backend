@@ -6,6 +6,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.util.UUID
 
 @Entity
@@ -16,6 +17,9 @@ data class BlueprintCheckOption(
     @ManyToOne
     @JoinColumn(name = "blueprint_question_id", nullable = false)
     val blueprintCheckQuestion: BlueprintCheckQuestion,
+    @Column(nullable = false)
+    @Version
+    var revision: Long = 0,
     @Column(nullable = false)
     var position: Int,
     @Column(nullable = false, columnDefinition = "TEXT")

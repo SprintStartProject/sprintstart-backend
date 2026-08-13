@@ -7,6 +7,7 @@ import java.util.UUID
 data class CreateBlueprintCheckQuestionResponse(
     val id: UUID,
     val blueprintPhaseId: UUID,
+    val revision: Long,
     val position: Int,
     val type: CheckQuestionType,
     val question: String,

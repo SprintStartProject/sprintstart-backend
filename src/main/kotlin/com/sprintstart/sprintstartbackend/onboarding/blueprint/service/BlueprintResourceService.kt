@@ -65,6 +65,13 @@ class BlueprintResourceService(
             .findById(resourceId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
 
+        if (blueprintResource.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint resource has been modified by another request. Please reload and try again.",
+            )
+        }
+
         blueprintResource.title = request.title
         blueprintResource.description = request.description
         blueprintResource.url = request.url

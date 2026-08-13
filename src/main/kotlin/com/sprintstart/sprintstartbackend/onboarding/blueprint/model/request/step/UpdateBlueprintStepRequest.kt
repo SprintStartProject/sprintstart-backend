@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.st
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 
 data class UpdateBlueprintStepRequest(
+    val revision: Long,
     val position: Int,
     val title: String,
     val description: String,

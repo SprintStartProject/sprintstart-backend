@@ -74,6 +74,13 @@ class BlueprintPhaseService(
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
 
+        if (phase.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint phase has been modified by another request. Please reload and try again.",
+            )
+        }
+
         shiftPhasesBetween(phase, request)
 
         phase.position = request.position
@@ -94,7 +101,7 @@ class BlueprintPhaseService(
         blueprintPhaseRepository.delete(phase)
     }
 
-    //  ========================== Helper Methods ==========================
+//  ========================== Helper Methods ==========================
 
     private fun shiftPhasesRight(
         blueprintPath: BlueprintPath,

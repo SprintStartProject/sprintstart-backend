@@ -69,6 +69,13 @@ class BlueprintCheckOptionService(
             .findById(optionId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
 
+        if (option.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint check option has been modified by another request. Please reload and try again.",
+            )
+        }
+
         shiftOptionsBetween(option, request)
 
         option.position = request.position

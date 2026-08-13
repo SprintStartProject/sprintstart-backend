@@ -6,9 +6,9 @@ import java.util.UUID
 data class GetBlueprintPathOverviewResponse(
     val id: UUID,
     val blueprintKey: UUID,
-    val title: String,
-    val description: String? = null,
     val version: Int,
     val revision: Long,
+    val title: String,
+    val description: String? = null,
     val status: BlueprintStatus,
 )

@@ -9,6 +9,7 @@ fun BlueprintCheckQuestion.toGetResponse(): GetBlueprintCheckQuestionResponse {
     return GetBlueprintCheckQuestionResponse(
         id = this.id,
         blueprintPhaseId = blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         type = this.type,
         question = this.question,
@@ -22,6 +23,7 @@ fun BlueprintCheckQuestion.toCreateResponse(): CreateBlueprintCheckQuestionRespo
     return CreateBlueprintCheckQuestionResponse(
         id = this.id,
         blueprintPhaseId = blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         type = this.type,
         question = this.question,
@@ -35,6 +37,7 @@ fun BlueprintCheckQuestion.toUpdateResponse(): UpdateBlueprintCheckQuestionRespo
     return UpdateBlueprintCheckQuestionResponse(
         id = this.id,
         blueprintPhaseId = blueprintPhase.id,
+        revision = this.revision,
         position = this.position,
         type = this.type,
         question = this.question,

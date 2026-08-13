@@ -5,6 +5,7 @@ import java.util.UUID
 data class GetBlueprintResourceResponse(
     val id: UUID,
     val blueprintStepId: UUID,
+    val revision: Long,
     val title: String,
     val description: String,
     val url: String,

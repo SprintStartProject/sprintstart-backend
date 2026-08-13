@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.ch
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 
 data class UpdateBlueprintCheckQuestionRequest(
+    val revision: Long,
     val position: Int,
     val type: CheckQuestionType,
     val question: String,

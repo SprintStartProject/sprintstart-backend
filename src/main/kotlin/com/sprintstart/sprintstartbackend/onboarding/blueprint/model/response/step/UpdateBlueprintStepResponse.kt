@@ -8,6 +8,7 @@ import java.util.UUID
 data class UpdateBlueprintStepResponse(
     val id: UUID,
     val blueprintPhaseId: UUID,
+    val revision: Long,
     val position: Int,
     val title: String,
     val description: String,

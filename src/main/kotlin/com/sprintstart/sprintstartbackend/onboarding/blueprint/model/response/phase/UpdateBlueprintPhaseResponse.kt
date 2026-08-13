@@ -7,6 +7,7 @@ import java.util.UUID
 data class UpdateBlueprintPhaseResponse(
     val id: UUID,
     val blueprintPathId: UUID,
+    val revision: Long,
     val position: Int,
     val title: String,
     val description: String,

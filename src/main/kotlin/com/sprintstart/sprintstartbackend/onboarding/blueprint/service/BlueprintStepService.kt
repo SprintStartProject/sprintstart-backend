@@ -73,6 +73,13 @@ class BlueprintStepService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
 
+        if (blueprintStep.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint step has been modified by another request. Please reload and try again.",
+            )
+        }
+
         shiftStepsBetween(blueprintStep, request)
 
         blueprintStep.position = request.position

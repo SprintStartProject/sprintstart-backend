@@ -9,6 +9,7 @@ fun BlueprintResource.toGetResponse(): GetBlueprintResourceResponse {
     return GetBlueprintResourceResponse(
         id = this.id,
         blueprintStepId = this.blueprintStep.id,
+        revision = this.revision,
         title = this.title,
         description = this.description,
         url = this.url,
@@ -19,6 +20,7 @@ fun BlueprintResource.toCreateResponse(): CreateBlueprintResourceResponse {
     return CreateBlueprintResourceResponse(
         id = this.id,
         blueprintStepId = this.blueprintStep.id,
+        revision = this.revision,
         title = this.title,
         description = this.description,
         url = this.url,
@@ -29,6 +31,7 @@ fun BlueprintResource.toUpdateResponse(): UpdateBlueprintResourceResponse {
     return UpdateBlueprintResourceResponse(
         id = this.id,
         blueprintStepId = this.blueprintStep.id,
+        revision = this.revision,
         title = this.title,
         description = this.description,
         url = this.url,

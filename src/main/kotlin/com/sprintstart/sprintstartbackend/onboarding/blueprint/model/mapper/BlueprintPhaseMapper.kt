@@ -9,6 +9,7 @@ fun BlueprintPhase.toGetResponse(): GetBlueprintPhaseResponse {
     return GetBlueprintPhaseResponse(
         id = this.id,
         blueprintPathId = this.blueprintPath.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,
@@ -21,6 +22,7 @@ fun BlueprintPhase.toCreateResponse(): CreateBlueprintPhaseResponse {
     return CreateBlueprintPhaseResponse(
         id = this.id,
         blueprintPathId = this.blueprintPath.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,
@@ -33,6 +35,7 @@ fun BlueprintPhase.toUpdateResponse(): UpdateBlueprintPhaseResponse {
     return UpdateBlueprintPhaseResponse(
         id = this.id,
         blueprintPathId = this.blueprintPath.id,
+        revision = this.revision,
         position = this.position,
         title = this.title,
         description = this.description,
