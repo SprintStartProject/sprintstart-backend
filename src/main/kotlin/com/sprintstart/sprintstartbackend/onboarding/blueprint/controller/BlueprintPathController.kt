@@ -40,6 +40,20 @@ class BlueprintPathController(
         return blueprintPathService.createBlueprintPath(request)
     }
 
+    @PostMapping("/paths/{pathId}/edit")
+    fun editBlueprintPathById(
+        @PathVariable pathId: UUID,
+    ): GetBlueprintPathResponse {
+        return blueprintPathService.openBlueprintPathDraftById(pathId)
+    }
+
+    @PostMapping("/paths/{pathId}/publish")
+    fun publishBlueprintPathById(
+        @PathVariable pathId: UUID,
+    ): GetBlueprintPathResponse {
+        return blueprintPathService.publishBlueprintPathDraftById(pathId)
+    }
+
     @PutMapping("/paths/{pathId}")
     fun updateBlueprintPathById(
         @PathVariable pathId: UUID,
