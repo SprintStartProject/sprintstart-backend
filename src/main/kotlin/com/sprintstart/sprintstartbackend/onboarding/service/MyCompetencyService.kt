@@ -13,10 +13,10 @@ import java.util.UUID
 /**
  * Serves the authenticated user their own durable competency ledger.
  *
- * This is the self-serve equivalent of the PM-only
- * [CompetencyDashboardService.getUserCompetencyStates]. The ledger is global (a proven skill
- * transfers across projects), so this view is not project-scoped. Every ledger row is returned,
- * including level-0 (placed-but-unknown) rows, so the client decides what to surface.
+ * The ledger is read by its owner and by nobody else: the level a hire is at is not reported to
+ * anybody, it decides what work is suggested to them. It is global (a proven skill transfers
+ * across projects), so this view is not project-scoped. Every ledger row is returned, including
+ * level-0 (placed-but-unknown) rows, so the client decides what to surface.
  */
 @Service
 class MyCompetencyService(

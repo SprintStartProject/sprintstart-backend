@@ -10,4 +10,6 @@ interface AutonomyMilestoneRepository : JpaRepository<AutonomyMilestone, UUID> {
     fun findByHireIdAndProjectId(hireId: UUID, projectId: UUID): AutonomyMilestone?
 
     fun findAllByProjectId(projectId: UUID): List<AutonomyMilestone>
+
+    fun deleteAllByHireId(hireId: UUID)
 }

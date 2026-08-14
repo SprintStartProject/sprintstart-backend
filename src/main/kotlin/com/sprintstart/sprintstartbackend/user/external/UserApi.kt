@@ -69,6 +69,17 @@ interface UserApi {
     fun getGithubLoginByUserId(userId: UUID): String?
 
     /**
+     * The skills a user has said they have, with the level they claimed.
+     *
+     * Named rather than identified, so a reader can match them against its own vocabulary without
+     * knowing anything about how skills are stored.
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @return The user's declared skills; empty when they have declared none (or do not exist).
+     */
+    fun getDeclaredSkills(userId: UUID): List<DeclaredSkill>
+
+    /**
      * Everything the GitHub-history seeding feature needs about a user, in one read.
      *
      * Bundled rather than exposed as three accessors because they are only ever used together, and

@@ -17,4 +17,6 @@ interface KnowledgeRequestRepository : JpaRepository<KnowledgeRequest, UUID> {
 
     /** Every escalation a hire made on a project — the surviving "needed a person" signal. */
     fun findAllByHireIdAndProjectId(hireId: UUID, projectId: UUID): List<KnowledgeRequest>
+
+    fun deleteAllByHireId(hireId: UUID)
 }

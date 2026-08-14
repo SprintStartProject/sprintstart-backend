@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import com.sprintstart.sprintstartbackend.user.repository.UserSkillAssessmentRepository
 import com.sprintstart.sprintstartbackend.user.service.GithubLoginService
 import com.sprintstart.sprintstartbackend.user.service.UserApiService
 import io.mockk.every
@@ -20,12 +21,18 @@ import java.util.UUID
 
 class UserApiServiceTest {
     private val userRepository: UserRepository = mockk()
+    private val userSkillAssessmentRepository: UserSkillAssessmentRepository = mockk()
     private val projectRepository: ProjectRepository = mockk()
 
     // The real service, not a mock: it owns normalisation, the uniqueness rule and clearing a
     // stale verification verdict, and setGithubLogin exists precisely to delegate to it.
     private val githubLoginService = GithubLoginService(userRepository)
-    private val userApi: UserApi = UserApiService(userRepository, projectRepository, githubLoginService)
+    private val userApi: UserApi = UserApiService(
+        userRepository,
+        userSkillAssessmentRepository,
+        projectRepository,
+        githubLoginService,
+    )
 
     /**
      * The buddy is a second *entry point* for a GitHub login, never a second writer. If this ever

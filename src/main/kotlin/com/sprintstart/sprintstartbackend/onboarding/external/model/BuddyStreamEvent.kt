@@ -39,4 +39,7 @@ data class BuddyStreamEvent(
     @SerialName("attester_id") val attesterId: String? = null,
     /** `set_github_login` confirm payload: the username the buddy offered to save. */
     @SerialName("github_login") val githubLogin: String? = null,
+    /** `record_assessment` confirm payload: which competency, and the level in words. */
+    @SerialName("competency_key") val competencyKey: String? = null,
+    val level: String? = null,
 )

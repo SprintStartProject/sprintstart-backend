@@ -20,4 +20,11 @@ data class BuddyActionRequest(
     val attesterId: UUID? = null,
     /** The GitHub account to record, for `set_github_login`. */
     val githubLogin: String? = null,
+    /**
+     * Which competency a conversational placement is about, and where it put the hire, for
+     * `record_assessment`. The level is the word ("beginner".."expert"), never a rank: the scale is
+     * re-read server-side, so a client cannot confirm a level the scale does not have.
+     */
+    val competencyKey: String? = null,
+    val level: String? = null,
 )

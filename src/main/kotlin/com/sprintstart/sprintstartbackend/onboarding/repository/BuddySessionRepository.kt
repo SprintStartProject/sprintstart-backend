@@ -6,4 +6,6 @@ import java.util.UUID
 
 interface BuddySessionRepository : JpaRepository<BuddySession, UUID> {
     fun findByUserId(userId: UUID): BuddySession?
+
+    fun deleteAllByUserId(userId: UUID)
 }

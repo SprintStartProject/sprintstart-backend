@@ -15,4 +15,6 @@ interface TaskZeroAssignmentRepository : JpaRepository<TaskZeroAssignment, UUID>
     /** Proposal ids already handed to a hire — so the same piece of work is never assigned twice. */
     @Query("SELECT a.proposalId FROM TaskZeroAssignment a")
     fun findAllAssignedProposalIds(): List<UUID>
+
+    fun deleteAllByHireId(hireId: UUID)
 }

@@ -14,4 +14,6 @@ interface ArrivalStepStateRepository : JpaRepository<ArrivalStepState, UUID> {
         stepKey: String,
         projectId: UUID,
     ): ArrivalStepState?
+
+    fun deleteAllByUserId(userId: UUID)
 }

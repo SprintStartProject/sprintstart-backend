@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
@@ -38,6 +39,7 @@ class BuddyActionServiceTest {
     // Relaxed: claiming a goal also pins the task to the board, which is a side effect these tests
     // are not about -- the case that asserts it says so explicitly.
     private val boardService: BoardService = mockk(relaxed = true)
+    private val competencyPlacementService: CompetencyPlacementService = mockk()
     private val service = BuddyActionService(
         taskZeroService,
         taskOrientationService,
@@ -46,6 +48,7 @@ class BuddyActionServiceTest {
         userApi,
         attestationService,
         boardService,
+        competencyPlacementService,
     )
 
     private val userId = UUID.randomUUID()
@@ -103,7 +106,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the six action tools`() {
+    fun `exposes exactly the seven action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -111,6 +114,7 @@ class BuddyActionServiceTest {
             "claim_goal",
             "request_attestation",
             "set_github_login",
+            "record_assessment",
         )
     }
 
@@ -202,6 +206,152 @@ class BuddyActionServiceTest {
         service.propose(call("set_github_login", mapOf("login" to "octocat")), userId)
 
         verify(exactly = 0) { userApi.setGithubLogin(any(), any()) }
+    }
+
+    // -- record_assessment ------------------------------------------------------------------------
+
+    /**
+     * The same exemption as the username, on the same grounds: the competency ledger is global, so
+     * a placement is a fact about the person. A hire on day one is exactly who the assessment is
+     * for, and they are on nothing yet.
+     */
+    @Test
+    fun `offers to record a placement even when the hire is on no project`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+        every { competencyPlacementService.labelFor("kotlin") } returns "Kotlin"
+
+        val outcome = service.propose(
+            call("record_assessment", mapOf("competency_key" to "kotlin", "level" to "intermediate")),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.competencyKey).isEqualTo("kotlin")
+        assertThat(outcome.proposal?.level).isEqualTo("intermediate")
+    }
+
+    /**
+     * The button says which skill and which level, because a hire confirming a judgement about
+     * their own competence should not have to read back up the thread to find out what they are
+     * agreeing to.
+     */
+    @Test
+    fun `the confirm button names the competency and the level`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+        every { competencyPlacementService.labelFor("kotlin") } returns "Kotlin"
+
+        val outcome = service.propose(
+            call("record_assessment", mapOf("competency_key" to "kotlin", "level" to "advanced")),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.label).isEqualTo("Save: Kotlin — advanced")
+    }
+
+    @Test
+    fun `proposing a placement writes nothing until it is confirmed`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+        every { competencyPlacementService.labelFor("kotlin") } returns "Kotlin"
+
+        service.propose(
+            call("record_assessment", mapOf("competency_key" to "kotlin", "level" to "beginner")),
+            userId,
+        )
+
+        verify(exactly = 0) { competencyPlacementService.record(any(), any(), any()) }
+    }
+
+    /**
+     * Caught while the mentor can still fix it. Discovered at confirm time this would be a hire
+     * clicking a button and being told no, for a mistake they did not make.
+     */
+    @Test
+    fun `a competency key nothing matches is corrected before the hire sees a button`() {
+        every { competencyPlacementService.labelFor("astrology") } returns null
+
+        val outcome = service.propose(
+            call("record_assessment", mapOf("competency_key" to "astrology", "level" to "expert")),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("get_competencies_to_assess")
+    }
+
+    @Test
+    fun `a level off the scale is refused with the scale`() {
+        every { competencyPlacementService.labelFor("kotlin") } returns "Kotlin"
+
+        val outcome = service.propose(
+            call("record_assessment", mapOf("competency_key" to "kotlin", "level" to "quite good")),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("beginner", "expert")
+    }
+
+    @Test
+    fun `confirming a placement records it and relays what the ledger said`() = runTest {
+        asHire()
+        every { competencyPlacementService.record(userId, "kotlin", ProficiencyLevel.INTERMEDIATE) } returns
+            CompetencyPlacementService.PlacementOutcome(recorded = true, message = "Noted — “Kotlin”.")
+
+        val result = service.perform(
+            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "intermediate"),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(result.message).contains("Kotlin")
+    }
+
+    @Test
+    fun `confirming a placement needs no project`() = runTest {
+        asHire()
+        every { competencyPlacementService.record(any(), any(), any()) } returns
+            CompetencyPlacementService.PlacementOutcome(recorded = true, message = "Noted.")
+
+        val result = service.perform(
+            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "beginner"),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        // The project is never resolved, so a hire on nothing is never turned away.
+        verify(exactly = 0) { userApi.getUsersByIds(any()) }
+    }
+
+    /**
+     * The scale is re-read from the word server-side, so a client cannot confirm a level the scale
+     * does not have by editing the payload the proposal carried.
+     */
+    @Test
+    fun `a confirmed level the scale does not have never reaches the ledger`() = runTest {
+        val result = service.perform(
+            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "godlike"),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        verify(exactly = 0) { competencyPlacementService.record(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a placement the ledger declines comes back as its own reason`() = runTest {
+        asHire()
+        every { competencyPlacementService.record(userId, "kotlin", ProficiencyLevel.EXPERT) } returns
+            CompetencyPlacementService.PlacementOutcome(
+                recorded = false,
+                message = "Your own accepted work already proves “Kotlin”.",
+            )
+
+        val result = service.perform(
+            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "expert"),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("already proves")
     }
 
     @Test
