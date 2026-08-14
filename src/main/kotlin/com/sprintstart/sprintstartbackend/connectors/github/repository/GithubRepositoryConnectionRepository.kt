@@ -24,4 +24,6 @@ interface GithubRepositoryConnectionRepository : JpaRepository<GithubRepositoryC
         """,
     )
     fun findAllByProjectId(@Param("projectId") projectId: UUID): List<GithubRepositoryConnection>
+
+    fun existsByOwner(@Param("owner") owner: String): Boolean
 }

@@ -123,7 +123,7 @@ class GithubClient(
      * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status code.
      * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized.
      */
-    suspend fun findOrgMetadata(org: String, token: String): OrgMetadataResponse {
+    suspend fun fetchOrgMetadata(org: String, token: String): OrgMetadataResponse {
         val url = "${applicationConfig.github.baseUrl.trimEnd('/')}/orgs/$org"
         return webClient
             .get()

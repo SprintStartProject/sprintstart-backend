@@ -613,7 +613,7 @@ class GithubClientTest {
                     ),
             )
 
-            val result = runBlocking { githubClient.findOrgMetadata("octocat", "test-token") }
+            val result = runBlocking { githubClient.fetchOrgMetadata("octocat", "test-token") }
 
             assertThat(result.login).isEqualTo("octocat")
             assertThat(result.publicRepos).isEqualTo(12)
