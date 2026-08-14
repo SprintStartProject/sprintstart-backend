@@ -21,18 +21,10 @@ class AdminProjectMapperTest {
         assertThat(response.projectRoles).containsExactly("Architect", "Developer")
     }
 
-    @Test
-    fun `toProjectUserResponse ignores the never-written assignment roles`() {
-        val user = user()
-        val assignment = ProjectUserAssignment(user = user, project = project())
-        // Roles are assigned to the user, never to the membership row, so
-        // anything sitting here must not reach the response.
-        assignment.projectRoles.add(ProjectRole(name = "Stale", description = "Unused"))
-
-        val response = assignment.toProjectUserResponse()
-
-        assertThat(response.projectRoles).isEmpty()
-    }
+    // The companion test — "ignores the never-written assignment roles" — is gone with its subject.
+    // It guarded against a stale per-assignment role collection leaking into the response; that
+    // collection no longer exists, so there is no second place a role can be written and nothing
+    // left to leak. The invariant it checked is now held by the model rather than by a test.
 
     private fun project(id: UUID = UUID.randomUUID()) = Project(
         id = id,

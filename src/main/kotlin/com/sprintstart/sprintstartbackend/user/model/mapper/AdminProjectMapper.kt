@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectMan
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserSummaryResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 
 fun Project.toAdminListResponse(
     sources: List<ProjectSourceDto>,
@@ -73,17 +74,6 @@ fun ProjectSourceDto.toResponse(): ProjectSourceResponse {
     )
 }
 
-/**
- * Maps a project membership to the user representation used in project responses.
- *
- * `projectRoles` deliberately comes from the user, not from this assignment.
- * Roles are assigned through `POST /users/{userId}/project-roles`, which writes
- * to `User.projectRoles`; the assignment's own `projectRoles` collection is
- * never written to, so reading it here returned an empty list for everyone and
- * made project responses look as if nobody held a role.
- *
- * @return The user with the roles they actually hold.
- */
 fun ProjectUserAssignment.toProjectUserResponse(): ProjectUserResponse {
     return ProjectUserResponse(
         id = user.id,
@@ -92,7 +82,13 @@ fun ProjectUserAssignment.toProjectUserResponse(): ProjectUserResponse {
         firstName = user.firstname,
         lastName = user.lastname,
         roles = user.roles.toSet(),
+        // Names only, the same shape this endpoint already serves, so a client reading
+        // `projectRoles` keeps working. `projectRoleRefs` below carries the same roles with ids for
+        // clients that need to remove one without matching on its name.
         projectRoles = user.projectRoles.map { it.name }.sorted(),
+        projectRoleRefs = user.projectRoles
+            .map { ProjectRoleSummary(id = it.id, name = it.name) }
+            .sortedBy { it.name },
         enabled = user.enabled,
     )
 }

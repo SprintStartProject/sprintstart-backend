@@ -957,8 +957,8 @@ class PhaseCheckServiceTest {
 
         @Test
         fun `collects wrong questions on the path's final phase as well`() {
-            // Regression: the pool used to only be filled when a following phase existed, so a
-            // question missed in the last phase was silently dropped and never re-tested.
+            // Filling the pool only when a following phase exists silently drops a question
+            // missed in the last phase, so it is never re-tested.
             val path = makePath(0)
             val phase = path.phases.single()
             val questions = (0 until 5).map { addMcQuestion(phase, it) }

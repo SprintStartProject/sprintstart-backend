@@ -114,7 +114,38 @@ class AdminProjectServiceTest {
         assertThat(result.sources.map { it.type }).containsExactly("GITHUB")
         assertThat(result.users).hasSize(1)
         assertThat(result.users.single().roles).containsExactly(Role.USER)
-        assertThat(result.users.single().projectRoles).containsExactly("MANAGER")
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("MANAGER")
+    }
+
+    /**
+     * Roles are read from the assignment, which is now the only place they live.
+     *
+     * Before per-project roles this list was empty for everybody: it read the assignment's set while
+     * every writer wrote a flat user-level one, so `GET /admin/projects/{id}/users` silently reported
+     * every member of every project as holding no role.
+     */
+    @Test
+    fun `project roles come from the assignment`() {
+        val project = project()
+        val user = user().apply { roles.add(Role.USER) }
+        val assignment = ProjectUserAssignment(user = user, project = project)
+        assignment.user.projectRoles.add(ProjectRole(name = "DEVELOPER", description = "Ships code"))
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
+
+        val result = service.getProjectById(project.id)
+
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("DEVELOPER")
     }
 
     @Test
