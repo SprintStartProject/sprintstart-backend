@@ -10,4 +10,6 @@ interface UserCompetencyStateRepository : JpaRepository<UserCompetencyState, UUI
     fun findAllByUserIdIn(userIds: Collection<UUID>): List<UserCompetencyState>
 
     fun findByUserIdAndCompetencyKey(userId: UUID, competencyKey: String): UserCompetencyState?
+
+    fun deleteAllByUserId(userId: UUID)
 }

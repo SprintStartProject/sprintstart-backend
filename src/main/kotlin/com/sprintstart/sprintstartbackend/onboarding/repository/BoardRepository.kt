@@ -6,4 +6,8 @@ import java.util.UUID
 
 interface BoardRepository : JpaRepository<Board, UUID> {
     fun findByUserIdAndProjectId(userId: UUID, projectId: UUID): Board?
+
+    fun findAllByUserId(userId: UUID): List<Board>
+
+    fun deleteAllByUserId(userId: UUID)
 }

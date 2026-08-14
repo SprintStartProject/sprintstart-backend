@@ -7,4 +7,6 @@ import java.util.UUID
 /**
  * Persistence access for the derived GitHub-history prior, keyed by user.
  */
-interface GithubHistoryPriorRepository : JpaRepository<GithubHistoryPrior, UUID>
+interface GithubHistoryPriorRepository : JpaRepository<GithubHistoryPrior, UUID> {
+    fun deleteAllByUserId(userId: UUID)
+}

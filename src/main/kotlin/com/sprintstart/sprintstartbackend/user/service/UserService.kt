@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginSource
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
+import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
@@ -225,6 +226,9 @@ class UserService(
         projectRepository.clearManagerForUser(id)
         userRepository.deleteRolesByUserId(id)
         userRepository.deleteProjectionById(id)
+        // What other modules recorded about this person is theirs to erase; only they know what
+        // they hold. Published inside the transaction so a rollback takes the erasure with it.
+        eventPublisher.publishEvent(UserDeletedEvent(id))
     }
 
     /**

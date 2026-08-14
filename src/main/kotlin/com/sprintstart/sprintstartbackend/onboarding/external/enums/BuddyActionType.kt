@@ -27,6 +27,19 @@ enum class BuddyActionType(
      * likely to be setting one.
      */
     SET_GITHUB_LOGIN("set_github_login", "Save this username"),
+
+    /**
+     * Records where a conversation placed the hire on one competency.
+     *
+     * Not project-scoped, for the same reason as [SET_GITHUB_LOGIN] and by the same rule
+     * `MyCompetencyService` states: the ledger is global, because a skill somebody has does not
+     * stop being true on their second project.
+     *
+     * Its [label] is the fallback rather than the button the hire usually sees — the proposal names
+     * the competency and the level, because "Save this" over a judgement about somebody's own
+     * skill is not something anybody should have to confirm blind.
+     */
+    RECORD_ASSESSMENT("record_assessment", "Save this placement"),
     ;
 
     companion object {

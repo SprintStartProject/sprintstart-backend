@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.user
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
+import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
@@ -194,6 +195,7 @@ class UserServiceTest {
         every { projectRepository.clearManagerForUser(user.id) } returns 0
         every { userRepository.deleteRolesByUserId(user.id) } returns 1
         every { userRepository.deleteProjectionById(user.id) } returns 1
+        every { eventPublisher.publishEvent(any<UserDeletedEvent>()) } just runs
 
         val result = userService.deleteAdminUserById(user.id)
 
@@ -201,6 +203,8 @@ class UserServiceTest {
         verify(exactly = 1) { keycloakAdminClient.deleteUser("auth-1") }
         verify(exactly = 1) { userRepository.deleteRolesByUserId(user.id) }
         verify(exactly = 1) { userRepository.deleteProjectionById(user.id) }
+        // Other modules hold data about this person that only they can reach.
+        verify(exactly = 1) { eventPublisher.publishEvent(UserDeletedEvent(user.id)) }
     }
 
     @Test
@@ -211,6 +215,7 @@ class UserServiceTest {
         every { projectRepository.clearManagerForUser(user.id) } returns 2
         every { userRepository.deleteRolesByUserId(user.id) } returns 1
         every { userRepository.deleteProjectionById(user.id) } returns 1
+        every { eventPublisher.publishEvent(any<UserDeletedEvent>()) } just runs
 
         userService.deleteAdminUserById(user.id)
 
@@ -228,6 +233,7 @@ class UserServiceTest {
         every { projectRepository.clearManagerForUser(user.id) } returns 0
         every { userRepository.deleteRolesByUserId(user.id) } returns 0
         every { userRepository.deleteProjectionById(user.id) } returns 0
+        every { eventPublisher.publishEvent(any<UserDeletedEvent>()) } just runs
 
         val result = userService.deleteAdminUserById(user.id)
 

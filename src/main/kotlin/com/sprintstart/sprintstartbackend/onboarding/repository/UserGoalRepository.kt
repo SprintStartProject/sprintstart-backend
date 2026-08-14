@@ -8,4 +8,6 @@ interface UserGoalRepository : JpaRepository<UserGoal, UUID> {
     fun findByUserIdAndProjectId(userId: UUID, projectId: UUID): UserGoal?
 
     fun deleteByUserIdAndProjectId(userId: UUID, projectId: UUID)
+
+    fun deleteAllByUserId(userId: UUID)
 }

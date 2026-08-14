@@ -9,4 +9,6 @@ interface AttestationRepository : JpaRepository<Attestation, UUID> {
     fun findAllByHireIdAndProjectId(hireId: UUID, projectId: UUID): List<Attestation>
 
     fun findAllByAttesterIdAndState(attesterId: UUID, state: AttestationState): List<Attestation>
+
+    fun deleteAllByHireId(hireId: UUID)
 }

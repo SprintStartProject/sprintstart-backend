@@ -33,9 +33,8 @@ class SessionActivityService(
      * [idleThreshold].
      *
      * A user's very first-ever recorded activity never publishes -- there is no prior baseline to
-     * reconcile against, and [CompetencyPathService]
-     * [com.sprintstart.sprintstartbackend.onboarding.service.CompetencyPathService] lazily
-     * creates a hire's graph pin on their first path request regardless.
+     * reconcile against, and nothing downstream needs one: what a hire is placed on is created
+     * lazily on the first read that needs it.
      *
      * @param authId External authentication identifier from the JWT subject.
      */

@@ -12,4 +12,6 @@ interface BoardCardRepository : JpaRepository<BoardCard, UUID> {
      * hire has removed, so the code that ensures cards exist has to see them.
      */
     fun findAllByBoardId(boardId: UUID): List<BoardCard>
+
+    fun deleteAllByBoardId(boardId: UUID)
 }

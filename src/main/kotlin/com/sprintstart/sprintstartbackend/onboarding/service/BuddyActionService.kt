@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
@@ -46,6 +47,7 @@ class BuddyActionService(
     private val userApi: UserApi,
     private val attestationService: AttestationService,
     private val boardService: BoardService,
+    private val competencyPlacementService: CompetencyPlacementService,
 ) {
     /** The action tools the AI reasoner is told it may propose, alongside the read-only tools. */
     fun actionSpecs(): List<BuddyToolSpecDto> =
@@ -56,6 +58,7 @@ class BuddyActionService(
             CLAIM_GOAL_SPEC,
             REQUEST_ATTESTATION_SPEC,
             SET_GITHUB_LOGIN_SPEC,
+            RECORD_ASSESSMENT_SPEC,
         )
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
@@ -79,6 +82,13 @@ class BuddyActionService(
         // not been added to anything yet. A test pins that.
         if (type == BuddyActionType.SET_GITHUB_LOGIN) {
             return proposeGithubLogin(call, type)
+        }
+
+        // Also before the project gate, and for the same reason: the competency ledger is global,
+        // so a placement is a fact about the person. Gating it would refuse the assessment to
+        // somebody on day one, who is exactly the hire it exists for.
+        if (type == BuddyActionType.RECORD_ASSESSMENT) {
+            return proposeAssessment(call, type)
         }
 
         val project = when (val resolution = resolveProject(userId)) {
@@ -188,6 +198,68 @@ class BuddyActionService(
     }
 
     /**
+     * Offers to record where the conversation placed the hire on one competency, without writing.
+     *
+     * Both halves are resolved *here*, not at confirm time, and that is the point of doing it
+     * before the button rather than after it. A key nothing matches or a level that is not one of
+     * the four words comes back as a correction the mentor can act on mid-conversation; discovered
+     * at confirm time it would instead be a hire clicking a button and being told no.
+     *
+     * The button names the competency and the level rather than saying "save this". A hire is
+     * confirming a judgement about their own skill, and the label is the last thing they read
+     * before it becomes a record.
+     */
+    private fun proposeAssessment(call: BuddyToolCallDto, type: BuddyActionType): ProposeOutcome {
+        val key = call.stringArg("competency_key").trim()
+        val label = key.takeIf { it.isNotBlank() }?.let { competencyPlacementService.labelFor(it) }
+            ?: return ProposeOutcome(
+                "No competency matched “$key”. Read get_competencies_to_assess and pass a " +
+                    "competency_key exactly as it appears there.",
+                null,
+            )
+
+        val level = ProficiencyLevel.fromWord(call.stringArg("level"))
+            ?: return ProposeOutcome(
+                "That is not a level I can record. Use one of: ${ProficiencyLevel.WORDS.joinToString(", ")}.",
+                null,
+            )
+
+        return ProposeOutcome(
+            toolResult = "Proposed to the hire: place them at ${level.word} on “$label”. They will " +
+                "see a confirm button; nothing is recorded unless they click it. Tell them what you " +
+                "concluded and why — do not claim it is saved.",
+            proposal = BuddyActionProposal(
+                action = type.toolName,
+                label = "Save: $label — ${level.word}",
+                question = null,
+                competencyKey = key,
+                level = level.word,
+            ),
+        )
+    }
+
+    /**
+     * Writes the placement the hire confirmed.
+     *
+     * The level is re-read from the word here rather than trusted as a rank, so a client cannot
+     * confirm a level the scale does not have. [CompetencyPlacementService] owns every rule about
+     * what a placement may overwrite; this only relays the sentence it produced.
+     */
+    private fun recordAssessment(authId: String, competencyKey: String?, level: String?): BuddyActionResponse {
+        if (competencyKey.isNullOrBlank()) {
+            return BuddyActionResponse(ok = false, message = "No skill was proposed to record.")
+        }
+        val resolvedLevel = level?.let { ProficiencyLevel.fromWord(it) }
+            ?: return BuddyActionResponse(ok = false, message = "No level was proposed to record.")
+
+        val userId = userApi.getUserIdByAuthId(authId).orElse(null)
+            ?: return BuddyActionResponse(ok = false, message = "I couldn't find your account.")
+
+        val outcome = competencyPlacementService.record(userId, competencyKey, resolvedLevel)
+        return BuddyActionResponse(ok = outcome.recorded, message = outcome.message)
+    }
+
+    /**
      * Both halves of an attestation proposal must be real before the hire sees a button: what work,
      * and which teammate. A missing one comes back as guidance the buddy can act on rather than a
      * proposal it cannot honour.
@@ -238,6 +310,13 @@ class BuddyActionService(
             }
         }
 
+        // Same reason again: the ledger is global, so there is no project to resolve first.
+        if (type == BuddyActionType.RECORD_ASSESSMENT) {
+            return withContext(Dispatchers.IO) {
+                recordAssessment(authId, request.competencyKey, request.level)
+            }
+        }
+
         val context = withContext(Dispatchers.IO) { resolveContext(authId) }
         val resolved = when (context) {
             is CallerContext.Resolved -> context
@@ -277,9 +356,10 @@ class BuddyActionService(
                     BuddyActionType.REQUEST_ATTESTATION ->
                         requestAttestation(resolved, request.title, request.attesterId)
                     BuddyActionType.OPEN_ORIENTATION,
-                    // Not project-scoped, so it returns before the project gate this dispatch
+                    // Not project-scoped, so these return before the project gate this dispatch
                     // sits behind.
                     BuddyActionType.SET_GITHUB_LOGIN,
+                    BuddyActionType.RECORD_ASSESSMENT,
                     -> error("handled above")
                 }
             }
@@ -456,6 +536,9 @@ class BuddyActionService(
             // this action never reaches. Present because the enum is exhaustive, which is what
             // made the compiler point at both of these when it was added.
             BuddyActionType.SET_GITHUB_LOGIN -> "save a GitHub username"
+            // Unused for the same reason: not project-scoped, so it never reaches the no-project
+            // reason lines.
+            BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -476,6 +559,9 @@ class BuddyActionService(
         val title: String? = null,
         val attesterId: String? = null,
         val githubLogin: String? = null,
+        /** `record_assessment` confirm payload: which competency, and the level in words. */
+        val competencyKey: String? = null,
+        val level: String? = null,
     )
 
     private sealed interface ProjectResolution {
@@ -578,6 +664,42 @@ class BuddyActionService(
                     }
                 }
                 putJsonArray("required") { add("login") }
+            },
+        )
+
+        val RECORD_ASSESSMENT_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.RECORD_ASSESSMENT.toolName,
+            description = "Offer to record where this conversation placed the hire on ONE " +
+                "competency. Call it as you finish talking about each skill, not once at the end. " +
+                "Only ever after actually asking them something about it: a placement nobody was " +
+                "asked about is a guess in a permanent record. Pass the competency_key exactly as " +
+                "get_competencies_to_assess gave it, and a level of " +
+                "${ProficiencyLevel.WORDS.joinToString("/")} — beginner is the honest answer when " +
+                "they have seen it but not used it. This does NOT record anything by itself; the " +
+                "hire sees a confirm button naming the skill and the level, and only they can " +
+                "save it. Tell them what you concluded and why before you offer it, and take a " +
+                "correction as the answer — it is their skill, not your verdict. What they say " +
+                "here is a starting point that their accepted work will outrank later, so never " +
+                "present it as final or as a score.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("competency_key") {
+                        put("type", "string")
+                        put("description", "The competency_key from get_competencies_to_assess.")
+                    }
+                    putJsonObject("level") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "Where the conversation placed them: ${ProficiencyLevel.WORDS.joinToString(", ")}.",
+                        )
+                    }
+                }
+                putJsonArray("required") {
+                    add("competency_key")
+                    add("level")
+                }
             },
         )
 

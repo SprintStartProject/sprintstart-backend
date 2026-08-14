@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.DeclaredSkill
 import com.sprintstart.sprintstartbackend.user.external.GithubSeedingContext
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
@@ -16,6 +17,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import com.sprintstart.sprintstartbackend.user.repository.UserSkillAssessmentRepository
 import jakarta.persistence.criteria.JoinType
 import jakarta.persistence.criteria.Predicate
 import org.springframework.data.domain.Page
@@ -42,6 +44,7 @@ import java.util.UUID
 @Suppress("TooManyFunctions")
 class UserApiService(
     private val userRepository: UserRepository,
+    private val userSkillAssessmentRepository: UserSkillAssessmentRepository,
     private val projectRepository: ProjectRepository,
     private val githubLoginService: GithubLoginService,
 ) : UserApi {
@@ -229,6 +232,13 @@ class UserApiService(
     @Transactional(readOnly = true)
     override fun getGithubLoginByUserId(userId: UUID): String? =
         userRepository.findById(userId).map { it.githubLogin }.orElse(null)
+
+    @Transactional(readOnly = true)
+    @Tracked("Reading a user's declared skills")
+    override fun getDeclaredSkills(userId: UUID): List<DeclaredSkill> =
+        userSkillAssessmentRepository
+            .findByUserId(userId)
+            .map { DeclaredSkill(name = it.skill.name, level = it.level) }
 
     @Transactional(readOnly = true)
     @Tracked("Checking if user has access to project")
