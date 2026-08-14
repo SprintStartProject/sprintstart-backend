@@ -42,37 +42,32 @@ data class InsightsConfig(
 /**
  * Bounds on the FAQ insight, which is maintained incrementally as questions are asked.
  *
- * The two ceilings are what keep the FAQ readable as it grows: without them the category list and
- * the group list under each category would both grow without limit, which is the "drowning in a
- * flat list" problem the grouping exists to solve. Crossing a ceiling triggers a consolidation
- * pass rather than rejecting the new entry, so a limit never loses a question.
+ * [maxGroups] is what keeps the FAQ readable as it grows: without it the list would grow without
+ * limit, which is the "drowning in questions" problem the grouping exists to solve. Crossing it
+ * triggers a merge pass rather than rejecting the new entry, so the limit never loses a question.
  *
  * ```yaml
  * sprintstart:
  *     insights:
  *         faq:
  *             live-updates: ...
- *             max-categories: ...
- *             max-groups-per-category: ...
+ *             max-groups: ...
  *             candidate-groups: ...
  *             sample-questions: ...
  *             trend-window-days: ...
  * ```
  *
  * @property liveUpdates whether a question asked in chat updates the FAQ right away
- * @property maxCategories ceiling on distinct categories per project
- * @property maxGroupsPerCategory ceiling on groups within one category
- * @property candidateGroups how many existing groups a single classification may consider
- * @property sampleQuestions how many sample questions a group's detail view shows
- * @property trendWindowDays length of the window a group's trend is measured over
+ * @property maxGroups ceiling on recurring-question entries per project
+ * @property candidateGroups how many existing entries a single classification may consider
+ * @property sampleQuestions how many phrasings an entry's detail view shows
+ * @property trendWindowDays length of the window an entry's trend is measured over
  */
 data class FaqInsightsConfig(
     @get:JsonProperty("live-updates")
     val liveUpdates: Boolean = true,
-    @get:JsonProperty("max-categories")
-    val maxCategories: Int = 12,
-    @get:JsonProperty("max-groups-per-category")
-    val maxGroupsPerCategory: Int = 20,
+    @get:JsonProperty("max-groups")
+    val maxGroups: Int = 40,
     @get:JsonProperty("candidate-groups")
     val candidateGroups: Int = 40,
     @get:JsonProperty("sample-questions")

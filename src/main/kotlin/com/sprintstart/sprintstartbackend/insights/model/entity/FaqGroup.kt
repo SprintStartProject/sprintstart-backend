@@ -11,10 +11,11 @@ import java.util.UUID
 /**
  * A cluster of semantically similar recurring questions surfaced for project managers.
  *
- * A group is one recurring question — the same thing asked in different words — and belongs to a
- * [category], the topic bucket PMs browse by. Groups are maintained incrementally: a question asked
- * in chat either joins an existing group or opens a new one, so the rows are living state rather
- * than a pure cache. A full refresh still replaces the whole set as a fallback.
+ * A group is one recurring question — the same thing asked in different words — headlined by a
+ * short generated [title] rather than by one of its questions verbatim, so a PM scans a phrase
+ * instead of reading a sentence per row. Groups are maintained incrementally: a question asked in
+ * chat either joins an existing group or opens a new one, so the rows are living state rather than
+ * a pure cache. A full refresh still replaces the whole set as a fallback.
  *
  * [occurrenceCount] is the authoritative number of times the group's question was asked. It can
  * exceed the number of stored [questions] after a full refresh, which only carries back a redacted
@@ -31,11 +32,10 @@ class FaqGroup(
     var question: String,
     @Column(nullable = false)
     var occurrenceCount: Int,
-    // Nullable rather than defaulted: rows written before categories existed genuinely have no
-    // category, and labelling them "Uncategorized" would claim the classifier looked at them and
-    // gave up. A consolidation pass can file them later.
-    @Column(name = "category")
-    var category: String? = null,
+    // Nullable rather than defaulted: rows written before titles existed genuinely have none, and
+    // the reader falls back to [question] for those rather than inventing one.
+    @Column(name = "title", columnDefinition = "TEXT")
+    var title: String? = null,
     @Column(name = "first_asked_at", nullable = false)
     var firstAskedAt: Instant = Instant.now(),
     // Distinct from refreshedAt: when the group's question was last actually asked, which is what

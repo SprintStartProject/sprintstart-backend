@@ -82,6 +82,7 @@ class InsightsFaqControllerTest(
             FaqGroupSummaryResponse(
                 groupId = groupId,
                 count = 14,
+                title = "Getting VPN access",
                 question = "How do I get VPN access?",
                 topDocuments = listOf(FaqDocumentPreviewResponse(id = "doc_001", title = "VPN Setup Guide")),
             ),
@@ -91,6 +92,8 @@ class InsightsFaqControllerTest(
     private fun buildDetail() = FaqDetailResponse(
         groupId = groupId,
         count = 14,
+        title = "Getting VPN access",
+        question = "How do I get VPN access?",
         questions = listOf(FaqQuestionResponse(id = UUID.randomUUID(), text = "How do I get VPN access?")),
         answeringDocuments = listOf(
             FaqDocumentResponse(

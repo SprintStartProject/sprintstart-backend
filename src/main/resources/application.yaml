@@ -15,8 +15,7 @@ sprintstart:
   insights:
     faq:
       live-updates: ${SPRINTSTART_FAQ_LIVE_UPDATES:true}
-      max-categories: 12
-      max-groups-per-category: 20
+      max-groups: 40
       candidate-groups: 40
       sample-questions: 10
       trend-window-days: 14

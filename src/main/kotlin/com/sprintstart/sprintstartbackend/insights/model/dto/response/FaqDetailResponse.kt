@@ -4,25 +4,30 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID
 
-@Schema(description = "Detailed view of a recurring-question group with sample questions and sources.")
+@Schema(description = "Detailed view of a recurring-question entry with its phrasings and sources.")
 data class FaqDetailResponse(
-    @field:Schema(description = "Stable identifier of the group.")
+    @field:Schema(description = "Stable identifier of the entry.")
     val groupId: UUID,
-    @field:Schema(description = "Total number of questions assigned to this group.")
+    @field:Schema(description = "Total number of questions assigned to this entry.")
     val count: Int,
-    @field:Schema(description = "Redacted sample of the questions in this group, most recent first.")
+    @field:Schema(
+        description = "Short generated title naming what the entry is about. Falls back to the " +
+            "representative question for entries written before titles existed.",
+    )
+    val title: String,
+    @field:Schema(description = "Representative question, in the wording users actually ask it.")
+    val question: String,
+    @field:Schema(description = "Redacted sample of the questions in this entry, most recent first.")
     val questions: List<FaqQuestionResponse>,
-    @field:Schema(description = "Documents that answered questions in this group.")
+    @field:Schema(description = "Documents that answered questions in this entry.")
     val answeringDocuments: List<FaqDocumentResponse>,
-    @field:Schema(description = "Topic category this group belongs to. Null for groups predating categories.")
-    val category: String? = null,
-    @field:Schema(description = "Questions assigned to this group within the current trend window.")
+    @field:Schema(description = "Questions assigned to this entry within the current trend window.")
     val recentCount: Int = 0,
-    @field:Schema(description = "Whether the group is growing, holding steady, or going quiet.")
+    @field:Schema(description = "Whether the entry is growing, holding steady, or going quiet.")
     val trend: FaqTrend = FaqTrend.STEADY,
-    @field:Schema(description = "When this group's question was first asked.")
+    @field:Schema(description = "When this entry's question was first asked.")
     val firstAskedAt: Instant? = null,
-    @field:Schema(description = "When this group's question was last asked.")
+    @field:Schema(description = "When this entry's question was last asked.")
     val lastAskedAt: Instant? = null,
 )
 

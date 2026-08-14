@@ -13,17 +13,6 @@ interface FaqGroupRepository : JpaRepository<FaqGroup, UUID> {
 
     fun findByIdAndProjectId(id: UUID, projectId: UUID): Optional<FaqGroup>
 
-    /**
-     * Returns all groups of one category, most frequently asked first.
-     *
-     * Used when a category grows past its group ceiling and its duplicates have to be folded
-     * together — the merge only ever looks at the category that actually overflowed.
-     */
-    fun findAllByProjectIdAndCategoryOrderByOccurrenceCountDesc(
-        projectId: UUID,
-        category: String,
-    ): List<FaqGroup>
-
     fun deleteAllByProjectId(projectId: UUID)
 
     /** Clears cache rows from before insights were project-scoped. */

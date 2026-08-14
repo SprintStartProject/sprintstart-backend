@@ -24,17 +24,17 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Keeps the FAQ insight current as questions are asked, instead of only when a PM presses refresh.
  *
- * Every question asked to the AI Buddy is filed into the existing structure by the AI service:
- * dropped if it is smalltalk, otherwise added to the group it repeats or opened as a new one under
- * a category. That is a single small AI call whose cost does not grow with the project's question
- * history, which is what makes it affordable per message — the full rebuild in
+ * Every question asked to the AI Buddy is filed into the existing entries by the AI service:
+ * dropped if it is smalltalk, otherwise added to the entry it repeats or opened as a new one with
+ * its own title. That is a single small AI call whose cost does not grow with the project's
+ * question history, which is what makes it affordable per message — the full rebuild in
  * [InsightsFaqService] costs one pass over every question ever asked and stays the manual
  * fallback.
  *
  * The trade-off is accepted deliberately: one question carries little context, so the classifier
- * will occasionally open a group that duplicates an existing one. Folding those back together once
- * a ceiling is crossed (see [FaqConsolidationService]) is far cheaper than comparing against the
- * whole corpus every time, and bounds the drift instead of letting it accumulate.
+ * will occasionally open an entry that duplicates an existing one. Folding those back together
+ * once the ceiling is reached (see [FaqConsolidationService]) is far cheaper than comparing
+ * against the whole corpus every time, and bounds the drift instead of letting it accumulate.
  */
 @Service
 class FaqLiveUpdateService(
@@ -51,9 +51,9 @@ class FaqLiveUpdateService(
     private val txTemplate = TransactionTemplate(transactionManager)
 
     // Two questions asked at the same time in one project would otherwise be classified against
-    // the same snapshot and could each open a group for the same topic, or both trip a ceiling and
-    // run two consolidations over the same rows. Per project rather than global, so one busy
-    // project cannot stall another's updates.
+    // the same snapshot and could each open an entry for the same question, or both trip the
+    // ceiling and run two merge passes over the same rows. Per project rather than global, so one
+    // busy project cannot stall another's updates.
     private val projectLocks = ConcurrentHashMap<UUID, Mutex>()
 
     private val faqConfig get() = applicationConfig.insights.faq
@@ -82,8 +82,7 @@ class FaqLiveUpdateService(
                 AiFaqClassifyRequest(
                     projectId = event.projectId.toString(),
                     question = event.question,
-                    categories = FaqSnapshot.categoriesOf(groups),
-                    groups = FaqSnapshot.candidatesOf(groups, faqConfig.candidateGroups),
+                    groups = candidateRefs(groups, faqConfig.candidateGroups),
                 ),
             )
 
@@ -92,8 +91,8 @@ class FaqLiveUpdateService(
                 return
             }
 
-            val category = apply(event, classification, groups)
-            faqConsolidationService.enforceLimits(event.projectId, category)
+            apply(event, classification)
+            faqConsolidationService.enforceGroupLimit(event.projectId)
         }
     }
 
@@ -104,24 +103,19 @@ class FaqLiveUpdateService(
             }.orEmpty()
 
     /**
-     * Persists the classification and returns the category the question ended up in.
+     * Persists the classification.
      */
-    private fun apply(
-        event: ChatQuestionAskedEvent,
-        classification: AiFaqClassifyResponse,
-        groups: List<FaqGroup>,
-    ): String? {
-        val category = resolveCategory(classification.category, groups)
+    private fun apply(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse) {
         val matchedId = classification.groupId?.let(::parseUuidOrNull)
 
-        return txTemplate.execute {
+        txTemplate.executeWithoutResult {
             // Re-read rather than reuse the snapshot: it was loaded outside this transaction and
             // before an AI call that can take seconds, so its entities are detached and its counts
             // may already be stale.
             val matched = matchedId
                 ?.let { faqGroupRepository.findByIdAndProjectId(it, event.projectId).orElse(null) }
 
-            val group = matched ?: newGroup(event, classification, category)
+            val group = matched ?: newGroup(event, classification)
             if (matched != null) {
                 matched.occurrenceCount += 1
                 matched.refreshedAt = Instant.now()
@@ -140,20 +134,18 @@ class FaqLiveUpdateService(
             )
 
             faqGroupRepository.save(group)
-            group.category
         }
     }
 
-    private fun newGroup(
-        event: ChatQuestionAskedEvent,
-        classification: AiFaqClassifyResponse,
-        category: String?,
-    ): FaqGroup {
+    private fun newGroup(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse): FaqGroup {
+        val question = classification.question.ifBlank { event.question }
         val group = FaqGroup(
             projectId = event.projectId,
-            question = classification.question.ifBlank { event.question },
+            question = question,
             occurrenceCount = 1,
-            category = category,
+            // Falls back to the redacted question rather than a placeholder: wordy, but it still
+            // says what the entry is about, and it can never leak an unredacted name.
+            title = classification.title.ifBlank { question },
             firstAskedAt = event.askedAt,
             lastAskedAt = event.askedAt,
         )
@@ -168,26 +160,6 @@ class FaqLiveUpdateService(
             )
         }
         return group
-    }
-
-    /**
-     * Snaps a classified category onto the spelling the project already uses.
-     *
-     * The AI service is asked to copy existing names exactly and usually does, but a single
-     * case or spacing difference would open a second bucket that reads to a PM as the same topic
-     * listed twice. Cheap to guard here, impossible to notice later.
-     */
-    private fun resolveCategory(raw: String?, groups: List<FaqGroup>): String? {
-        val label = raw?.trim()?.replace(WHITESPACE, " ")
-        if (label.isNullOrBlank()) return null
-        return groups
-            .mapNotNull { it.category }
-            .firstOrNull { it.equals(label, ignoreCase = true) }
-            ?: label
-    }
-
-    private companion object {
-        private val WHITESPACE = Regex("\\s+")
     }
 }
 

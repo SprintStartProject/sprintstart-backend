@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.chat.external.ChatQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
@@ -39,7 +38,6 @@ class InsightsFaqService(
     private val aiFaqGroupMapper: AiFaqGroupMapper,
     private val faqResponseMapper: FaqResponseMapper,
     private val faqTrendCalculator: FaqTrendCalculator,
-    private val applicationConfig: ApplicationConfig,
     transactionManager: PlatformTransactionManager,
 ) {
     // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
@@ -51,8 +49,7 @@ class InsightsFaqService(
     private val txTemplate = TransactionTemplate(transactionManager)
 
     /**
-     * Returns the project's recurring-question groups, most frequently asked first, together with
-     * the categories they are filed under.
+     * Returns the project's recurring-question entries, most frequently asked first.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving FAQ overview")
@@ -84,7 +81,7 @@ class InsightsFaqService(
      * Recomputes the recurring-question groups via the AI service and replaces the stored ones.
      *
      * Collects all user questions, sends them to the stateless AI service for grouping and
-     * categorization, and stores the freshly grouped result, replacing the previous groups.
+     * titling, and stores the freshly grouped result, replacing the previous entries.
      *
      * @throws com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
      *   if the AI service does not return a grouping result.
@@ -100,11 +97,7 @@ class InsightsFaqService(
         val askedAtByQuestionId = chatQuestions.associate { it.id.toString() to it.askedAt }
 
         val aiResponse = insightsAiClient.groupFaqQuestions(
-            AiFaqGroupingRequest(
-                projectId = projectId.toString(),
-                questions = questions,
-                maxCategories = applicationConfig.insights.faq.maxCategories,
-            ),
+            AiFaqGroupingRequest(projectId = projectId.toString(), questions = questions),
         )
         val groups = aiResponse.groups.map { aiFaqGroupMapper.toEntity(it, projectId, askedAtByQuestionId) }
 

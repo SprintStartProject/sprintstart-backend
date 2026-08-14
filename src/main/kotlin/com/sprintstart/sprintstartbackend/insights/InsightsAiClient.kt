@@ -3,7 +3,6 @@ package com.sprintstart.sprintstartbackend.insights
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyResponse
-import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqConsolidateCategoriesRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingResponse
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeGroupsRequest
@@ -68,24 +67,7 @@ class InsightsAiClient(
         }
 
     /**
-     * Requests a plan for merging an over-grown category set back under its ceiling.
-     *
-     * @throws InsightsAiException if the AI service returns a non-2xx status.
-     */
-    suspend fun consolidateFaqCategories(request: AiFaqConsolidateCategoriesRequest): AiFaqMergeResponse =
-        try {
-            webClient
-                .post()
-                .uri(uri("/api/v1/insights/faq/categories/consolidate"))
-                .body(request)
-                .sync()
-                .perform<AiFaqMergeResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw InsightsAiException("Failed to consolidate FAQ categories (HTTP ${e.statusCode}): ${e.body}")
-        }
-
-    /**
-     * Requests a plan for folding duplicate groups inside one category together.
+     * Requests a plan for folding duplicate entries together once the FAQ is over its ceiling.
      *
      * @throws InsightsAiException if the AI service returns a non-2xx status.
      */

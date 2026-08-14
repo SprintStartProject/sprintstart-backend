@@ -34,7 +34,9 @@ class AiFaqGroupMapper {
             projectId = projectId,
             question = aiGroup.question,
             occurrenceCount = aiGroup.count,
-            category = aiGroup.category?.takeIf { it.isNotBlank() },
+            // Falls back to the redacted representative question: wordy, but it still says what
+            // the entry is about, and it can never leak an unredacted name.
+            title = aiGroup.title?.takeIf { it.isNotBlank() } ?: aiGroup.question,
             firstAskedAt = askedAt.minOrNull() ?: now,
             lastAskedAt = askedAt.maxOrNull() ?: now,
         )

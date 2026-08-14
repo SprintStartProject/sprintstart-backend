@@ -13,9 +13,6 @@ import kotlinx.serialization.Serializable
 data class AiFaqGroupingRequest(
     val projectId: String,
     val questions: List<AiFaqQuestion>,
-    // Passed rather than left to the AI service's own default, so a rebuild produces the same
-    // category budget the live classification path enforces.
-    val maxCategories: Int,
 )
 
 /**

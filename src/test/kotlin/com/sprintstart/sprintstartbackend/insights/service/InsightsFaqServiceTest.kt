@@ -59,7 +59,6 @@ class InsightsFaqServiceTest {
         aiFaqGroupMapper = aiFaqGroupMapper,
         faqResponseMapper = faqResponseMapper,
         faqTrendCalculator = faqTrendCalculator,
-        applicationConfig = applicationConfig,
         transactionManager = transactionManager,
     )
 
@@ -138,7 +137,7 @@ class InsightsFaqServiceTest {
                             source = "confluence",
                         ),
                     ),
-                    category = "Access & Accounts",
+                    title = "Getting VPN access",
                     questionIds = listOf(messageId.toString()),
                 ),
             ),
@@ -165,7 +164,7 @@ class InsightsFaqServiceTest {
         assertEquals(14, persisted.occurrenceCount)
         assertEquals(2, persisted.questions.size)
         assertEquals("doc_001", persisted.documents.first().documentRef)
-        assertEquals("Access & Accounts", persisted.category)
+        assertEquals("Getting VPN access", persisted.title)
         // Recovered from the chat message, not stamped with "now": a rebuilt group that looks
         // freshly asked would tell a PM the opposite of the truth about a dormant topic.
         assertEquals(askedAt, persisted.lastAskedAt)

@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.model.mapper
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqCategoryResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentPreviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentResponse
@@ -14,7 +13,7 @@ import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
- * Converts persisted FAQ groups into API response DTOs.
+ * Converts persisted FAQ entries into API response DTOs.
  *
  * The upstream document reference ([com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument.documentRef])
  * is exposed as the document id so clients can reference the real knowledge-base document.
@@ -33,6 +32,7 @@ class FaqResponseMapper(
                 FaqGroupSummaryResponse(
                     groupId = group.id,
                     count = group.occurrenceCount,
+                    title = group.displayTitle,
                     question = group.question,
                     topDocuments = group.documents.map { document ->
                         FaqDocumentPreviewResponse(
@@ -40,13 +40,11 @@ class FaqResponseMapper(
                             title = document.title,
                         )
                     },
-                    category = group.category,
                     recentCount = stats.recentCount,
                     trend = stats.trend,
                     lastAskedAt = group.lastAskedAt,
                 )
             },
-            categories = toCategories(groups, statsByGroup),
             lastAskedAt = groups.maxOfOrNull { it.lastAskedAt },
         )
     }
@@ -55,7 +53,9 @@ class FaqResponseMapper(
         return FaqDetailResponse(
             groupId = group.id,
             count = group.occurrenceCount,
-            // Newest first and capped: a long-lived group accumulates one row per ask, and a PM
+            title = group.displayTitle,
+            question = group.question,
+            // Newest first and capped: a long-lived entry accumulates one row per ask, and a PM
             // opening it wants to see how the question is being phrased now, not scroll a log.
             questions = group.questions
                 .sortedByDescending { it.askedAt }
@@ -74,42 +74,19 @@ class FaqResponseMapper(
                     source = document.source,
                 )
             },
-            category = group.category,
             recentCount = stats.recentCount,
             trend = stats.trend,
             firstAskedAt = group.firstAskedAt,
             lastAskedAt = group.lastAskedAt,
         )
     }
-
-    /**
-     * Rolls the groups up into their categories, most active first.
-     *
-     * Ordered by recent volume rather than all-time count, which is what makes a category that is
-     * picking up surface above one that was busy months ago and has gone quiet since — the
-     * "growing topics surface, stale ones fade" behaviour the panel is for.
-     */
-    private fun toCategories(
-        groups: List<FaqGroup>,
-        statsByGroup: Map<UUID, FaqTrendCalculator.Stats>,
-    ): List<FaqCategoryResponse> =
-        groups
-            .mapNotNull { group -> group.category?.let { it to group } }
-            .groupBy({ it.first }, { it.second })
-            .map { (name, groupsInCategory) ->
-                val stats = groupsInCategory
-                    .map { statsByGroup[it.id] ?: FaqTrendCalculator.Stats.NONE }
-                    .fold(FaqTrendCalculator.Stats.NONE, FaqTrendCalculator.Stats::plus)
-                FaqCategoryResponse(
-                    name = name,
-                    groupCount = groupsInCategory.size,
-                    questionCount = groupsInCategory.sumOf { it.occurrenceCount },
-                    recentQuestionCount = stats.recentCount,
-                    trend = stats.trend,
-                    lastAskedAt = groupsInCategory.maxOf { it.lastAskedAt },
-                )
-            }.sortedWith(
-                compareByDescending<FaqCategoryResponse> { it.recentQuestionCount }
-                    .thenByDescending { it.questionCount },
-            )
 }
+
+/**
+ * The title to show, falling back to the representative question.
+ *
+ * Entries written before titles existed have none, and a client rendering an empty headline would
+ * be worse than a wordy one — the question at least says what the entry is about.
+ */
+private val FaqGroup.displayTitle: String
+    get() = title?.takeIf { it.isNotBlank() } ?: question

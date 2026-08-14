@@ -18,7 +18,6 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.transaction.PlatformTransactionManager
@@ -61,14 +60,14 @@ class FaqLiveUpdateServiceTest {
 
     private fun existingGroup(
         question: String = "How do I get VPN access?",
-        category: String? = "Access & Accounts",
+        title: String? = "Getting VPN access",
         count: Int = 3,
         lastAskedAt: Instant = askedAt.minusSeconds(3600),
     ) = FaqGroup(
         projectId = projectId,
         question = question,
         occurrenceCount = count,
-        category = category,
+        title = title,
         firstAskedAt = lastAskedAt,
         lastAskedAt = lastAskedAt,
     )
@@ -92,7 +91,7 @@ class FaqLiveUpdateServiceTest {
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "How do I get VPN access?",
-            category = "Access & Accounts",
+            title = "Getting VPN access",
             groupId = null,
             documents = listOf(AiFaqDocument(id = "doc_001", title = "VPN Setup Guide", source = "confluence")),
         )
@@ -101,7 +100,7 @@ class FaqLiveUpdateServiceTest {
 
         val group = saved.captured
         assertEquals(1, group.occurrenceCount)
-        assertEquals("Access & Accounts", group.category)
+        assertEquals("Getting VPN access", group.title)
         assertEquals(askedAt, group.firstAskedAt)
         assertEquals(askedAt, group.lastAskedAt)
         assertEquals("doc_001", group.documents.single().documentRef)
@@ -116,7 +115,7 @@ class FaqLiveUpdateServiceTest {
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "Can someone enable VPN for me?",
-            category = "Access & Accounts",
+            title = "Getting VPN access",
             groupId = group.id.toString(),
         )
 
@@ -134,7 +133,7 @@ class FaqLiveUpdateServiceTest {
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "Ask [NAME] for VPN access",
-            category = "Access & Accounts",
+            title = "Getting VPN access",
         )
 
         serviceWith().onQuestionAsked(event("Ask John Doe for VPN access"))
@@ -185,14 +184,15 @@ class FaqLiveUpdateServiceTest {
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "How do I start the backend?",
-            category = "Local Setup",
+            title = "Starting the backend locally",
             groupId = UUID.randomUUID().toString(),
         )
 
         serviceWith().onQuestionAsked(event("How do I start the backend?"))
 
         assertEquals(1, saved.captured.occurrenceCount)
-        assertEquals("Local Setup", saved.captured.category)
+        // Not the title of the entry it thought it was joining.
+        assertEquals("Starting the backend locally", saved.captured.title)
     }
 
     @Test
@@ -202,7 +202,7 @@ class FaqLiveUpdateServiceTest {
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "How do I start the backend?",
-            category = "Local Setup",
+            title = "Starting the backend locally",
             groupId = "not-a-uuid",
         )
 
@@ -212,67 +212,71 @@ class FaqLiveUpdateServiceTest {
     }
 
     @Test
-    fun `snaps a differently cased category onto the spelling already in use`() = runTest {
-        givenGroups(existingGroup(category = "Local Setup"))
-        val saved = captureSaved()
+    fun `keeps a matched group's own title`() = runTest {
+        val group = existingGroup(title = "Getting VPN access")
+        givenGroups(group)
+        every { faqGroupRepository.findByIdAndProjectId(group.id, projectId) } returns Optional.of(group)
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
-            question = "How do I start the backend?",
-            category = "local  setup",
+            question = "Can someone enable VPN for me?",
+            title = "Something else entirely",
+            groupId = group.id.toString(),
         )
 
-        serviceWith().onQuestionAsked(event("How do I start the backend?"))
+        serviceWith().onQuestionAsked(event("Can someone enable VPN for me?"))
 
-        // Two spellings would read to a PM as the same topic listed twice.
-        assertEquals("Local Setup", saved.captured.category)
+        // Re-titling on every rephrasing would make the list churn.
+        assertEquals("Getting VPN access", group.title)
     }
 
     @Test
-    fun `leaves a group uncategorized when the AI service names no category`() = runTest {
+    fun `falls back to the redacted question when the AI service gives no title`() = runTest {
         givenGroups()
         val saved = captureSaved()
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
-            question = "How do I get VPN access?",
-            category = "   ",
+            question = "Ask [NAME] for VPN access",
+            title = "   ",
         )
 
-        serviceWith().onQuestionAsked(event())
+        serviceWith().onQuestionAsked(event("Ask John Doe for VPN access"))
 
-        assertNull(saved.captured.category)
+        // Wordy, but it says what the entry is about — and it can never carry the unredacted name.
+        assertEquals("Ask [NAME] for VPN access", saved.captured.title)
     }
 
     @Test
-    fun `sends the existing structure so the AI service can match against it`() = runTest {
+    fun `sends the existing entries so the AI service can match against them`() = runTest {
         givenGroups(existingGroup(count = 5), existingGroup(question = "How do I start the backend?", count = 2))
         captureSaved()
         val request = slot<AiFaqClassifyRequest>()
         coEvery { insightsAiClient.classifyFaqQuestion(capture(request)) } returns
-            AiFaqClassifyResponse(relevant = true, question = "How do I deploy?", category = "Deployment")
+            AiFaqClassifyResponse(relevant = true, question = "How do I deploy?", title = "Deploying")
 
         serviceWith().onQuestionAsked(event("How do I deploy?"))
 
         val sent = request.captured
         assertEquals(projectId.toString(), sent.projectId)
         assertEquals("How do I deploy?", sent.question)
-        assertEquals(listOf("Access & Accounts"), sent.categories.map { it.name })
-        assertEquals(7, sent.categories.single().questionCount)
         assertEquals(2, sent.groups.size)
+        // Both travel: a summarised title can lose the component name that tells two otherwise
+        // identical requests apart.
+        assertTrue(sent.groups.all { it.title.isNotBlank() && it.question.isNotBlank() })
     }
 
     @Test
-    fun `enforces the structure limits after filing a question`() = runTest {
+    fun `enforces the entry limit after filing a question`() = runTest {
         givenGroups()
         captureSaved()
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
             relevant = true,
             question = "How do I get VPN access?",
-            category = "Access & Accounts",
+            title = "Getting VPN access",
         )
 
         serviceWith().onQuestionAsked(event())
 
-        coVerify(exactly = 1) { faqConsolidationService.enforceLimits(projectId, "Access & Accounts") }
+        coVerify(exactly = 1) { faqConsolidationService.enforceGroupLimit(projectId) }
     }
 
     @Test
@@ -282,7 +286,7 @@ class FaqLiveUpdateServiceTest {
         captureSaved()
         val request = slot<AiFaqClassifyRequest>()
         coEvery { insightsAiClient.classifyFaqQuestion(capture(request)) } returns
-            AiFaqClassifyResponse(relevant = true, question = "How do I deploy?", category = "Deployment")
+            AiFaqClassifyResponse(relevant = true, question = "How do I deploy?", title = "Deploying")
 
         serviceWith(FaqInsightsConfig(candidateGroups = 10)).onQuestionAsked(event("How do I deploy?"))
 
