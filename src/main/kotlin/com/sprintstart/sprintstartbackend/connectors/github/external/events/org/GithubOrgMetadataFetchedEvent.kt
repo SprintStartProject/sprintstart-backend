@@ -1,15 +1,9 @@
-package com.sprintstart.sprintstartbackend.ingestion.model.dto
+package com.sprintstart.sprintstartbackend.connectors.github.external.events.org
 
 import java.util.UUID
 
-sealed interface ArtifactMetadata
-
-data class GithubArtifactMetadata(
-    val repositoryId: UUID,
-    val repositoryFullName: String,
-) : ArtifactMetadata
-
-data class GithubOrgMetadataArtifactMetadata(
+data class GithubOrgMetadataFetchedEvent(
+    val transactionId: UUID,
     val login: String,
     val name: String,
     val description: String?,
@@ -21,7 +15,7 @@ data class GithubOrgMetadataArtifactMetadata(
     val privateRepos: Int?,
     val teams: List<GithubOrgMetadataTeam>?,
     val members: List<GithubOrgMetadataMember>,
-) : ArtifactMetadata
+)
 
 data class GithubOrgMetadataTeam(
     val name: String,
@@ -40,12 +34,3 @@ data class GithubOrgMetadataMember(
     val login: String,
     val url: String,
 )
-
-/**
- * `actorId` is operation-neutral: it is the uploader for stored artifact metadata and the remover
- * for failed deletion metadata.
- */
-data class UploadArtifactMetadata(
-    var storagePath: String? = null,
-    var actorId: UUID,
-) : ArtifactMetadata

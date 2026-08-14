@@ -308,7 +308,7 @@ class GithubConnectorService(
             )
         }
         applicationScope.launch {
-            orgService.connectGithubOrgIfNecessary(repository.owner, repository.user.token)
+            orgService.connectGithubOrgIfNecessary(repository.owner, repository.user.token, transactionId)
         }
 
         return transactionId

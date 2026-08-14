@@ -3,10 +3,15 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.FileMetaDataResolver
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataMember
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataTeam
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataTeamMember
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubSourceUrlFactory.buildCommitUrl
@@ -184,6 +189,54 @@ class GithubArtifactMapper {
                     owner = event.repositoryOwner,
                     name = event.repositoryName,
                 ),
+            ),
+        )
+    }
+
+    fun toCommand(event: GithubOrgMetadataFetchedEvent): GithubArtifactCommand {
+        return GithubArtifactCommand(
+            ingestionRunId = event.transactionId,
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = event.login,
+            sourceUrl = "https://github.com/${event.login}",
+            artifactType = ArtifactType.ORG_METADATA,
+            title = event.name,
+            bodyText = null,
+            mime = null,
+            language = null,
+            createdAtSource = null,
+            updatedAtSource = null,
+            hash = null,
+            metadata = GithubOrgMetadataArtifactMetadata(
+                login = event.login,
+                name = event.name,
+                description = event.description,
+                company = event.company,
+                blog = event.blog,
+                location = event.location,
+                email = event.email,
+                publicRepos = event.publicRepos,
+                privateRepos = event.privateRepos,
+                teams = event.teams?.map { team ->
+                    GithubOrgMetadataTeam(
+                        name = team.name,
+                        slug = team.slug,
+                        orgLogin = team.orgLogin,
+                        orgName = team.orgName,
+                        members = team.members.map { member ->
+                            GithubOrgMetadataTeamMember(
+                                login = member.login,
+                                name = member.name,
+                            )
+                        },
+                    )
+                },
+                members = event.members.map { member ->
+                    GithubOrgMetadataMember(
+                        login = member.login,
+                        url = member.url,
+                    )
+                },
             ),
         )
     }

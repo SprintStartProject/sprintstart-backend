@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class OrgMetadataResponse(
     val login: String,
-    val name: String? = null,
+    val name: String,
     val description: String? = null,
     val company: String? = null,
     val blog: String? = null,
