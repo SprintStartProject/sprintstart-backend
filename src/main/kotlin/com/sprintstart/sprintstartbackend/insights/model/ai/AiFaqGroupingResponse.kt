@@ -17,13 +17,31 @@ data class AiFaqGroupingResponse(
  * @property count total number of questions assigned to the cluster; may exceed [questions] size
  * @property questions a redacted sample of the questions in the cluster
  * @property documents the knowledge-base documents that answered questions in the cluster
+ * @property category the topic bucket the cluster belongs to
+ * @property questionIds ids of every question in the cluster, not just the sampled ones. The AI
+ * service keeps no history, so these are what let this module recover when each question was asked
+ * and rebuild the group's recency from it.
  */
 @Serializable
 data class AiFaqGroup(
     val question: String,
     val count: Int,
-    val questions: List<String>,
-    val documents: List<AiFaqDocument>,
+    val questions: List<AiFaqSampleQuestion> = emptyList(),
+    val documents: List<AiFaqDocument> = emptyList(),
+    val category: String? = null,
+    val questionIds: List<String> = emptyList(),
+)
+
+/**
+ * One redacted sample question, carrying the id it was sent in as.
+ *
+ * @property id identifier of the chat message the question came from
+ * @property text the redacted question text
+ */
+@Serializable
+data class AiFaqSampleQuestion(
+    val id: String,
+    val text: String,
 )
 
 /**

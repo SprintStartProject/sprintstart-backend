@@ -56,6 +56,7 @@ class KnowledgeGapsServiceTest {
         knowledgeGapResponseMapper = knowledgeGapResponseMapper,
         userApi = userApi,
         artifactIngestionApi = artifactIngestionApi,
+        refreshTracker = InsightsRefreshTracker(),
         transactionManager = transactionManager,
     )
 

@@ -19,6 +19,7 @@ class KnowledgeGapResponseMapper {
         gaps: List<KnowledgeGap>,
         ownersByComponent: Map<String, List<KnowledgeGapOwnerResponse>>,
         firstIngestedByComponent: Map<String, Instant>,
+        refreshing: Boolean = false,
     ): KnowledgeGapsOverviewResponse {
         return KnowledgeGapsOverviewResponse(
             gaps = gaps.map {
@@ -28,6 +29,10 @@ class KnowledgeGapResponseMapper {
                     firstIngestedByComponent[it.component],
                 )
             },
+            refreshing = refreshing,
+            // The gaps are rebuilt as one set, so any row's timestamp is the set's. Taking the
+            // newest keeps it honest if a partial write ever left them differing.
+            refreshedAt = gaps.maxOfOrNull { it.refreshedAt },
         )
     }
 

@@ -12,6 +12,17 @@ sprintstart:
   upload:
     directory: uploads
     max-file-size-bytes: 10485760
+  insights:
+    faq:
+      live-updates: ${SPRINTSTART_FAQ_LIVE_UPDATES:true}
+      max-categories: 12
+      max-groups-per-category: 20
+      candidate-groups: 40
+      sample-questions: 10
+      trend-window-days: 14
+    knowledge-gaps:
+      auto-refresh: ${SPRINTSTART_KNOWLEDGE_GAPS_AUTO_REFRESH:true}
+      debounce-seconds: 60
 
 spring:
   config:

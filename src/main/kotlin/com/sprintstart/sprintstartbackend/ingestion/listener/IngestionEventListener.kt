@@ -1,19 +1,25 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
+import com.sprintstart.sprintstartbackend.ingestion.external.events.ArtifactsIndexedEvent
+import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
+import java.util.UUID
 
 @Component
 class IngestionEventListener(
     private val runArtifactsIngestionService: RunArtifactsIngestionService,
     private val ingestionRunLifeCycleService: IngestionRunLifeCycleService,
+    private val artifactRepository: ArtifactRepository,
+    private val publisher: ApplicationEventPublisher,
     private val applicationScope: CoroutineScope,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -36,10 +42,31 @@ class IngestionEventListener(
             try {
                 runArtifactsIngestionService.ingestRunArtifacts(event.runId)
                 ingestionRunLifeCycleService.markAiSyncSucceeded(event.runId)
+                announceIndexed(event.runId)
             } catch (e: Exception) {
                 logger.error("AI sync failed for ingestion run {}", event.runId, e)
                 ingestionRunLifeCycleService.markAiSyncFailed(event.runId, e.message)
             }
+        }
+    }
+
+    /**
+     * Tells the rest of the application that the run's artifacts are now searchable.
+     *
+     * Published only after the sync succeeded, because that is the first moment a consumer asking
+     * the AI service about these documents would actually find them. A run that ingested nothing
+     * is skipped: there is no project to announce and nothing downstream would change.
+     *
+     * Failures here are logged rather than propagated — the sync itself worked, and marking it
+     * failed because a downstream notification did not go out would misreport the run.
+     */
+    private fun announceIndexed(runId: UUID) {
+        try {
+            val projectIds = artifactRepository.findProjectIdsByIngestionRunId(runId)
+            if (projectIds.isEmpty()) return
+            publisher.publishEvent(ArtifactsIndexedEvent(runId = runId, projectIds = projectIds))
+        } catch (e: Exception) {
+            logger.warn("Could not announce indexed artifacts for ingestion run {}", runId, e)
         }
     }
 }

@@ -24,6 +24,6 @@ internal class ChatQuestionApiService(
     override fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion> {
         return messageRepository
             .findAllByRoleAndChatProjectId(ChatRole.USER, projectId)
-            .map { ChatQuestion(id = it.id, text = it.content) }
+            .map { ChatQuestion(id = it.id, text = it.content, askedAt = it.createdAt.toInstant()) }
     }
 }

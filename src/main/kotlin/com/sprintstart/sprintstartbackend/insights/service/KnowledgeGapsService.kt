@@ -41,6 +41,7 @@ class KnowledgeGapsService(
     private val knowledgeGapResponseMapper: KnowledgeGapResponseMapper,
     private val userApi: UserApi,
     private val artifactIngestionApi: ArtifactIngestionApi,
+    private val refreshTracker: InsightsRefreshTracker,
     transactionManager: PlatformTransactionManager,
 ) {
     // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
@@ -63,7 +64,12 @@ class KnowledgeGapsService(
         val components = gaps.map { it.component }.distinct()
         val ownersByComponent = resolveOwners(components)
         val firstIngestedByComponent = artifactIngestionApi.getFirstIngestedAt(components)
-        return knowledgeGapResponseMapper.toOverviewResponse(gaps, ownersByComponent, firstIngestedByComponent)
+        return knowledgeGapResponseMapper.toOverviewResponse(
+            gaps,
+            ownersByComponent,
+            firstIngestedByComponent,
+            refreshing = refreshTracker.isRefreshingKnowledgeGaps(projectId),
+        )
     }
 
     /**

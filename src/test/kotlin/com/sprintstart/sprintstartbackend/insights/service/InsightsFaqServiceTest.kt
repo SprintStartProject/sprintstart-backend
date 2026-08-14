@@ -3,10 +3,12 @@ package com.sprintstart.sprintstartbackend.insights.service
 import com.sprintstart.sprintstartbackend.chat.external.ChatQuestion
 import com.sprintstart.sprintstartbackend.chat.external.ChatQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
+import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingResponse
+import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqSampleQuestion
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
@@ -29,6 +31,7 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -38,7 +41,12 @@ class InsightsFaqServiceTest {
     private val insightsAiClient = mockk<InsightsAiClient>()
     private val chatQuestionApi = mockk<ChatQuestionApi>()
     private val aiFaqGroupMapper = AiFaqGroupMapper()
-    private val faqResponseMapper = FaqResponseMapper()
+    private val applicationConfig = insightsTestConfig()
+    private val faqResponseMapper = FaqResponseMapper(applicationConfig)
+
+    // Relaxed: no test here asserts on trends, and the calculator's own behaviour is covered
+    // separately; an empty stat map is the same "no data yet" case a fresh project produces.
+    private val faqTrendCalculator = mockk<FaqTrendCalculator>(relaxed = true)
 
     // Relaxed: TransactionTemplate only needs a manager to hand it a status; the callback
     // runs inline either way.
@@ -50,6 +58,8 @@ class InsightsFaqServiceTest {
         chatQuestionApi = chatQuestionApi,
         aiFaqGroupMapper = aiFaqGroupMapper,
         faqResponseMapper = faqResponseMapper,
+        faqTrendCalculator = faqTrendCalculator,
+        applicationConfig = applicationConfig,
         transactionManager = transactionManager,
     )
 
@@ -110,12 +120,17 @@ class InsightsFaqServiceTest {
 
     @Test
     fun `refreshFaqGroups groups via the AI service and rebuilds the cache`() = runTest {
+        val askedAt = Instant.parse("2026-08-01T10:00:00Z")
+        val messageId = UUID.randomUUID()
         val aiResponse = AiFaqGroupingResponse(
             groups = listOf(
                 AiFaqGroup(
                     question = "How do I get VPN access?",
                     count = 14,
-                    questions = listOf("How do I get VPN access?", "Can someone enable VPN for me?"),
+                    questions = listOf(
+                        AiFaqSampleQuestion(id = messageId.toString(), text = "How do I get VPN access?"),
+                        AiFaqSampleQuestion(id = UUID.randomUUID().toString(), text = "Can someone enable VPN for me?"),
+                    ),
                     documents = listOf(
                         AiFaqDocument(
                             id = "doc_001",
@@ -123,11 +138,13 @@ class InsightsFaqServiceTest {
                             source = "confluence",
                         ),
                     ),
+                    category = "Access & Accounts",
+                    questionIds = listOf(messageId.toString()),
                 ),
             ),
         )
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns
-            listOf(ChatQuestion(id = UUID.randomUUID(), text = "How do I get VPN access?"))
+            listOf(ChatQuestion(id = messageId, text = "How do I get VPN access?", askedAt = askedAt))
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns aiResponse
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
@@ -148,6 +165,12 @@ class InsightsFaqServiceTest {
         assertEquals(14, persisted.occurrenceCount)
         assertEquals(2, persisted.questions.size)
         assertEquals("doc_001", persisted.documents.first().documentRef)
+        assertEquals("Access & Accounts", persisted.category)
+        // Recovered from the chat message, not stamped with "now": a rebuilt group that looks
+        // freshly asked would tell a PM the opposite of the truth about a dormant topic.
+        assertEquals(askedAt, persisted.lastAskedAt)
+        assertEquals(askedAt, persisted.questions.first().askedAt)
+        assertEquals(messageId, persisted.questions.first().sourceMessageId)
 
         coVerify(exactly = 1) { insightsAiClient.groupFaqQuestions(any()) }
         verifyOrder {
