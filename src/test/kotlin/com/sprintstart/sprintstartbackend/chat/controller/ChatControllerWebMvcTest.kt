@@ -434,9 +434,10 @@ class ChatControllerWebMvcTest(
         }
 
         @Test
-        fun `forwards tool_use citation and error events untouched`() {
+        fun `forwards tool_use reasoning citation and error events untouched`() {
             val messages = listOf(
                 AiStreamMessage(type = "tool_use", name = "retrieve", kind = "tool"),
+                AiStreamMessage(type = "reasoning", reasoning = "I am checking the sources..."),
                 AiStreamMessage("token", "The main blocker"),
                 AiStreamMessage(
                     type = "citation",
@@ -468,8 +469,10 @@ class ChatControllerWebMvcTest(
             val expected = messages.joinToString("") { Json.encodeToString(it) }
 
             assertEquals(expected, actual)
+
             // Wire field names must mirror the AI service contract for the frontend.
             assert(actual.contains("""{"type":"tool_use","name":"retrieve","kind":"tool"}"""))
+            assert(actual.contains("""{"type":"reasoning","reasoning":"I am checking the sources..."}"""))
             assert(actual.contains(""""artifact_id":"artifact-1""""))
             assert(actual.contains(""""start_line":12"""))
         }

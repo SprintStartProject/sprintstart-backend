@@ -463,6 +463,46 @@ class ChatServiceTests {
         }
 
         @Test
+        fun `forwards reasoning events without accumulating them into the saved message`() = runTest {
+            val chat = Chat(
+                id = chatId,
+                userId = userId,
+                title = "Existing title",
+                createdAt = OffsetDateTime.now(),
+                projectId = projectId,
+            )
+            val aiPromptRequest = AiPromptRequest("Hello", listOf(), projectId.toString())
+            val stream = listOf(
+                AiStreamMessage(type = "reasoning", reasoning = "I am thinking..."),
+                AiStreamMessage("token", "Hello"),
+                AiStreamMessage(type = "reasoning", reasoning = "Let me continue..."),
+                AiStreamMessage("token", " world"),
+                AiStreamMessage("done"),
+            )
+            val savedMessages = mutableListOf<ChatMessage>()
+            mockOwnedChat(chat)
+            every { chatMessageRepository.findAllByChat(any(), any()) } returns PageImpl(emptyList())
+            every { chatMessageRepository.save(capture(savedMessages)) } answers { firstArg() }
+            every { citationRepository.saveAll(any<List<Citation>>()) } answers { firstArg() }
+            every { connectorConfigurationService.findAllConnectors() } returns emptyList()
+            every { chatAiClient.streamPrompt(aiPromptRequest) } returns flowOf(*stream.toTypedArray())
+            every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"
+
+            val emitted = chatService
+                .promptForCurrentUser(
+                    authId,
+                    PromptRequest(chatId = chatId, msg = "Hello"),
+                ).toList()
+
+            // Reasoning events are forwarded downstream untouched
+            assertEquals(stream, emitted)
+            // But only token content is persisted as the assistant message
+            assertEquals(2, savedMessages.size)
+            assertEquals(ChatRole.ASSISTANT, savedMessages[1].role)
+            assertEquals("Hello world", savedMessages[1].content)
+        }
+
+        @Test
         fun `saves ai response as message on stream completion`() = runTest {
             val chat = Chat(
                 id = chatId,
