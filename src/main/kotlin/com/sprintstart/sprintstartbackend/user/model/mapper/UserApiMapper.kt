@@ -22,18 +22,18 @@ fun User.toUserApiDto(): UserDto {
                     description = it.description,
                 )
             }.toSet(),
-        skills = this.skillAssessments.map { assessment ->
-            UserSkillDto(
-                skillId = assessment.skill.id,
-                name = assessment.skill.name,
-                level = assessment.level.name,
-            )
-        },
         projectRoles = this.projectRoles.map { role ->
             ProjectRoleDto(
                 roleId = role.id,
                 name = role.name,
                 description = role.description,
+            )
+        },
+        skills = this.skillAssessments.map { assessment ->
+            UserSkillDto(
+                skillId = assessment.skill.id,
+                name = assessment.skill.name,
+                level = assessment.level.name,
             )
         },
     )

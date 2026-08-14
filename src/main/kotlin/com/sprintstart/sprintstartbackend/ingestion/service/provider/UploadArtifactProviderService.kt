@@ -38,6 +38,7 @@ class UploadArtifactProviderService(
      */
     @Transactional
     fun persistArtifact(command: UploadArtifactCommand) {
+        val runId = command.ingestionRunId
         val projectId = command.projectId
 
         var artifact = artifactRepository.findBySourceId(command.sourceId)

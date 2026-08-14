@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.PullRequestFileResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubIssuesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubPrSearchResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubSinglePrResponse
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphq
 import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
@@ -37,12 +39,17 @@ import tools.jackson.module.kotlin.jacksonObjectMapper
  * @param queryLoader Responsible for loading pre-defined GitHub GraphQL queries.
  */
 @Component
+// One function per GitHub resource this app reads, plus the paging helpers underneath them. Splitting
+// by resource would put two or three methods in each of four classes that all share the same
+// WebClient, base URL and error translation.
+@Suppress("TooManyFunctions")
 class GithubClient(
     private val webClient: WebClient,
     private val applicationConfig: ApplicationConfig,
     private val queryLoader: GithubQueryLoader,
 ) {
     private val objectMapper = jacksonObjectMapper()
+    private val logger = LoggerFactory.getLogger(GithubClient::class.java)
 
     /**
      * Checks if a repository exists on GitHub.
@@ -68,6 +75,33 @@ class GithubClient(
             } else {
                 throw e // propagate unexpected errors
             }
+        }
+    }
+
+    /**
+     * Whether a GitHub account with this login exists — or `null` when GitHub would not say.
+     *
+     * Three-valued, and unauthenticated — no token is threaded through here. The cost is
+     * GitHub's unauthenticated rate limit (60/hour per IP), affordable only because the answer is
+     * *stored* against the user and re-checked when their login changes or a previous check could
+     * not run.
+     *
+     * Only a 404 means "no such account". A rate limit, a 5xx or a dropped connection all
+     * return null, never false — an outage is not evidence about the world.
+     *
+     * @return true when it exists, false when GitHub says it does not, null when GitHub would not
+     * answer.
+     */
+    suspend fun userExists(login: String): Boolean? {
+        return try {
+            webClient
+                .get()
+                .uri("${applicationConfig.github.baseUrl}/users/$login")
+                .sync()
+                .performRaw()
+            true
+        } catch (e: WebClientException) {
+            if (e.statusCode == 404) false else null
         }
     }
 
@@ -138,6 +172,55 @@ class GithubClient(
     }
 
     /**
+     * Fetches one pull request's full detail (title, body, state, changed files, CI status,
+     * commit messages) on demand, by number -- unlike [fetchAllPullRequests], this doesn't crawl
+     * a repository's whole PR list first. Used by artifact verification to gather live evidence
+     * for a hire-submitted PR number at grading time.
+     *
+     * @param repository the repository containing the pull request.
+     * @param prNumber the number of the pull request to fetch.
+     * @return the pull request's details, or null if it does not exist.
+     * @throws WebClientException if there is an issue with the network or server response.
+     * @throws kotlinx.serialization.SerializationException if the response data cannot be deserialized.
+     */
+    suspend fun fetchPullRequest(repository: GithubRepositoryConnection, prNumber: Int): PullRequest? {
+        val query = queryLoader.load("github/graphql/100-pullrequests-deep.graphql")
+        return fetchSinglePullRequest(repository, prNumber, query)
+    }
+
+    /**
+     * The changed files of one pull request, with their diffs.
+     *
+     * A second call, and it cannot be joined into the GraphQL one: GraphQL's
+     * `PullRequestChangedFile` has a path and counts but no patch. Patch text is REST-only.
+     *
+     * Capped at [MAX_FILES_PER_PAGE] files, one page.
+     *
+     * Returns an empty list rather than throwing when GitHub will not answer: an unavailable
+     * diff is not evidence of an empty one, and the caller says so to the model rather than
+     * failing somebody's work on a network error.
+     */
+    suspend fun fetchPullRequestFiles(
+        repository: GithubRepositoryConnection,
+        prNumber: Int,
+    ): List<PullRequestFileResponse> {
+        val uri = "${applicationConfig.github.baseUrl}/repos/${repository.owner}/${repository.name}" +
+            "/pulls/$prNumber/files?per_page=$MAX_FILES_PER_PAGE"
+        return try {
+            webClient
+                .get()
+                .uri(uri)
+                .header("Authorization", "Bearer ${repository.user.token}")
+                .sync()
+                .perform<Array<PullRequestFileResponse>>()
+                .toList()
+        } catch (e: WebClientException) {
+            logger.warn("Could not read the diff of pull request #{}: {}", prNumber, e.message)
+            emptyList()
+        }
+    }
+
+    /**
      * Discovers repositories of a given GitHub organization.
      *
      * This method fetches the list of repositories belonging to the specified GitHub organization by
@@ -161,18 +244,10 @@ class GithubClient(
     }
 
     /**
-     * Discovers repositories of a given GitHub user.
+     * Discovers repositories of a given GitHub user, authenticating with [token].
      *
-     * This method queries the GitHub API to fetch repositories associated with the specified user.
-     * Authentication is performed using the provided personal access token (PAT).
-     *
-     * @param user the username of the GitHub user whose repositories are to be discovered.
-     * @param token the personal access token (PAT) used to authenticate the request to the GitHub API.
      * @param page the zero-based index of the page to fetch.
-     * @param pageSize the number of repositories to fetch per page.
-     * @return a [DiscoverRepositoriesResponse] object containing the list of repositories belonging to the user.
-     * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status
-     * code.
+     * @throws WebClientException on a network problem or a non-2xx status code.
      */
     suspend fun discoverRepositoriesOfUser(
         user: String,
@@ -238,14 +313,7 @@ class GithubClient(
     /**
      * Fetches a single pull request from a GitHub repository.
      *
-     * This method queries the GitHub API to retrieve details of a specific pull request
-     * identified by its number within the specified repository.
-     *
-     * @param repository the repository containing the pull request.
-     * @param prNumber the number of the pull request to fetch.
-     * @param query the GraphQL query used to retrieve the pull request data.
-     * @return the details of the requested pull request as a [PullRequest] object, or null if
-     *         the pull request does not exist or the API response is incomplete.
+     * @return the pull request, or null if it does not exist or the API response is incomplete.
      */
     private suspend fun fetchSinglePullRequest(
         repository: GithubRepositoryConnection,
@@ -274,17 +342,11 @@ class GithubClient(
     }
 
     /**
-     * Fetches all paginated data using the provided GraphQL query and variables.
+     * Sends [query] repeatedly until every page has been fetched, following the pagination
+     * information in each response.
      *
-     * This method sends a GraphQL request repeatedly until all pages of data have been fetched
-     * by leveraging the pagination information available in the response.
-     *
-     * @param query the GraphQL query used to fetch data.
-     * @param token the GitHub PAT used for authentication.
-     * @param variablesBuilder a function that builds the variables map for the query. The function takes
-     * a cursor as input and returns a map of variables. The cursor is used to navigate through
-     * the paginated results.
-     * @return a list of all fetched entities of type [S].
+     * @param variablesBuilder Builds the variables map for one page; the cursor it is given is null
+     * for the first page and the previous response's end cursor thereafter.
      */
     private suspend inline fun <S, reified T : PageableResponse<S>> doFetchAll(
         query: String,
@@ -319,5 +381,11 @@ class GithubClient(
         } while (cursor != null)
 
         return entities
+    }
+
+    private companion object {
+        // One page. A pull request touching more files than this is not a starter task, and paging
+        // it would spend a hire's verification latency gathering evidence nobody should read whole.
+        const val MAX_FILES_PER_PAGE = 100
     }
 }
