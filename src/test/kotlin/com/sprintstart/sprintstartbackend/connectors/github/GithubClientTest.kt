@@ -136,6 +136,49 @@ class GithubClientTest {
     }
 
     @Nested
+    inner class IsOrganization {
+        @Test
+        fun `isOrganization returns true when org endpoint responds with 2xx`() {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("{}"),
+            )
+
+            val result = runBlocking { githubClient.isOrganization("octocat", "test-token") }
+
+            assertThat(result).isTrue()
+            val request = mockWebServer.takeRequest()
+            assertThat(request.path).isEqualTo("/orgs/octocat")
+            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
+        }
+
+        @Test
+        fun `isOrganization returns false when org endpoint responds with 404`() {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(404)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"message": "Not Found"}"""),
+            )
+
+            val result = runBlocking { githubClient.isOrganization("octocat", "test-token") }
+
+            assertThat(result).isFalse()
+        }
+
+        @Test
+        fun `isOrganization propagates exception on non-404 error`() {
+            mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
+
+            assertThatThrownBy {
+                runBlocking { githubClient.isOrganization("octocat", "test-token") }
+            }.hasMessageContaining("500")
+        }
+    }
+
+    @Nested
     inner class FetchIssues {
         @Test
         fun `fetchIssues uses all-issues query when no sinceTimestamp provided`() {
