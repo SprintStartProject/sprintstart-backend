@@ -17,7 +17,11 @@ data class FaqDetailResponse(
     val title: String,
     @field:Schema(description = "Representative question, in the wording users actually ask it.")
     val question: String,
-    @field:Schema(description = "Redacted sample of the questions in this entry, most recent first.")
+    @field:Schema(
+        description = "The distinct phrasings this entry was asked in, most recently asked first. " +
+            "Repeats are folded into one item carrying its occurrence count, so a question asked " +
+            "the same way ten times is one line rather than ten.",
+    )
     val questions: List<FaqQuestionResponse>,
     @field:Schema(description = "Documents that answered questions in this entry.")
     val answeringDocuments: List<FaqDocumentResponse>,
@@ -31,14 +35,16 @@ data class FaqDetailResponse(
     val lastAskedAt: Instant? = null,
 )
 
-@Schema(description = "A single sample question within a group.")
+@Schema(description = "One distinct phrasing an entry was asked in.")
 data class FaqQuestionResponse(
-    @field:Schema(description = "Identifier of the sample question.")
+    @field:Schema(description = "Identifier of the most recent ask with this phrasing.")
     val id: UUID,
     @field:Schema(description = "Redacted question text.")
     val text: String,
-    @field:Schema(description = "When this question was asked.")
+    @field:Schema(description = "When this phrasing was last asked.")
     val askedAt: Instant? = null,
+    @field:Schema(description = "How often the entry was asked in exactly this wording.")
+    val occurrences: Int = 1,
 )
 
 @Schema(description = "A document that answered questions in the group.")

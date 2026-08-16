@@ -58,21 +58,7 @@ class FaqResponseMapper(
             count = group.occurrenceCount,
             title = group.displayTitle,
             question = group.question,
-            // Newest first and capped: a long-lived entry accumulates one row per ask, and a PM
-            // opening it wants to see how the question is being phrased now, not scroll a log.
-            // Text-less rows are counted, never shown — they record that an ask happened, and a
-            // rebuild produces one for every question whose wording it did not carry back.
-            questions = group.questions
-                .filter { it.text.isNotBlank() }
-                .sortedByDescending { it.askedAt }
-                .take(applicationConfig.insights.faq.sampleQuestions)
-                .map { question ->
-                    FaqQuestionResponse(
-                        id = question.id,
-                        text = question.text,
-                        askedAt = question.askedAt,
-                    )
-                },
+            questions = toPhrasings(group),
             answeringDocuments = group.documents.map { document ->
                 FaqDocumentResponse(
                     id = document.documentRef,
@@ -86,6 +72,31 @@ class FaqResponseMapper(
             lastAskedAt = group.lastAskedAt,
         )
     }
+
+    /**
+     * The distinct phrasings an entry was asked in, most recently asked first and capped.
+     *
+     * Identical wordings are folded into one item with a count rather than listed separately: a
+     * question asked the same way ten times is the *same* phrasing ten times, and ten copies of
+     * one line would push the genuinely different wordings — the interesting ones — past the cap.
+     *
+     * Text-less rows are counted elsewhere but never shown; they record that an ask happened, and
+     * a rebuild produces one for every question whose wording it did not carry back.
+     */
+    private fun toPhrasings(group: FaqGroup): List<FaqQuestionResponse> =
+        group.questions
+            .filter { it.text.isNotBlank() }
+            .groupBy { it.text }
+            .map { (text, asks) ->
+                val newest = asks.maxBy { it.askedAt }
+                FaqQuestionResponse(
+                    id = newest.id,
+                    text = text,
+                    askedAt = newest.askedAt,
+                    occurrences = asks.size,
+                )
+            }.sortedByDescending { it.askedAt }
+            .take(applicationConfig.insights.faq.sampleQuestions)
 }
 
 /**
