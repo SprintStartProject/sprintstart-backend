@@ -11,17 +11,23 @@ import java.util.UUID
 /**
  * A single asked question that belongs to a [FaqGroup].
  *
- * Questions arriving through the live path are each stored, which is what makes a group's trend
- * exact; a full refresh only carries back a redacted sample, so after one a group holds fewer rows
- * than its occurrence count. Either way the detail view shows a capped sample, not every row.
+ * There is one row per *ask*, not per distinct phrasing — that is what makes a group's trend and
+ * recent count exact, since a recurring question is exactly one that gets repeated.
  *
- * The text is stored as delivered by the AI service, which is responsible for stripping personally
- * identifiable information before the questions reach this module.
+ * [text] is empty for asks whose wording did not come back. A rebuild samples by distinct text and
+ * caps how many it returns, so most of what it regroups arrives as a count without a phrasing; the
+ * row still has to exist to be counted. Readers showing questions must skip the blank ones.
+ *
+ * Non-empty text is stored as delivered by the AI service, which is responsible for stripping
+ * personally identifiable information before the questions reach this module.
  */
 @Entity
 class FaqQuestion(
     @Id
     val id: UUID = UUID.randomUUID(),
+    // Empty rather than null, so an existing database needs no constraint change — Hibernate's
+    // schema update adds columns but never relaxes a NOT NULL, and a nullable field here would
+    // fail on insert against a table created before it.
     @Column(nullable = false, columnDefinition = "TEXT")
     val text: String,
     @Column(name = "asked_at", nullable = false)

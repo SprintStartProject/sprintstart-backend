@@ -84,7 +84,7 @@ class InsightsFaqServiceTest {
     fun `getFaqOverview maps groups and exposes the document reference as the id`() {
         val group = buildGroup()
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns listOf(group)
-        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 14
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 14
 
         val overview = service.getFaqOverview(projectId)
 
@@ -149,7 +149,7 @@ class InsightsFaqServiceTest {
         )
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns
             listOf(ChatQuestion(id = messageId, text = "How do I get VPN access?", askedAt = askedAt))
-        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 1
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 1
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns aiResponse
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
@@ -168,7 +168,9 @@ class InsightsFaqServiceTest {
         val persisted = savedSlot.captured.first()
         assertEquals("How do I get VPN access?", persisted.question)
         assertEquals(14, persisted.occurrenceCount)
-        assertEquals(2, persisted.questions.size)
+        // One row per ask, not per sampled phrasing: the trend counts rows, and a rebuilt group
+        // whose repeats were sampled away would read as quieter than it is.
+        assertEquals(2, persisted.questions.count { it.text.isNotBlank() })
         assertEquals("doc_001", persisted.documents.first().documentRef)
         assertEquals("Getting VPN access", persisted.title)
         // Recovered from the chat message, not stamped with "now": a rebuilt group that looks
@@ -187,7 +189,7 @@ class InsightsFaqServiceTest {
     @Test
     fun `refreshFaqGroups clears the cache even when the AI returns no groups`() = runTest {
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns emptyList()
-        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 0
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 0
         coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(groups = emptyList())
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
@@ -210,7 +212,7 @@ class InsightsFaqServiceTest {
 
     private fun givenQuestions(chatQuestions: List<ChatQuestion>) {
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns chatQuestions
-        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns chatQuestions.size.toLong()
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns chatQuestions.size.toLong()
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
         every { faqGroupRepository.saveAll(any<List<FaqGroup>>()) } answers
@@ -295,7 +297,7 @@ class InsightsFaqServiceTest {
     @Test
     fun `getFaqOverview reports the material a rebuild has and the ceiling on it`() {
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns emptyList()
-        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 5_000
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 5_000
 
         val overview = service.getFaqOverview(projectId)
 
@@ -306,8 +308,8 @@ class InsightsFaqServiceTest {
 
     @Test
     fun `refreshFaqGroups narrows to the requested scope`() = runTest {
-        val old = Instant.parse("2026-01-01T10:00:00Z")
-        val recent = Instant.parse("2026-08-01T10:00:00Z")
+        val old = Instant.now().minus(200, java.time.temporal.ChronoUnit.DAYS)
+        val recent = Instant.now().minus(1, java.time.temporal.ChronoUnit.DAYS)
         val chatQuestions = listOf(
             ChatQuestion(id = UUID.randomUUID(), text = "Old question", askedAt = old),
             ChatQuestion(id = UUID.randomUUID(), text = "Recent question", askedAt = recent),
@@ -316,7 +318,7 @@ class InsightsFaqServiceTest {
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns AiFaqGroupingResponse(emptyList())
 
-        service.refreshFaqGroups(projectId, FaqRebuildScope(sinceMonths = 1))
+        service.refreshFaqGroups(projectId, FaqRebuildScope(sinceDays = 30))
 
         // Everything outside the window is dropped — that is the point of asking for it, and why
         // the caller has to choose it rather than getting it applied quietly.
@@ -347,9 +349,69 @@ class InsightsFaqServiceTest {
     }
 
     @Test
+    fun `refreshFaqGroups stores a row for every ask, not just the sampled phrasings`() = runTest {
+        val repeated = List(3) { UUID.randomUUID() }
+        val askedAt = Instant.parse("2026-08-01T10:00:00Z")
+        givenQuestions(
+            repeated.map { ChatQuestion(id = it, text = "How do I get VPN access?", askedAt = askedAt) },
+        )
+        coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(
+            groups = listOf(
+                AiFaqGroup(
+                    question = "How do I get VPN access?",
+                    count = 3,
+                    // The AI service samples by distinct text, so three identical asks come back
+                    // as one phrasing — the ids are the only record that there were three.
+                    questions = listOf(
+                        AiFaqSampleQuestion(id = repeated.first().toString(), text = "How do I get VPN access?"),
+                    ),
+                    title = "Getting VPN access",
+                    questionIds = repeated.map { it.toString() },
+                ),
+            ),
+        )
+        val savedSlot = slot<List<FaqGroup>>()
+        every { faqGroupRepository.saveAll(capture(savedSlot)) } answers { savedSlot.captured.toMutableList() }
+
+        service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING)
+
+        val persisted = savedSlot.captured.single()
+        assertEquals(3, persisted.questions.size)
+        assertEquals(1, persisted.questions.count { it.text.isNotBlank() })
+        // Every ask carries its origin, so a redelivered event cannot count one of them twice.
+        assertEquals(repeated.toSet(), persisted.questions.mapNotNull { it.sourceMessageId }.toSet())
+    }
+
+    @Test
+    fun `previewRebuild caps each window the way a rebuild would`() {
+        val service = InsightsFaqService(
+            faqGroupRepository = faqGroupRepository,
+            insightsAiClient = insightsAiClient,
+            chatQuestionApi = chatQuestionApi,
+            aiFaqGroupMapper = aiFaqGroupMapper,
+            faqResponseMapper = faqResponseMapper,
+            faqTrendCalculator = faqTrendCalculator,
+            applicationConfig = insightsTestConfig(faq = FaqInsightsConfig(rebuildQuestionLimit = 50)),
+            transactionManager = transactionManager,
+        )
+        // The windowed stub first: mockk matches the most recently defined one, and `any()` would
+        // otherwise swallow the null call too.
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, any<Instant>()) } returns 400
+        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 900
+
+        val preview = service.previewRebuild(projectId, listOf(1, 30))
+
+        // The total is honest about what exists; the windows describe what would actually be
+        // sent, so a client showing them is not promising something the rebuild cannot keep.
+        assertEquals(900, preview.totalQuestionCount)
+        assertEquals(listOf(1, 30), preview.windows.map { it.sinceDays })
+        assertEquals(listOf(50, 50), preview.windows.map { it.questionCount })
+    }
+
+    @Test
     fun `a scope bound below one is rejected`() {
         // Coercing it would hide the caller's bug behind a wiped FAQ.
         assertThrows<ResponseStatusException> { FaqRebuildScope(questionLimit = 0) }
-        assertThrows<ResponseStatusException> { FaqRebuildScope(sinceMonths = -1) }
+        assertThrows<ResponseStatusException> { FaqRebuildScope(sinceDays = -1) }
     }
 }

@@ -41,13 +41,20 @@ class AiFaqGroupMapper {
             lastAskedAt = askedAt.maxOrNull() ?: now,
         )
 
-        aiGroup.questions.forEach { question ->
-            val messageId = parseUuidOrNull(question.id)
+        // One row per question the group holds, not just per sampled phrasing. The AI service
+        // samples by distinct text, so an identically repeated question comes back once no matter
+        // how often it was asked — counting rows off that would make a rebuilt group's trend read
+        // as quieter than it is, and a verbatim repeat is precisely what a recurring question is.
+        // Rows for unsampled ids carry no text; they exist to be counted.
+        val sampleTexts = aiGroup.questions.associate { it.id to it.text }
+        val questionIds = (aiGroup.questionIds + sampleTexts.keys).distinct()
+
+        questionIds.forEach { questionId ->
             group.questions.add(
                 FaqQuestion(
-                    text = question.text,
-                    askedAt = askedAtByQuestionId[question.id] ?: now,
-                    sourceMessageId = messageId,
+                    text = sampleTexts[questionId].orEmpty(),
+                    askedAt = askedAtByQuestionId[questionId] ?: now,
+                    sourceMessageId = parseUuidOrNull(questionId),
                     group = group,
                 ),
             )

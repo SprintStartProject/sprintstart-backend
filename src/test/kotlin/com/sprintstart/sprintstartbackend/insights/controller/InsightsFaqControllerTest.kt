@@ -210,14 +210,14 @@ class InsightsFaqControllerTest(
 
         val asyncResult = mockMvc
             .perform(
-                post("/api/v1/insights/faq/refresh?projectId=$projectId&questionLimit=500&sinceMonths=3")
+                post("/api/v1/insights/faq/refresh?projectId=$projectId&questionLimit=500&sinceDays=90")
                     .with(pmJwt),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
-        assertEquals(FaqRebuildScope(questionLimit = 500, sinceMonths = 3), scopeSlot.captured)
+        assertEquals(FaqRebuildScope(questionLimit = 500, sinceDays = 90), scopeSlot.captured)
     }
 
     @Test

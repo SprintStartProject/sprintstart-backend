@@ -10,6 +10,8 @@ import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqQuestion
 import com.sprintstart.sprintstartbackend.insights.model.dto.request.FaqRebuildScope
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOverviewResponse
+import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqRebuildPreviewResponse
+import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqRebuildWindowResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshFaqResponse
 import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiFaqGroupMapper
@@ -23,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -89,6 +90,36 @@ class InsightsFaqService(
     }
 
     /**
+     * Reports how many questions a rebuild would cover, overall and per requested window.
+     *
+     * The counts are capped the same way a rebuild would cap them, so a client showing them is
+     * describing what would happen rather than what exists. Counted in the database — this is a
+     * preview, and loading every question's text to size it would cost more than the rebuild it
+     * is previewing.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Previewing a FAQ rebuild")
+    fun previewRebuild(projectId: UUID, windowsInDays: List<Int>): FaqRebuildPreviewResponse {
+        val limit = applicationConfig.insights.faq.rebuildQuestionLimit
+        val now = Instant.now()
+
+        return FaqRebuildPreviewResponse(
+            totalQuestionCount = chatQuestionApi.countUserQuestionsForProject(projectId).toInt(),
+            rebuildQuestionLimit = limit,
+            windows = windowsInDays.map { days ->
+                val scope = FaqRebuildScope(sinceDays = days)
+                FaqRebuildWindowResponse(
+                    sinceDays = days,
+                    questionCount = chatQuestionApi
+                        .countUserQuestionsForProject(projectId, scope.notBefore(now))
+                        .coerceAtMost(limit.toLong())
+                        .toInt(),
+                )
+            },
+        )
+    }
+
+    /**
      * Recomputes the recurring-question groups via the AI service and replaces the stored ones.
      *
      * Collects the questions [scope] covers, sends them to the stateless AI service for grouping
@@ -139,9 +170,7 @@ class InsightsFaqService(
      * member as its representative, and the oldest phrasing is the more established one.
      */
     private fun questionsForRebuild(projectId: UUID, scope: FaqRebuildScope): List<ChatQuestion> {
-        val notBefore = scope.sinceMonths?.let {
-            Instant.now().minus(it.toLong() * DAYS_PER_MONTH, ChronoUnit.DAYS)
-        }
+        val notBefore = scope.notBefore()
         val limit = minOf(
             scope.questionLimit ?: Int.MAX_VALUE,
             applicationConfig.insights.faq.rebuildQuestionLimit,
@@ -185,11 +214,5 @@ class InsightsFaqService(
          * failed grouping, so the guard stays out of the way.
          */
         const val DEGENERATE_RESULT_THRESHOLD = 20
-
-        /**
-         * A month as a rebuild scope means "roughly this far back", not a calendar month — the
-         * questions being cut off are the oldest ones either way.
-         */
-        const val DAYS_PER_MONTH = 30L
     }
 }

@@ -60,7 +60,10 @@ class FaqResponseMapper(
             question = group.question,
             // Newest first and capped: a long-lived entry accumulates one row per ask, and a PM
             // opening it wants to see how the question is being phrased now, not scroll a log.
+            // Text-less rows are counted, never shown — they record that an ask happened, and a
+            // rebuild produces one for every question whose wording it did not carry back.
             questions = group.questions
+                .filter { it.text.isNotBlank() }
                 .sortedByDescending { it.askedAt }
                 .take(applicationConfig.insights.faq.sampleQuestions)
                 .map { question ->
