@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Keeps the FAQ insight current as questions are asked, instead of only when a PM presses refresh.
  *
- * Every question asked to the AI Buddy is filed into the existing entries by the AI service:
+ * Every question asked in the chat is filed into the existing entries by the AI service:
  * dropped if it is smalltalk, otherwise added to the entry it repeats or opened as a new one with
  * its own title. That is a single small AI call whose cost does not grow with the project's
  * question history, which is what makes it affordable per message — the full rebuild in

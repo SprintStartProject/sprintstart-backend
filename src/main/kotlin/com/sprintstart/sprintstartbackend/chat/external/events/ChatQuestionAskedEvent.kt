@@ -4,7 +4,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Published when a user asks the AI Buddy a question.
+ * Published when a user asks a question in the chat.
  *
  * Carries the question text rather than only its id so listeners do not have to reach back into
  * the chat module's storage for it. Handling is expected to be asynchronous: the prompt's response

@@ -9,7 +9,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 /**
- * Updates the FAQ insight whenever someone asks the AI Buddy a question.
+ * Updates the FAQ insight whenever someone asks a question in the chat.
  *
  * The handoff to [applicationScope] is the point of this class. A plain `@EventListener` runs on
  * the publisher's thread, and the publisher here is the chat prompt — so doing the work inline
