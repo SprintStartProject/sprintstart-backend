@@ -5,4 +5,5 @@ enum class ArtifactType {
     FILE,
     ISSUE,
     PULL_REQUEST,
+    ORG_METADATA,
 }

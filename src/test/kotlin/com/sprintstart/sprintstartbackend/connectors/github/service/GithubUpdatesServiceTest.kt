@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
+import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -46,6 +47,7 @@ class GithubUpdatesServiceTest {
     private val commitsService = mockk<GithubCommitsService>()
     private val issuesService = mockk<GithubIssuesService>()
     private val pullRequestsService = mockk<GithubPullRequestsService>()
+    private val githubOrgService = mockk<GithubOrgService>()
 
     private lateinit var service: GithubUpdatesService
 
@@ -65,6 +67,7 @@ class GithubUpdatesServiceTest {
             commitsService = commitsService,
             issuesService = issuesService,
             pullRequestsService = pullRequestsService,
+            githubOrgService = githubOrgService,
         )
     }
 
@@ -112,12 +115,14 @@ class GithubUpdatesServiceTest {
             coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
+            coJustRun { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
             every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs
 
             service.updateAllRepositories()
             testScope.advanceUntilIdle()
 
             coVerify(exactly = 2) { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
+            coVerify(exactly = 2) { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
         }
 
         @Test
@@ -213,12 +218,14 @@ class GithubUpdatesServiceTest {
             coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
+            coJustRun { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
             every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs
 
             service.updateRepository(UpdateRepositoryRequest("owner", "repo"), true)
             testScope.advanceUntilIdle()
 
             coVerify { fileService.fetchAndIngestFileUpdatesIncremental(repo, any()) }
+            coVerify { githubOrgService.connectGithubOrgIfNecessary("owner", "test-token", any()) }
             coVerify { commitsService.fetchAndIngestLatestCommits(repo.snapshot!!, any()) }
             coVerify { issuesService.fetchAndIngestAllIssues(repo.id, "owner", "repo", any(), true, any()) }
             coVerify {

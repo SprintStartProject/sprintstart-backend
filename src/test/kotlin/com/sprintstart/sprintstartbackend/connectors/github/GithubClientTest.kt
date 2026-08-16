@@ -59,6 +59,8 @@ class GithubClientTest {
             every { load("github/graphql/issues-since.graphql") } returns "{ issuesSinceQuery }"
             every { load("github/graphql/pullrequests-since.graphql") } returns "{ prListQuery }"
             every { load("github/graphql/100-pullrequests-deep.graphql") } returns "{ prDetailsQuery }"
+            every { load("github/graphql/org-teams.graphql") } returns "{ organizationTeamsQuery }"
+            every { load("github/graphql/org-team-members.graphql") } returns "{ organizationTeamMembersQuery }"
         }
 
         val httpClient = HttpClient
@@ -129,6 +131,49 @@ class GithubClientTest {
 
             assertThatThrownBy {
                 runBlocking { githubClient.repositoryExists(repository) }
+            }.hasMessageContaining("500")
+        }
+    }
+
+    @Nested
+    inner class IsOrganization {
+        @Test
+        fun `isOrganization returns true when org endpoint responds with 2xx`() {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("{}"),
+            )
+
+            val result = runBlocking { githubClient.isOrganization("octocat", "test-token") }
+
+            assertThat(result).isTrue()
+            val request = mockWebServer.takeRequest()
+            assertThat(request.path).isEqualTo("/orgs/octocat")
+            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
+        }
+
+        @Test
+        fun `isOrganization returns false when org endpoint responds with 404`() {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(404)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"message": "Not Found"}"""),
+            )
+
+            val result = runBlocking { githubClient.isOrganization("octocat", "test-token") }
+
+            assertThat(result).isFalse()
+        }
+
+        @Test
+        fun `isOrganization propagates exception on non-404 error`() {
+            mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
+
+            assertThatThrownBy {
+                runBlocking { githubClient.isOrganization("octocat", "test-token") }
             }.hasMessageContaining("500")
         }
     }
@@ -558,6 +603,109 @@ class GithubClientTest {
         }
     }
 
+    @Nested
+    inner class OrganizationMetadata {
+        @Test
+        fun `getOrgMembers requests organization members and wraps response`() {
+            mockWebServer.enqueue(orgMembersResponse(listOf(orgMemberJson("alice"), orgMemberJson("bob"))))
+
+            val result = runBlocking { githubClient.getOrgMembers("octocat", "test-token") }
+
+            assertThat(result.members.map { it.login }).containsExactly("alice", "bob")
+            val request = mockWebServer.takeRequest()
+            assertThat(request.path).isEqualTo("/orgs/octocat/members?per_page=100&page=1")
+            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
+        }
+
+        @Test
+        fun `getOrgMembers fetches subsequent pages when the page is full`() {
+            mockWebServer.enqueue(
+                orgMembersResponse(List(100) { index -> orgMemberJson("member-$index") }),
+            )
+            mockWebServer.enqueue(orgMembersResponse(listOf(orgMemberJson("member-100"))))
+
+            val result = runBlocking { githubClient.getOrgMembers("octocat", "test-token") }
+
+            assertThat(result.members).hasSize(101)
+            val firstPagePath = mockWebServer.takeRequest().path
+            val secondPagePath = mockWebServer.takeRequest().path
+            assertThat(firstPagePath).isEqualTo("/orgs/octocat/members?per_page=100&page=1")
+            assertThat(secondPagePath).isEqualTo("/orgs/octocat/members?per_page=100&page=2")
+        }
+
+        @Test
+        fun `findOrgMetadata requests organization endpoint and maps response`() {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """
+                        {
+                            "login": "octocat",
+                            "name": "The Octocats",
+                            "description": "A GitHub organization",
+                            "company": "GitHub",
+                            "blog": "https://github.blog",
+                            "location": "San Francisco",
+                            "email": "octocat@github.com",
+                            "public_repos": 12,
+                            "total_private_repos": 4
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val result = runBlocking { githubClient.fetchOrgMetadata("octocat", "test-token") }
+
+            assertThat(result.login).isEqualTo("octocat")
+            assertThat(result.publicRepos).isEqualTo(12)
+            assertThat(result.privateRepos).isEqualTo(4)
+            val request = mockWebServer.takeRequest()
+            assertThat(request.path).isEqualTo("/orgs/octocat")
+            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
+        }
+    }
+
+    @Nested
+    inner class OrganizationTeams {
+        @Test
+        fun `getOrgTeams returns teams and paginates with organization and cursor variables`() {
+            mockWebServer.enqueue(
+                orgTeamsResponse(
+                    teamName = "Platform",
+                    hasNextPage = true,
+                    cursor = "cursor-abc",
+                    memberHasNextPage = true,
+                    memberCursor = "member-cursor",
+                ),
+            )
+            mockWebServer.enqueue(orgTeamsResponse(teamName = "Product", hasNextPage = false))
+            mockWebServer.enqueue(teamMembersResponse(listOf(memberJson("carol")), hasNextPage = false))
+
+            val result = runBlocking { githubClient.getOrgTeams("octocat", "test-token") }
+
+            assertThat(result.map { it.name }).containsExactly("Platform", "Product")
+            val firstTeam = result.first()
+            val teamMemberLogins = firstTeam.members.nodes.map { it.login }
+            assertThat(teamMemberLogins).containsExactly("alice", "carol")
+            verify { queryLoader.load("github/graphql/org-teams.graphql") }
+            verify { queryLoader.load("github/graphql/org-team-members.graphql") }
+
+            val firstRequest = mockWebServer.takeRequest()
+            assertThat(firstRequest.getHeader("Authorization")).isEqualTo("Bearer test-token")
+            val firstBody = firstRequest.body.readUtf8()
+            assertThat(firstBody).contains("\"org\":\"octocat\"")
+            assertThat(firstBody).doesNotContain("cursor-abc")
+
+            val secondRequest = mockWebServer.takeRequest()
+            assertThat(secondRequest.body.readUtf8()).contains("cursor-abc")
+
+            val memberRequest = mockWebServer.takeRequest()
+            assertThat(memberRequest.body.readUtf8()).contains("member-cursor")
+        }
+    }
+
     // ── JSON helpers ──────────────────────────────────────────────────────────
 
     private fun issueJson(number: Int) =
@@ -628,6 +776,95 @@ class GithubClientTest {
             )
 
     private fun emptyPrSearchResponse() = prSearchResponse(emptyList())
+
+    private fun orgTeamsResponse(
+        teamName: String,
+        hasNextPage: Boolean,
+        cursor: String? = null,
+        memberHasNextPage: Boolean = false,
+        memberCursor: String? = null,
+    ) = MockResponse()
+        .setResponseCode(200)
+        .setHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            {
+                "data": {
+                    "organization": {
+                        "login": "octocat",
+                        "name": "The Octocats",
+                        "teams": {
+                            "nodes": [
+                                {
+                                    "name": "$teamName",
+                                    "slug": "${teamName.lowercase()}",
+                                    "organization": {
+                                        "login": "octocat",
+                                        "name": "The Octocats"
+                                    },
+                                    "members": {
+                                        "nodes": [
+                                            { "login": "alice", "name": "Alice" }
+                                        ],
+                                        "pageInfo": {
+                                            "hasNextPage": $memberHasNextPage,
+                                            "endCursor": ${if (memberCursor != null) "\"$memberCursor\"" else "null"}
+                                        }
+                                    }
+                                }
+                            ],
+                            "pageInfo": {
+                                "hasNextPage": $hasNextPage,
+                                "endCursor": ${if (cursor != null) "\"$cursor\"" else "null"}
+                            }
+                        }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+
+    private fun orgMembersResponse(members: List<String>) = MockResponse()
+        .setResponseCode(200)
+        .setHeader("Content-Type", "application/json")
+        .setBody("[${members.joinToString(",")}]")
+
+    private fun orgMemberJson(login: String) =
+        """
+        { "login": "$login", "html_url": "https://github.com/$login" }
+        """.trimIndent()
+
+    private fun memberJson(login: String) =
+        """
+        { "login": "$login", "name": "${login.replaceFirstChar { it.uppercase() }}" }
+        """.trimIndent()
+
+    private fun teamMembersResponse(
+        members: List<String>,
+        hasNextPage: Boolean,
+        cursor: String? = null,
+    ) = MockResponse()
+        .setResponseCode(200)
+        .setHeader("Content-Type", "application/json")
+        .setBody(
+            """
+            {
+                "data": {
+                    "organization": {
+                        "team": {
+                            "members": {
+                                "nodes": [${members.joinToString(",")}],
+                                "pageInfo": {
+                                    "hasNextPage": $hasNextPage,
+                                    "endCursor": ${if (cursor != null) "\"$cursor\"" else "null"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
 
     private fun singlePrResponse(prNumber: Int) = MockResponse()
         .setResponseCode(200)

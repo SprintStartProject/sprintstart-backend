@@ -23,6 +23,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
+import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -91,6 +92,7 @@ class GithubConnectorService(
     private val commitsService: GithubCommitsService,
     private val issuesService: GithubIssuesService,
     private val pullRequestsService: GithubPullRequestsService,
+    private val orgService: GithubOrgService,
     private val githubClient: GithubClient,
     private val eventPublisher: ApplicationEventPublisher,
     private val userApi: UserApi,
@@ -304,6 +306,9 @@ class GithubConnectorService(
                 repository.name,
                 transactionId,
             )
+        }
+        applicationScope.launch {
+            orgService.connectGithubOrgIfNecessary(repository.owner, repository.user.token, transactionId)
         }
 
         return transactionId
