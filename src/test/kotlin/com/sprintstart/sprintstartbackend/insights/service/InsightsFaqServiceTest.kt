@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingResponse
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqSampleQuestion
+import com.sprintstart.sprintstartbackend.insights.model.dto.request.FaqRebuildScope
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
@@ -156,7 +157,7 @@ class InsightsFaqServiceTest {
         val savedSlot = slot<List<FaqGroup>>()
         every { faqGroupRepository.saveAll(capture(savedSlot)) } answers { savedSlot.captured.toMutableList() }
 
-        val result = service.refreshFaqGroups(projectId)
+        val result = service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING)
 
         assertEquals(1, result.groupCount)
 
@@ -192,7 +193,7 @@ class InsightsFaqServiceTest {
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
         every { faqGroupRepository.saveAll(any<List<FaqGroup>>()) } answers { mutableListOf() }
 
-        val result = service.refreshFaqGroups(projectId)
+        val result = service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING)
 
         assertEquals(0, result.groupCount)
         verify(exactly = 1) { faqGroupRepository.deleteAllByProjectId(projectId) }
@@ -239,7 +240,7 @@ class InsightsFaqServiceTest {
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns AiFaqGroupingResponse(emptyList())
 
-        service.refreshFaqGroups(projectId)
+        service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING)
 
         // The newest ones, but back in chronological order: the AI service treats a cluster's
         // first member as its representative, and the oldest phrasing is the established one.
@@ -258,7 +259,7 @@ class InsightsFaqServiceTest {
 
         // One entry per question is the AI service's own "could not parse" fallback. Applying it
         // would delete a working FAQ and silently replace it with 25 single-count entries.
-        assertThrows<InsightsAiException> { service.refreshFaqGroups(projectId) }
+        assertThrows<InsightsAiException> { service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING) }
         verify(exactly = 0) { faqGroupRepository.deleteAllByProjectId(projectId) }
     }
 
@@ -277,7 +278,7 @@ class InsightsFaqServiceTest {
 
         // A single real cluster is proof the model did its job; the rest genuinely being distinct
         // is a legitimate answer.
-        assertEquals(25, service.refreshFaqGroups(projectId).groupCount)
+        assertEquals(25, service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING).groupCount)
     }
 
     @Test
@@ -288,19 +289,67 @@ class InsightsFaqServiceTest {
 
         // Five questions with nothing in common is entirely plausible; the guard must not turn a
         // young project's honest result into an error.
-        assertEquals(5, service.refreshFaqGroups(projectId).groupCount)
+        assertEquals(5, service.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING).groupCount)
     }
 
     @Test
-    fun `getFaqOverview reports how many questions a rebuild would use`() {
+    fun `getFaqOverview reports the material a rebuild has and the ceiling on it`() {
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns emptyList()
         every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 5_000
 
         val overview = service.getFaqOverview(projectId)
 
-        // Capped, so the number shown is what would actually be sent — not a promise the rebuild
-        // cannot keep.
-        assertEquals(applicationConfig.insights.faq.rebuildQuestionLimit, overview.rebuildQuestionCount)
+        // Uncapped, so a client can tell that the ceiling would bite and say so before the click.
+        assertEquals(5_000, overview.questionCount)
         assertEquals(applicationConfig.insights.faq.rebuildQuestionLimit, overview.rebuildQuestionLimit)
+    }
+
+    @Test
+    fun `refreshFaqGroups narrows to the requested scope`() = runTest {
+        val old = Instant.parse("2026-01-01T10:00:00Z")
+        val recent = Instant.parse("2026-08-01T10:00:00Z")
+        val chatQuestions = listOf(
+            ChatQuestion(id = UUID.randomUUID(), text = "Old question", askedAt = old),
+            ChatQuestion(id = UUID.randomUUID(), text = "Recent question", askedAt = recent),
+        )
+        givenQuestions(chatQuestions)
+        val requestSlot = slot<AiFaqGroupingRequest>()
+        coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns AiFaqGroupingResponse(emptyList())
+
+        service.refreshFaqGroups(projectId, FaqRebuildScope(sinceMonths = 1))
+
+        // Everything outside the window is dropped — that is the point of asking for it, and why
+        // the caller has to choose it rather than getting it applied quietly.
+        assertEquals(listOf("Recent question"), requestSlot.captured.questions.map { it.text })
+    }
+
+    @Test
+    fun `refreshFaqGroups never lets a scope exceed the configured ceiling`() = runTest {
+        val service = InsightsFaqService(
+            faqGroupRepository = faqGroupRepository,
+            insightsAiClient = insightsAiClient,
+            chatQuestionApi = chatQuestionApi,
+            aiFaqGroupMapper = aiFaqGroupMapper,
+            faqResponseMapper = faqResponseMapper,
+            faqTrendCalculator = faqTrendCalculator,
+            applicationConfig = insightsTestConfig(faq = FaqInsightsConfig(rebuildQuestionLimit = 2)),
+            transactionManager = transactionManager,
+        )
+        givenQuestions(questions(10))
+        val requestSlot = slot<AiFaqGroupingRequest>()
+        coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns AiFaqGroupingResponse(emptyList())
+
+        service.refreshFaqGroups(projectId, FaqRebuildScope(questionLimit = 9))
+
+        // The scope can only ask for less. A caller must not be able to opt out of the bound that
+        // keeps this prompt from growing without limit.
+        assertEquals(2, requestSlot.captured.questions.size)
+    }
+
+    @Test
+    fun `a scope bound below one is rejected`() {
+        // Coercing it would hide the caller's bug behind a wiped FAQ.
+        assertThrows<ResponseStatusException> { FaqRebuildScope(questionLimit = 0) }
+        assertThrows<ResponseStatusException> { FaqRebuildScope(sinceMonths = -1) }
     }
 }

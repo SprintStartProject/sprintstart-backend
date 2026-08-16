@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.insights.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.insights.model.dto.request.FaqRebuildScope
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentPreviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentResponse
@@ -14,7 +15,9 @@ import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.slot
 import io.mockk.verify
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -183,7 +186,7 @@ class InsightsFaqControllerTest(
 
     @Test
     fun `refreshFaqGroups should return 200 and the group count for a PM`() {
-        coEvery { insightsFaqService.refreshFaqGroups(projectId) } returns RefreshFaqResponse(groupCount = 3)
+        coEvery { insightsFaqService.refreshFaqGroups(projectId, any()) } returns RefreshFaqResponse(groupCount = 3)
 
         val asyncResult = mockMvc
             .perform(post("/api/v1/insights/faq/refresh?projectId=$projectId").with(pmJwt))
@@ -195,7 +198,36 @@ class InsightsFaqControllerTest(
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { insightsFaqService.refreshFaqGroups(projectId) }
+        coVerify(exactly = 1) { insightsFaqService.refreshFaqGroups(projectId, FaqRebuildScope.EVERYTHING) }
+    }
+
+    @Test
+    fun `refreshFaqGroups should pass the requested scope through`() {
+        val scopeSlot = slot<FaqRebuildScope>()
+        coEvery {
+            insightsFaqService.refreshFaqGroups(projectId, capture(scopeSlot))
+        } returns RefreshFaqResponse(groupCount = 3)
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/insights/faq/refresh?projectId=$projectId&questionLimit=500&sinceMonths=3")
+                    .with(pmJwt),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        assertEquals(FaqRebuildScope(questionLimit = 500, sinceMonths = 3), scopeSlot.captured)
+    }
+
+    @Test
+    fun `refreshFaqGroups should return 400 for a scope bound below one`() {
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/insights/faq/refresh?projectId=$projectId&questionLimit=0").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isBadRequest)
     }
 
     @Test
@@ -218,6 +250,6 @@ class InsightsFaqControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
 
-        coVerify(exactly = 0) { insightsFaqService.refreshFaqGroups(projectId) }
+        coVerify(exactly = 0) { insightsFaqService.refreshFaqGroups(projectId, any()) }
     }
 }

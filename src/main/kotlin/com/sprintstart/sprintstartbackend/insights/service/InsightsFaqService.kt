@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqQuestion
+import com.sprintstart.sprintstartbackend.insights.model.dto.request.FaqRebuildScope
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOverviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshFaqResponse
@@ -21,6 +22,8 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -63,8 +66,8 @@ class InsightsFaqService(
             faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId),
             faqTrendCalculator.statsByGroup(projectId),
             // Counted rather than loaded: this only tells the client how much material a rebuild
-            // would work on, so a PM knows what the button is about to do.
-            rebuildQuestionCount = rebuildQuestionCount(projectId),
+            // would work on, so a PM can judge the scope before triggering one.
+            questionCount = chatQuestionApi.countUserQuestionsForProject(projectId).toInt(),
         )
     }
 
@@ -88,17 +91,17 @@ class InsightsFaqService(
     /**
      * Recomputes the recurring-question groups via the AI service and replaces the stored ones.
      *
-     * Collects all user questions, sends them to the stateless AI service for grouping and
-     * titling, and stores the freshly grouped result, replacing the previous entries.
+     * Collects the questions [scope] covers, sends them to the stateless AI service for grouping
+     * and titling, and stores the freshly grouped result, replacing the previous entries.
      *
      * @throws com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
      *   if the AI service does not return a grouping result.
      */
     @Tracked("Refreshing FAQ groups")
-    suspend fun refreshFaqGroups(projectId: UUID): RefreshFaqResponse {
+    suspend fun refreshFaqGroups(projectId: UUID, scope: FaqRebuildScope): RefreshFaqResponse {
         // Only this project's questions: the panel is per project, and mixing them would show one
         // project's questions — and the documents answering them — in another's dashboard.
-        val chatQuestions = newestQuestions(projectId)
+        val chatQuestions = questionsForRebuild(projectId, scope)
         val questions = chatQuestions.map { AiFaqQuestion(id = it.id.toString(), text = it.text) }
         // The AI service is stateless and returns no timestamps, so the only place a rebuilt
         // group's recency can come from is the messages the questions were asked in.
@@ -121,31 +124,36 @@ class InsightsFaqService(
     }
 
     /**
-     * The questions a rebuild sends, newest first and capped, then back in chronological order.
+     * The questions a rebuild sends: narrowed to [scope], newest first, capped, then back in
+     * chronological order.
      *
-     * The cap is the point: this is the one path that puts raw question text into a prompt, so it
-     * is the one whose size grows without bound as a project keeps chatting. Past the limit the
-     * older questions are genuinely dropped — a rebuild replaces the FAQ, so they leave the counts
-     * with it. That is why the count is surfaced on the overview: it is the PM's decision to make,
-     * not a surprise.
+     * The configured cap always wins over the requested scope. This is the one path that puts raw
+     * question text into a prompt, so it is the one whose size grows without bound as a project
+     * keeps chatting — a caller must not be able to opt out of that bound.
+     *
+     * Whatever falls outside the scope is genuinely dropped: a rebuild replaces the FAQ, so those
+     * questions leave the counts with it. That is why the scope is the caller's explicit choice
+     * rather than something applied quietly.
      *
      * Chronological order is restored afterwards because the AI service treats a cluster's first
      * member as its representative, and the oldest phrasing is the more established one.
      */
-    private fun newestQuestions(projectId: UUID): List<ChatQuestion> =
-        chatQuestionApi
-            .getUserQuestionsForProject(projectId)
-            .sortedByDescending { it.askedAt }
-            .take(applicationConfig.insights.faq.rebuildQuestionLimit)
-            .sortedBy { it.askedAt }
+    private fun questionsForRebuild(projectId: UUID, scope: FaqRebuildScope): List<ChatQuestion> {
+        val notBefore = scope.sinceMonths?.let {
+            Instant.now().minus(it.toLong() * DAYS_PER_MONTH, ChronoUnit.DAYS)
+        }
+        val limit = minOf(
+            scope.questionLimit ?: Int.MAX_VALUE,
+            applicationConfig.insights.faq.rebuildQuestionLimit,
+        )
 
-    private fun rebuildQuestionCount(projectId: UUID): Int =
-        chatQuestionApi
-            .countUserQuestionsForProject(projectId)
-            .coerceAtMost(
-                applicationConfig.insights.faq.rebuildQuestionLimit
-                    .toLong(),
-            ).toInt()
+        return chatQuestionApi
+            .getUserQuestionsForProject(projectId)
+            .filter { notBefore == null || !it.askedAt.isBefore(notBefore) }
+            .sortedByDescending { it.askedAt }
+            .take(limit)
+            .sortedBy { it.askedAt }
+    }
 
     /**
      * Refuses a rebuild result that carries the signature of the AI service's own fallback.
@@ -177,5 +185,11 @@ class InsightsFaqService(
          * failed grouping, so the guard stays out of the way.
          */
         const val DEGENERATE_RESULT_THRESHOLD = 20
+
+        /**
+         * A month as a rebuild scope means "roughly this far back", not a calendar month — the
+         * questions being cut off are the oldest ones either way.
+         */
+        const val DAYS_PER_MONTH = 30L
     }
 }

@@ -25,7 +25,7 @@ class FaqResponseMapper(
     fun toOverviewResponse(
         groups: List<FaqGroup>,
         statsByGroup: Map<UUID, FaqTrendCalculator.Stats>,
-        rebuildQuestionCount: Int,
+        questionCount: Int,
     ): FaqOverviewResponse {
         return FaqOverviewResponse(
             groups = groups.map { group ->
@@ -47,7 +47,7 @@ class FaqResponseMapper(
                 )
             },
             lastAskedAt = groups.maxOfOrNull { it.lastAskedAt },
-            rebuildQuestionCount = rebuildQuestionCount,
+            questionCount = questionCount,
             rebuildQuestionLimit = applicationConfig.insights.faq.rebuildQuestionLimit,
         )
     }
