@@ -10,6 +10,14 @@ data class FaqOverviewResponse(
     val groups: List<FaqGroupSummaryResponse>,
     @field:Schema(description = "When a question was last filed into this project's FAQ. Null when it is empty.")
     val lastAskedAt: Instant? = null,
+    @field:Schema(
+        description = "How many questions a manual rebuild would send to the AI service. Already " +
+            "capped; equals rebuildQuestionLimit when the project has more than that, in which " +
+            "case a rebuild uses only the newest ones and older questions drop out of the FAQ.",
+    )
+    val rebuildQuestionCount: Int = 0,
+    @field:Schema(description = "The cap on how many questions a rebuild may send.")
+    val rebuildQuestionLimit: Int = 0,
 )
 
 @Schema(

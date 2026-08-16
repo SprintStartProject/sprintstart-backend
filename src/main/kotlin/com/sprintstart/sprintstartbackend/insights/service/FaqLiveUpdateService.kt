@@ -91,8 +91,15 @@ class FaqLiveUpdateService(
                 return
             }
 
-            apply(event, classification)
-            faqConsolidationService.enforceGroupLimit(event.projectId)
+            // Only a new entry can make a merge possible. When the question joined an existing
+            // one the entry set is unchanged since the last attempt — same titles, same
+            // representative questions — and only the counts moved, which decide *which* entry
+            // survives a merge, never *whether* one exists. Retrying would ask the same model the
+            // same thing about the same data. Without this guard a project sitting one entry over
+            // the ceiling with nothing mergeable paid for that answer on every single message.
+            if (apply(event, classification)) {
+                faqConsolidationService.enforceGroupLimit(event.projectId)
+            }
         }
     }
 
@@ -104,11 +111,13 @@ class FaqLiveUpdateService(
 
     /**
      * Persists the classification.
+     *
+     * @return whether this opened a new entry rather than joining an existing one.
      */
-    private fun apply(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse) {
+    private fun apply(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse): Boolean {
         val matchedId = classification.groupId?.let(::parseUuidOrNull)
 
-        txTemplate.executeWithoutResult {
+        return txTemplate.execute {
             // Re-read rather than reuse the snapshot: it was loaded outside this transaction and
             // before an AI call that can take seconds, so its entities are detached and its counts
             // may already be stale.
@@ -134,7 +143,10 @@ class FaqLiveUpdateService(
             )
 
             faqGroupRepository.save(group)
-        }
+            matched == null
+            // Defaults to "nothing new": a transaction that never ran cannot have opened an entry,
+            // and claiming otherwise would trigger a pointless merge attempt.
+        } ?: false
     }
 
     private fun newGroup(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse): FaqGroup {

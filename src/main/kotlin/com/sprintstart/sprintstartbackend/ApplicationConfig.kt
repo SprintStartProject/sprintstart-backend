@@ -59,9 +59,14 @@ data class InsightsConfig(
  *
  * @property liveUpdates whether a question asked in chat updates the FAQ right away
  * @property maxGroups ceiling on recurring-question entries per project
- * @property candidateGroups how many existing entries a single classification may consider
+ * @property candidateGroups how many existing entries a single classification may consider.
+ * Keep this at least as large as [maxGroups]: below it, a classification stops seeing part of the
+ * FAQ, fails to find matches that exist, and opens duplicates for them.
  * @property sampleQuestions how many phrasings an entry's detail view shows
  * @property trendWindowDays length of the window an entry's trend is measured over
+ * @property rebuildQuestionLimit how many questions a manual rebuild may send to the AI service.
+ * A hard cap, not a warning: the rebuild is the one path that puts raw questions into a prompt, so
+ * it is the one path whose size grows without bound as a project keeps chatting.
  */
 data class FaqInsightsConfig(
     @get:JsonProperty("live-updates")
@@ -74,6 +79,8 @@ data class FaqInsightsConfig(
     val sampleQuestions: Int = 10,
     @get:JsonProperty("trend-window-days")
     val trendWindowDays: Long = 14,
+    @get:JsonProperty("rebuild-question-limit")
+    val rebuildQuestionLimit: Int = 2000,
 )
 
 /**

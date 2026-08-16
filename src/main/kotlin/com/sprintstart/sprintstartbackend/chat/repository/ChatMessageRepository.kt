@@ -50,4 +50,12 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
      * @param projectId The project the owning chat belongs to.
      */
     fun findAllByRoleAndChatProjectId(role: ChatRole, projectId: UUID): List<ChatMessage>
+
+    /**
+     * Counts what [findAllByRoleAndChatProjectId] would return, without loading the messages.
+     *
+     * @param role The role to filter messages by.
+     * @param projectId The project the owning chat belongs to.
+     */
+    fun countByRoleAndChatProjectId(role: ChatRole, projectId: UUID): Long
 }

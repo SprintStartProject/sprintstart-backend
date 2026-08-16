@@ -26,4 +26,10 @@ internal class ChatQuestionApiService(
             .findAllByRoleAndChatProjectId(ChatRole.USER, projectId)
             .map { ChatQuestion(id = it.id, text = it.content, askedAt = it.createdAt.toInstant()) }
     }
+
+    @Tracked("Counting user questions for a project")
+    @Transactional(readOnly = true)
+    override fun countUserQuestionsForProject(projectId: UUID): Long {
+        return messageRepository.countByRoleAndChatProjectId(ChatRole.USER, projectId)
+    }
 }

@@ -19,6 +19,7 @@ sprintstart:
       candidate-groups: 40
       sample-questions: 10
       trend-window-days: 14
+      rebuild-question-limit: 2000
     knowledge-gaps:
       auto-refresh: ${SPRINTSTART_KNOWLEDGE_GAPS_AUTO_REFRESH:true}
       debounce-seconds: 60

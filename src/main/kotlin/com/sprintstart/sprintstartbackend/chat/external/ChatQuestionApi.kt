@@ -20,4 +20,14 @@ interface ChatQuestionApi {
      * @param projectId The project whose chats to collect questions from.
      */
     fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion>
+
+    /**
+     * Counts the same questions [getUserQuestionsForProject] would return.
+     *
+     * Exists so a caller can tell a user how much material an operation would work on without
+     * loading every question's text to find out.
+     *
+     * @param projectId The project whose chats to count questions in.
+     */
+    fun countUserQuestionsForProject(projectId: UUID): Long
 }

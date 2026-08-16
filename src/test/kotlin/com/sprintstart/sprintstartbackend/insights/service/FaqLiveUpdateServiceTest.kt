@@ -265,7 +265,7 @@ class FaqLiveUpdateServiceTest {
     }
 
     @Test
-    fun `enforces the entry limit after filing a question`() = runTest {
+    fun `enforces the entry limit after opening a new entry`() = runTest {
         givenGroups()
         captureSaved()
         coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
@@ -277,6 +277,36 @@ class FaqLiveUpdateServiceTest {
         serviceWith().onQuestionAsked(event())
 
         coVerify(exactly = 1) { faqConsolidationService.enforceGroupLimit(projectId) }
+    }
+
+    @Test
+    fun `does not retry the merge when the question joined an existing entry`() = runTest {
+        val group = existingGroup()
+        givenGroups(group)
+        every { faqGroupRepository.findByIdAndProjectId(group.id, projectId) } returns Optional.of(group)
+        coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(
+            relevant = true,
+            question = "Can someone enable VPN for me?",
+            title = "Getting VPN access",
+            groupId = group.id.toString(),
+        )
+
+        serviceWith().onQuestionAsked(event("Can someone enable VPN for me?"))
+
+        // The entry set is unchanged, so a merge attempt could only reach the same conclusion as
+        // the last one. Without this a project one entry over the ceiling with nothing mergeable
+        // paid for that answer on every single message.
+        coVerify(exactly = 0) { faqConsolidationService.enforceGroupLimit(any()) }
+    }
+
+    @Test
+    fun `does not enforce the entry limit for a discarded question`() = runTest {
+        givenGroups()
+        coEvery { insightsAiClient.classifyFaqQuestion(any()) } returns AiFaqClassifyResponse(relevant = false)
+
+        serviceWith().onQuestionAsked(event("hey there, how you doing"))
+
+        coVerify(exactly = 0) { faqConsolidationService.enforceGroupLimit(any()) }
     }
 
     @Test

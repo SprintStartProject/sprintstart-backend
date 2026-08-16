@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
+import com.sprintstart.sprintstartbackend.FaqInsightsConfig
 import com.sprintstart.sprintstartbackend.chat.external.ChatQuestion
 import com.sprintstart.sprintstartbackend.chat.external.ChatQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
@@ -12,6 +13,7 @@ import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqSampleQuestion
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
+import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiFaqGroupMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.FaqResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
@@ -59,6 +61,7 @@ class InsightsFaqServiceTest {
         aiFaqGroupMapper = aiFaqGroupMapper,
         faqResponseMapper = faqResponseMapper,
         faqTrendCalculator = faqTrendCalculator,
+        applicationConfig = applicationConfig,
         transactionManager = transactionManager,
     )
 
@@ -80,6 +83,7 @@ class InsightsFaqServiceTest {
     fun `getFaqOverview maps groups and exposes the document reference as the id`() {
         val group = buildGroup()
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns listOf(group)
+        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 14
 
         val overview = service.getFaqOverview(projectId)
 
@@ -144,6 +148,7 @@ class InsightsFaqServiceTest {
         )
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns
             listOf(ChatQuestion(id = messageId, text = "How do I get VPN access?", askedAt = askedAt))
+        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 1
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns aiResponse
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
@@ -181,6 +186,7 @@ class InsightsFaqServiceTest {
     @Test
     fun `refreshFaqGroups clears the cache even when the AI returns no groups`() = runTest {
         every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns emptyList()
+        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 0
         coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(groups = emptyList())
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
@@ -190,5 +196,111 @@ class InsightsFaqServiceTest {
 
         assertEquals(0, result.groupCount)
         verify(exactly = 1) { faqGroupRepository.deleteAllByProjectId(projectId) }
+    }
+
+    private fun questions(count: Int): List<ChatQuestion> =
+        (1..count).map {
+            ChatQuestion(
+                id = UUID.randomUUID(),
+                text = "Question $it",
+                askedAt = Instant.parse("2026-08-01T10:00:00Z").plusSeconds(it.toLong()),
+            )
+        }
+
+    private fun givenQuestions(chatQuestions: List<ChatQuestion>) {
+        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns chatQuestions
+        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns chatQuestions.size.toLong()
+        every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
+        every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
+        every { faqGroupRepository.saveAll(any<List<FaqGroup>>()) } answers
+            { firstArg<List<FaqGroup>>().toMutableList() }
+    }
+
+    private fun singletonGroups(chatQuestions: List<ChatQuestion>) = AiFaqGroupingResponse(
+        groups = chatQuestions.map {
+            AiFaqGroup(question = it.text, count = 1, title = it.text, questionIds = listOf(it.id.toString()))
+        },
+    )
+
+    @Test
+    fun `refreshFaqGroups sends at most the configured number of questions`() = runTest {
+        val service = InsightsFaqService(
+            faqGroupRepository = faqGroupRepository,
+            insightsAiClient = insightsAiClient,
+            chatQuestionApi = chatQuestionApi,
+            aiFaqGroupMapper = aiFaqGroupMapper,
+            faqResponseMapper = faqResponseMapper,
+            faqTrendCalculator = faqTrendCalculator,
+            applicationConfig = insightsTestConfig(faq = FaqInsightsConfig(rebuildQuestionLimit = 3)),
+            transactionManager = transactionManager,
+        )
+        val chatQuestions = questions(10)
+        givenQuestions(chatQuestions)
+        val requestSlot = slot<AiFaqGroupingRequest>()
+        coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns AiFaqGroupingResponse(emptyList())
+
+        service.refreshFaqGroups(projectId)
+
+        // The newest ones, but back in chronological order: the AI service treats a cluster's
+        // first member as its representative, and the oldest phrasing is the established one.
+        assertEquals(3, requestSlot.captured.questions.size)
+        assertEquals(
+            listOf("Question 8", "Question 9", "Question 10"),
+            requestSlot.captured.questions.map { it.text },
+        )
+    }
+
+    @Test
+    fun `refreshFaqGroups keeps the previous FAQ when the AI grouped nothing`() = runTest {
+        val chatQuestions = questions(25)
+        givenQuestions(chatQuestions)
+        coEvery { insightsAiClient.groupFaqQuestions(any()) } returns singletonGroups(chatQuestions)
+
+        // One entry per question is the AI service's own "could not parse" fallback. Applying it
+        // would delete a working FAQ and silently replace it with 25 single-count entries.
+        assertThrows<InsightsAiException> { service.refreshFaqGroups(projectId) }
+        verify(exactly = 0) { faqGroupRepository.deleteAllByProjectId(projectId) }
+    }
+
+    @Test
+    fun `refreshFaqGroups accepts a result that grouped at least something`() = runTest {
+        val chatQuestions = questions(25)
+        givenQuestions(chatQuestions)
+        val grouped = singletonGroups(chatQuestions).let { response ->
+            AiFaqGroupingResponse(
+                groups = response.groups.mapIndexed { index, group ->
+                    if (index == 0) group.copy(count = 2) else group
+                },
+            )
+        }
+        coEvery { insightsAiClient.groupFaqQuestions(any()) } returns grouped
+
+        // A single real cluster is proof the model did its job; the rest genuinely being distinct
+        // is a legitimate answer.
+        assertEquals(25, service.refreshFaqGroups(projectId).groupCount)
+    }
+
+    @Test
+    fun `refreshFaqGroups allows one entry per question for a small project`() = runTest {
+        val chatQuestions = questions(5)
+        givenQuestions(chatQuestions)
+        coEvery { insightsAiClient.groupFaqQuestions(any()) } returns singletonGroups(chatQuestions)
+
+        // Five questions with nothing in common is entirely plausible; the guard must not turn a
+        // young project's honest result into an error.
+        assertEquals(5, service.refreshFaqGroups(projectId).groupCount)
+    }
+
+    @Test
+    fun `getFaqOverview reports how many questions a rebuild would use`() {
+        every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns emptyList()
+        every { chatQuestionApi.countUserQuestionsForProject(projectId) } returns 5_000
+
+        val overview = service.getFaqOverview(projectId)
+
+        // Capped, so the number shown is what would actually be sent — not a promise the rebuild
+        // cannot keep.
+        assertEquals(applicationConfig.insights.faq.rebuildQuestionLimit, overview.rebuildQuestionCount)
+        assertEquals(applicationConfig.insights.faq.rebuildQuestionLimit, overview.rebuildQuestionLimit)
     }
 }
