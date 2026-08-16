@@ -132,8 +132,11 @@ class InsightsFaqServiceTest {
                     question = "How do I get VPN access?",
                     count = 14,
                     questions = listOf(
-                        AiFaqSampleQuestion(id = messageId.toString(), text = "How do I get VPN access?"),
-                        AiFaqSampleQuestion(id = UUID.randomUUID().toString(), text = "Can someone enable VPN for me?"),
+                        AiFaqSampleQuestion(ids = listOf(messageId.toString()), text = "How do I get VPN access?"),
+                        AiFaqSampleQuestion(
+                            ids = listOf(UUID.randomUUID().toString()),
+                            text = "Can someone enable VPN for me?",
+                        ),
                     ),
                     documents = listOf(
                         AiFaqDocument(
@@ -360,10 +363,13 @@ class InsightsFaqServiceTest {
                 AiFaqGroup(
                     question = "How do I get VPN access?",
                     count = 3,
-                    // The AI service samples by distinct text, so three identical asks come back
-                    // as one phrasing — the ids are the only record that there were three.
+                    // One phrasing, but every asker of it: three identical asks are three asks,
+                    // and the sample carries all three ids rather than only the first.
                     questions = listOf(
-                        AiFaqSampleQuestion(id = repeated.first().toString(), text = "How do I get VPN access?"),
+                        AiFaqSampleQuestion(
+                            ids = repeated.map { it.toString() },
+                            text = "How do I get VPN access?",
+                        ),
                     ),
                     title = "Getting VPN access",
                     questionIds = repeated.map { it.toString() },
@@ -377,7 +383,9 @@ class InsightsFaqServiceTest {
 
         val persisted = savedSlot.captured.single()
         assertEquals(3, persisted.questions.size)
-        assertEquals(1, persisted.questions.count { it.text.isNotBlank() })
+        // Every one keeps the phrasing, so the detail view's "(3x)" is right too — not just the
+        // group's total.
+        assertEquals(3, persisted.questions.count { it.text.isNotBlank() })
         // Every ask carries its origin, so a redelivered event cannot count one of them twice.
         assertEquals(repeated.toSet(), persisted.questions.mapNotNull { it.sourceMessageId }.toSet())
     }

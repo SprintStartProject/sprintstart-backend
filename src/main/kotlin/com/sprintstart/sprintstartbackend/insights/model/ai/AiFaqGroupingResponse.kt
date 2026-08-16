@@ -33,14 +33,18 @@ data class AiFaqGroup(
 )
 
 /**
- * One redacted sample question, carrying the id it was sent in as.
+ * One redacted phrasing, with every ask that used it.
  *
- * @property id identifier of the chat message the question came from
+ * All of them, not just the first: a phrasing used four times is four asks at four different
+ * moments, and this module needs each one to keep the entry's trend exact and to say when the
+ * phrasing was *last* used.
+ *
+ * @property ids identifiers of the chat messages asked in exactly this wording
  * @property text the redacted question text
  */
 @Serializable
 data class AiFaqSampleQuestion(
-    val id: String,
+    val ids: List<String> = emptyList(),
     val text: String,
 )
 

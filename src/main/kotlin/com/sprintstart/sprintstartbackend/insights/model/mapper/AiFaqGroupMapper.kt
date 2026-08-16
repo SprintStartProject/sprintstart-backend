@@ -41,12 +41,14 @@ class AiFaqGroupMapper {
             lastAskedAt = askedAt.maxOrNull() ?: now,
         )
 
-        // One row per question the group holds, not just per sampled phrasing. The AI service
-        // samples by distinct text, so an identically repeated question comes back once no matter
-        // how often it was asked — counting rows off that would make a rebuilt group's trend read
-        // as quieter than it is, and a verbatim repeat is precisely what a recurring question is.
-        // Rows for unsampled ids carry no text; they exist to be counted.
-        val sampleTexts = aiGroup.questions.associate { it.id to it.text }
+        // One row per ask, not per sampled phrasing. A sample carries every id asked in that
+        // exact wording, so a question repeated verbatim keeps all of its asks — each with its own
+        // timestamp, which is what the trend counts and what makes "last asked" true. Rows for ids
+        // the sampling did not cover carry no text; they exist to be counted.
+        val sampleTexts = aiGroup.questions
+            .flatMap { sample ->
+                sample.ids.map { it to sample.text }
+            }.toMap()
         val questionIds = (aiGroup.questionIds + sampleTexts.keys).distinct()
 
         questionIds.forEach { questionId ->
