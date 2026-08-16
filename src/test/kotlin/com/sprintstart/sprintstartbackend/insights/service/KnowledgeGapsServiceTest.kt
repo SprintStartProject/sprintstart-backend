@@ -8,10 +8,12 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.request.SetComponen
 import com.sprintstart.sprintstartbackend.insights.model.entity.ComponentOwner
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGap
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapSeverity
+import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapsScan
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiKnowledgeGapMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.KnowledgeGapResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.ComponentOwnerRepository
 import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapRepository
+import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapsScanRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -36,6 +38,11 @@ import java.util.UUID
 
 class KnowledgeGapsServiceTest {
     private val knowledgeGapRepository = mockk<KnowledgeGapRepository>()
+
+    // Not relaxed: `save` is generic, and a relaxed mock answers it with a stand-in that the
+    // compiler-inserted cast to the entity type rejects. The defaults are set in `init` instead,
+    // so cases indifferent to the scan record need no stubbing and the rest can override.
+    private val knowledgeGapsScanRepository = mockk<KnowledgeGapsScanRepository>()
     private val projectId: UUID = UUID.randomUUID()
     private val componentOwnerRepository = mockk<ComponentOwnerRepository>()
     private val knowledgeGapsAiClient = mockk<KnowledgeGapsAiClient>()
@@ -50,6 +57,7 @@ class KnowledgeGapsServiceTest {
 
     private val service = KnowledgeGapsService(
         knowledgeGapRepository = knowledgeGapRepository,
+        knowledgeGapsScanRepository = knowledgeGapsScanRepository,
         componentOwnerRepository = componentOwnerRepository,
         knowledgeGapsAiClient = knowledgeGapsAiClient,
         aiKnowledgeGapMapper = aiKnowledgeGapMapper,
@@ -59,6 +67,11 @@ class KnowledgeGapsServiceTest {
         refreshTracker = InsightsRefreshTracker(),
         transactionManager = transactionManager,
     )
+
+    init {
+        every { knowledgeGapsScanRepository.findById(any()) } returns Optional.empty()
+        every { knowledgeGapsScanRepository.save(any<KnowledgeGapsScan>()) } answers { firstArg() }
+    }
 
     private fun buildGap(
         component: String,
@@ -102,6 +115,52 @@ class KnowledgeGapsServiceTest {
             listOf("auth-service", "payment-service", "frontend-portal"),
             overview.gaps.map { it.component },
         )
+    }
+
+    // A scan that finds nothing writes no gap rows, so the timestamp cannot be derived from them.
+    // Without the recorded scan the panel cannot tell "documentation is complete" from "no scan has
+    // ever run" -- opposite messages for a PM.
+    @Test
+    fun `getKnowledgeGaps reports when the last scan ran even though it found nothing`() {
+        val scannedAt = Instant.parse("2026-08-16T14:03:35Z")
+        every { knowledgeGapRepository.findAllByProjectId(projectId) } returns emptyList()
+        every { componentOwnerRepository.findAllByComponentIn(any()) } returns emptyList()
+        every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
+        every { knowledgeGapsScanRepository.findById(projectId) } returns
+            Optional.of(KnowledgeGapsScan(projectId = projectId, scannedAt = scannedAt))
+
+        val overview = service.getKnowledgeGaps(projectId)
+
+        assertTrue(overview.gaps.isEmpty())
+        assertEquals(scannedAt, overview.refreshedAt)
+    }
+
+    @Test
+    fun `getKnowledgeGaps reports no scan time before the first scan`() {
+        every { knowledgeGapRepository.findAllByProjectId(projectId) } returns emptyList()
+        every { componentOwnerRepository.findAllByComponentIn(any()) } returns emptyList()
+        every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
+        every { knowledgeGapsScanRepository.findById(projectId) } returns Optional.empty()
+
+        val overview = service.getKnowledgeGaps(projectId)
+
+        assertEquals(null, overview.refreshedAt)
+    }
+
+    @Test
+    fun `refreshKnowledgeGaps records the scan even when the AI reports no gaps`() = runTest {
+        coEvery { knowledgeGapsAiClient.detectKnowledgeGaps(any()) } returns
+            AiKnowledgeGapsResponse(gaps = emptyList())
+        every { knowledgeGapRepository.deleteAllByProjectId(projectId) } just Runs
+        every { knowledgeGapRepository.deleteAllByProjectIdIsNull() } just Runs
+        every { knowledgeGapRepository.saveAll(any<List<KnowledgeGap>>()) } returns emptyList()
+
+        val result = service.refreshKnowledgeGaps(projectId)
+
+        assertEquals(0, result.gapCount)
+        val saved = slot<KnowledgeGapsScan>()
+        verify { knowledgeGapsScanRepository.save(capture(saved)) }
+        assertEquals(projectId, saved.captured.projectId)
     }
 
     @Test

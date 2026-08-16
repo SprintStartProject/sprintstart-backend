@@ -10,10 +10,12 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.model.entity.ComponentOwner
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGap
+import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapsScan
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiKnowledgeGapMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.KnowledgeGapResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.ComponentOwnerRepository
 import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapRepository
+import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapsScanRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
@@ -35,6 +37,7 @@ import java.util.UUID
 @Service
 class KnowledgeGapsService(
     private val knowledgeGapRepository: KnowledgeGapRepository,
+    private val knowledgeGapsScanRepository: KnowledgeGapsScanRepository,
     private val componentOwnerRepository: ComponentOwnerRepository,
     private val knowledgeGapsAiClient: KnowledgeGapsAiClient,
     private val aiKnowledgeGapMapper: AiKnowledgeGapMapper,
@@ -69,6 +72,7 @@ class KnowledgeGapsService(
             ownersByComponent,
             firstIngestedByComponent,
             refreshing = refreshTracker.isRefreshingKnowledgeGaps(projectId),
+            scannedAt = knowledgeGapsScanRepository.findById(projectId).orElse(null)?.scannedAt,
         )
     }
 
@@ -135,6 +139,10 @@ class KnowledgeGapsService(
             // otherwise linger forever, since every read is now scoped.
             knowledgeGapRepository.deleteAllByProjectIdIsNull()
             knowledgeGapRepository.saveAll(gaps)
+            // Written in the same transaction as the gaps, and unconditionally: a scan that found
+            // nothing still happened, and it is the only scan whose outcome the panel cannot read
+            // off the gap rows.
+            knowledgeGapsScanRepository.save(KnowledgeGapsScan(projectId = projectId))
         }
 
         return RefreshKnowledgeGapsResponse(gapCount = gaps.size)
