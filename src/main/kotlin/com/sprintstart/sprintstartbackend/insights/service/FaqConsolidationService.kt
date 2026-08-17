@@ -139,6 +139,10 @@ class FaqConsolidationService(
      * The AI service validates its own plan, but this module is the one applying it destructively,
      * so it does not take that on trust: an unknown id, a source claimed twice, or a target that a
      * later merge consumes would each corrupt the result rather than merely degrade it.
+     *
+     * [claimed] holds accepted targets as well as sources, so an id takes part in at most one merge.
+     * That is what makes the plan order-independent: a later merge can no longer name an earlier
+     * target as its source, because the id is already spoken for when its sources are built.
      */
     private fun validMerges(merges: List<AiFaqMerge>, known: Set<String>): List<AiFaqMerge> {
         val claimed = mutableSetOf<String>()
@@ -152,10 +156,11 @@ class FaqConsolidationService(
             if (sources.isEmpty()) continue
 
             claimed.addAll(sources)
+            claimed.add(merge.into)
             accepted.add(merge.copy(sources = sources))
         }
 
-        return accepted.filterNot { it.into in claimed }
+        return accepted
     }
 
     private fun readGroups(projectId: UUID): List<FaqGroup> =

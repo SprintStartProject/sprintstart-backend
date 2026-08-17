@@ -195,7 +195,7 @@ class FaqConsolidationServiceTest {
     }
 
     @Test
-    fun `drops a merge whose target a later merge consumes`() = runTest {
+    fun `drops a merge whose target is already spoken for`() = runTest {
         val a = group("q1")
         val b = group("q2")
         val c = group("q3")
@@ -209,7 +209,30 @@ class FaqConsolidationServiceTest {
         val deleted = mutableListOf<List<FaqGroup>>()
         every { faqGroupRepository.deleteAll(capture(deleted)) } answers { }
 
-        // Applying both would make the outcome depend on which ran first.
+        // Applying both would make the outcome depend on which ran first, so the first claim on
+        // an id wins and the merge that would have consumed it is dropped whole.
+        serviceWith(FaqInsightsConfig(maxGroups = 2)).mergeDuplicates(projectId)
+
+        assertEquals(listOf(listOf(c.id)), deleted.map { batch -> batch.map { it.id } })
+    }
+
+    @Test
+    fun `never merges into the same target twice`() = runTest {
+        val a = group("q1")
+        val b = group("q2")
+        val c = group("q3")
+        givenGroups(listOf(a, b, c, group("q4")))
+        coEvery { insightsAiClient.mergeFaqGroups(any()) } returns AiFaqMergeResponse(
+            merges = listOf(
+                AiFaqMerge(into = a.id.toString(), sources = listOf(b.id.toString())),
+                AiFaqMerge(into = a.id.toString(), sources = listOf(c.id.toString())),
+            ),
+        )
+        val deleted = mutableListOf<List<FaqGroup>>()
+        every { faqGroupRepository.deleteAll(capture(deleted)) } answers { }
+
+        // An id takes part in at most one merge: two entries naming the same target left the
+        // result up to the order they happened to be applied in.
         serviceWith(FaqInsightsConfig(maxGroups = 2)).mergeDuplicates(projectId)
 
         assertEquals(listOf(listOf(b.id)), deleted.map { batch -> batch.map { it.id } })
