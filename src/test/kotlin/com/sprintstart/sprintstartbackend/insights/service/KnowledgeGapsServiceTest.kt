@@ -259,4 +259,53 @@ class KnowledgeGapsServiceTest {
         assertEquals("auth-service", persisted.component)
         assertEquals(listOf("readme"), persisted.presentTypes)
     }
+
+    // Every component now yields a row, so the row count alone no longer says whether anything is
+    // wrong -- callers that report "nothing to fix" would misfire on a stored covered component.
+    @Test
+    fun `refreshKnowledgeGaps counts covered components separately from actual gaps`() = runTest {
+        val aiResponse = AiKnowledgeGapsResponse(
+            gaps = listOf(
+                AiKnowledgeGap(
+                    component = "auth-service",
+                    missingTypes = listOf("runbook"),
+                    presentTypes = listOf("readme"),
+                    lastUpdated = "2025-05-01T00:00:00Z",
+                    severity = "low",
+                ),
+                AiKnowledgeGap(
+                    component = "docs-wiki",
+                    missingTypes = emptyList(),
+                    presentTypes = listOf("readme", "setup"),
+                    lastUpdated = "2025-05-01T00:00:00Z",
+                    severity = "covered",
+                ),
+            ),
+        )
+        coEvery { knowledgeGapsAiClient.detectKnowledgeGaps(any()) } returns aiResponse
+        every { knowledgeGapRepository.deleteAllByProjectId(projectId) } just Runs
+        every { knowledgeGapRepository.deleteAllByProjectIdIsNull() } just Runs
+        val savedSlot = slot<List<KnowledgeGap>>()
+        every { knowledgeGapRepository.saveAll(capture(savedSlot)) } answers { savedSlot.captured.toMutableList() }
+
+        val result = service.refreshKnowledgeGaps(projectId)
+
+        assertEquals(1, result.gapCount)
+        assertEquals(2, result.componentCount)
+        // The covered component is stored like any other, so the panel can show it.
+        assertEquals(listOf("auth-service", "docs-wiki"), savedSlot.captured.map { it.component })
+    }
+
+    @Test
+    fun `getKnowledgeGaps sorts covered components below every real gap`() {
+        val covered = buildGap("docs-wiki", KnowledgeGapSeverity.COVERED)
+        val low = buildGap("auth-service", KnowledgeGapSeverity.LOW)
+        every { knowledgeGapRepository.findAllByProjectId(projectId) } returns listOf(covered, low)
+        every { componentOwnerRepository.findAllByComponentIn(any()) } returns emptyList()
+        every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
+
+        val overview = service.getKnowledgeGaps(projectId)
+
+        assertEquals(listOf("auth-service", "docs-wiki"), overview.gaps.map { it.component })
+    }
 }

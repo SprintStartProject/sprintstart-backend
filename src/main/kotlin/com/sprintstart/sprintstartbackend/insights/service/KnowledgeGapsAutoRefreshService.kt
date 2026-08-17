@@ -65,9 +65,10 @@ class KnowledgeGapsAutoRefreshService(
         try {
             val result = knowledgeGapsService.refreshKnowledgeGaps(projectId)
             logger.info(
-                "Rescanned knowledge gaps for project {} after ingestion, {} gaps found",
+                "Rescanned knowledge gaps for project {} after ingestion, {} of {} components have gaps",
                 projectId,
                 result.gapCount,
+                result.componentCount,
             )
         } catch (e: Exception) {
             // A failed rescan leaves the previous gaps in place, which is the right outcome:

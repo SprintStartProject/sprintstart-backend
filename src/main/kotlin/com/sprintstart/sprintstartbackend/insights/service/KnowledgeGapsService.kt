@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.model.entity.ComponentOwner
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGap
+import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapSeverity
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapsScan
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiKnowledgeGapMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.KnowledgeGapResponseMapper
@@ -145,7 +146,12 @@ class KnowledgeGapsService(
             knowledgeGapsScanRepository.save(KnowledgeGapsScan(projectId = projectId))
         }
 
-        return RefreshKnowledgeGapsResponse(gapCount = gaps.size)
+        // Split deliberately: every component now yields a row, so the row count no longer says
+        // whether anything is wrong. Callers that report "nothing to fix" need the gap count.
+        return RefreshKnowledgeGapsResponse(
+            gapCount = gaps.count { it.severity != KnowledgeGapSeverity.COVERED },
+            componentCount = gaps.size,
+        )
     }
 
     /**
