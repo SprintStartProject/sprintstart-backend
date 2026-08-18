@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
@@ -46,6 +47,13 @@ class BlueprintResourceService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
 
+        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         val blueprintResource = BlueprintResource(
             blueprintStep = blueprintStep,
             title = request.title,
@@ -64,6 +72,13 @@ class BlueprintResourceService(
         val blueprintResource = blueprintResourceRepository
             .findById(resourceId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
+
+        if (blueprintResource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         if (blueprintResource.revision != request.revision) {
             throw ResponseStatusException(
@@ -84,6 +99,13 @@ class BlueprintResourceService(
         val blueprintResource = blueprintResourceRepository
             .findById(resourceId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
+
+        if (blueprintResource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         blueprintResourceRepository.delete(blueprintResource)
     }

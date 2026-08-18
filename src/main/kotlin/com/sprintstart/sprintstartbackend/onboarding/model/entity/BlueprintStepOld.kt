@@ -9,8 +9,8 @@ import jakarta.persistence.Table
 import java.util.UUID
 
 @Entity
-@Table(name = "blueprint_steps")
-class BlueprintStep(
+@Table(name = "blueprint_steps_old")
+class BlueprintStepOld(
     @Id
     val id: UUID = UUID.randomUUID(),
     @ManyToOne

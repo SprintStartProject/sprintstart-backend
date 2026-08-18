@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
@@ -18,7 +19,7 @@ import java.util.UUID
 data class BlueprintStep(
     @Id
     val id: UUID = UUID.randomUUID(),
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "blueprint_phase_id", nullable = false)
     val blueprintPhase: BlueprintPhase,
     @Column(nullable = false)
@@ -37,14 +38,14 @@ data class BlueprintStep(
     @Column(nullable = true)
     var estimatedMinutes: Int,
     @OneToMany(
-        mappedBy = "blueprint_step",
+        mappedBy = "blueprintStep",
         cascade = [CascadeType.ALL],
         orphanRemoval = true,
     )
     @OrderBy("position")
     val blueprintTasks: MutableList<BlueprintTask> = mutableListOf(),
     @OneToMany(
-        mappedBy = "blueprint_step",
+        mappedBy = "blueprintStep",
         cascade = [CascadeType.ALL],
         orphanRemoval = true,
     )

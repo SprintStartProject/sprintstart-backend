@@ -18,11 +18,22 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprint")
+@RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintPathController(
     private val blueprintPathService: BlueprintPathService,
 ) {
-    // Filter options: status, version,
+    // This should return based on the blueprintKey
+    @GetMapping()
+    fun getBlueprints(): List<GetBlueprintPathOverviewResponse> {
+        return blueprintPathService.getBlueprintPathOverviewsByBlueprintKeys()
+    }
+
+    @GetMapping("/{blueprintKey}")
+    fun getBlueprintHistoryByBlueprintKey(@PathVariable blueprintKey: UUID): List<GetBlueprintPathResponse> {
+        return blueprintPathService.getBlueprintPathHistoryByBlueprintKey(blueprintKey)
+    }
+
+    // This should probably not be used
     @GetMapping("/paths")
     fun getBlueprintPaths(): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathService.getBlueprintPathOverviews()
@@ -54,6 +65,14 @@ class BlueprintPathController(
         return blueprintPathService.publishBlueprintPathDraftById(pathId)
     }
 
+    @PostMapping("/{blueprintKey}/rollBack/{rollbackVersion}")
+    fun rollBackBlueprintPathByBlueprintKey(
+        @PathVariable blueprintKey: UUID,
+        @PathVariable rollbackVersion: Int,
+    ): GetBlueprintPathResponse {
+        return blueprintPathService.rollbackBlueprintPathByBlueprintKey(blueprintKey, rollbackVersion)
+    }
+
     @PutMapping("/paths/{pathId}")
     fun updateBlueprintPathById(
         @PathVariable pathId: UUID,
@@ -62,8 +81,14 @@ class BlueprintPathController(
         return blueprintPathService.updateBlueprintPathById(pathId, request)
     }
 
+    // any unpublished drafts are deleted
+    @PostMapping("/paths/{pathId}/archive")
+    fun archiveBlueprintPathById(@PathVariable pathId: UUID) {
+        blueprintPathService.archiveBlueprintPathByBlueprintKey(pathId)
+    }
+
     @DeleteMapping("/paths/{pathId}")
-    fun deleteBlueprintPathById(@PathVariable pathId: UUID) {
-        blueprintPathService.deleteBlueprintPathById(pathId)
+    fun deleteBlueprintDraftById(@PathVariable pathId: UUID) {
+        blueprintPathService.deleteBlueprintPathDraftById(pathId)
     }
 }

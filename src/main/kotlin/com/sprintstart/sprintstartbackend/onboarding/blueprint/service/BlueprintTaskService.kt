@@ -1,14 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.CreateBlueprintTaskRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.CreateBlueprintTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.GetBlueprintTaskResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.UpdateBlueprintTaskPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.UpdateBlueprintTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintTaskRepository
@@ -49,6 +53,13 @@ class BlueprintTaskService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
 
+        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         shiftTasksRight(blueprintStep, request)
 
         val blueprintTask = BlueprintTask(
@@ -67,6 +78,13 @@ class BlueprintTaskService(
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
 
+        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         if (blueprintTask.revision != request.revision) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -74,7 +92,7 @@ class BlueprintTaskService(
             )
         }
 
-        shiftTasksBetween(blueprintTask, request)
+        shiftTasksBetween(blueprintTask, request.position)
 
         blueprintTask.position = request.position
         blueprintTask.title = request.title
@@ -84,10 +102,48 @@ class BlueprintTaskService(
     }
 
     @Transactional
+    fun updateBlueprintTaskPositionById(
+        taskId: UUID,
+        request: UpdateBlueprintTaskPositionRequest,
+    ): List<UpdateBlueprintTaskPositionResponse> {
+        val blueprintTask = blueprintTaskRepository
+            .findById(taskId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
+
+        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
+        if (blueprintTask.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint task has been modified by another request. Please reload and try again.",
+            )
+        }
+
+        val shiftedTasks = shiftTasksBetween(blueprintTask, request.position)
+        blueprintTask.position = request.position
+        shiftedTasks.add(blueprintTask)
+        blueprintTaskRepository.saveAllAndFlush(shiftedTasks)
+
+        return shiftedTasks.map { it.toUpdatePositionResponse() }
+    }
+
+    @Transactional
     fun deleteBlueprintTaskById(taskId: UUID) {
         val blueprintTask = blueprintTaskRepository
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
+
+        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         blueprintTaskRepository.delete(blueprintTask)
     }
@@ -118,17 +174,16 @@ class BlueprintTaskService(
 
     private fun shiftTasksBetween(
         task: BlueprintTask,
-        request: UpdateBlueprintTaskRequest,
-    ) {
+        newPosition: Int,
+    ): MutableList<BlueprintTask> {
         val taskCount = blueprintTaskRepository.countByBlueprintStepId(task.blueprintStep.id)
 
-        if (request.position !in 0 until taskCount) {
+        if (newPosition !in 0 until taskCount) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${taskCount - 1}")
         }
 
         val oldPosition = task.position
-        val newPosition = request.position
-        var tasksToShift: MutableList<BlueprintTask>
+        var tasksToShift: MutableList<BlueprintTask> = mutableListOf()
 
         if (oldPosition < newPosition) {
             tasksToShift = blueprintTaskRepository
@@ -151,5 +206,7 @@ class BlueprintTaskService(
 
             tasksToShift.forEach { it.position += 1 }
         }
+
+        return tasksToShift
     }
 }

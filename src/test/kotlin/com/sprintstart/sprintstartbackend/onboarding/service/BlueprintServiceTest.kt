@@ -8,7 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.GeneratedBlu
 import com.sprintstart.sprintstartbackend.onboarding.external.model.GeneratedBlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Blueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStatus
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStepOld
 import com.sprintstart.sprintstartbackend.onboarding.repository.BlueprintRepository
 import io.mockk.Runs
 import io.mockk.coEvery
@@ -37,8 +37,8 @@ class BlueprintServiceTest {
     private fun makeBlueprint(scope: String, version: String, status: BlueprintStatus): Blueprint =
         Blueprint(scope = scope, version = version, status = status)
 
-    private fun makeStep(blueprint: Blueprint, stepId: String, title: String, pos: Int): BlueprintStep =
-        BlueprintStep(blueprint = blueprint, stepId = stepId, title = title, position = pos)
+    private fun makeStep(blueprint: Blueprint, stepId: String, title: String, pos: Int): BlueprintStepOld =
+        BlueprintStepOld(blueprint = blueprint, stepId = stepId, title = title, position = pos)
 
     @Nested
     inner class GenerateBlueprints {

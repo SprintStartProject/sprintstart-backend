@@ -6,6 +6,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
@@ -20,7 +21,7 @@ import java.util.UUID
 class BlueprintCheckQuestion(
     @Id
     val id: UUID = UUID.randomUUID(),
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "blueprint_phase_id", nullable = false)
     val blueprintPhase: BlueprintPhase,
     @Column(nullable = false)

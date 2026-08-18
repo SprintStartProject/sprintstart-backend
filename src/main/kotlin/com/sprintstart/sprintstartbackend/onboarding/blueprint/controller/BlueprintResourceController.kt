@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("api/v1/onboarding/blueprint")
+@RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintResourceController(
     private val blueprintResourceService: BlueprintResourceService,
 ) {

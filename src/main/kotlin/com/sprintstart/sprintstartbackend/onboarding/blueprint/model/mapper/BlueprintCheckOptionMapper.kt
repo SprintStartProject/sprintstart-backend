@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.CreateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.GetBlueprintCheckOptionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionResponse
 
 fun BlueprintCheckOption.toGetResponse(): GetBlueprintCheckOptionResponse {
@@ -35,5 +36,13 @@ fun BlueprintCheckOption.toUpdateResponse(): UpdateBlueprintCheckOptionResponse 
         position = this.position,
         label = this.label,
         correct = this.correct,
+    )
+}
+
+fun BlueprintCheckOption.toUpdatePositionResponse(): UpdateBlueprintCheckOptionPositionResponse {
+    return UpdateBlueprintCheckOptionPositionResponse(
+        id = this.id,
+        revision = this.revision,
+        position = this.position,
     )
 }

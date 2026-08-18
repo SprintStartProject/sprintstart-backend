@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
 
 fun BlueprintPhase.toGetResponse(): GetBlueprintPhaseResponse {
@@ -41,5 +42,13 @@ fun BlueprintPhase.toUpdateResponse(): UpdateBlueprintPhaseResponse {
         description = this.description,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
+    )
+}
+
+fun BlueprintPhase.toUpdatePositionResponse(): UpdateBlueprintPhasePositionResponse {
+    return UpdateBlueprintPhasePositionResponse(
+        id = this.id,
+        revision = this.revision,
+        position = this.position,
     )
 }

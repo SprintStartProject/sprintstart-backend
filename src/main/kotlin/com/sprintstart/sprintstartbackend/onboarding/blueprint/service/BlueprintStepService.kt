@@ -1,14 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
@@ -48,6 +52,13 @@ class BlueprintStepService(
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
 
+        if (blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         shiftStepsRight(blueprintPhase, request)
 
         val blueprintStep = BlueprintStep(
@@ -73,6 +84,13 @@ class BlueprintStepService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
 
+        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         if (blueprintStep.revision != request.revision) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -80,7 +98,7 @@ class BlueprintStepService(
             )
         }
 
-        shiftStepsBetween(blueprintStep, request)
+        shiftStepsBetween(blueprintStep, request.position)
 
         blueprintStep.position = request.position
         blueprintStep.title = request.title
@@ -94,10 +112,48 @@ class BlueprintStepService(
     }
 
     @Transactional
+    fun updateBlueprintStepPositionById(
+        stepId: UUID,
+        request: UpdateBlueprintStepPositionRequest,
+    ): List<UpdateBlueprintStepPositionResponse> {
+        val blueprintStep = blueprintStepRepository
+            .findById(stepId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
+
+        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
+        if (blueprintStep.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint step has been modified by another request. Please reload and try again.",
+            )
+        }
+
+        val shiftedSteps = shiftStepsBetween(blueprintStep, request.position)
+        blueprintStep.position = request.position
+        shiftedSteps.add(blueprintStep)
+        blueprintStepRepository.saveAllAndFlush(shiftedSteps)
+
+        return shiftedSteps.map { it.toUpdatePositionResponse() }
+    }
+
+    @Transactional
     fun deleteBlueprintStepById(stepId: UUID) {
         val blueprintStep = blueprintStepRepository
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
+
+        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         blueprintStepRepository.delete(blueprintStep)
     }
@@ -128,17 +184,16 @@ class BlueprintStepService(
 
     private fun shiftStepsBetween(
         step: BlueprintStep,
-        request: UpdateBlueprintStepRequest,
-    ) {
+        newPosition: Int,
+    ): MutableList<BlueprintStep> {
         val stepCount = blueprintStepRepository.countByBlueprintPhaseId(step.blueprintPhase.id)
 
-        if (request.position !in 0 until stepCount) {
+        if (newPosition !in 0 until stepCount) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${stepCount - 1}")
         }
 
         val oldPosition = step.position
-        val newPosition = request.position
-        var stepsToShift: MutableList<BlueprintStep>
+        var stepsToShift: MutableList<BlueprintStep> = mutableListOf()
 
         if (oldPosition < newPosition) {
             stepsToShift = blueprintStepRepository
@@ -161,5 +216,7 @@ class BlueprintStepService(
 
             stepsToShift.forEach { it.position += 1 }
         }
+
+        return stepsToShift
     }
 }

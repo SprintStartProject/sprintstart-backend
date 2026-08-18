@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintPhaseService
 import jakarta.validation.Valid
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprint")
+@RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintPhaseController(
     private val blueprintPhaseService: BlueprintPhaseService,
 ) {
@@ -57,6 +59,15 @@ class BlueprintPhaseController(
         @Valid @RequestBody request: UpdateBlueprintPhaseRequest,
     ): UpdateBlueprintPhaseResponse {
         return blueprintPhaseService.updateBlueprintPhaseById(phaseId, request)
+    }
+
+    @PutMapping("/phases/{phaseId}/position")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun updateBlueprintPhasePositionById(
+        @PathVariable phaseId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintPhasePositionRequest,
+    ): List<UpdateBlueprintPhasePositionResponse> {
+        return blueprintPhaseService.updateBlueprintPhasePositionById(phaseId, request)
     }
 
     @DeleteMapping("/phases/{phaseId}")

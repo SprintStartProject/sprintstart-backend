@@ -32,5 +32,5 @@ class Blueprint(
     val createdAt: Instant = Instant.now(),
     @OneToMany(mappedBy = "blueprint", cascade = [CascadeType.ALL], orphanRemoval = true)
     @OrderBy("position ASC")
-    val steps: MutableList<BlueprintStep> = mutableListOf(),
+    val steps: MutableList<BlueprintStepOld> = mutableListOf(),
 )

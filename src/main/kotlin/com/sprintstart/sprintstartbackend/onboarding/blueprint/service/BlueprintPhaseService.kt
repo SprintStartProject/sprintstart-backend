@@ -1,14 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
@@ -53,6 +57,13 @@ class BlueprintPhaseService(
             .findById(pathId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found: $pathId") }
 
+        if (path.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         shiftPhasesRight(path, request)
 
         val phase = BlueprintPhase(
@@ -74,6 +85,13 @@ class BlueprintPhaseService(
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
 
+        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         if (phase.revision != request.revision) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -81,7 +99,7 @@ class BlueprintPhaseService(
             )
         }
 
-        shiftPhasesBetween(phase, request)
+        shiftPhasesBetween(phase, request.position)
 
         phase.position = request.position
         phase.title = request.title
@@ -91,12 +109,50 @@ class BlueprintPhaseService(
     }
 
     @Transactional
+    fun updateBlueprintPhasePositionById(
+        phaseId: UUID,
+        request: UpdateBlueprintPhasePositionRequest,
+    ): List<UpdateBlueprintPhasePositionResponse> {
+        val phase = blueprintPhaseRepository
+            .findById(phaseId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
+
+        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
+        if (phase.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint phase has been modified by another request. Please reload and try again.",
+            )
+        }
+
+        val shiftedPhases = shiftPhasesBetween(phase, request.position)
+        phase.position = request.position
+        shiftedPhases.add(phase)
+        blueprintPhaseRepository.saveAllAndFlush(shiftedPhases)
+
+        return shiftedPhases.map { it.toUpdatePositionResponse() }
+    }
+
+    @Transactional
     fun deleteBlueprintPhaseById(
         phaseId: UUID,
     ) {
         val phase = blueprintPhaseRepository
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
+
+        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         blueprintPhaseRepository.delete(phase)
     }
@@ -127,17 +183,16 @@ class BlueprintPhaseService(
 
     private fun shiftPhasesBetween(
         blueprintPhase: BlueprintPhase,
-        request: UpdateBlueprintPhaseRequest,
-    ) {
+        newPosition: Int,
+    ): MutableList<BlueprintPhase> {
         val phaseCount = blueprintPhaseRepository.countByBlueprintPathId(blueprintPhase.blueprintPath.id)
 
-        if (request.position !in 0 until phaseCount) {
+        if (newPosition !in 0 until phaseCount) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${phaseCount - 1}")
         }
 
         val oldPosition = blueprintPhase.position
-        val newPosition = request.position
-        var phasesToShift: MutableList<BlueprintPhase>
+        var phasesToShift: MutableList<BlueprintPhase> = mutableListOf()
 
         if (oldPosition < newPosition) {
             phasesToShift = blueprintPhaseRepository
@@ -160,5 +215,7 @@ class BlueprintPhaseService(
 
             phasesToShift.forEach { it.position += 1 }
         }
+
+        return phasesToShift
     }
 }

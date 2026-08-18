@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.CreateBlueprintCheckOptionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.CreateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.GetBlueprintCheckOptionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintCheckOptionService
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -19,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprint/checks")
+@RequestMapping("/api/v1/onboarding/blueprints/checks")
 class BlueprintCheckOptionController(
     private val blueprintCheckOptionService: BlueprintCheckOptionService,
 ) {
@@ -55,6 +58,15 @@ class BlueprintCheckOptionController(
         @RequestBody request: UpdateBlueprintCheckOptionRequest,
     ): UpdateBlueprintCheckOptionResponse {
         return blueprintCheckOptionService.updateBlueprintCheckOptionById(optionId, request)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/options/{optionId}/position")
+    fun updateBlueprintCheckOptionPositionById(
+        @PathVariable optionId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintCheckOptionPositionRequest,
+    ): List<UpdateBlueprintCheckOptionPositionResponse> {
+        return blueprintCheckOptionService.updateBlueprintCheckOptionPositionById(optionId, request)
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)

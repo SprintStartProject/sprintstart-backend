@@ -5,7 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintSch
 import com.sprintstart.sprintstartbackend.onboarding.external.model.GeneratedBlueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Blueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStatus
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BlueprintStepOld
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toSchema
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintOutcomeResponse
@@ -131,7 +131,7 @@ class BlueprintService(
         )
         archived.steps.forEach { step ->
             newBlueprint.steps.add(
-                BlueprintStep(
+                BlueprintStepOld(
                     blueprint = newBlueprint,
                     stepId = step.stepId,
                     title = step.title,
@@ -187,7 +187,7 @@ class BlueprintService(
         )
         generated.steps.forEachIndexed { index, step ->
             blueprint.steps.add(
-                BlueprintStep(
+                BlueprintStepOld(
                     blueprint = blueprint,
                     stepId = step.id,
                     title = step.title,

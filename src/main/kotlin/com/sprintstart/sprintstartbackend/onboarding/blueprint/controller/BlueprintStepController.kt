@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintStepService
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -19,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprint")
+@RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintStepController(
     private val blueprintStepService: BlueprintStepService,
 ) {
@@ -55,6 +58,15 @@ class BlueprintStepController(
         @RequestBody request: UpdateBlueprintStepRequest,
     ): UpdateBlueprintStepResponse {
         return blueprintStepService.updateBlueprintStepById(stepId, request)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/steps/{stepId}/position")
+    fun updateBlueprintStepPositionById(
+        @PathVariable stepId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintStepPositionRequest,
+    ): List<UpdateBlueprintStepPositionResponse> {
+        return blueprintStepService.updateBlueprintStepPositionById(stepId, request)
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)

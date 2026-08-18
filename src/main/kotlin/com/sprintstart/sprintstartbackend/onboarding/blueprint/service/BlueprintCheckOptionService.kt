@@ -1,14 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.CreateBlueprintCheckOptionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.CreateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.GetBlueprintCheckOptionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckOptionRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
@@ -48,6 +52,13 @@ class BlueprintCheckOptionService(
             .findById(questionId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
 
+        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         shiftOptionsRight(question, request)
 
         val option = BlueprintCheckOption(
@@ -69,6 +80,13 @@ class BlueprintCheckOptionService(
             .findById(optionId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
 
+        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
         if (option.revision != request.revision) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -76,7 +94,7 @@ class BlueprintCheckOptionService(
             )
         }
 
-        shiftOptionsBetween(option, request)
+        shiftOptionsBetween(option, request.position)
 
         option.position = request.position
         option.label = request.label
@@ -86,12 +104,51 @@ class BlueprintCheckOptionService(
     }
 
     @Transactional
+    fun updateBlueprintCheckOptionPositionById(
+        optionId: UUID,
+        request: UpdateBlueprintCheckOptionPositionRequest,
+    ): List<UpdateBlueprintCheckOptionPositionResponse> {
+        val option = blueprintCheckOptionRepository
+            .findById(optionId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+
+        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+
+        if (option.revision != request.revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint check option has been modified by another request. Please reload and try again.",
+            )
+        }
+
+        val shiftedOptions = shiftOptionsBetween(option, request.position)
+        option.position = request.position
+        shiftedOptions.add(option)
+
+        blueprintCheckOptionRepository.saveAllAndFlush(shiftedOptions)
+
+        return shiftedOptions.map { it.toUpdatePositionResponse() }
+    }
+
+    @Transactional
     fun deleteBlueprintCheckOptionById(
         optionId: UUID,
     ) {
         val option = blueprintCheckOptionRepository
             .findById(optionId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+
+        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
 
         blueprintCheckOptionRepository.delete(option)
     }
@@ -122,17 +179,16 @@ class BlueprintCheckOptionService(
 
     private fun shiftOptionsBetween(
         option: BlueprintCheckOption,
-        request: UpdateBlueprintCheckOptionRequest,
-    ) {
+        newPosition: Int,
+    ): MutableList<BlueprintCheckOption> {
         val stepCount = blueprintCheckOptionRepository.countByBlueprintCheckQuestionId(option.blueprintCheckQuestion.id)
 
-        if (request.position !in 0 until stepCount) {
+        if (newPosition !in 0 until stepCount) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${stepCount - 1}")
         }
 
         val oldPosition = option.position
-        val newPosition = request.position
-        var optionsToShift: MutableList<BlueprintCheckOption>
+        var optionsToShift: MutableList<BlueprintCheckOption> = mutableListOf()
 
         if (oldPosition < newPosition) {
             optionsToShift = blueprintCheckOptionRepository
@@ -155,5 +211,7 @@ class BlueprintCheckOptionService(
 
             optionsToShift.forEach { it.position += 1 }
         }
+
+        return optionsToShift
     }
 }

@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.CreateBlueprintCheckQuestionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.CreateBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.GetBlueprintCheckQuestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintCheckQuestionService
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -17,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprint/")
+@RequestMapping("/api/v1/onboarding/blueprints/")
 class BlueprintCheckQuestionController(
     private val blueprintCheckQuestionService: BlueprintCheckQuestionService,
 ) {
@@ -49,6 +51,14 @@ class BlueprintCheckQuestionController(
         @RequestBody request: UpdateBlueprintCheckQuestionRequest,
     ): UpdateBlueprintCheckQuestionResponse {
         return blueprintCheckQuestionService.updateBlueprintCheckQuestionById(questionId, request)
+    }
+
+    @PutMapping("/checks/question/{questionId}/position")
+    fun updateBlueprintCheckQuestionPositionById(
+        @PathVariable questionId: UUID,
+        @RequestBody request: UpdateBlueprintCheckQuestionPositionRequest,
+    ): List<UpdateBlueprintCheckQuestionPositionResponse> {
+        return blueprintCheckQuestionService.updateBlueprintCheckQuestionPositionById(questionId, request)
     }
 
     @DeleteMapping("/checks/question/{questionId}")
