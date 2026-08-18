@@ -14,6 +14,8 @@ fun BlueprintPhase.toGetResponse(): GetBlueprintPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        aiPrompt = this.aiPrompt,
+        type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
     )
@@ -27,6 +29,8 @@ fun BlueprintPhase.toCreateResponse(): CreateBlueprintPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        aiPrompt = this.aiPrompt,
+        type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
     )
@@ -40,6 +44,8 @@ fun BlueprintPhase.toUpdateResponse(): UpdateBlueprintPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        aiPrompt = this.aiPrompt,
+        type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
     )

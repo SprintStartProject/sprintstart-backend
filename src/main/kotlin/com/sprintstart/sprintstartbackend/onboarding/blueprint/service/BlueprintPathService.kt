@@ -279,10 +279,11 @@ class BlueprintPathService(
 //      -> this should return the complete changed List of entities
 //  - [x] Add delete endpoint for drafts
 //  - [] Add role and skill "requirements" to phases
-//  - [] Add an option to just specify a prompt as the phase and the ai will created dynamically
+//  - [x] Add an option to just specify a prompt as the phase
 //  - [] Think about a teamoverview phase with : (Name, roles, Ai worksummary) per person
-//  - [] Add a for all members option which will add a Task with the each members name (only 70% need to be reached)
+//  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] Add the Blueprint -> AI Conversion service and controller
+//      - [] Add prompt -> phase service
 //  - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
 //  - [] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation

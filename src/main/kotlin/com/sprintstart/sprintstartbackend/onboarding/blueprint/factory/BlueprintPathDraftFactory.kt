@@ -37,6 +37,8 @@ class BlueprintPathDraftFactory {
             position = phase.position,
             title = phase.title,
             description = phase.description,
+            aiPrompt = phase.aiPrompt,
+            type = phase.type,
         )
 
         phase.blueprintSteps

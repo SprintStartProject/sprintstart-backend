@@ -71,6 +71,8 @@ class BlueprintPhaseService(
             position = request.position,
             title = request.title,
             description = request.description,
+            aiPrompt = request.aiPrompt,
+            type = request.type,
         )
 
         return blueprintPhaseRepository.save(phase).toCreateResponse()
@@ -104,6 +106,8 @@ class BlueprintPhaseService(
         phase.position = request.position
         phase.title = request.title
         phase.description = request.description
+        phase.aiPrompt = request.aiPrompt
+        phase.type = request.type
 
         return blueprintPhaseRepository.save(phase).toUpdateResponse()
     }

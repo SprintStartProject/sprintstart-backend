@@ -1,8 +1,11 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
@@ -28,8 +31,13 @@ class BlueprintPhase(
     var position: Int,
     @Column(nullable = false)
     var title: String,
+    @Column(nullable = true)
+    var description: String?,
+    @Column(nullable = true)
+    var aiPrompt: String?,
     @Column(nullable = false)
-    var description: String,
+    @Enumerated(EnumType.STRING)
+    var type: BlueprintPhaseType,
     @OneToMany(
         mappedBy = "blueprintPhase",
         cascade = [CascadeType.ALL],
