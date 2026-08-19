@@ -1,7 +1,5 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.ChatAiClient
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -12,8 +10,6 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
-import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
-import com.sprintstart.sprintstartbackend.connectors.overview.service.ConnectorConfigurationService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
@@ -34,22 +30,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 class ChatServiceTests {
-    private val applicationConfig: ApplicationConfig = mockk()
     private val chatRepository: ChatRepository = mockk()
     private val chatMessageRepository: ChatMessageRepository = mockk()
-    private val citationRepository: CitationRepository = mockk()
-    private val connectorConfigurationService: ConnectorConfigurationService = mockk()
-    private val chatAiClient: ChatAiClient = mockk()
     private val userApi: UserApi = mockk()
-    private val artifactLookupService: ArtifactLookupService = mockk()
+    private val chatAuthService: ChatAuthService = mockk()
     private val chatService = ChatService(
         chatRepository,
         chatMessageRepository,
-        citationRepository,
-        connectorConfigurationService,
-        chatAiClient,
         userApi,
-        artifactLookupService,
+        chatAuthService,
     )
 
     private val userId = UUID.randomUUID()
@@ -134,7 +123,10 @@ class ChatServiceTests {
         fun `returns only current user's chats`() {
             val request = GetChatsRequest(limit = 5)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { chatRepository.findAllByUserId(userId, any<Pageable>()) } returns PageImpl(allChats)
+            every {
+                chatRepository.findAllByUserId(userId, any<Pageable>())
+            } returns PageImpl(allChats)
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
             val result = chatService.getChatsForCurrentUser(authId, request)
 
@@ -147,6 +139,12 @@ class ChatServiceTests {
         fun `throws not found when current user cannot be resolved for chat list`() {
             val request = GetChatsRequest(limit = null)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+            every {
+                chatAuthService.resolveCurrentUserId(userApi, authId)
+            } throws ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Authenticated user not found",
+            )
 
             val ex = assertFailsWith<ResponseStatusException> {
                 chatService.getChatsForCurrentUser(authId, request)
@@ -272,24 +270,27 @@ class ChatServiceTests {
         @Test
         fun `returns current user's chat messages for owned chat`() {
             val request = GetChatMessagesRequest(limit = null)
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { chatRepository.findByIdAndUserId(chat.id, userId) } returns Optional.of(chat)
             every {
                 chatMessageRepository.findAllByChat(chat.id, any<Pageable>())
             } returns PageImpl(chatMessages)
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
+            every { chatAuthService.findOwnedChat(chat.id, userId) } returns chat
 
             val result = chatService.getChatForCurrentUser(authId, chat.id, request)
 
             assertEquals(5, result.messages.size)
             assertEquals(chatMessages[0].toChatMessageResponse(), result.messages[0])
-            verify(exactly = 1) { chatRepository.findByIdAndUserId(chat.id, userId) }
+            verify(exactly = 1) { chatAuthService.resolveCurrentUserId(userApi, authId) }
+            verify(exactly = 1) { chatAuthService.findOwnedChat(chat.id, userId) }
         }
 
         @Test
         fun `throws not found and does not load messages for foreign chat`() {
             val request = GetChatMessagesRequest(limit = null)
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { chatRepository.findByIdAndUserId(chat.id, userId) } returns Optional.empty()
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
+            every {
+                chatAuthService.findOwnedChat(chat.id, userId)
+            } throws ResponseStatusException(HttpStatus.NOT_FOUND)
 
             val ex = assertFailsWith<ResponseStatusException> {
                 chatService.getChatForCurrentUser(authId, chat.id, request)
@@ -333,6 +334,7 @@ class ChatServiceTests {
             val chatSlot = slot<Chat>()
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { chatRepository.save(capture(chatSlot)) } answers { chatSlot.captured }
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
             val result = chatService.createChatForCurrentUser(authId, projectId)
 
@@ -379,13 +381,15 @@ class ChatServiceTests {
             val chatId = UUID.randomUUID()
             val chat = mockk<Chat>()
 
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.of(chat)
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
+            every { chatAuthService.findOwnedChat(chatId, userId) } returns chat
             every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
             every { chatRepository.delete(chat) } returns Unit
 
             chatService.deleteChatForCurrentUser(authId, chatId)
 
+            verify(exactly = 1) { chatAuthService.resolveCurrentUserId(userApi, authId) }
+            verify(exactly = 1) { chatAuthService.findOwnedChat(chatId, userId) }
             verify(exactly = 1) { chatMessageRepository.deleteAllByChatId(chatId) }
             verify(exactly = 1) { chatRepository.delete(chat) }
         }
@@ -394,14 +398,13 @@ class ChatServiceTests {
         fun `throws not found when current user does not own chat`() {
             val chatId = UUID.randomUUID()
 
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.empty()
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
+            every { chatAuthService.findOwnedChat(chatId, userId) } throws ResponseStatusException(HttpStatus.NOT_FOUND)
 
-            assertThrows<ResponseStatusException> {
-                chatService.deleteChatForCurrentUser(authId, chatId)
-            }
+            assertThrows<ResponseStatusException> { chatService.deleteChatForCurrentUser(authId, chatId) }
 
             verify(exactly = 0) { chatRepository.delete(any()) }
+
             verify(exactly = 0) { chatMessageRepository.deleteAllByChatId(any()) }
         }
     }
@@ -419,6 +422,7 @@ class ChatServiceTests {
             every { message.chat } returns chat
             every { chat.userId } returns userId
             every { chatMessageRepository.delete(message) } returns Unit
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
             chatService.deleteMessageForCurrentUser(authId, messageId)
 
@@ -432,6 +436,7 @@ class ChatServiceTests {
 
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { chatMessageRepository.findById(messageId) } returns Optional.empty()
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
             assertThrows<ResponseStatusException> {
                 chatService.deleteMessageForCurrentUser(authId, messageId)
@@ -453,6 +458,7 @@ class ChatServiceTests {
             every { chatMessageRepository.findById(messageId) } returns Optional.of(message)
             every { message.chat } returns chat
             every { chat.userId } returns otherUserId
+            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
             assertThrows<ResponseStatusException> {
                 chatService.deleteMessageForCurrentUser(authId, messageId)
