@@ -38,6 +38,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
@@ -394,6 +395,85 @@ class ChatControllerWebMvcTest(
                 }.andExpect {
                     status { isForbidden() }
                 }
+        }
+    }
+
+    @Nested
+    inner class DeleteChat {
+
+        @Test
+        fun `returns 204 when admin deletes chat`() {
+            every { chatService.deleteChat(chatId) } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/$chatId") {
+                    with(adminJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteChat(chatId)
+            }
+        }
+
+        @Test
+        fun `returns 403 when normal user tries to delete chat`() {
+            mockMvc
+                .delete("/api/v1/chats/$chatId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChat(any())
+            }
+        }
+
+        @Test
+        fun `returns 204 when current user deletes own chat`() {
+            every {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+        }
+
+        @Test
+        fun `returns 401 when current user endpoint is called without authentication`() {
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId")
+                .andExpect {
+                    status { isUnauthorized() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChatForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 403 when current user endpoint is called with wrong role`() {
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId") {
+                    with(noUserRoleJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChatForCurrentUser(any(), any())
+            }
         }
     }
 

@@ -208,6 +208,45 @@ internal class ChatService(
     }
 
     /**
+     * Deletes an existing chat.
+     *
+     * This function deletes a specific chat (by id) and all its contained messages, meaning all messages linked to
+     * the specified chat.
+     *
+     * @param chatId The ID of the chat to be deleted.
+     * @throws ResponseStatusException '404' when the specified chat does not exist.
+     */
+    @Transactional
+    @Tracked("Deleting existing chat")
+    fun deleteChat(chatId: UUID) {
+        val chat = chatRepository.findById(chatId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Chat with id $chatId not found")
+        }
+        messageRepository.deleteAllByChatId(chatId)
+        chatRepository.delete(chat)
+    }
+
+    /**
+     * Deletes an existing chat created by the current user.
+     *
+     * This function deletes both the chat and all its contained messages. Only works for chats owned by the current
+     * user, e.g., chats that were created by the current user.
+     *
+     * @param authId The ID of the currently authenticated user.
+     * @param chatId The ID of the chat to be deleted.
+     * @throws ResponseStatusException '404' when the specified chat does not exist or does not belong to the
+     * authenticated user.
+     */
+    @Transactional
+    @Tracked("Deleting existing chat created by the current user")
+    fun deleteChatForCurrentUser(authId: String, chatId: UUID) {
+        val userId = resolveCurrentUserId(userApi, authId)
+        val chat = findOwnedChat(chatRepository, chatId, userId)
+        messageRepository.deleteAllByChatId(chatId)
+        chatRepository.delete(chat)
+    }
+
+    /**
      * Prompts the AI only for a chat owned by the authenticated user.
      *
      * The chat id remains in the request because it identifies the conversation, but ownership is

@@ -133,6 +133,37 @@ class ChatControllerUnitTest {
     }
 
     @Nested
+    inner class DeleteChat {
+
+        @Test
+        fun `delegates to service with correct chat id`() {
+            every { chatService.deleteChat(chatId) } returns Unit
+            controller.deleteChat(chatId)
+
+            verify(exactly = 1) {
+                chatService.deleteChat(chatId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMyChat {
+
+        @Test
+        fun `delegates to service with correct auth id and chat id`() {
+            val jwt = mockk<Jwt>()
+            every { jwt.subject } returns authId
+            every { chatService.deleteChatForCurrentUser(authId, chatId) } returns Unit
+
+            controller.deleteMyChat(chatId, jwt)
+
+            verify(exactly = 1) {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+        }
+    }
+
+    @Nested
     inner class Prompt {
         @Test
         fun `delegates to service and returns flow unchanged`() = runTest {

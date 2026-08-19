@@ -359,6 +359,70 @@ class ChatServiceTests {
     }
 
     @Nested
+    inner class DeleteChat {
+
+        @Test
+        fun `deletes chat and all its messages`() {
+            val chatId = UUID.randomUUID()
+            val chat = mockk<Chat>()
+
+            every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
+            every { chatRepository.delete(chat) } returns Unit
+
+            chatService.deleteChat(chatId)
+
+            verify(exactly = 1) { chatMessageRepository.deleteAllByChatId(chatId) }
+            verify(exactly = 1) { chatRepository.delete(chat) }
+        }
+
+        @Test
+        fun `throws not found when chat does not exist`() {
+            val chatId = UUID.randomUUID()
+
+            every { chatRepository.findById(chatId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                chatService.deleteChat(chatId)
+            }
+
+            verify(exactly = 0) { chatRepository.delete(any()) }
+            verify(exactly = 0) { chatMessageRepository.deleteAllByChatId(any()) }
+        }
+
+        @Test
+        fun `deletes chat and all its messages for current user`() {
+            val chatId = UUID.randomUUID()
+            val chat = mockk<Chat>()
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.of(chat)
+            every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
+            every { chatRepository.delete(chat) } returns Unit
+
+            chatService.deleteChatForCurrentUser(authId, chatId)
+
+            verify(exactly = 1) { chatMessageRepository.deleteAllByChatId(chatId) }
+            verify(exactly = 1) { chatRepository.delete(chat) }
+        }
+
+        @Test
+        fun `throws not found when current user does not own chat`() {
+            val chatId = UUID.randomUUID()
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatRepository.findByIdAndUserId(chatId, userId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+
+            verify(exactly = 0) { chatRepository.delete(any()) }
+            verify(exactly = 0) { chatMessageRepository.deleteAllByChatId(any()) }
+        }
+    }
+
+    @Nested
     inner class PromptAi {
         private val chatId = UUID.randomUUID()
 
