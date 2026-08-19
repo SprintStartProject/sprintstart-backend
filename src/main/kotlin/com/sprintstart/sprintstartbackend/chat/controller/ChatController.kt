@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -43,6 +44,7 @@ import java.util.UUID
 @Validated
 internal class ChatController(
     private val chatService: ChatService,
+    private val chatPromptService: ChatPromptService,
 ) {
     @Operation(
         summary = "Retrieves chats with their metadata (No messages!)",
@@ -261,7 +263,7 @@ internal class ChatController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<AiStreamMessage> {
-        return chatService.promptForCurrentUser(jwt.subject, request)
+        return chatPromptService.promptForCurrentUser(jwt.subject, request)
     }
 
     @Operation(

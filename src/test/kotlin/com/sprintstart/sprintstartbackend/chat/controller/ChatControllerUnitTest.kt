@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
@@ -41,7 +42,8 @@ import kotlin.test.assertEquals
  */
 class ChatControllerUnitTest {
     private val chatService: ChatService = mockk()
-    private val controller = ChatController(chatService)
+    private val chatPromptService: ChatPromptService = mockk()
+    private val controller = ChatController(chatService, chatPromptService)
 
     private val chatId = UUID.randomUUID()
     private val messageId = UUID.randomUUID()
@@ -202,12 +204,14 @@ class ChatControllerUnitTest {
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, request) } returns flowOf(*tokens.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, request)
+            } returns flowOf(*tokens.toTypedArray())
 
             val result = controller.promptMyChat(request, jwt).toList()
 
             assertEquals(tokens, result)
-            coVerify(exactly = 1) { chatService.promptForCurrentUser(authId, request) }
+            coVerify(exactly = 1) { chatPromptService.promptForCurrentUser(authId, request) }
         }
     }
 
@@ -229,14 +233,14 @@ class ChatControllerUnitTest {
         )
 
         coEvery {
-            chatService.promptForCurrentUser(authId, request)
+            chatPromptService.promptForCurrentUser(authId, request)
         } returns flowOf(*tokens.toTypedArray())
 
         val result = controller.promptMyChat(request, jwt).toList()
 
         assertEquals(tokens, result)
         coVerify(exactly = 1) {
-            chatService.promptForCurrentUser(authId, request)
+            chatPromptService.promptForCurrentUser(authId, request)
         }
     }
 }

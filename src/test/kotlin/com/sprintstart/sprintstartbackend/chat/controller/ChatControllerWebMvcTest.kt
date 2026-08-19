@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -85,6 +86,9 @@ class ChatControllerWebMvcTest(
 
     @MockkBean
     private lateinit var chatService: ChatService
+
+    @MockkBean
+    private lateinit var chatPromptService: ChatPromptService
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -585,7 +589,9 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -624,7 +630,9 @@ class ChatControllerWebMvcTest(
                 ),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -768,7 +776,9 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("done"),
             )
 
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -795,7 +805,7 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.promptForCurrentUser(
+                chatPromptService.promptForCurrentUser(
                     authId,
                     match {
                         it.filters?.sourceSystems == listOf(SourceSystem.GITHUB) &&
@@ -807,7 +817,9 @@ class ChatControllerWebMvcTest(
 
         @Test
         fun `accepts prompt without filters`() {
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(AiStreamMessage("done"))
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(AiStreamMessage("done"))
 
             val asyncResult = mockMvc
                 .perform(
@@ -823,7 +835,7 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.promptForCurrentUser(
+                chatPromptService.promptForCurrentUser(
                     authId,
                     match { it.filters == null },
                 )
