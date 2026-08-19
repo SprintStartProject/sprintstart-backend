@@ -274,7 +274,7 @@ internal class ChatController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
             ApiResponse(responseCode = "404", description = "Chat not found"),
-        ]
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/{id}")
@@ -285,9 +285,8 @@ internal class ChatController(
 
     @Operation(
         summary = "Deletes an existing chat created by the current user",
-        description =
-            "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
-                    "the current user.",
+        description = "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
+            "the current user.",
     )
     @ApiResponses(
         value = [
@@ -295,14 +294,14 @@ internal class ChatController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
             ApiResponse(responseCode = "404", description = "Chat not found for authenticated user"),
-        ]
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/me/{id}")
     @PreAuthorize("hasRole('USER')")
     fun deleteMyChat(
         @PathVariable id: UUID,
-        @AuthenticationPrincipal jwt: Jwt
+        @AuthenticationPrincipal jwt: Jwt,
     ) {
         chatService.deleteChatForCurrentUser(jwt.subject, id)
     }
@@ -317,7 +316,7 @@ internal class ChatController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
             ApiResponse(responseCode = "404", description = "Message not found"),
-        ]
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/messages/{id}")
@@ -329,7 +328,7 @@ internal class ChatController(
     @Operation(
         summary = "Deletes a message from a hat owned by the current user",
         description = "Deletes a message from the db. Fails if the specified message does not belong to a chat owned" +
-                "by the user.",
+            "by the user.",
     )
     @ApiResponses(
         value = [
@@ -337,14 +336,14 @@ internal class ChatController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
             ApiResponse(responseCode = "404", description = "Message not found for authenticated user"),
-        ]
+        ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/messages/me/{id}")
     @PreAuthorize("hasRole('USER')")
     fun deleteMyMessage(
         @PathVariable id: UUID,
-        @AuthenticationPrincipal jwt: Jwt
+        @AuthenticationPrincipal jwt: Jwt,
     ) {
         chatService.deleteMessageForCurrentUser(jwt.subject, id)
     }

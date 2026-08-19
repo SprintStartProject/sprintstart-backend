@@ -135,7 +135,6 @@ class ChatControllerUnitTest {
 
     @Nested
     inner class DeleteChat {
-
         @Test
         fun `delegates to service with correct chat id`() {
             every { chatService.deleteChat(chatId) } returns Unit
@@ -149,7 +148,6 @@ class ChatControllerUnitTest {
 
     @Nested
     inner class DeleteMyChat {
-
         @Test
         fun `delegates to service with correct auth id and chat id`() {
             val jwt = mockk<Jwt>()
@@ -166,7 +164,6 @@ class ChatControllerUnitTest {
 
     @Nested
     inner class DeleteMessage {
-
         @Test
         fun `delegates to service with correct message id`() {
             every { chatService.deleteMessage(messageId) } returns Unit
@@ -181,7 +178,6 @@ class ChatControllerUnitTest {
 
     @Nested
     inner class DeleteMyMessage {
-
         @Test
         fun `delegates to service with correct auth id and message id`() {
             val jwt = mockk<Jwt>()

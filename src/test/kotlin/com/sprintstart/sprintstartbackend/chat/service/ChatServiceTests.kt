@@ -360,7 +360,6 @@ class ChatServiceTests {
 
     @Nested
     inner class DeleteChat {
-
         @Test
         fun `deletes chat and all its messages`() {
             val chatId = UUID.randomUUID()

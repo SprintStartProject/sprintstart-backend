@@ -403,7 +403,6 @@ class ChatControllerWebMvcTest(
 
     @Nested
     inner class DeleteChat {
-
         @Test
         fun `returns 204 when admin deletes chat`() {
             every { chatService.deleteChat(chatId) } returns Unit
@@ -491,8 +490,7 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .delete("/api/v1/chats/messages/me/$messageId") {
                     with(userJwt)
-                }
-                .andExpect {
+                }.andExpect {
                     status { isNoContent() }
                 }
 
@@ -519,8 +517,7 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .delete("/api/v1/chats/messages/me/$messageId") {
                     with(noUserRoleJwt)
-                }
-                .andExpect {
+                }.andExpect {
                     status { isForbidden() }
                 }
 
@@ -541,8 +538,7 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .delete("/api/v1/chats/messages/me/$messageId") {
                     with(userJwt)
-                }
-                .andExpect {
+                }.andExpect {
                     status { isNotFound() }
                 }
 
@@ -556,8 +552,7 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .delete("/api/v1/chats/messages/$messageId") {
                     with(userJwt)
-                }
-                .andExpect {
+                }.andExpect {
                     status { isForbidden() }
                 }
         }
@@ -571,8 +566,7 @@ class ChatControllerWebMvcTest(
             mockMvc
                 .delete("/api/v1/chats/messages/$messageId") {
                     with(adminJwt)
-                }
-                .andExpect {
+                }.andExpect {
                     status { isNoContent() }
                 }
 
