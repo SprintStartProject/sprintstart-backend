@@ -95,7 +95,7 @@ class ChatControllerUnitTest {
         fun `delegates to service with correct id and request, returns response unchanged`() {
             val request = GetChatMessagesRequest(limit = 5)
             val expected = GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
             every { chatService.getChat(chatId, request) } returns expected
 

@@ -229,7 +229,7 @@ class ChatControllerWebMvcTest(
             every {
                 chatService.getChatForCurrentUser(authId, chatId, request)
             } returns GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
@@ -248,7 +248,7 @@ class ChatControllerWebMvcTest(
             every {
                 chatService.getChatForCurrentUser(authId, chatId, request)
             } returns GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
