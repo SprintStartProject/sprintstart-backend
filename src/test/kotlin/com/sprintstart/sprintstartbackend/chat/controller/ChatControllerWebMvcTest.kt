@@ -32,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -47,6 +48,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.server.ResponseStatusException
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -95,6 +97,7 @@ class ChatControllerWebMvcTest(
     private lateinit var projectAuth: ProjectAuthorization
 
     private val chatId: UUID = UUID.randomUUID()
+    private val messageId: UUID = UUID.randomUUID()
     private val userId: UUID = UUID.randomUUID()
     private val authId = "auth-user"
     private val projectId: UUID = UUID.randomUUID()
@@ -473,6 +476,108 @@ class ChatControllerWebMvcTest(
 
             verify(exactly = 0) {
                 chatService.deleteChatForCurrentUser(any(), any())
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMessage {
+        @Test
+        fun `returns 204 when message is deleted successfully`() {
+            every {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(userJwt)
+                }
+                .andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }
+        }
+
+        @Test
+        fun `returns 401 when not authenticated`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId")
+                .andExpect {
+                    status { isUnauthorized() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteMessageForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 403 when authenticated with wrong role`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(noUserRoleJwt)
+                }
+                .andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteMessageForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 404 when message does not exist`() {
+            every {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            } throws ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Message not found",
+            )
+
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(userJwt)
+                }
+                .andExpect {
+                    status { isNotFound() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }
+        }
+
+        @Test
+        fun `explicit delete endpoint rejects normal user`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/$messageId") {
+                    with(userJwt)
+                }
+                .andExpect {
+                    status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit delete endpoint allows admin`() {
+            every {
+                chatService.deleteMessage(messageId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/messages/$messageId") {
+                    with(adminJwt)
+                }
+                .andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessage(messageId)
             }
         }
     }

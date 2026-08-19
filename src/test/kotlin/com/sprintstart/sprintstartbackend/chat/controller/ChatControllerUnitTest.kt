@@ -44,6 +44,7 @@ class ChatControllerUnitTest {
     private val controller = ChatController(chatService)
 
     private val chatId = UUID.randomUUID()
+    private val messageId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
     private val authId = "auth-user"
     private val projectId: UUID = UUID.randomUUID()
@@ -159,6 +160,38 @@ class ChatControllerUnitTest {
 
             verify(exactly = 1) {
                 chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMessage {
+
+        @Test
+        fun `delegates to service with correct message id`() {
+            every { chatService.deleteMessage(messageId) } returns Unit
+
+            controller.deleteMessage(messageId)
+
+            verify(exactly = 1) {
+                chatService.deleteMessage(messageId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMyMessage {
+
+        @Test
+        fun `delegates to service with correct auth id and message id`() {
+            val jwt = mockk<Jwt>()
+            every { jwt.subject } returns authId
+            every { chatService.deleteMessageForCurrentUser(authId, messageId) } returns Unit
+
+            controller.deleteMyMessage(messageId, jwt)
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
             }
         }
     }

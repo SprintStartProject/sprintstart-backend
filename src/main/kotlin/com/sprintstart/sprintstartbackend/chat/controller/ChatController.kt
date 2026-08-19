@@ -212,49 +212,6 @@ internal class ChatController(
         return chatService.createChatForCurrentUser(jwt.subject, request.projectId)
     }
 
-    @Operation(
-        summary = "Deletes an existing chat",
-        description = "Deletes a chat and all its contained messages from the db",
-    )
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
-            ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
-            ApiResponse(responseCode = "404", description = "Chat not found"),
-        ]
-    )
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    fun deleteChat(@PathVariable id: UUID) {
-        chatService.deleteChat(id)
-    }
-
-    @Operation(
-        summary = "Deletes an existing chat created by the current user",
-        description =
-            "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
-            "the current user",
-    )
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
-            ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
-            ApiResponse(responseCode = "404", description = "Chat not found for authenticated user"),
-        ]
-    )
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/me/{id}")
-    @PreAuthorize("hasRole('USER')")
-    fun deleteMyChat(
-        @PathVariable id: UUID,
-        @AuthenticationPrincipal jwt: Jwt
-    ) {
-        chatService.deleteChatForCurrentUser(jwt.subject, id)
-    }
-
     /**
      * Prompts the AI for a chat owned by the authenticated user.
      *
@@ -305,5 +262,90 @@ internal class ChatController(
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<AiStreamMessage> {
         return chatService.promptForCurrentUser(jwt.subject, request)
+    }
+
+    @Operation(
+        summary = "Deletes an existing chat",
+        description = "Deletes a chat and all its contained messages from the db.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Chat not found"),
+        ]
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteChat(@PathVariable id: UUID) {
+        chatService.deleteChat(id)
+    }
+
+    @Operation(
+        summary = "Deletes an existing chat created by the current user",
+        description =
+            "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
+                    "the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Chat not found for authenticated user"),
+        ]
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/me/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMyChat(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt
+    ) {
+        chatService.deleteChatForCurrentUser(jwt.subject, id)
+    }
+
+    @Operation(
+        summary = "Deletes a message from any chat",
+        description = "Deletes a message from the db.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Message not found"),
+        ]
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteMessage(@PathVariable id: UUID) {
+        chatService.deleteMessage(id)
+    }
+
+    @Operation(
+        summary = "Deletes a message from a hat owned by the current user",
+        description = "Deletes a message from the db. Fails if the specified message does not belong to a chat owned" +
+                "by the user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Message not found for authenticated user"),
+        ]
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/me/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMyMessage(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt
+    ) {
+        chatService.deleteMessageForCurrentUser(jwt.subject, id)
     }
 }

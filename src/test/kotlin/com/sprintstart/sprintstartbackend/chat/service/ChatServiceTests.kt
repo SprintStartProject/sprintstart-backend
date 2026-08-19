@@ -423,6 +423,64 @@ class ChatServiceTests {
     }
 
     @Nested
+    inner class DeleteMessage {
+        @Test
+        fun `deletes message owned by current user`() {
+            val messageId = UUID.randomUUID()
+            val message = mockk<ChatMessage>()
+            val chat = mockk<Chat>()
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatMessageRepository.findById(messageId) } returns Optional.of(message)
+            every { message.chat } returns chat
+            every { chat.userId } returns userId
+            every { chatMessageRepository.delete(message) } returns Unit
+
+            chatService.deleteMessageForCurrentUser(authId, messageId)
+
+            verify(exactly = 1) { chatMessageRepository.findById(messageId) }
+            verify(exactly = 1) { chatMessageRepository.delete(message) }
+        }
+
+        @Test
+        fun `throws not found when message does not exist`() {
+            val messageId = UUID.randomUUID()
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatMessageRepository.findById(messageId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }.also {
+                assertEquals(HttpStatus.NOT_FOUND, it.statusCode)
+            }
+
+            verify(exactly = 0) { chatMessageRepository.delete(any()) }
+        }
+
+        @Test
+        fun `throws not found when message belongs to another user`() {
+            val messageId = UUID.randomUUID()
+            val message = mockk<ChatMessage>()
+            val chat = mockk<Chat>()
+            val otherUserId = UUID.randomUUID()
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { chatMessageRepository.findById(messageId) } returns Optional.of(message)
+            every { message.chat } returns chat
+            every { chat.userId } returns otherUserId
+
+            assertThrows<ResponseStatusException> {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }.also {
+                assertEquals(HttpStatus.NOT_FOUND, it.statusCode)
+            }
+
+            verify(exactly = 0) { chatMessageRepository.delete(any()) }
+        }
+    }
+
+    @Nested
     inner class PromptAi {
         private val chatId = UUID.randomUUID()
 

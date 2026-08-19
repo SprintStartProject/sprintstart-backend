@@ -232,7 +232,7 @@ internal class ChatService(
      * This function deletes both the chat and all its contained messages. Only works for chats owned by the current
      * user, e.g., chats that were created by the current user.
      *
-     * @param authId The ID of the currently authenticated user.
+     * @param authId ID used for verifying the current user.
      * @param chatId The ID of the chat to be deleted.
      * @throws ResponseStatusException '404' when the specified chat does not exist or does not belong to the
      * authenticated user.
@@ -244,6 +244,45 @@ internal class ChatService(
         val chat = findOwnedChat(chatRepository, chatId, userId)
         messageRepository.deleteAllByChatId(chatId)
         chatRepository.delete(chat)
+    }
+
+    /**
+     * Deletes a message from any chat.
+     *
+     * @param messageId The ID of the message to be deleted.
+     * @throws ResponseStatusException '404' when the specified message does not exist.
+     */
+    @Transactional
+    @Tracked("Deleting message from chat")
+    fun deleteMessage(messageId: UUID) {
+        val message = messageRepository.findById(messageId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Message with id $messageId not found")
+        }
+        messageRepository.delete(message)
+    }
+
+    /**
+     * Deletes a message from a chat owned by the current user.
+     *
+     * Only works if the message belongs to a chat that is owned by the currently authenticated user.
+     *
+     * @param authId ID used for verifying the current user.
+     * @param messageId The ID of the message to be deleted.
+     * @throws ResponseStatusException '404' when the message does not exist or does not belong to a chat owned by the
+     * current user.
+     */
+    @Transactional
+    @Tracked("Deleting message from chat owned by the current user")
+    fun deleteMessageForCurrentUser(authId: String, messageId: UUID) {
+        val userId = resolveCurrentUserId(userApi, authId)
+        val message = messageRepository.findById(messageId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Message with id $messageId not found")
+        }
+        val chat = message.chat
+        if (chat.userId != userId) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Message with id $messageId not found for current user")
+        }
+        messageRepository.delete(message)
     }
 
     /**
