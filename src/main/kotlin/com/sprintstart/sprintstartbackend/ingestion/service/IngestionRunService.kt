@@ -10,7 +10,9 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
+import jakarta.persistence.criteria.Root
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
@@ -66,18 +68,16 @@ class IngestionRunService(
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Ingestion run with id $runId not found")
 
     /**
-     * Returns a filtered, paginated page of ingestion runs, newest first.
+     * Searches and paginates ingestion runs matching the given filters.
      *
-     * All filters are optional and combined with AND semantics. `projectId` is resolved to the set
-     * of repositories connected to that project and matched against each run's `repositoryId`; a
-     * project with no connected repositories yields an empty page.
+     * All filter parameters are optional and combined with `AND`. The result is ordered newest-first
+     * by [IngestionRun.startedAt].
      *
-     * @param page The 1-based page number to return.
-     * @param size The maximum number of runs to include in one page.
-     * @param sourceSystem Optional source-system filter, for example GITHUB.
-     * @param repositoryId Optional connected-repository filter (GitHub, matched on the UUID instance id).
-     * @param sourceRef Optional source-instance filter matched on the connector-neutral reference
-     * (for Jira the instance URL).
+     * @param page 1-based page index.
+     * @param size Page size.
+     * @param sourceSystem Optional source-system filter (e.g. GITHUB, JIRA).
+     * @param repositoryId Optional GitHub repository filter.
+     * @param sourceRef Optional connector-neutral source reference filter (for Jira the instance URL).
      * @param projectId Optional project filter, resolved via the project's connected repositories and
      * Jira instances.
      * @param status Optional run-status filter.
@@ -109,28 +109,7 @@ class IngestionRunService(
                 status?.let { predicates.add(cb.equal(root.get<IngestionRunStatus>("status"), it)) }
                 since?.let { predicates.add(cb.greaterThanOrEqualTo(root.get<Instant>("startedAt"), it)) }
                 projectId?.let { pId ->
-                    val sources = projectSources ?: resolveProjectSources(pId)
-                    val matches = buildList {
-                        if (sources.repositoryIds.isNotEmpty()) {
-                            add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
-                        }
-                        if (sources.jiraRefs.isNotEmpty()) {
-                            add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
-                        }
-                        add(
-                            cb.and(
-                                cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
-                                cb.equal(root.get<UUID>("sourceInstanceId"), pId),
-                            ),
-                        )
-                    }
-                    predicates.add(
-                        when (matches.size) {
-                            0 -> cb.disjunction()
-                            1 -> matches.single()
-                            else -> cb.or(*matches.toTypedArray())
-                        },
-                    )
+                    predicates.add(buildProjectPredicate(root, cb, pId, projectSources))
                 }
                 if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
             }
@@ -149,6 +128,34 @@ class IngestionRunService(
                 hasPrevious = result.hasPrevious(),
             ),
         )
+    }
+
+    private fun buildProjectPredicate(
+        root: Root<IngestionRun>,
+        cb: CriteriaBuilder,
+        projectId: UUID,
+        projectSources: ProjectSources?,
+    ): Predicate {
+        val sources = projectSources ?: resolveProjectSources(projectId)
+        val matches = buildList {
+            if (sources.repositoryIds.isNotEmpty()) {
+                add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
+            }
+            if (sources.jiraRefs.isNotEmpty()) {
+                add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
+            }
+            add(
+                cb.and(
+                    cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
+                    cb.equal(root.get<UUID>("sourceInstanceId"), projectId),
+                ),
+            )
+        }
+        return when (matches.size) {
+            0 -> cb.disjunction()
+            1 -> matches.single()
+            else -> cb.or(*matches.toTypedArray())
+        }
     }
 
     private fun resolveProjectSources(projectId: UUID): ProjectSources =
