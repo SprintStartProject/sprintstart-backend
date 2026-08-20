@@ -104,6 +104,73 @@ class KnowledgeGapsServiceTest {
     }
 
     @Test
+    fun `getMyKnowledgeGaps returns only the gaps whose component the caller owns`() {
+        val userId = UUID.randomUUID()
+        val ownedGap = buildGap("auth-service", KnowledgeGapSeverity.HIGH)
+        every { userApi.getUserIdByAuthId("auth-id") } returns Optional.of(userId)
+        every { componentOwnerRepository.findAllByUserId(userId) } returns
+            listOf(ComponentOwner(component = "auth-service", userId = userId))
+        every {
+            knowledgeGapRepository.findAllByProjectIdAndComponentIn(projectId, listOf("auth-service"))
+        } returns listOf(ownedGap)
+        every { componentOwnerRepository.findAllByComponentIn(listOf("auth-service")) } returns
+            listOf(ComponentOwner(component = "auth-service", userId = userId))
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(buildUser(userId, null))
+        every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
+
+        val overview = service.getMyKnowledgeGaps(projectId, "auth-id")
+
+        assertEquals(listOf("auth-service"), overview.gaps.map { it.component })
+        val owners = overview.gaps.first().owners
+        assertEquals(userId.toString(), owners.first().id)
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps orders by severity then component`() {
+        val userId = UUID.randomUUID()
+        val components = listOf("frontend-portal", "payment-service", "auth-service")
+        every { userApi.getUserIdByAuthId("auth-id") } returns Optional.of(userId)
+        every { componentOwnerRepository.findAllByUserId(userId) } returns
+            components.map { ComponentOwner(component = it, userId = userId) }
+        every { knowledgeGapRepository.findAllByProjectIdAndComponentIn(projectId, components) } returns listOf(
+            buildGap("frontend-portal", KnowledgeGapSeverity.LOW),
+            buildGap("payment-service", KnowledgeGapSeverity.HIGH),
+            buildGap("auth-service", KnowledgeGapSeverity.HIGH),
+        )
+        every { componentOwnerRepository.findAllByComponentIn(any()) } returns emptyList()
+        every { artifactIngestionApi.getFirstIngestedAt(any<Collection<String>>()) } returns emptyMap()
+
+        val overview = service.getMyKnowledgeGaps(projectId, "auth-id")
+
+        assertEquals(
+            listOf("auth-service", "payment-service", "frontend-portal"),
+            overview.gaps.map { it.component },
+        )
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps returns nothing when the caller owns no component`() {
+        val userId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId("auth-id") } returns Optional.of(userId)
+        every { componentOwnerRepository.findAllByUserId(userId) } returns emptyList()
+
+        val overview = service.getMyKnowledgeGaps(projectId, "auth-id")
+
+        assertTrue(overview.gaps.isEmpty())
+        verify(exactly = 0) { knowledgeGapRepository.findAllByProjectIdAndComponentIn(any(), any()) }
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps returns nothing when the caller has no user projection`() {
+        every { userApi.getUserIdByAuthId("unknown-auth-id") } returns Optional.empty()
+
+        val overview = service.getMyKnowledgeGaps(projectId, "unknown-auth-id")
+
+        assertTrue(overview.gaps.isEmpty())
+        verify(exactly = 0) { componentOwnerRepository.findAllByUserId(any()) }
+    }
+
+    @Test
     fun `getKnowledgeGap maps fields and enriches owners with their project role`() {
         val gap = buildGap("auth-service", KnowledgeGapSeverity.HIGH)
         gap.missingTypes.addAll(listOf("runbook", "adr"))
