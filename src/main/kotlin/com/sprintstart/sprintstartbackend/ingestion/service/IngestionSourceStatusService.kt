@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceA
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceInstanceIngestionStatusResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -44,8 +45,13 @@ class IngestionSourceStatusService(
         val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val uploadStatuses = if (projectId != null) {
             val uploadCount = artifactRepository.countUploadArtifactsByProjectId(projectId)
-            if (uploadCount > 0) {
-                val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
+            val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
+            if (uploadCount > 0 || lastRun != null) {
+                val connectionStatus = when (lastRun?.status) {
+                    IngestionRunStatus.FAILED -> "FAILED"
+                    IngestionRunStatus.RUNNING, IngestionRunStatus.CONNECTED -> "UPDATING"
+                    else -> "CONNECTED"
+                }
                 listOf(
                     SourceInstanceIngestionStatusResponse(
                         sourceSystem = SourceSystem.UPLOAD,
@@ -55,7 +61,7 @@ class IngestionSourceStatusService(
                         owner = null,
                         name = null,
                         sourceUrl = "",
-                        connectionStatus = "CONNECTED",
+                        connectionStatus = connectionStatus,
                         enabled = true,
                         lastRunTime = lastRun?.startedAt,
                         ingestedCount = lastRun?.ingestedCount ?: 0,

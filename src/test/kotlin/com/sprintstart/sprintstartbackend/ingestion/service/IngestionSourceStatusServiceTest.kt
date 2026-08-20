@@ -134,6 +134,7 @@ class IngestionSourceStatusServiceTest {
         every { githubRepositoryApi.getSourceInstances(projectId) } returns listOf(instance)
         every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
         every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns null
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId) } returns null
         every { artifactRepository.countByComponent("owner/repo") } returns 5
         every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 0
 
