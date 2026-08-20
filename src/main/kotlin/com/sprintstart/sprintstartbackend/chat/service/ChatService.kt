@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid
@@ -32,6 +33,7 @@ import java.util.UUID
 internal class ChatService(
     private val chatRepository: ChatRepository,
     private val messageRepository: ChatMessageRepository,
+    private val citationRepository: CitationRepository,
     private val userApi: UserApi,
     private val chatAuthService: ChatAuthService,
 ) {
@@ -196,6 +198,7 @@ internal class ChatService(
         val chat = chatRepository.findById(chatId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Chat with id $chatId not found")
         }
+        citationRepository.deleteAllByMessageChatId(chatId)
         messageRepository.deleteAllByChatId(chatId)
         chatRepository.delete(chat)
     }
@@ -216,6 +219,7 @@ internal class ChatService(
     fun deleteChatForCurrentUser(authId: String, chatId: UUID) {
         val userId = chatAuthService.resolveCurrentUserId(userApi, authId)
         val chat = chatAuthService.findOwnedChat(chatId, userId)
+        citationRepository.deleteAllByMessageChatId(chatId)
         messageRepository.deleteAllByChatId(chatId)
         chatRepository.delete(chat)
     }
