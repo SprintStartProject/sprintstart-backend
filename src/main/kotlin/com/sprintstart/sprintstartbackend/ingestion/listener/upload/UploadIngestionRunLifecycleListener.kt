@@ -31,6 +31,8 @@ internal class UploadIngestionRunLifecycleListener(
                 transactionId = event.transactionId,
                 sourceSystem = SourceSystem.UPLOAD,
                 status = IngestionRunStatus.RUNNING,
+                sourceInstanceId = event.projectId,
+                sourceInstanceRef = "Uploads",
             )
     }
 

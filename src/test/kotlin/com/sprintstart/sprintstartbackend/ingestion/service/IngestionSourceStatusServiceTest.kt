@@ -135,6 +135,7 @@ class IngestionSourceStatusServiceTest {
         every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
         every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns null
         every { artifactRepository.countByComponent("owner/repo") } returns 5
+        every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 0
 
         val response = service.getStatusPerSourceInstance(projectId).single()
 
@@ -191,5 +192,42 @@ class IngestionSourceStatusServiceTest {
         assertThat(response.lastIssuesSyncAt).isEqualTo(instance.lastUpdate)
         assertThat(response.lastCommitsSyncAt).isNull()
         assertThat(response.lastPullRequestsSyncAt).isNull()
+    }
+
+    @Test
+    fun `maps project-scoped uploaded artifacts with latest run counters and artifact count`() {
+        val projectId = UUID.randomUUID()
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.UPLOAD,
+            sourceInstanceId = projectId,
+            sourceInstanceRef = "Uploads",
+            startedAt = Instant.parse("2026-07-06T10:00:00Z"),
+            ingestedCount = 5,
+            updatedCount = 0,
+            deletedCount = 0,
+            failedCount = 0,
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(projectId) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
+        every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 5
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId) } returns run
+
+        val response = service.getStatusPerSourceInstance(projectId).single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.UPLOAD)
+        assertThat(response.sourceId).isEqualTo("Uploads")
+        assertThat(response.displayName).isEqualTo("Uploaded files")
+        assertThat(response.repositoryId).isEqualTo(projectId)
+        assertThat(response.owner).isNull()
+        assertThat(response.name).isNull()
+        assertThat(response.sourceUrl).isEqualTo("")
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(5)
+        assertThat(response.artifactCount).isEqualTo(5)
     }
 }

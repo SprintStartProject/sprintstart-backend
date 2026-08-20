@@ -233,4 +233,29 @@ class IngestionRunServiceTest {
         verify(exactly = 0) { jiraInstanceApi.getInstanceRefsByProject(any()) }
         assertThat(response.items.single().sourceId).isEqualTo(jiraRef)
     }
+
+    @Test
+    fun `getRuns resolves projectId to connected upload runs`() {
+        val projectId = UUID.randomUUID()
+        val uploadRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.UPLOAD,
+            sourceInstanceId = projectId,
+            sourceInstanceRef = "Uploads",
+            startedAt = Instant.parse("2024-01-01T00:00:00Z"),
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getRepositoryIdsByProject(projectId) } returns emptyList()
+        every { jiraInstanceApi.getInstanceRefsByProject(projectId) } returns emptyList()
+        every {
+            ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>())
+        } returns PageImpl(listOf(uploadRun), PageRequest.of(0, 20), 1)
+
+        val response = service.getRuns(page = 1, size = 20, projectId = projectId)
+
+        assertThat(response.items).hasSize(1)
+        assertThat(response.items.single().sourceSystem).isEqualTo(SourceSystem.UPLOAD)
+        assertThat(response.items.single().repositoryId).isEqualTo(projectId)
+    }
 }

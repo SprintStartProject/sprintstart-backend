@@ -108,7 +108,8 @@ class IngestionRunService(
                 sourceRef?.let { predicates.add(cb.equal(root.get<String>("sourceInstanceRef"), it)) }
                 status?.let { predicates.add(cb.equal(root.get<IngestionRunStatus>("status"), it)) }
                 since?.let { predicates.add(cb.greaterThanOrEqualTo(root.get<Instant>("startedAt"), it)) }
-                projectSources?.let { sources ->
+                projectId?.let { pId ->
+                    val sources = projectSources ?: resolveProjectSources(pId)
                     val matches = buildList {
                         if (sources.repositoryIds.isNotEmpty()) {
                             add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
@@ -116,13 +117,18 @@ class IngestionRunService(
                         if (sources.jiraRefs.isNotEmpty()) {
                             add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
                         }
+                        add(
+                            cb.and(
+                                cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
+                                cb.equal(root.get<UUID>("sourceInstanceId"), pId),
+                            ),
+                        )
                     }
-                    // An empty project (no connected sources at all) matches no run.
                     predicates.add(
                         when (matches.size) {
                             0 -> cb.disjunction()
                             1 -> matches.single()
-                            else -> cb.or(matches[0], matches[1])
+                            else -> cb.or(*matches.toTypedArray())
                         },
                     )
                 }

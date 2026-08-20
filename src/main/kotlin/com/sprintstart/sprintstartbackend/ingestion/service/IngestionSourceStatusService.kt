@@ -39,9 +39,45 @@ class IngestionSourceStatusService(
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving ingestion status per source instance")
-    fun getStatusPerSourceInstance(projectId: UUID? = null): List<SourceInstanceIngestionStatusResponse> =
-        githubRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() } +
-            jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+    fun getStatusPerSourceInstance(projectId: UUID? = null): List<SourceInstanceIngestionStatusResponse> {
+        val githubStatuses = githubRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+        val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+        val uploadStatuses = if (projectId != null) {
+            val uploadCount = artifactRepository.countUploadArtifactsByProjectId(projectId)
+            if (uploadCount > 0) {
+                val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
+                listOf(
+                    SourceInstanceIngestionStatusResponse(
+                        sourceSystem = SourceSystem.UPLOAD,
+                        sourceId = "Uploads",
+                        displayName = "Uploaded files",
+                        repositoryId = projectId,
+                        owner = null,
+                        name = null,
+                        sourceUrl = "",
+                        connectionStatus = "CONNECTED",
+                        enabled = true,
+                        lastRunTime = lastRun?.startedAt,
+                        ingestedCount = lastRun?.ingestedCount ?: 0,
+                        updatedCount = lastRun?.updatedCount ?: 0,
+                        deletedCount = lastRun?.deletedCount ?: 0,
+                        failedCount = lastRun?.failedCount ?: 0,
+                        failedItems = lastRun?.failedItems.orEmpty(),
+                        artifactCount = uploadCount,
+                        lastCommitsSyncAt = null,
+                        lastIssuesSyncAt = null,
+                        lastPullRequestsSyncAt = null,
+                    ),
+                )
+            } else {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        return githubStatuses + jiraStatuses + uploadStatuses
+    }
 
     private fun GithubSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
         val component = "$owner/$name"
