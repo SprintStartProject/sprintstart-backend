@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
@@ -105,6 +106,13 @@ internal class JiraService(
         }
         instance.projectIds.remove(projectId)
         instanceRepository.save(instance)
+        eventPublisher.publishEvent(
+            JiraInstanceProjectLinkChangedEvent(
+                instanceUrl = instance.instanceUrl,
+                projectId = projectId,
+                linked = false,
+            ),
+        )
     }
 
     /**
@@ -166,6 +174,16 @@ internal class JiraService(
             instance.projectIds.add(projectId)
             instanceRepository.save(instance)
         }
+        // Announced even when the instance already carried the project: the membership also lives
+        // on the instance's artifacts and their indexed chunks, and reconnecting is how a PM
+        // repairs a propagation that failed earlier.
+        eventPublisher.publishEvent(
+            JiraInstanceProjectLinkChangedEvent(
+                instanceUrl = instance.instanceUrl,
+                projectId = projectId,
+                linked = true,
+            ),
+        )
     }
 
     /**

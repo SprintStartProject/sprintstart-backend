@@ -52,8 +52,6 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
         @Param("filter") filter: String, pageable: Pageable,
     ): Page<Artifact>
 
-    fun deleteBySourceId(sourceId: String)
-
     /**
      * Returns one filtered artifact page across all projects.
      */
@@ -85,6 +83,33 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findFirstIngestedAt(
         @Param("component") component: String,
     ): Instant?
+
+    /**
+     * Returns every stored artifact of a GitHub component.
+     *
+     * The component is an `owner/repo` string, matched by source-id prefix the same way
+     * [countByComponent] counts them.
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId LIKE CONCAT('github:', :component, ':%')",
+    )
+    fun findAllByComponent(
+        @Param("component") component: String,
+    ): List<Artifact>
+
+    /**
+     * Returns every stored artifact of a Jira instance.
+     *
+     * Matched on the issue web-url prefix, mirroring [countJiraArtifactsByInstanceUrl].
+     */
+    @Query(
+        "SELECT a FROM Artifact a " +
+            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.JIRA " +
+            "AND a.sourceUrl LIKE CONCAT(:instanceUrl, '/browse/%')",
+    )
+    fun findAllJiraArtifactsByInstanceUrl(
+        @Param("instanceUrl") instanceUrl: String,
+    ): List<Artifact>
 
     /**
      * Counts stored artifacts belonging to a GitHub component.

@@ -76,4 +76,14 @@ class Artifact(
      * @return `true` when the project id was new, see [addProjectIds].
      */
     fun addProjectId(projectId: UUID): Boolean = projectIdsInternal.add(projectId)
+
+    /**
+     * Unlinks the artifact from one project.
+     *
+     * The artifact itself is kept -- it usually belongs to other projects too -- it merely stops
+     * being reachable from this one.
+     *
+     * @return `true` when the project was linked before.
+     */
+    fun removeProjectId(projectId: UUID): Boolean = projectIdsInternal.remove(projectId)
 }
