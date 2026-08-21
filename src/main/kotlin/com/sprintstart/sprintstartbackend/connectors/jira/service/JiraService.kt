@@ -16,11 +16,13 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraC
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -40,6 +42,7 @@ internal class JiraService(
     private val jiraIssueService: JiraIssueService,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceConfigService: JiraInstanceConfigService,
+    private val userApi: UserApi,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -86,13 +89,17 @@ internal class JiraService(
      * stops appearing among that project's sources. Removing the last project leaves the instance
      * connected but unassigned rather than deleting it (avoiding a destructive cascade).
      *
+     * @param authId The authenticated caller subject, used to authorize access to the target project.
      * @param instanceUrl The URL of the Jira instance to unlink.
      * @param projectId The project whose association should be removed.
+     * @throws JiraProjectAccessDeniedException when the caller does not manage the target project.
      * @throws JiraInstanceNotConnectedException when the instance is unknown.
      */
     @Transactional
     @Tracked("Removing a project from a Jira instance")
-    fun removeInstanceFromProject(instanceUrl: String, projectId: UUID) {
+    fun removeInstanceFromProject(authId: String, instanceUrl: String, projectId: UUID) {
+        requireAccessToProject(authId, projectId)
+
         val instance = instanceRepository.findById(instanceUrl).orElseThrow {
             JiraInstanceNotConnectedException(instanceUrl)
         }
@@ -112,6 +119,8 @@ internal class JiraService(
     @Transactional
     @Tracked("Connecting Jira Cloud instance if not already connected")
     suspend fun connectInstanceIfNeeded(authId: String, request: ConnectJiraInstanceRequest): UUID {
+        requireAccessToProject(authId, request.projectId)
+
         val transactionId = UUID.randomUUID()
         eventPublisher.publishEvent(
             JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName, request.url),
@@ -127,6 +136,23 @@ internal class JiraService(
         }
 
         return connectNewInstance(authId, request, transactionId)
+    }
+
+    /**
+     * Rejects a caller acting on a project they do not manage.
+     *
+     * The endpoints are role-gated to PM and ADMIN, but a PM only manages their own projects, so
+     * the role check alone would let any PM attach an instance to -- or detach it from -- a project
+     * belonging to someone else. Mirrors the GitHub connector's check.
+     *
+     * @param authId The authenticated caller subject.
+     * @param projectId The project being linked or unlinked.
+     * @throws JiraProjectAccessDeniedException when the caller has no access to the project.
+     */
+    private fun requireAccessToProject(authId: String, projectId: UUID) {
+        if (!userApi.userHasAccessToProject(authId, projectId)) {
+            throw JiraProjectAccessDeniedException(projectId)
+        }
     }
 
     /**

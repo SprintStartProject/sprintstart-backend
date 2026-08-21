@@ -393,7 +393,7 @@ class JiraControllerTest {
         fun `should return 204 and unlink the instance from the project`() {
             val projectId = UUID.randomUUID()
             every {
-                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+                service.removeInstanceFromProject(any(), "https://jira.example.com/", projectId)
             } returns Unit
 
             mockMvc
@@ -405,7 +405,7 @@ class JiraControllerTest {
                 ).andExpect(status().isNoContent)
 
             verify {
-                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+                service.removeInstanceFromProject(any(), "https://jira.example.com/", projectId)
             }
         }
 

@@ -11,10 +11,12 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraC
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -54,11 +56,16 @@ class JiraServiceTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val applicationScope = kotlinx.coroutines.CoroutineScope(UnconfinedTestDispatcher())
 
+    private val userApi = mockk<UserApi>()
+
     private lateinit var service: JiraService
+
+    private val authId = "auth-id"
 
     @BeforeEach
     fun setUp() {
         every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns java.time.Instant.now()
+        every { userApi.userHasAccessToProject(any(), any()) } returns true
         service = JiraService(
             credentialsRepository,
             instanceRepository,
@@ -68,6 +75,7 @@ class JiraServiceTest {
             jiraIssueService,
             eventPublisher,
             jiraInstanceConfigService,
+            userApi,
         )
     }
 
@@ -139,7 +147,7 @@ class JiraServiceTest {
             every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
             every { instanceRepository.save(instance) } answers { firstArg() }
 
-            service.removeInstanceFromProject(instance.instanceUrl, projectId)
+            service.removeInstanceFromProject(authId, instance.instanceUrl, projectId)
 
             assertThat(instance.projectIds).containsExactly(otherProject)
             verify { instanceRepository.save(instance) }
@@ -150,8 +158,26 @@ class JiraServiceTest {
             every { instanceRepository.findById("unknown") } returns Optional.empty()
 
             assertFailsWith<JiraInstanceNotConnectedException> {
-                service.removeInstanceFromProject("unknown", UUID.randomUUID())
+                service.removeInstanceFromProject(authId, "unknown", UUID.randomUUID())
             }
+        }
+
+        @Test
+        fun `should refuse to unlink a project the caller does not manage`() {
+            val projectId = UUID.randomUUID()
+            val instance = jiraInstance(
+                instanceUrl = "https://acme.atlassian.net",
+                projectIds = mutableSetOf(projectId),
+            )
+            every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+            assertFailsWith<JiraProjectAccessDeniedException> {
+                service.removeInstanceFromProject(authId, instance.instanceUrl, projectId)
+            }
+
+            // The role check alone would have let any PM detach another PM's project.
+            assertThat(instance.projectIds).containsExactly(projectId)
+            verify(exactly = 0) { instanceRepository.save(any()) }
         }
     }
 
