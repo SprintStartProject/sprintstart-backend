@@ -113,4 +113,20 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countJiraArtifactsByInstanceUrl(
         @Param("instanceUrl") instanceUrl: String,
     ): Long
+
+    /**
+     * Counts stored upload artifacts belonging to a project.
+     */
+    @Query(
+        """
+            SELECT COUNT(DISTINCT a)
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.UPLOAD
+        """,
+    )
+    fun countUploadArtifactsByProjectId(
+        @Param("projectId") projectId: UUID,
+    ): Long
 }
