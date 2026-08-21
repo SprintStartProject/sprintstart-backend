@@ -10,7 +10,6 @@ import java.util.UUID
 
 @Repository
 internal interface CitationRepository : JpaRepository<Citation, UUID> {
-
     @Modifying
     @Query(
         value = """
