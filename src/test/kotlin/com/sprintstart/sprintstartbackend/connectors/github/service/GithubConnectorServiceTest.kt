@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.github.service
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
@@ -66,6 +67,9 @@ class GithubConnectorServiceTest {
     @BeforeEach
     fun setUp() {
         every { userApi.userHasAccessToProject(any(), any()) } returns true
+        // Default: not connected anywhere yet, so the full connect flow runs. Tests covering the
+        // reuse path override this.
+        every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null
 
         service = GithubConnectorService(
             applicationScope = testScope,
@@ -126,10 +130,63 @@ class GithubConnectorServiceTest {
         fun `connectRepositoryIfExists returns a transactionId when repo exists`() = testScope.runTest {
             stubSuccessfulConnect()
 
-            val transactionId = service.connectRepositoryIfExists("auth-id", connectRequest())
+            val outcome = service.connectRepositoryIfExists("auth-id", connectRequest())
 
-            assertThat(transactionId).isNotNull()
-            assertThat(transactionId).isInstanceOf(UUID::class.java)
+            assertThat(outcome.transactionId).isNotNull()
+            assertThat(outcome.wasReused).isFalse()
+        }
+
+        @Test
+        fun `connectRepositoryIfExists links an already-connected repository instead of fetching it again`() =
+            testScope.runTest {
+                val existing = GithubRepositoryConnection(
+                    owner = "owner",
+                    name = "repo",
+                    user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                    projectIdsInternal = mutableSetOf(UUID.randomUUID()),
+                )
+                every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+                every { repoConnectionRepository.save(any()) } answers { firstArg() }
+
+                val outcome = service.connectRepositoryIfExists("auth-id", connectRequest())
+
+                assertThat(outcome.wasReused).isTrue()
+                assertThat(existing.projectIds).contains(testProjectId)
+                // No second connection row, no second snapshot, no second config, and above all no
+                // re-fetch of everything already stored.
+                verify(exactly = 0) { repoConfigRepository.save(any()) }
+                coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
+                coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
+            }
+
+        @Test
+        fun `reusing a connection announces the link so the artifacts follow`() = testScope.runTest {
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(),
+            )
+            val event = slot<GithubRepositoryProjectLinkChangedEvent>()
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            every { repoConnectionRepository.save(any()) } answers { firstArg() }
+            every { eventPublisher.publishEvent(capture(event)) } returns Unit
+
+            service.connectRepositoryIfExists("auth-id", connectRequest())
+
+            assertThat(event.captured.linked).isTrue()
+            assertThat(event.captured.projectId).isEqualTo(testProjectId)
+        }
+
+        @Test
+        fun `reuse still refuses a project the caller does not manage`() = testScope.runTest {
+            every { userApi.userHasAccessToProject("auth-id", testProjectId) } returns false
+
+            assertFailsWith<ResponseStatusException> {
+                service.connectRepositoryIfExists("auth-id", connectRequest())
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.findByOwnerAndName(any(), any()) }
         }
 
         @Test

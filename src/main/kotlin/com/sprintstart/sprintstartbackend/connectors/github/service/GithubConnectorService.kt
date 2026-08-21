@@ -4,10 +4,12 @@ import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
@@ -68,11 +70,14 @@ class GithubRepositoryConnectionOrchestrator(
         request: ConnectRepositoriesRequest,
     ): ConnectRepositoriesResponse {
         val transactionIdsByRepoIds = mutableMapOf<String, UUID>() // "owner/name" -> transactionId
+        val reused = mutableSetOf<String>()
         request.repositories.forEach {
-            val transactionId = connectorService.connectRepositoryIfExists(authId, it)
-            transactionIdsByRepoIds["${it.owner}/${it.name}"] = transactionId
+            val outcome = connectorService.connectRepositoryIfExists(authId, it)
+            val repositoryId = "${it.owner}/${it.name}"
+            transactionIdsByRepoIds[repositoryId] = outcome.transactionId
+            if (outcome.wasReused) reused.add(repositoryId)
         }
-        return ConnectRepositoriesResponse(transactionIdsByRepoIds)
+        return ConnectRepositoriesResponse(transactionIdsByRepoIds, reused)
     }
 }
 
@@ -202,9 +207,19 @@ class GithubConnectorService(
      */
     @Tracked("Connecting GitHub repository")
     @Transactional
-    suspend fun connectRepositoryIfExists(authId: String, request: ConnectRepositoryRequest): UUID {
+    suspend fun connectRepositoryIfExists(
+        authId: String,
+        request: ConnectRepositoryRequest,
+    ): RepositoryConnectionOutcome {
         if (!userApi.userHasAccessToProject(authId, request.projectId)) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
+        }
+
+        val alreadyConnected = withContext(Dispatchers.IO) {
+            repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
+        }
+        if (alreadyConnected != null) {
+            return reuseConnection(alreadyConnected, request.projectId)
         }
 
         val transactionId = UUID.randomUUID()
@@ -242,7 +257,47 @@ class GithubConnectorService(
             throw ex
         }
 
-        return connectRepository(repoConnection, transactionId)
+        return RepositoryConnectionOutcome(connectRepository(repoConnection, transactionId), wasReused = false)
+    }
+
+    /**
+     * Links an already-connected repository to a further project instead of connecting it again.
+     *
+     * Connecting created a second connection row for the same repository every time, along with a
+     * second snapshot, a second config and a second nightly CRON job, and re-fetched every file,
+     * commit, issue and pull request that was already stored. The repository connection already
+     * supports several projects, so the project id is simply added and the artifacts are shared.
+     *
+     * The connection keeps the PAT of whoever connected it first (#257's option (a)): the simplest
+     * behaviour that works, with the known consequence that revoking that PAT stops future syncs
+     * for every linked project.
+     *
+     * No connection-initiated event is published, because nothing is fetched -- there is no
+     * ingestion run to report progress for, which is what `wasReused` tells the caller.
+     *
+     * @param connection The existing connection for this owner and name.
+     * @param projectId The project to link it to.
+     * @return The outcome, flagged as reused.
+     */
+    private fun reuseConnection(
+        connection: GithubRepositoryConnection,
+        projectId: UUID,
+    ): RepositoryConnectionOutcome {
+        connection.projectIdsInternal.add(projectId)
+        repoConnectionRepository.save(connection)
+
+        // Announced even when the project was already linked, so a repeated connect repairs a
+        // membership that never reached the artifacts or the AI index.
+        eventPublisher.publishEvent(
+            GithubRepositoryProjectLinkChangedEvent(
+                owner = connection.owner,
+                name = connection.name,
+                projectId = projectId,
+                linked = true,
+            ),
+        )
+
+        return RepositoryConnectionOutcome(UUID.randomUUID(), wasReused = true)
     }
 
     /**

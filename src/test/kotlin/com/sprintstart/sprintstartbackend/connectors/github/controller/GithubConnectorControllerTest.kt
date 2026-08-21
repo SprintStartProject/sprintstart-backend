@@ -4,6 +4,7 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
@@ -102,7 +103,7 @@ class GithubConnectorControllerTest {
                     "mockId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
@@ -134,7 +135,7 @@ class GithubConnectorControllerTest {
                     "adminId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
