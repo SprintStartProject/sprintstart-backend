@@ -12,6 +12,15 @@ import java.util.UUID
 interface KnowledgeGapRepository : JpaRepository<KnowledgeGap, UUID> {
     fun findAllByProjectId(projectId: UUID): List<KnowledgeGap>
 
+    /**
+     * The project's gaps limited to the given components.
+     *
+     * Backs the "assigned to me" read: component ownership is not project-scoped, so the
+     * components a user owns have to be intersected with the project being asked about
+     * rather than looked up directly.
+     */
+    fun findAllByProjectIdAndComponentIn(projectId: UUID, components: Collection<String>): List<KnowledgeGap>
+
     fun findByIdAndProjectId(id: UUID, projectId: UUID): Optional<KnowledgeGap>
 
     fun deleteAllByProjectId(projectId: UUID)

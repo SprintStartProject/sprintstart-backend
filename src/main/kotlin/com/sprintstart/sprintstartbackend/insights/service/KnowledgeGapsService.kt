@@ -57,13 +57,43 @@ class KnowledgeGapsService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving all knowledge gaps")
     fun getKnowledgeGaps(projectId: UUID): KnowledgeGapsOverviewResponse {
-        val gaps = knowledgeGapRepository
-            .findAllByProjectId(projectId)
-            .sortedWith(compareBy({ it.severity.ordinal }, { it.component }))
-        val components = gaps.map { it.component }.distinct()
-        val ownersByComponent = resolveOwners(components)
-        val firstIngestedByComponent = artifactIngestionApi.getFirstIngestedAt(components)
-        return knowledgeGapResponseMapper.toOverviewResponse(gaps, ownersByComponent, firstIngestedByComponent)
+        return toOverviewResponse(knowledgeGapRepository.findAllByProjectId(projectId))
+    }
+
+    /**
+     * Returns the project's cached knowledge gaps whose component the given user owns.
+     *
+     * The self-scoped counterpart to [getKnowledgeGaps], so a regular team member can be shown what
+     * they are on the hook for without being given the project's full gap panel. Ownership is the
+     * only filter: the caller sees a gap exactly when a [ComponentOwner] row ties them to its
+     * component. Ownership is not project-partitioned yet (see [setComponentOwners]), so the owned
+     * components are intersected with [projectId] here rather than trusted on their own.
+     *
+     * An unknown [authId] yields an empty overview rather than an error: the caller is
+     * authenticated, so a missing user projection is a synchronisation gap, not a bad request, and
+     * an empty panel is the honest way to render one.
+     *
+     * @param projectId The project whose gaps are being read.
+     * @param authId Keycloak subject of the calling user.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving knowledge gaps assigned to the current user")
+    fun getMyKnowledgeGaps(projectId: UUID, authId: String): KnowledgeGapsOverviewResponse {
+        val userId = userApi.getUserIdByAuthId(authId).orElse(null)
+            ?: return KnowledgeGapsOverviewResponse(gaps = emptyList())
+
+        val ownedComponents = componentOwnerRepository
+            .findAllByUserId(userId)
+            .map { it.component }
+            .distinct()
+
+        if (ownedComponents.isEmpty()) {
+            return KnowledgeGapsOverviewResponse(gaps = emptyList())
+        }
+
+        return toOverviewResponse(
+            knowledgeGapRepository.findAllByProjectIdAndComponentIn(projectId, ownedComponents),
+        )
     }
 
     /**
@@ -132,6 +162,21 @@ class KnowledgeGapsService(
         }
 
         return RefreshKnowledgeGapsResponse(gapCount = gaps.size)
+    }
+
+    /**
+     * Sorts the gaps for display and enriches them with their owners and first-ingested date.
+     *
+     * Shared by both read paths so the panel and the per-user view can never disagree about the
+     * order gaps come in or how much is known about them. Most severe first, then by component
+     * name, which is the only tie-break that stays stable between two calls.
+     */
+    private fun toOverviewResponse(gaps: List<KnowledgeGap>): KnowledgeGapsOverviewResponse {
+        val sorted = gaps.sortedWith(compareBy({ it.severity.ordinal }, { it.component }))
+        val components = sorted.map { it.component }.distinct()
+        val ownersByComponent = resolveOwners(components)
+        val firstIngestedByComponent = artifactIngestionApi.getFirstIngestedAt(components)
+        return knowledgeGapResponseMapper.toOverviewResponse(sorted, ownersByComponent, firstIngestedByComponent)
     }
 
     /**
