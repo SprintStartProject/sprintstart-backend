@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMeta
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory
@@ -13,6 +14,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 /**
  * Owns writes to the ingestion artifact store and the mutable parts of `IngestionRun`.
@@ -54,80 +56,103 @@ class GithubArtifactProviderService(
         } else {
             mutableSetOf()
         }
-        var artifact: Artifact?
+
+        val existing = artifactRepository.findBySourceId(command.sourceId)
+        if (existing != null) {
+            updateExisting(existing, command, projectIds, runId)
+            return
+        }
+
+        storeNew(command, projectIds, runId)
+    }
+
+    /**
+     * Applies a re-fetch to an artifact an earlier run already stored.
+     *
+     * Both a content change and a newly linked project have to reach the AI index, so either marks
+     * the artifact for re-ingestion. Only a content change counts as an update of the run: linking a
+     * repository to a second project does not change what was fetched.
+     *
+     * @param artifact The stored artifact matching the command's source id.
+     * @param command The mapped GitHub artifact command.
+     * @param projectIds The projects the artifact's repository is currently linked to.
+     * @param runId The active ingestion run.
+     */
+    private fun updateExisting(
+        artifact: Artifact,
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+        runId: UUID,
+    ) {
+        val linked = artifact.addProjectIds(projectIds)
+        val contentChanged = applyContentChange(artifact, command)
+
+        if (!linked && !contentChanged) return
+
+        val ingestionRun = lockRun(runId)
+        if (contentChanged) ingestionRun.updatedCount++
+        ingestionRun.artifactIdsToReingest.add(artifact.id)
+    }
+
+    /**
+     * Overwrites the stored content when the source changed, per artifact type.
+     *
+     * @param artifact The stored artifact to update in place.
+     * @param command The mapped GitHub artifact command carrying the freshly fetched content.
+     * @return `true` when the artifact's effective content changed.
+     */
+    private fun applyContentChange(artifact: Artifact, command: GithubArtifactCommand): Boolean =
         when (command.artifactType) {
+            // Immutable once fetched: a re-fetch yields the same content, so only a new project
+            // link is ever worth acting on.
             ArtifactType.COMMIT,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
+            ArtifactType.ORG_METADATA,
+            -> false
+
+            ArtifactType.FILE -> {
+                if (artifact.hash == command.hash) {
+                    false
+                } else {
+                    artifact.content = command.bodyText
+                    artifact.hash = command.hash
+                    true
                 }
             }
 
-            ArtifactType.FILE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
-
-            ArtifactType.ISSUE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.title = command.title
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
-
-            ArtifactType.PULL_REQUEST,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
+            ArtifactType.ISSUE -> {
+                if (artifact.hash == command.hash) {
+                    false
+                } else {
                     artifact.title = command.title
                     artifact.content = command.bodyText
-                    val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                        IngestionRunNotFoundException(runId)
-                    }
-                    ingestionRun.updatedCount++
-                    return
+                    artifact.hash = command.hash
+                    true
                 }
             }
 
-            ArtifactType.ORG_METADATA -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
-                }
+            // Pull requests carry no content hash, so they stay mutable records: every re-fetch
+            // overwrites title and body and counts as an update.
+            ArtifactType.PULL_REQUEST -> {
+                artifact.title = command.title
+                artifact.content = command.bodyText
+                true
             }
         }
 
-        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-            IngestionRunNotFoundException(runId)
-        }
-        artifact = Artifact(
+    /**
+     * Stores an artifact this run is the first to see.
+     *
+     * @param command The mapped GitHub artifact command.
+     * @param projectIds The projects the artifact's repository is currently linked to.
+     * @param runId The active ingestion run.
+     */
+    private fun storeNew(
+        command: GithubArtifactCommand,
+        projectIds: MutableSet<UUID>,
+        runId: UUID,
+    ) {
+        val ingestionRun = lockRun(runId)
+        val artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = command.sourceUrl,
@@ -146,6 +171,19 @@ class GithubArtifactProviderService(
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
     }
+
+    /**
+     * Loads the active run with a write lock, the way every counter and collection mutation here
+     * needs it.
+     *
+     * @param runId The ingestion run to lock.
+     * @return The locked run.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    private fun lockRun(runId: UUID): IngestionRun =
+        ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
+            IngestionRunNotFoundException(runId)
+        }
 
     /**
      * Removes an ingestion file artifact when GitHub reports that the source file was deleted and

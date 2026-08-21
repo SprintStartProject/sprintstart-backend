@@ -72,7 +72,7 @@ class GithubArtifactProviderServiceTest {
 
     @Test
     fun `persistArtifact ignores duplicate commit source id`() {
-        val existing = artifact(artifactType = ArtifactType.COMMIT, hash = null)
+        val existing = artifact(artifactType = ArtifactType.COMMIT, hash = null, projectIds = setOf(projectId))
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
 
         service.persistArtifact(
@@ -85,11 +85,34 @@ class GithubArtifactProviderServiceTest {
 
         assertThat(existing.projectIds).containsExactly(projectId)
         verify(exactly = 0) { artifactRepository.save(any()) }
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+    }
+
+    @Test
+    fun `persistArtifact marks a commit that gained a project for re-ingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.COMMIT, hash = null)
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.COMMIT,
+                hash = null,
+            ),
+        )
+
+        assertThat(existing.projectIds).containsExactly(projectId)
+        // The commit itself is unchanged, but it now belongs to a project whose chunks do not
+        // carry that membership yet -- without the re-ingest it stays invisible there.
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(run.updatedCount).isZero()
     }
 
     @Test
     fun `persistArtifact ignores unchanged file source id`() {
-        val existing = artifact(hash = "same-hash")
+        val existing = artifact(hash = "same-hash", projectIds = setOf(projectId))
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
 
         service.persistArtifact(artifactCommand(sourceId = existing.sourceId, hash = "same-hash"))
@@ -97,6 +120,22 @@ class GithubArtifactProviderServiceTest {
         assertThat(existing.content).isEqualTo("old content")
         assertThat(existing.projectIds).containsExactly(projectId)
         verify(exactly = 0) { artifactRepository.save(any()) }
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+    }
+
+    @Test
+    fun `persistArtifact marks an unchanged file that gained a project for re-ingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(hash = "same-hash")
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(artifactCommand(sourceId = existing.sourceId, hash = "same-hash"))
+
+        assertThat(existing.content).isEqualTo("old content")
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        // Linking a repository to a second project changes nothing about what was fetched.
+        assertThat(run.updatedCount).isZero()
     }
 
     @Test
@@ -118,7 +157,31 @@ class GithubArtifactProviderServiceTest {
         assertThat(existing.hash).isEqualTo("new-hash")
         assertThat(existing.projectIds).containsExactly(projectId)
         assertThat(run.updatedCount).isEqualTo(1)
+        // Stored by an earlier run, so `findAllByIngestionRunId` cannot see it: without this the
+        // updated content would never reach the AI index.
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
         verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact marks a re-fetched pull request for re-ingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.PULL_REQUEST, hash = null, projectIds = setOf(projectId))
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.PULL_REQUEST,
+                bodyText = "new body",
+                hash = null,
+            ),
+        )
+
+        assertThat(existing.content).isEqualTo("new body")
+        assertThat(run.updatedCount).isEqualTo(1)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
     }
 
     @Test
@@ -248,7 +311,9 @@ class GithubArtifactProviderServiceTest {
     private fun artifact(
         artifactType: ArtifactType = ArtifactType.FILE,
         hash: String?,
+        projectIds: Set<UUID> = emptySet(),
     ) = Artifact(
+        projectIdsInternal = projectIds.toMutableSet(),
         sourceSystem = SourceSystem.GITHUB,
         sourceId = "github:owner/repo:${artifactType.name}:src/main/App.kt",
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",

@@ -60,11 +60,20 @@ class Artifact(
     val projectIds: Set<UUID>
         get() = projectIdsInternal.toSet()
 
-    fun addProjectIds(projectIds: Set<UUID>) {
-        projectIdsInternal.addAll(projectIds)
-    }
+    /**
+     * Links the artifact to further projects.
+     *
+     * @return `true` when at least one project id was new. Callers use this to decide whether the
+     * artifact has to be re-sent to the AI service: membership lives on the indexed chunks too, and
+     * a link that never reaches them leaves the artifact invisible to the project that just gained
+     * it.
+     */
+    fun addProjectIds(projectIds: Set<UUID>): Boolean = projectIdsInternal.addAll(projectIds)
 
-    fun addProjectId(projectId: UUID) {
-        projectIdsInternal.add(projectId)
-    }
+    /**
+     * Links the artifact to one further project.
+     *
+     * @return `true` when the project id was new, see [addProjectIds].
+     */
+    fun addProjectId(projectId: UUID): Boolean = projectIdsInternal.add(projectId)
 }

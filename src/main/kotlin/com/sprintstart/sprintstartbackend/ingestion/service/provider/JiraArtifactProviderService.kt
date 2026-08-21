@@ -50,6 +50,9 @@ class JiraArtifactProviderService(
                 IngestionRunNotFoundException(runId)
             }
             ingestionRun.updatedCount++
+            // The artifact still belongs to the run that first stored it, so the AI sync would not
+            // pick up this update -- nor a project this import just linked it to.
+            ingestionRun.artifactIdsToReingest.add(existing.id)
             return
         }
 

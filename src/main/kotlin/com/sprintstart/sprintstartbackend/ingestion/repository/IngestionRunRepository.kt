@@ -44,9 +44,15 @@ interface IngestionRunRepository :
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
 
-    @EntityGraph(attributePaths = ["artifactIdsToDeindex"])
+    /**
+     * Loads a run together with both artifact-id collections the AI sync needs.
+     *
+     * Fetched in one go because the sync runs after the run's own transaction has committed, where
+     * a lazy collection would throw rather than load.
+     */
+    @EntityGraph(attributePaths = ["artifactIdsToDeindex", "artifactIdsToReingest"])
     @Query("SELECT r FROM IngestionRun r WHERE r.id = :id")
-    fun findWithArtifactIdsToDeindexById(
+    fun findWithAiSyncArtifactIdsById(
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
 }
