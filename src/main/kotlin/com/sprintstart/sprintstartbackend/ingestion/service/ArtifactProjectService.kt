@@ -7,7 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactPr
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_STATUS_FAILED
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
-import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +33,7 @@ import java.util.UUID
  */
 @Service
 class ArtifactProjectService(
-    private val artifactRepository: ArtifactRepository,
+    private val artifactProjectRepository: ArtifactProjectRepository,
     private val artifactIngestionClient: ArtifactIngestionClient,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -101,8 +101,37 @@ class ArtifactProjectService(
      * @return The source's stored artifacts, empty when it has never been ingested.
      */
     private fun findArtifactsOf(source: ArtifactSourceRef): List<Artifact> = when (source) {
-        is ArtifactSourceRef.GithubRepository -> artifactRepository.findAllByComponent(source.component)
-        is ArtifactSourceRef.JiraInstance -> artifactRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
+        is ArtifactSourceRef.GithubRepository ->
+            artifactProjectRepository.findAllByComponent(source.component)
+
+        is ArtifactSourceRef.JiraInstance ->
+            artifactProjectRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
+    }
+
+    /**
+     * Drops a deleted project from every artifact and from the AI index.
+     *
+     * Deleting a project used to leave its id behind on `artifact_projects` and on every indexed
+     * chunk, where nothing would ever clear it again. The artifacts are kept -- they usually belong
+     * to other projects too -- they merely stop being reachable from the deleted one.
+     *
+     * @param projectId The project that was deleted.
+     * @throws IngestionResponseException when the AI service rejects the purge.
+     */
+    @Tracked("Purging a deleted project from the artifact store")
+    suspend fun purgeProject(projectId: UUID) {
+        val removedLinks = withContext(Dispatchers.IO) {
+            transactionTemplate.execute { artifactProjectRepository.deleteProjectLinks(projectId) }
+        } ?: 0
+
+        val response = artifactIngestionClient.deleteProjectMemberships(projectId)
+
+        logger.info(
+            "Purged deleted project {}: {} artifact link(s) locally, {} chunk(s) in the AI index",
+            projectId,
+            removedLinks,
+            response.chunkCount,
+        )
     }
 
     /**

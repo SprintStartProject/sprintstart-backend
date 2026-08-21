@@ -24,3 +24,19 @@ data class ArtifactProjectsAiResponse(
 data class ArtifactProjectsAiSyncResponse(
     val artifacts: List<ArtifactProjectsAiResponse>,
 )
+
+/**
+ * Outcome of dropping a deleted project from the whole AI index.
+ *
+ * @property chunkCount How many indexed chunks stopped carrying the project.
+ * @property artifactCount How many artifacts they belonged to.
+ */
+@Serializable
+data class ProjectMembershipsDeletedAiResponse(
+    @SerialName("project_id")
+    val projectId: String,
+    @SerialName("chunk_count")
+    val chunkCount: Int,
+    @SerialName("artifact_count")
+    val artifactCount: Int,
+)

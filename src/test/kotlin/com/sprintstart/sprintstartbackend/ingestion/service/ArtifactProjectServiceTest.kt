@@ -6,17 +6,19 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ProjectMembershipsDeletedAiResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
-import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
@@ -27,12 +29,12 @@ import org.springframework.transaction.support.SimpleTransactionStatus
 import java.util.UUID
 
 class ArtifactProjectServiceTest {
-    private val artifactRepository = mockk<ArtifactRepository>()
+    private val artifactProjectRepository = mockk<ArtifactProjectRepository>()
     private val artifactIngestionClient = mockk<ArtifactIngestionClient>()
     private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
 
     private val service = ArtifactProjectService(
-        artifactRepository,
+        artifactProjectRepository,
         artifactIngestionClient,
         transactionManager,
     )
@@ -50,7 +52,7 @@ class ArtifactProjectServiceTest {
         val first = artifact(existingProject)
         val second = artifact(existingProject)
         val request = slot<ArtifactProjectsAiSyncRequest>()
-        every { artifactRepository.findAllByComponent("acme/repo") } returns listOf(first, second)
+        every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(first, second)
         coEvery { artifactIngestionClient.syncProjectMemberships(capture(request)) } returns
             succeeded(first.id, second.id)
 
@@ -73,7 +75,7 @@ class ArtifactProjectServiceTest {
     fun `unlinking drops only the one project`() = runTest {
         val artifact = artifact(existingProject, newProject)
         val request = slot<ArtifactProjectsAiSyncRequest>()
-        every { artifactRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
+        every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
         coEvery { artifactIngestionClient.syncProjectMemberships(capture(request)) } returns
             succeeded(artifact.id)
 
@@ -89,7 +91,7 @@ class ArtifactProjectServiceTest {
     @Test
     fun `linking is idempotent`() = runTest {
         val artifact = artifact(existingProject, newProject)
-        every { artifactRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
+        every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
         coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns succeeded(artifact.id)
 
         service.applyProjectLink(source, newProject, linked = true)
@@ -99,7 +101,7 @@ class ArtifactProjectServiceTest {
 
     @Test
     fun `a source with no ingested artifacts completes without calling the AI service`() = runTest {
-        every { artifactRepository.findAllByComponent("acme/repo") } returns emptyList()
+        every { artifactProjectRepository.findAllByComponent("acme/repo") } returns emptyList()
 
         service.applyProjectLink(source, newProject, linked = true)
 
@@ -110,7 +112,7 @@ class ArtifactProjectServiceTest {
     fun `a Jira instance resolves its artifacts by instance url`() = runTest {
         val artifact = artifact(existingProject)
         every {
-            artifactRepository.findAllJiraArtifactsByInstanceUrl("https://acme.atlassian.net")
+            artifactProjectRepository.findAllJiraArtifactsByInstanceUrl("https://acme.atlassian.net")
         } returns listOf(artifact)
         coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns succeeded(artifact.id)
 
@@ -126,7 +128,7 @@ class ArtifactProjectServiceTest {
     @Test
     fun `an artifact the AI service could not re-scope fails the operation`() {
         val artifact = artifact(existingProject)
-        every { artifactRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
+        every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(artifact)
         coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns
             ArtifactProjectsAiSyncResponse(
                 artifacts = listOf(
@@ -143,6 +145,25 @@ class ArtifactProjectServiceTest {
             runBlocking { service.applyProjectLink(source, newProject, linked = true) }
         }.isInstanceOf(IngestionResponseException::class.java)
             .hasMessageContaining("collection locked")
+    }
+
+    @Test
+    fun `purging a deleted project clears it locally and in the index`() = runTest {
+        val projectId = UUID.randomUUID()
+        every { artifactProjectRepository.deleteProjectLinks(projectId) } returns 4
+        coEvery { artifactIngestionClient.deleteProjectMemberships(projectId) } returns
+            ProjectMembershipsDeletedAiResponse(
+                projectId = projectId.toString(),
+                chunkCount = 9,
+                artifactCount = 4,
+            )
+
+        service.purgeProject(projectId)
+
+        // Nothing else ever clears a deleted project's id from artifact_projects or from the
+        // chunk markers.
+        verify(exactly = 1) { artifactProjectRepository.deleteProjectLinks(projectId) }
+        coVerify(exactly = 1) { artifactIngestionClient.deleteProjectMemberships(projectId) }
     }
 
     private fun succeeded(vararg artifactIds: UUID) = ArtifactProjectsAiSyncResponse(

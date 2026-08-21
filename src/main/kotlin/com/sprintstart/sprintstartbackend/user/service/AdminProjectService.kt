@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminDetailResponse
@@ -19,6 +20,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -40,6 +42,7 @@ class AdminProjectService(
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -146,6 +149,10 @@ class AdminProjectService(
      * the project link is removed from all GitHub repository connections and Jira instances (via the
      * respective module APIs) so no connection keeps referencing a project that no longer exists.
      *
+     * The same id also sits on every artifact of those sources and on every indexed chunk, where
+     * nothing else would ever clear it. That cleanup is announced with a [ProjectDeletedEvent]
+     * rather than performed here, because the ingestion module already depends on this one.
+     *
      * @param id Project identifier.
      * @return Deletion confirmation DTO.
      * @throws ResponseStatusException When no project exists for [id].
@@ -159,6 +166,7 @@ class AdminProjectService(
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
         jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
+        eventPublisher.publishEvent(ProjectDeletedEvent(project.id))
 
         return DeleteProjectResponse(id = id)
     }
