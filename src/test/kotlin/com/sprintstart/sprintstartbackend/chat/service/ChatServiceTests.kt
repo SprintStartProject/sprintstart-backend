@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.toChatMessageRes
 import com.sprintstart.sprintstartbackend.chat.models.responses.toChatResponse
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.chat.repository.ChatRepository
+import com.sprintstart.sprintstartbackend.chat.repository.CitationRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
@@ -32,11 +33,13 @@ import kotlin.test.assertFailsWith
 class ChatServiceTests {
     private val chatRepository: ChatRepository = mockk()
     private val chatMessageRepository: ChatMessageRepository = mockk()
+    private val citationRepository: CitationRepository = mockk()
     private val userApi: UserApi = mockk()
     private val chatAuthService: ChatAuthService = mockk()
     private val chatService = ChatService(
         chatRepository,
         chatMessageRepository,
+        citationRepository,
         userApi,
         chatAuthService,
     )
@@ -348,18 +351,26 @@ class ChatServiceTests {
     @Nested
     inner class DeleteChat {
         @Test
-        fun `deletes chat and all its messages`() {
+        fun `deletes chat, all its citations and messages`() {
             val chatId = UUID.randomUUID()
             val chat = mockk<Chat>()
 
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
+            every { citationRepository.deleteAllByMessageChatId(chatId) } returns Unit
             every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
             every { chatRepository.delete(chat) } returns Unit
 
             chatService.deleteChat(chatId)
 
-            verify(exactly = 1) { chatMessageRepository.deleteAllByChatId(chatId) }
-            verify(exactly = 1) { chatRepository.delete(chat) }
+            verify(exactly = 1) {
+                citationRepository.deleteAllByMessageChatId(chatId)
+            }
+            verify(exactly = 1) {
+                chatMessageRepository.deleteAllByChatId(chatId)
+            }
+            verify(exactly = 1) {
+                chatRepository.delete(chat)
+            }
         }
 
         @Test
@@ -377,21 +388,33 @@ class ChatServiceTests {
         }
 
         @Test
-        fun `deletes chat and all its messages for current user`() {
+        fun `deletes chat and all its citations and messages for current user`() {
             val chatId = UUID.randomUUID()
             val chat = mockk<Chat>()
 
             every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
             every { chatAuthService.findOwnedChat(chatId, userId) } returns chat
+            every { citationRepository.deleteAllByMessageChatId(chatId) } returns Unit
             every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
             every { chatRepository.delete(chat) } returns Unit
 
             chatService.deleteChatForCurrentUser(authId, chatId)
 
-            verify(exactly = 1) { chatAuthService.resolveCurrentUserId(userApi, authId) }
-            verify(exactly = 1) { chatAuthService.findOwnedChat(chatId, userId) }
-            verify(exactly = 1) { chatMessageRepository.deleteAllByChatId(chatId) }
-            verify(exactly = 1) { chatRepository.delete(chat) }
+            verify(exactly = 1) {
+                chatAuthService.resolveCurrentUserId(userApi, authId)
+            }
+            verify(exactly = 1) {
+                chatAuthService.findOwnedChat(chatId, userId)
+            }
+            verify(exactly = 1) {
+                citationRepository.deleteAllByMessageChatId(chatId)
+            }
+            verify(exactly = 1) {
+                chatMessageRepository.deleteAllByChatId(chatId)
+            }
+            verify(exactly = 1) {
+                chatRepository.delete(chat)
+            }
         }
 
         @Test
