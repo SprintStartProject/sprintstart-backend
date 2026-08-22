@@ -4,13 +4,21 @@ import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.OrgMemberResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.OrgMembersResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.OrgMetadataResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubIssuesResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubPrSearchResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.GithubSinglePrResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.Issue
+import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.Member
+import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.MemberConnection
+import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.OrganizationTeamMembersResponse
+import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.OrganizationTeamsResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PageableResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PrNode
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequest
+import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
@@ -36,6 +44,7 @@ import tools.jackson.module.kotlin.jacksonObjectMapper
  * @param applicationConfig Application-level configuration parameters, including GitHub-specific configurations.
  * @param queryLoader Responsible for loading pre-defined GitHub GraphQL queries.
  */
+@Suppress("TooManyFunctions")
 @Component
 class GithubClient(
     private val webClient: WebClient,
@@ -43,6 +52,120 @@ class GithubClient(
     private val queryLoader: GithubQueryLoader,
 ) {
     private val objectMapper = jacksonObjectMapper()
+
+    /**
+     * Retrieves the list of members belonging to the specified GitHub organization.
+     *
+     * @param org The name of the GitHub organization whose members are to be fetched.
+     * @param token The authorization token to authenticate the request.
+     * @return The response containing the members of the specified organization.
+     * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status
+     * code.
+     * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized.
+     */
+    suspend fun getOrgMembers(org: String, token: String): OrgMembersResponse {
+        val baseUrl = "${applicationConfig.github.baseUrl.trimEnd('/')}/orgs/$org/members"
+        val members = mutableListOf<OrgMemberResponse>()
+        var page = 1
+
+        do {
+            val pageMembers = webClient
+                .get()
+                .uri("$baseUrl?per_page=100&page=$page")
+                .header("Authorization", "Bearer $token")
+                .sync()
+                .perform<Array<OrgMemberResponse>>()
+
+            members += pageMembers
+            page++
+        } while (pageMembers.size == 100)
+
+        return OrgMembersResponse(members = members)
+    }
+
+    /**
+     * Retrieves all teams belonging to the specified GitHub organization.
+     *
+     * The team connection is traversed using GitHub's cursor-based GraphQL pagination.
+     * Team members included in each page are returned as part of each [Team].
+     *
+     * @param org the name of the GitHub organization whose teams are fetched.
+     * @param token the personal access token used to authenticate the request.
+     * @return all teams belonging to the organization.
+     */
+    suspend fun getOrgTeams(org: String, token: String): List<Team> {
+        val query = queryLoader.load("github/graphql/org-teams.graphql")
+
+        val teams = doFetchAll<Team, OrganizationTeamsResponse>(query, token) { cursor ->
+            mapOf("org" to org, "cursor" to cursor)
+        }
+
+        return teams.map { team ->
+            if (!team.members.pageInfo.hasNextPage) {
+                team
+            } else {
+                team.copy(
+                    members = MemberConnection(
+                        nodes = fetchAllTeamMembers(org, team, token),
+                        pageInfo = team.members.pageInfo.copy(hasNextPage = false, endCursor = null),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Fetches metadata of a GitHub organization.
+     *
+     * This method retrieves metadata information for the specified organization by querying the GitHub API.
+     *
+     * @param org the name of the GitHub organization whose metadata will be fetched.
+     * @param token the personal access token (PAT) used to authenticate the request to the GitHub API.
+     * @return an [OrgMetadataResponse] object containing metadata details of the specified organization.
+     * @throws WebClientException if there is an issue with the network or server response, such as a non-2xx status
+     * code.
+     * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized.
+     */
+    suspend fun fetchOrgMetadata(org: String, token: String): OrgMetadataResponse {
+        val url = "${applicationConfig.github.baseUrl.trimEnd('/')}/orgs/$org"
+        return webClient
+            .get()
+            .uri(url)
+            .header("Authorization", "Bearer $token")
+            .sync()
+            .perform<OrgMetadataResponse>()
+    }
+
+    /**
+     * Checks whether the given GitHub login refers to an organization.
+     *
+     * The `/orgs/{org}` endpoint only resolves for organizations; for user accounts it responds
+     * with 404. This method therefore treats a 404 as "not an organization" and rethrows any
+     * other non-2xx status.
+     *
+     * @param org the GitHub login to check.
+     * @param token the personal access token used to authenticate the request.
+     * @return true if the login is a GitHub organization, false otherwise.
+     * @throws WebClientException if the request fails with a status other than 404.
+     */
+    suspend fun isOrganization(org: String, token: String): Boolean {
+        val url = "${applicationConfig.github.baseUrl.trimEnd('/')}/orgs/$org"
+        return try {
+            webClient
+                .get()
+                .uri(url)
+                .header("Authorization", "Bearer $token")
+                .sync()
+                .performRaw()
+            true
+        } catch (e: WebClientException) {
+            if (e.statusCode == 404) {
+                false
+            } else {
+                throw e
+            }
+        }
+    }
 
     /**
      * Checks if a repository exists on GitHub.
@@ -184,6 +307,19 @@ class GithubClient(
         return discoverRepositories(uri, token)
     }
 
+    private suspend fun fetchAllTeamMembers(org: String, team: Team, token: String): List<Member> {
+        val query = queryLoader.load("github/graphql/org-team-members.graphql")
+        val initialMembers = team.members.nodes
+
+        return initialMembers + doFetchAll<Member, OrganizationTeamMembersResponse>(
+            query = query,
+            token = token,
+            initialCursor = team.members.pageInfo.endCursor,
+        ) { cursor ->
+            mapOf("org" to org, "slug" to team.slug, "cursor" to cursor)
+        }
+    }
+
     private suspend fun discoverRepositories(uri: String, token: String): DiscoverRepositoriesResponse {
         val result = webClient
             .get()
@@ -289,10 +425,11 @@ class GithubClient(
     private suspend inline fun <S, reified T : PageableResponse<S>> doFetchAll(
         query: String,
         token: String,
+        initialCursor: String? = null,
         variablesBuilder: (cursor: String?) -> Map<String, Any?>,
     ): List<S> {
         val entities = mutableListOf<S>()
-        var cursor: String? = null
+        var cursor: String? = initialCursor
 
         do {
             val body = mapOf(

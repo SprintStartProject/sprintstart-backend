@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -157,6 +158,62 @@ class GithubArtifactProviderServiceTest {
             .isInstanceOf(IngestionRunNotFoundException::class.java)
             .hasMessageContaining(runId.toString())
     }
+
+    @Test
+    fun `persistArtifact saves new org metadata artifact without project ids`() {
+        val run = ingestionRun()
+        val savedArtifact = slot<Artifact>()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.findBySourceId("octocat") } returns null
+        every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+
+        service.persistArtifact(orgMetadataCommand())
+
+        assertThat(savedArtifact.captured.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(savedArtifact.captured.sourceId).isEqualTo("octocat")
+        assertThat(savedArtifact.captured.projectIds).isEmpty()
+        assertThat(run.ingestedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `persistArtifact ignores duplicate org metadata source id`() {
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null)
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
+
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    private fun orgMetadataCommand(
+        sourceId: String = "octocat",
+    ) = GithubArtifactCommand(
+        ingestionRunId = runId,
+        sourceSystem = SourceSystem.GITHUB,
+        sourceId = sourceId,
+        sourceUrl = "https://github.com/octocat",
+        artifactType = ArtifactType.ORG_METADATA,
+        title = "The Octocats",
+        bodyText = null,
+        mime = null,
+        language = null,
+        createdAtSource = null,
+        updatedAtSource = null,
+        hash = null,
+        metadata = GithubOrgMetadataArtifactMetadata(
+            login = "octocat",
+            name = "The Octocats",
+            description = null,
+            company = null,
+            blog = null,
+            location = null,
+            email = null,
+            publicRepos = null,
+            privateRepos = null,
+            teams = null,
+            members = emptyList(),
+        ),
+    )
 
     private fun artifactCommand(
         sourceId: String = "github:owner/repo:FILE:src/main/App.kt",

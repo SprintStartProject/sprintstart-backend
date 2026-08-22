@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
+import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,7 @@ class GithubUpdatesService(
     private val commitsService: GithubCommitsService,
     private val issuesService: GithubIssuesService,
     private val pullRequestsService: GithubPullRequestsService,
+    private val githubOrgService: GithubOrgService,
 ) {
     /**
      * Updates all connected GitHub repositories by synchronizing their latest state.
@@ -201,6 +203,16 @@ class GithubUpdatesService(
                 transactionId,
                 true,
                 githubRepository.snapshot!!.lastPullRequestsSyncAt,
+            )
+        }
+        // Not a pretty fix but it does the job.
+        // As currently the org metadata has no update management, calling this method results in the fetching being
+        // aborted, however from the ingestion run POV it succeeded, therefore unlocks the ingestion run.
+        applicationScope.launch {
+            githubOrgService.connectGithubOrgIfNecessary(
+                githubRepository.owner,
+                githubRepository.user.token,
+                transactionId,
             )
         }
 

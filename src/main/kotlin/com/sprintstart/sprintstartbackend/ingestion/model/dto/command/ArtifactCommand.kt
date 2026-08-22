@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.ingestion.model.dto.command
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
-import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraArtifactMetadataWrapper
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueComment
@@ -29,7 +28,7 @@ data class GithubArtifactCommand(
     val createdAtSource: Instant?,
     val updatedAtSource: Instant?,
     val hash: String?,
-    val metadata: GithubArtifactMetadata,
+    val metadata: ArtifactMetadata,
 ) : ArtifactCommand
 
 data class JiraArtifactCommand(

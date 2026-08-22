@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
+import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -55,6 +56,7 @@ class GithubConnectorServiceTest {
     private val commitsService = mockk<GithubCommitsService>()
     private val issuesService = mockk<GithubIssuesService>()
     private val pullRequestsService = mockk<GithubPullRequestsService>()
+    private val orgService = mockk<GithubOrgService>()
     private val githubClient = mockk<GithubClient>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val userApi = mockk<UserApi>()
@@ -74,6 +76,7 @@ class GithubConnectorServiceTest {
             commitsService = commitsService,
             issuesService = issuesService,
             pullRequestsService = pullRequestsService,
+            orgService = orgService,
             githubClient = githubClient,
             eventPublisher = eventPublisher,
             userApi = userApi,
@@ -171,6 +174,7 @@ class GithubConnectorServiceTest {
             coVerify { commitsService.fetchAndIngestAllCommits(any(), any()) }
             coVerify { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any()) }
             coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any()) }
+            coVerify { orgService.connectGithubOrgIfNecessary("owner", "test-token", any()) }
         }
 
         @Test
@@ -431,5 +435,6 @@ class GithubConnectorServiceTest {
         coJustRun { commitsService.fetchAndIngestAllCommits(any(), any()) }
         coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
         coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
+        coJustRun { orgService.connectGithubOrgIfNecessary(any(), any(), any()) }
     }
 }

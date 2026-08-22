@@ -3,8 +3,14 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataMember
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeam
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeamMember
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.assertj.core.api.Assertions.assertThat
@@ -33,7 +39,7 @@ class GithubArtifactMapperTest {
 
         assertThat(result.ingestionRunId).isEqualTo(runId)
         assertThat(result.sourceSystem).isEqualTo(SourceSystem.GITHUB)
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceId).isEqualTo("github:owner/repo:FILE:src/main/App.kt")
         assertThat(result.sourceUrl).isEqualTo(event.sourceUrl)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
@@ -81,7 +87,7 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:COMMIT:abc123")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo("https://github.com/owner/repo/commit/abc123")
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.COMMIT)
@@ -114,7 +120,7 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:ISSUE:42")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo(event.url)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.ISSUE)
@@ -148,12 +154,61 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:PULL_REQUEST:7")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo(event.url)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.PULL_REQUEST)
         assertThat(result.title).isEqualTo("PR #7 Improve docs")
         assertThat(result.bodyText).isNull()
         assertThat(result.hash).isNull()
+    }
+
+    @Test
+    fun `toCommand maps github org metadata using login as source identity`() {
+        val event = GithubOrgMetadataFetchedEvent(
+            transactionId = runId,
+            login = "octocat",
+            name = "The Octocats",
+            description = "A GitHub organization",
+            company = "GitHub",
+            blog = "https://github.blog",
+            location = "San Francisco",
+            email = "octocat@github.com",
+            publicRepos = 12,
+            privateRepos = 4,
+            teams = listOf(
+                GithubOrgMetadataTeam(
+                    name = "Platform",
+                    slug = "platform",
+                    orgLogin = "octocat",
+                    orgName = "The Octocats",
+                    members = listOf(
+                        GithubOrgMetadataTeamMember(login = "alice", name = "Alice"),
+                    ),
+                ),
+            ),
+            members = listOf(
+                GithubOrgMetadataMember(login = "bob", url = "https://github.com/bob"),
+            ),
+        )
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.ingestionRunId).isEqualTo(runId)
+        assertThat(result.sourceSystem).isEqualTo(SourceSystem.GITHUB)
+        assertThat(result.sourceId).isEqualTo("octocat")
+        assertThat(result.sourceUrl).isEqualTo("https://github.com/octocat")
+        assertThat(result.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(result.title).isEqualTo("The Octocats")
+
+        val metadata = result.metadata as GithubOrgMetadataArtifactMetadata
+        assertThat(metadata.login).isEqualTo("octocat")
+        assertThat(metadata.name).isEqualTo("The Octocats")
+        assertThat(metadata.publicRepos).isEqualTo(12)
+        assertThat(metadata.privateRepos).isEqualTo(4)
+        assertThat(metadata.teams).hasSize(1)
+        assertThat(metadata.teams!![0].members[0].login).isEqualTo("alice")
+        assertThat(metadata.members[0].login).isEqualTo("bob")
+        assertThat(metadata.members[0].url).isEqualTo("https://github.com/bob")
     }
 }

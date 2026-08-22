@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -48,7 +49,11 @@ class GithubArtifactProviderService(
     @Transactional
     fun persistArtifact(command: GithubArtifactCommand) {
         val runId = command.ingestionRunId
-        val projectIds = githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
+        val projectIds = if (command.metadata is GithubArtifactMetadata) {
+            githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
+        } else {
+            mutableSetOf()
+        }
         var artifact: Artifact?
         when (command.artifactType) {
             ArtifactType.COMMIT,
@@ -106,6 +111,14 @@ class GithubArtifactProviderService(
                         IngestionRunNotFoundException(runId)
                     }
                     ingestionRun.updatedCount++
+                    return
+                }
+            }
+
+            ArtifactType.ORG_METADATA -> {
+                artifact = artifactRepository.findBySourceId(command.sourceId)
+                if (artifact != null) {
+                    artifact.addProjectIds(projectIds)
                     return
                 }
             }
