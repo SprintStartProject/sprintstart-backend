@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageImpl
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -49,6 +50,11 @@ class ChatPromptServiceTest {
     private val chatAiClient: ChatAiClient = mockk()
     private val userApi: UserApi = mockk()
     private val artifactLookupService: ArtifactLookupService = mockk()
+
+    // Relaxed: the question-asked event is fire-and-forget analytics, and no test here is about
+    // what listens to it.
+    private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
+
     private val chatPromptService = ChatPromptService(
         chatRepository,
         chatMessageRepository,
@@ -57,6 +63,7 @@ class ChatPromptServiceTest {
         chatAiClient,
         userApi,
         artifactLookupService,
+        eventPublisher,
     )
 
     private val userId = UUID.randomUUID()

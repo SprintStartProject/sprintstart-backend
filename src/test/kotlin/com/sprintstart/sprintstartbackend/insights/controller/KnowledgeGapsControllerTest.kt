@@ -78,6 +78,7 @@ class KnowledgeGapsControllerTest(
     private val pmJwt = jwtWithRoles("PM")
     private val adminJwt = jwtWithRoles("ADMIN")
     private val userJwt = jwtWithRoles("USER")
+    private val hrJwt = jwtWithRoles("HR")
 
     private fun buildGap() = KnowledgeGapResponse(
         id = gapId,
@@ -128,6 +129,69 @@ class KnowledgeGapsControllerTest(
         mockMvc
             .perform(get("/api/v1/insights/knowledge-gaps?projectId=$projectId").with(userJwt))
             .andExpect(status().isForbidden)
+    }
+
+    // ========================== Assigned to me ==========================
+
+    @Test
+    fun `getMyKnowledgeGaps should return 200 and the gaps for a plain user`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") }
+    }
+
+    /**
+     * The endpoint is open to every permission group deliberately — ownership decides what comes
+     * back, and a manager owns components too. Pinned here so that narrowing the guard to a single
+     * role later fails a test instead of quietly hiding a manager's own gaps from them.
+     */
+    @Test
+    fun `getMyKnowledgeGaps should be reachable by every permission group`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
+
+        for (jwt in listOf(userJwt, pmJwt, hrJwt, adminJwt)) {
+            mockMvc
+                .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(jwt))
+                .andExpect(status().isOk)
+        }
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps should return 403 without access to the project`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    /**
+     * `mine` must not be swallowed by the `/{gapId}` route, which would fail to bind it as a UUID.
+     */
+    @Test
+    fun `getMyKnowledgeGaps should win over the gap detail route`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(emptyList())
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isOk)
+
+        verify(exactly = 0) { knowledgeGapsService.getKnowledgeGap(any(), any()) }
     }
 
     // ========================== Detail ==========================

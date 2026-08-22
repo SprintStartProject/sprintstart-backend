@@ -18,6 +18,23 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
 
     /**
+     * Returns every project the run's artifacts belong to.
+     *
+     * A run is not scoped to a project of its own, so this is the only way to tell which projects a
+     * finished run actually affected. Queried directly rather than walking the artifacts, whose
+     * project ids are a lazy collection and would need an open session to read.
+     */
+    @Query(
+        """
+            SELECT DISTINCT p
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE a.ingestionRun.id = :runId
+        """,
+    )
+    fun findProjectIdsByIngestionRunId(@Param("runId") runId: UUID): Set<UUID>
+
+    /**
      * Returns one artifact page limited to artifacts linked to the given project.
      */
     @Query(
@@ -112,5 +129,21 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     )
     fun countJiraArtifactsByInstanceUrl(
         @Param("instanceUrl") instanceUrl: String,
+    ): Long
+
+    /**
+     * Counts stored upload artifacts belonging to a project.
+     */
+    @Query(
+        """
+            SELECT COUNT(DISTINCT a)
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.UPLOAD
+        """,
+    )
+    fun countUploadArtifactsByProjectId(
+        @Param("projectId") projectId: UUID,
     ): Long
 }
