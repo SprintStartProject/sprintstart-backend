@@ -221,6 +221,33 @@ class ArtifactServiceTest {
     }
 
     @Test
+    fun `getArtifactContent redirects confluence page artifacts to source url`() {
+        val sourceUrl = "https://example.atlassian.net/wiki/spaces/ENG/pages/123456"
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { artifactRepository.findById(artifactId) } returns Optional.of(
+            artifact(
+                sourceSystem = SourceSystem.CONFLUENCE,
+                sourceId = "123456",
+                sourceUrl = sourceUrl,
+                content = null,
+                mime = "text/html",
+                artifactType = ArtifactType.PAGE,
+            ),
+        )
+
+        val result = service.getArtifactContent(
+            projectId = projectId,
+            artifactId = artifactId,
+            authId = authId,
+        ) as ArtifactContentRedirectResponse
+
+        assertThat(result.url).isEqualTo(sourceUrl)
+        verify(exactly = 0) {
+            uploadedArtifactReader.readBytes(any())
+        }
+    }
+
+    @Test
     fun `getArtifactContent returns not found when non-upload artifact has no content`() {
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { artifactRepository.findById(artifactId) } returns Optional.of(
@@ -249,11 +276,12 @@ class ArtifactServiceTest {
         sourceUrl: String? = null,
         content: String?,
         mime: String?,
+        artifactType: ArtifactType = ArtifactType.FILE,
     ) = Artifact(
         sourceSystem = sourceSystem,
         sourceId = sourceId,
         sourceUrl = sourceUrl,
-        artifactType = ArtifactType.FILE,
+        artifactType = artifactType,
         title = "artifact",
         content = content,
         mime = mime,

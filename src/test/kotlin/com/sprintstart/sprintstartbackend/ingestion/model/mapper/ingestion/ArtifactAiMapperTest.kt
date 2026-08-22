@@ -24,6 +24,7 @@ class ArtifactAiMapperTest {
         sourceSystem = SourceSystem.GITHUB,
         sourceId = "github:owner/repo:FILE:README.md",
         sourceUrl = "https://github.com/owner/repo/blob/main/README.md",
+        sourceVersion = "v1",
         artifactType = ArtifactType.FILE,
         title = "README.md",
         content = "content",

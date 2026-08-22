@@ -25,6 +25,8 @@ class Artifact(
     val sourceId: String,
     @Column(name = "source_url", length = 2048)
     val sourceUrl: String?,
+    @Column(name = "source_version")
+    var sourceVersion: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(name = "artifact_type", nullable = false)
     val artifactType: ArtifactType,

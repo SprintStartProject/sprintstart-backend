@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 /**
  * Owns writes to the ingestion artifact store and the mutable parts of `IngestionRun`.
@@ -54,80 +55,15 @@ class GithubArtifactProviderService(
         } else {
             mutableSetOf()
         }
-        var artifact: Artifact?
-        when (command.artifactType) {
-            ArtifactType.COMMIT,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
-                }
-            }
 
-            ArtifactType.FILE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
-
-            ArtifactType.ISSUE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.title = command.title
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
-
-            ArtifactType.PULL_REQUEST,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    artifact.title = command.title
-                    artifact.content = command.bodyText
-                    val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                        IngestionRunNotFoundException(runId)
-                    }
-                    ingestionRun.updatedCount++
-                    return
-                }
-            }
-
-            ArtifactType.ORG_METADATA -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
-                }
-            }
+        if (handleExistingArtifact(command, projectIds)) {
+            return
         }
 
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
             IngestionRunNotFoundException(runId)
         }
-        artifact = Artifact(
+        val artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = command.sourceUrl,
@@ -145,6 +81,83 @@ class GithubArtifactProviderService(
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
+    }
+
+    private fun handleExistingArtifact(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Boolean {
+        return when (command.artifactType) {
+            ArtifactType.COMMIT,
+            ArtifactType.ORG_METADATA,
+            -> attachProjectsIfExisting(command, projectIds)
+
+            ArtifactType.FILE -> updateExistingFileIfChanged(command, projectIds)
+            ArtifactType.ISSUE -> updateExistingIssueIfChanged(command, projectIds)
+            ArtifactType.PULL_REQUEST -> updateExistingPullRequest(command, projectIds)
+            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+        }
+    }
+
+    private fun attachProjectsIfExisting(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Boolean {
+        return findExistingArtifact(command, projectIds) != null
+    }
+
+    private fun updateExistingFileIfChanged(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Boolean {
+        val artifact = findExistingArtifact(command, projectIds) ?: return false
+        if (artifact.hash != command.hash) {
+            artifact.content = command.bodyText
+            artifact.hash = command.hash
+            incrementUpdatedCount(command.ingestionRunId)
+        }
+        return true
+    }
+
+    private fun updateExistingIssueIfChanged(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Boolean {
+        val artifact = findExistingArtifact(command, projectIds) ?: return false
+        if (artifact.hash != command.hash) {
+            artifact.title = command.title
+            artifact.content = command.bodyText
+            artifact.hash = command.hash
+            incrementUpdatedCount(command.ingestionRunId)
+        }
+        return true
+    }
+
+    private fun updateExistingPullRequest(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Boolean {
+        val artifact = findExistingArtifact(command, projectIds) ?: return false
+        artifact.title = command.title
+        artifact.content = command.bodyText
+        incrementUpdatedCount(command.ingestionRunId)
+        return true
+    }
+
+    private fun findExistingArtifact(
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+    ): Artifact? {
+        val artifact = artifactRepository.findBySourceId(command.sourceId) ?: return null
+        artifact.addProjectIds(projectIds)
+        return artifact
+    }
+
+    private fun incrementUpdatedCount(runId: UUID) {
+        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
+            IngestionRunNotFoundException(runId)
+        }
+        ingestionRun.updatedCount++
     }
 
     /**

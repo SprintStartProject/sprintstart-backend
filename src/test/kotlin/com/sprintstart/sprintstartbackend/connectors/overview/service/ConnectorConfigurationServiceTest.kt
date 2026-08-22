@@ -209,7 +209,9 @@ class ConnectorConfigurationServiceTest {
 
         @Test
         fun `should update lastConfiguredAt but not firstConfiguredAt on subsequent config`() = runTest {
-            val now = java.time.Instant.now()
+            val now = java.time.Instant
+                .now()
+                .minusSeconds(1)
             val config = ConnectorConfiguration(
                 id = "github",
                 enabled = true,
