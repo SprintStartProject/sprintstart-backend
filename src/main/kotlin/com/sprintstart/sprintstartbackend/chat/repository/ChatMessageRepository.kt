@@ -67,7 +67,7 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
         nativeQuery = true,
     )
     fun deleteAllByChatId(@Param("chatId") chatId: UUID)
-    
+
     /**
      * Counts what [findAllByRoleAndChatProjectId] would return, without loading the messages.
      *
