@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.chat.ChatAiClient
+import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
@@ -58,6 +60,7 @@ internal class ChatService(
     private val chatAiClient: ChatAiClient,
     private val userApi: UserApi,
     private val artifactLookupService: ArtifactLookupService,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -265,6 +268,20 @@ internal class ChatService(
         val filters = request.filters?.toAiChatFilters()
 
         messageRepository.save(msg)
+
+        // Announced before the AI stream opens, not after it completes: the FAQ insight is about
+        // what was *asked*, so it should not depend on the answer arriving. Listeners are expected
+        // to hand off asynchronously — nothing here waits on them, and the user's answer must not
+        // be delayed by analytics.
+        eventPublisher.publishEvent(
+            ChatQuestionAskedEvent(
+                messageId = msg.id,
+                chatId = chat.id,
+                projectId = projectId,
+                question = request.msg,
+                askedAt = msg.createdAt.toInstant(),
+            ),
+        )
 
         data class PendingCitation(
             val id: UUID,

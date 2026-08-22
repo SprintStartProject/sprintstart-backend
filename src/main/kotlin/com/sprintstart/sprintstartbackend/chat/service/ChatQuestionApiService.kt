@@ -7,6 +7,8 @@ import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -24,6 +26,19 @@ internal class ChatQuestionApiService(
     override fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion> {
         return messageRepository
             .findAllByRoleAndChatProjectId(ChatRole.USER, projectId)
-            .map { ChatQuestion(id = it.id, text = it.content) }
+            .map { ChatQuestion(id = it.id, text = it.content, askedAt = it.createdAt.toInstant()) }
+    }
+
+    @Tracked("Counting user questions for a project")
+    @Transactional(readOnly = true)
+    override fun countUserQuestionsForProject(projectId: UUID, since: Instant?): Long {
+        if (since == null) {
+            return messageRepository.countByRoleAndChatProjectId(ChatRole.USER, projectId)
+        }
+        return messageRepository.countByRoleAndChatProjectIdAndCreatedAtGreaterThanEqual(
+            ChatRole.USER,
+            projectId,
+            since.atOffset(ZoneOffset.UTC),
+        )
     }
 }

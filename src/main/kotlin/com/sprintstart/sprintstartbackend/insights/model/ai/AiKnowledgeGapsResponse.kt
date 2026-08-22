@@ -17,11 +17,14 @@ data class AiKnowledgeGapsResponse(
  * index holds no user/ownership data and it retains no question history. Ownership is enriched by
  * the backend.
  *
- * @property component name of the component that has gaps
- * @property missingTypes document types the component is missing, for example "runbook" or "adr"
+ * @property component name of the component
+ * @property missingTypes document types the component is missing, for example "runbook" or "adr";
+ * empty when the component is fully covered
  * @property presentTypes document types the component already has
  * @property lastUpdated ISO-8601 timestamp of the component's most recent activity
- * @property severity impact level, one of "high", "medium" or "low"
+ * @property severity impact level, one of "high", "medium", "low" or "covered". The AI service
+ * reports every component of the project, so "covered" marks one that is missing nothing rather
+ * than a gap.
  */
 @Serializable
 data class AiKnowledgeGap(

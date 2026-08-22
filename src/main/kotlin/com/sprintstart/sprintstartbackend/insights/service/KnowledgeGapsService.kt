@@ -10,10 +10,13 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.model.entity.ComponentOwner
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGap
+import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapSeverity
+import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapsScan
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiKnowledgeGapMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.KnowledgeGapResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.ComponentOwnerRepository
 import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapRepository
+import com.sprintstart.sprintstartbackend.insights.repository.KnowledgeGapsScanRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.http.HttpStatus
@@ -35,12 +38,14 @@ import java.util.UUID
 @Service
 class KnowledgeGapsService(
     private val knowledgeGapRepository: KnowledgeGapRepository,
+    private val knowledgeGapsScanRepository: KnowledgeGapsScanRepository,
     private val componentOwnerRepository: ComponentOwnerRepository,
     private val knowledgeGapsAiClient: KnowledgeGapsAiClient,
     private val aiKnowledgeGapMapper: AiKnowledgeGapMapper,
     private val knowledgeGapResponseMapper: KnowledgeGapResponseMapper,
     private val userApi: UserApi,
     private val artifactIngestionApi: ArtifactIngestionApi,
+    private val refreshTracker: InsightsRefreshTracker,
     transactionManager: PlatformTransactionManager,
 ) {
     // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
@@ -57,7 +62,7 @@ class KnowledgeGapsService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving all knowledge gaps")
     fun getKnowledgeGaps(projectId: UUID): KnowledgeGapsOverviewResponse {
-        return toOverviewResponse(knowledgeGapRepository.findAllByProjectId(projectId))
+        return toOverviewResponse(projectId, knowledgeGapRepository.findAllByProjectId(projectId))
     }
 
     /**
@@ -80,7 +85,7 @@ class KnowledgeGapsService(
     @Tracked("Retrieving knowledge gaps assigned to the current user")
     fun getMyKnowledgeGaps(projectId: UUID, authId: String): KnowledgeGapsOverviewResponse {
         val userId = userApi.getUserIdByAuthId(authId).orElse(null)
-            ?: return KnowledgeGapsOverviewResponse(gaps = emptyList())
+            ?: return toOverviewResponse(projectId, emptyList())
 
         val ownedComponents = componentOwnerRepository
             .findAllByUserId(userId)
@@ -88,10 +93,11 @@ class KnowledgeGapsService(
             .distinct()
 
         if (ownedComponents.isEmpty()) {
-            return KnowledgeGapsOverviewResponse(gaps = emptyList())
+            return toOverviewResponse(projectId, emptyList())
         }
 
         return toOverviewResponse(
+            projectId,
             knowledgeGapRepository.findAllByProjectIdAndComponentIn(projectId, ownedComponents),
         )
     }
@@ -159,24 +165,46 @@ class KnowledgeGapsService(
             // otherwise linger forever, since every read is now scoped.
             knowledgeGapRepository.deleteAllByProjectIdIsNull()
             knowledgeGapRepository.saveAll(gaps)
+            // Written in the same transaction as the gaps, and unconditionally: a scan that found
+            // nothing still happened, and it is the only scan whose outcome the panel cannot read
+            // off the gap rows.
+            knowledgeGapsScanRepository.save(KnowledgeGapsScan(projectId = projectId))
         }
 
-        return RefreshKnowledgeGapsResponse(gapCount = gaps.size)
+        // Split deliberately: every component now yields a row, so the row count no longer says
+        // whether anything is wrong. Callers that report "nothing to fix" need the gap count.
+        return RefreshKnowledgeGapsResponse(
+            gapCount = gaps.count { it.severity != KnowledgeGapSeverity.COVERED },
+            componentCount = gaps.size,
+        )
     }
 
     /**
-     * Sorts the gaps for display and enriches them with their owners and first-ingested date.
+     * Sorts the gaps for display and enriches them with their owners, first-ingested date and the
+     * project's scan state.
      *
      * Shared by both read paths so the panel and the per-user view can never disagree about the
      * order gaps come in or how much is known about them. Most severe first, then by component
      * name, which is the only tie-break that stays stable between two calls.
+     *
+     * The scan state is read per project rather than derived from [gaps], because it answers
+     * whether a rescan is running and when the last one finished — the same answer for everyone
+     * looking at the project, whichever subset of its gaps they are shown. Reading it off the rows
+     * would make the per-user view report a scanned project as never scanned whenever the caller
+     * owns none of its components.
      */
-    private fun toOverviewResponse(gaps: List<KnowledgeGap>): KnowledgeGapsOverviewResponse {
+    private fun toOverviewResponse(projectId: UUID, gaps: List<KnowledgeGap>): KnowledgeGapsOverviewResponse {
         val sorted = gaps.sortedWith(compareBy({ it.severity.ordinal }, { it.component }))
         val components = sorted.map { it.component }.distinct()
         val ownersByComponent = resolveOwners(components)
         val firstIngestedByComponent = artifactIngestionApi.getFirstIngestedAt(components)
-        return knowledgeGapResponseMapper.toOverviewResponse(sorted, ownersByComponent, firstIngestedByComponent)
+        return knowledgeGapResponseMapper.toOverviewResponse(
+            sorted,
+            ownersByComponent,
+            firstIngestedByComponent,
+            refreshing = refreshTracker.isRefreshingKnowledgeGaps(projectId),
+            scannedAt = knowledgeGapsScanRepository.findById(projectId).orElse(null)?.scannedAt,
+        )
     }
 
     /**

@@ -1,10 +1,13 @@
 package com.sprintstart.sprintstartbackend.insights.controller
 
+import com.sprintstart.sprintstartbackend.insights.model.dto.request.FaqRebuildScope
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOverviewResponse
+import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqRebuildPreviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshFaqResponse
 import com.sprintstart.sprintstartbackend.insights.service.InsightsFaqService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -88,14 +91,17 @@ class InsightsFaqController(
      */
     @Operation(
         summary = "Refresh recurring-question groups",
-        description = "Triggers AI grouping of recurring questions and rebuilds the cache. PM/Admin only.",
+        description = "Regroups the project's questions from scratch and replaces the stored " +
+            "entries. Destructive: whatever falls outside the requested scope is gone from the " +
+            "counts afterwards, and the surviving entries get new ids. PM/Admin only.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "FAQ groups refreshed successfully"),
+            ApiResponse(responseCode = "400", description = "A scope bound was not a positive number"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
-            ApiResponse(responseCode = "500", description = "The AI service failed to return a grouping result"),
+            ApiResponse(responseCode = "500", description = "The AI service failed to return a usable grouping"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -105,7 +111,45 @@ class InsightsFaqController(
     )
     suspend fun refreshFaqGroups(
         @RequestParam projectId: UUID,
+        @Parameter(description = "At most this many questions, newest first. Never above the configured ceiling.")
+        @RequestParam(required = false) questionLimit: Int? = null,
+        @Parameter(description = "Only questions asked within this many days.")
+        @RequestParam(required = false) sinceDays: Int? = null,
     ): RefreshFaqResponse {
-        return insightsFaqService.refreshFaqGroups(projectId)
+        return insightsFaqService.refreshFaqGroups(
+            projectId,
+            FaqRebuildScope(questionLimit = questionLimit, sinceDays = sinceDays),
+        )
+    }
+
+    /**
+     * Reports how much material a rebuild would have, per requested time window.
+     */
+    @Operation(
+        summary = "Preview what a rebuild would cover",
+        description = "Returns the project's question count and, per requested window, how many " +
+            "questions a rebuild scoped to it would send. Lets a client show the trade-off " +
+            "before a scope is chosen, since a rebuild drops whatever it does not cover. " +
+            "PM/Admin only.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Preview returned successfully"),
+            ApiResponse(responseCode = "400", description = "A window was not a positive number of days"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/rebuild-preview")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    fun previewRebuild(
+        @RequestParam projectId: UUID,
+        @Parameter(description = "Window lengths in days. Repeat the parameter for several.")
+        @RequestParam(required = false) sinceDays: List<Int>?,
+    ): FaqRebuildPreviewResponse {
+        return insightsFaqService.previewRebuild(projectId, sinceDays.orEmpty())
     }
 }
