@@ -17,6 +17,7 @@ import jakarta.persistence.JoinTable
 import jakarta.persistence.ManyToMany
 import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
+import org.hibernate.annotations.BatchSize
 import java.time.Instant
 import java.util.UUID
 
@@ -43,12 +44,12 @@ class User(
     // path still reads these, and this stack does not remove that feature.
     @Column(nullable = false)
     var hasCompletedOnboarding: Boolean = false,
-    @jakarta.persistence.OneToMany(
+    @OneToMany(
         mappedBy = "user",
         cascade = [jakarta.persistence.CascadeType.ALL],
         orphanRemoval = true,
     )
-    @org.hibernate.annotations.BatchSize(size = 50)
+    @BatchSize(size = 50)
     var skillAssessments: MutableSet<UserSkillAssessment> = mutableSetOf(),
     // Stamped by SessionActivityService on authenticated request traffic; used to detect an idle
     // gap past the configured threshold as a stand-in for a real login/session boundary.

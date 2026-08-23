@@ -12,8 +12,19 @@ import java.net.http.HttpResponse
  * The underlying [java.net.http.HttpClient.send] call is dispatched on [Dispatchers.IO]
  * so it never blocks a coroutine thread. There is no `runBlocking` anywhere in this path.
  *
- * Non-2xx responses throw a [WebClientException] carrying the status code and raw body, so callers
- * decide how to handle domain-level errors.
+ * ### Error handling
+ * Non-2xx responses throw a [WebClientException] carrying the status code and raw body,
+ * letting callers decide how to handle domain-level errors without coupling transport to
+ * business logic.
+ *
+ * ### Usage
+ * ```kotlin
+ * val response: MyResponse = webClient
+ *     .get()
+ *     .uri("https://api.example.com/users/1")
+ *     .sync()
+ *     .perform<MyResponse>()
+ * ```
  */
 class SyncExecution(
     val builder: RequestBuilder,

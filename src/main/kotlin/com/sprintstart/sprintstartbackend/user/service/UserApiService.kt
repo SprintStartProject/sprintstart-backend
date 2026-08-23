@@ -38,9 +38,6 @@ import java.util.UUID
  * controller DTOs or internal user service workflows.
  */
 @Service
-// Tracks [UserApi]'s surface one-for-one, so the count is the boundary's, not this class's. The
-// five GitHub-related members are a visible cluster and a plausible future split -- left alone
-// because there is one implementation, and an interface extracted from one is a guess.
 @Suppress("TooManyFunctions")
 class UserApiService(
     private val userRepository: UserRepository,

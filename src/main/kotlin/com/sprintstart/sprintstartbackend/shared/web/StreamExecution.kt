@@ -17,12 +17,26 @@ import java.net.http.HttpResponse
  * is handled naturally by the Flow contract — the producer only advances when the
  * collector is ready.
  *
- * Expects standard SSE lines (`data: <payload>`); lines not starting with `data:` (comments,
- * blank keep-alives) are silently skipped.
+ * ### SSE format
+ * Expects the server to emit standard SSE lines: `data: <payload>`.
+ * Lines not starting with `data:` (comments, blank keep-alives) are silently skipped.
+ * Each matching line's payload is deserialized into [T] and emitted downstream.
  *
- * A non-2xx status before the stream starts throws [WebClientException]. Per-chunk
- * deserialization errors call [onChunkError] (default: log and skip), so a single malformed chunk
- * does not kill the whole stream.
+ * ### Error handling
+ * A non-2xx status before the stream starts throws [WebClientException].
+ * Deserialization errors per-chunk call [onChunkError] (default: log and skip),
+ * so a single malformed chunk does not kill the whole stream.
+ *
+ * ### Usage
+ * ```kotlin
+ * webClient
+ *     .post()
+ *     .uri("https://api.example.com/chat/stream")
+ *     .body(chatRequest)
+ *     .stream()
+ *     .perform<AiStreamChunk>()
+ *     .collect { chunk -> println(chunk.token) }
+ * ```
  */
 class StreamExecution internal constructor(
     val builder: RequestBuilder,
