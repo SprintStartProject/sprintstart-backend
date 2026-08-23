@@ -1,0 +1,41 @@
+* SprintStart - Project Overview
+
+- Purpose :: AI-assisted onboarding tool for companies
+  - Build a knowledge base using RAG from multiple sources
+  - Users can ask questions about the knowledge base
+  - System generates knowledge-specific onboarding paths for new hires
+
+- Architecture :: Split across 3 projects
+  ** Frontend :: Web application (likely React)
+  ** Backend :: Kotlin + Spring Boot (we are here)
+  ** AI :: RAG pipeline, embeddings, LLM orchestration (likely Python)
+
+- This file :: /home/fabian/Desktop/git/sprintstart-backend
+
+* Backend Module Overview
+
+- Source root :: src/main/kotlin/com/sprintstart/sprintstartbackend/
+- Test root :: src/test/kotlin/com/sprintstart/sprintstartbackend/
+
+- Modules (by package):
+  ** connectors/ :: Data source integrations (GitHub, Jira)
+  ** ingestion/ :: Artifact ingestion pipeline
+  ** chat/ :: Chat over knowledge base
+  ** onboarding/ :: Onboarding paths, phases, steps, blueprints
+  ** user/ :: User management, Keycloak integration
+  ** upload/ :: Document upload & processing
+  ** insights/ :: Knowledge gaps & FAQ generation
+  ** shared/ :: Shared utilities (web clients, crypto, scheduling)
+  ** health/ :: Health check endpoint
+  ** config/ :: Security, CORS, Keycloak config
+
+* Tech Stack
+
+- Kotlin
+- Spring Boot
+- Spring Modulith
+- Spring Data JPA / Hibernate (PostgreSQL)
+- Gradle Kotlin DSL
+- JUnit 5 / MockK / Mockito Kotlin
+- Keycloak for auth
+- Docker Compose for local infra

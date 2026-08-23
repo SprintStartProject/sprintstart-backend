@@ -1,0 +1,20 @@
+* Notes
+** GitHub connector
+   - (x)
+   - Removed new PR logic that was not used anywhere (except its test cases)
+     - Note however, currently the PR body is not fetched (the file patches). Maybe that's worth adding separately
+** Insights
+   - (x)
+** Shared/web
+   - (x)
+** Onboarding
+   - (-)
+** Graphql
+   - (x)
+   - While okay, these changes may introduce api limit hits
+** application.yml
+   - (x)
+** User
+   - (-)
+** Ingestion
+

@@ -1,0 +1,387 @@
+@document.meta
+title: PR review — API surface summary
+branch: review/buddy-all
+commits: 4 stacked (The buddy, Orientation, The competency ledger, The shared substrate)
+files: 287 (~27k additions, ~1.8k deletions)
+scope: onboarding module + user / ingestion / github module API extensions
+@end
+
+* Summary
+
+This branch adds ~62 new HTTP endpoints across 11 new onboarding controllers,
+plus extends 3 existing module API interfaces and adds 1 new one.  The
+onboarding module alone adds roughly the same number of endpoints as the rest of
+the application combined.
+
+Six new Spring events are introduced.
+
+The rest of this document lists every new or changed endpoint and module API,
+grouped by domain, with a one-line description of each.
+
+* Onboarding - Starter Work
+  Path: `/api/v1/onboarding/starter-work`
+  Controller: `StarterWorkController` (13 endpoints)
+
+**Admin / PM / HR surface**
+
+- `POST /generate` → ADMIN,PM,HR
+  Triggers AI mining over the project’s ingested open tracker issues.  Mined
+  tasks are stored LIVE and claimable immediately.  Returns
+  `GenerateStarterWorkResponse`.
+
+- `POST /generate/stream` → ADMIN,PM,HR (SSE)
+  Streaming twin — watch the pool fill one task at a time as
+  `Flow<AiProgressEvent>`.
+
+- `POST /` → ADMIN,PM
+  Create a hand-authored starter-work task with no AI in the loop.  Body:
+  `CreateStarterWorkTaskRequest`.
+
+- `GET /candidates` → ADMIN,PM,HR
+  Lists a project’s open ingested tracker issues for browsing.  Deterministic
+  filter, no AI call.  Param: `projectId`.  Returns
+  `List<StarterWorkCandidateResponse>`.
+
+- `POST /candidates/promote` → ADMIN,PM
+  Puts a browsed issue into the pool as live + reviewed.  Body:
+  `PromoteStarterWorkCandidateRequest`.
+
+- `GET /unreviewed` → ADMIN,PM
+  Live tasks no PM has vouched for yet.  Already claimable; reviewing lifts only
+  a fit-ranking demotion.
+
+- `GET /pool` → ADMIN,PM
+  The entire live starter-work pool.
+
+- `POST /{id}/review` → ADMIN,PM
+  Mark a task reviewed (idempotent).
+
+- `POST /{id}/reject` → ADMIN,PM
+  Remove a task from the pool permanently — mining never re-proposes it.  Body
+  (optional): `RejectProposalRequest`.
+
+**Hire self-serve surface (`/me/...`)**
+
+- `GET /me/matches` → USER
+  Ranks the live pool by fit for the authenticated hire.  Deterministic, no AI.
+  Returns `List<RankedStarterWorkTaskResponse>` with reasons per task.
+
+- `POST /me/goal` → USER
+  Claims a task as the hire’s goal.  Body: `ClaimGoalRequest`.  Returns
+  `GoalView`.
+
+- `DELETE /me/goal` → USER
+  Drops the hire’s goal; falls back to baseline.
+
+* Onboarding - Task Orientation
+  Path: `/api/v1/onboarding`
+  Controller: `TaskOrientationController` (7 endpoints)
+
+AI-assembled (or human-authored) task guidance grounded in the project corpus.
+
+**Hire self-serve**
+
+- `GET /me/orientation` → USER,PM,HR,ADMIN
+  AI-assembled orientation for the caller’s current task, cached against the
+  corpus.  Param: `projectId`.  Returns `MyOrientationResponse`.
+
+- `POST /me/orientation/stream` → USER,PM,HR,ADMIN (SSE)
+  Streaming twin.  Returns `Flow<AiProgressEvent>`.
+
+- `PUT /me/orientation` → USER,PM,HR,ADMIN
+  Fix the caller’s orientation in place with hand-authored content.  Pins as
+  HUMAN origin.  Body: `AuthorOrientationRequest`.  Returns
+  `OrientationPacketResponse`.
+
+- `DELETE /me/orientation` → USER,PM,HR,ADMIN
+  Revert to AI assembly for the caller’s task.
+
+**PM authoring**
+
+- `GET /orientation/tasks/{taskId}` → PM,ADMIN
+  Read a task’s orientation for editing; never triggers AI generation.
+
+- `PUT /orientation/tasks/{taskId}` → PM,ADMIN
+  Author a task’s orientation (PM-side).  Body: `AuthorOrientationRequest`.
+
+- `DELETE /orientation/tasks/{taskId}` → PM,ADMIN
+  Restore AI assembly for a task (PM-side).
+
+* Onboarding - Buddy
+  Path: `/api/v1/onboarding/me/buddy`
+  Controller: `BuddyController` (5 endpoints)
+
+A persistent, tool-using, streaming AI companion conversation per hire.
+
+- `GET /messages` → USER
+  The caller’s buddy conversation so far, oldest first.  Returns
+  `List<BuddyMessageResponse>`.
+
+- `GET /suggestions` → USER
+  Quick-question chips drawn from the tools mounted for this hire.  No model
+  call.  Returns `List<BuddySuggestionResponse>`.
+
+- `POST /open/stream` → USER (SSE)
+  Opens a visit — folds prior visit into memory, streams a proactive greeting.
+  Returns `Flow<BuddyStreamEvent>`.
+
+- `POST /messages` → USER (SSE)
+  Sends a message and streams the grounded reply.  Body:
+  `SendBuddyMessageRequest`.  Returns `Flow<BuddyStreamEvent>`.
+
+- `POST /actions` → USER
+  Confirms a buddy-proposed action (start Task 0, claim goal, flag to PM, etc.).
+  Body: `BuddyActionRequest`.  Returns `BuddyActionResponse`.
+
+Buddy stream event vocabulary: `tool_use`, `token`, `citation`, `action_proposal`,
+`done`, `error`.
+
+* Onboarding - Board
+  Path: `/api/v1/onboarding`
+  Controller: `BoardController` (6 endpoints)
+
+A per-hire, per-project card surface with 11 card types discriminated by
+`BoardCardKind`.
+
+- `GET /me/board` → USER,PM,HR,ADMIN
+  The caller’s board on a project.  Created on first read.  Param: `projectId`.
+  Returns `BoardResponse`.
+
+- `GET /me/board/cards/{cardId}/diagram` → USER,PM,HR,ADMIN
+  Redraw a diagram card if the project has changed; returns cached otherwise.
+
+- `POST /me/board/cards` → USER,PM,HR,ADMIN
+  Add a user-authored card (note, link, checklist).  Body: `AuthoredCardRequest`.
+  Returns `BoardCardResponse`.
+
+- `PATCH /me/board/cards/{cardId}` → USER,PM,HR,ADMIN
+  Edit a user-authored card’s content.  Body: `AuthoredCardRequest`.
+
+- `PUT /me/board/order` → USER,PM,HR,ADMIN
+  Reorder cards.  Body: `ReorderBoardRequest` (list of card IDs in order).
+
+- `DELETE /me/board/cards/{cardId}` → USER,PM,HR,ADMIN
+  Dismiss a card permanently.  Idempotent.
+
+Board card content types:
+- `PATH_TO_FIRST_CONTRIBUTION` — timeline moments (joined→claimed→submitted→responded→accepted)
+- `ARRIVAL_STEPS` — what still needs to be true before the hire can work
+- `OPEN_PULL_REQUESTS` — open PRs with wait times
+- `CURRENT_TASK` — the hire’s current task, or the fact they have none
+- `SUGGESTED_TASKS` — ranked fit suggestions with reasons
+- `COMPETENCY_PROGRESS` — held vs in-progress competencies
+- `MEMORY_RECAP` — the mentor’s durable memory note
+- `DIAGRAM` — an AI-drawn architecture diagram grounded in project material
+- `NOTE` — user-authored free text
+- `LINK` — user-authored URL
+- `CHECKLIST` — user-authored checklist with tickable items
+
+* Onboarding - Arrival Steps
+
+**Authoring**
+  Path: `/api/v1/onboarding/arrival-steps`
+  Controller: `ArrivalAuthoringController` (6 endpoints)
+
+- `GET /` → ADMIN,PM,HR
+  List steps in a scope (optional `projectId`; omit for company-wide).
+
+- `POST /` → ADMIN,PM
+  Create a step.  Body: `CreateArrivalStepRequest`.
+
+- `GET /derivable` → ADMIN,PM,HR
+  List steps the system can verify for itself (e.g. GitHub account exists).
+
+- `PATCH /{key}` → ADMIN,PM
+  Update a step’s wording, link, or settlement mechanism.  Key is immutable.
+
+- `POST /reorder` → ADMIN,PM
+  Apply a complete ordering.  Body: `ReorderArrivalStepsRequest`.
+
+- `DELETE /{key}` → ADMIN,PM
+  Delete a step definition.  Hire settlement records survive by key.
+
+**Hire self-serve**
+  Path: `/api/v1/onboarding`
+  Controller: `MyArrivalController` (3 endpoints)
+
+- `GET /me/arrival` → USER
+  The caller’s steps across all projects + company-wide, counted by rigor.
+  Returns `MyArrivalResponse`.
+
+- `POST /me/arrival/refresh` → USER
+  Re-checks observable steps (GitHub account, work produced).
+
+- `POST /me/arrival/{key}/confirm` → USER
+  Self-confirm a step (DECLARED rigor).  Idempotent.
+
+* Onboarding - Attestations
+  Path: `/api/v1/onboarding`
+  Controller: `AttestationController` (6 endpoints)
+
+Work confirmed by a named colleague, for roles nothing observes.
+
+- `GET /me/attestations` → USER,PM,HR,ADMIN
+  The caller’s attestation requests on a project.  Param: `projectId`.
+
+- `POST /me/attestations` → USER,PM,HR,ADMIN
+  Ask someone to confirm your work.  Body: `RequestAttestationRequest`.
+
+- `POST /me/attestations/{id}/withdraw` → USER,PM,HR,ADMIN
+  Withdraw a request you no longer want answered.
+
+- `GET /attestations/pending` → USER,PM,HR,ADMIN
+  What is waiting on the caller to confirm, longest-waiting first.
+
+- `POST /attestations/{id}/accept` → USER,PM,HR,ADMIN
+  Confirm the work happened and met the bar.
+
+- `POST /attestations/{id}/send-back` → USER,PM,HR,ADMIN
+  Send back with what needs to change.  Body: `SendBackAttestationRequest`.
+
+* Onboarding - Competencies
+  Path: `/api/v1/onboarding`
+  Controller: `MyCompetencyController` (1 endpoint)
+
+- `GET /me/competencies` → USER
+  The caller’s full durable competency ledger (level + source per competency).
+  Returns `List<MyCompetencyResponse>`.
+
+* Onboarding - Knowledge Requests
+  Path: `/api/v1/onboarding`
+  Controller: `KnowledgeRequestController` (7 endpoints)
+
+The buddy’s growth loop: escalate a gap to a PM, answer it, serve the answer
+as durable knowledge.
+
+- `GET /me/knowledge-requests` → USER,PM,HR,ADMIN
+  The caller’s own escalated questions.
+
+- `POST /me/knowledge-requests` → USER,PM,HR,ADMIN
+  Escalate a question the buddy could not answer.  Body: `CreateKnowledgeRequest`.
+
+- `GET /knowledge-requests` → PM,HR,ADMIN
+  The escalation inbox for a project.  Param: `projectId`.
+
+- `POST /knowledge-requests/{requestId}/answer` → PM,ADMIN
+  Answer an escalated question (mints a durable canonical answer).  Body:
+  `AnswerKnowledgeRequest`.
+
+- `POST /knowledge-requests/{requestId}/dismiss` → PM,ADMIN
+  Close without minting an answer.
+
+- `GET /canonical-answers` → PM,HR,ADMIN
+  Every durable answer on a project.  Param: `projectId`.
+
+- `PUT /canonical-answers/{answerId}` → PM,ADMIN
+  Edit a canonical answer.  Body: `UpdateCanonicalAnswer`.
+
+* Onboarding - Task Zero
+  Path: `/api/v1/onboarding`
+  Controller: `TaskZeroController` (3 endpoints)
+
+The trivial first task that proves the branch→PR→review→merge loop.
+
+- `POST /starter-work/{proposalId}/task-zero` → ADMIN,PM
+  Flag an approved task as suitable for Task 0.  Body:
+  `SetTaskZeroEligibilityRequest`.
+
+- `GET /me/task-zero` → USER,PM,HR,ADMIN
+  Read (and auto-assign, if the hire’s environment is ready) the caller’s Task
+  0.  Param: `projectId`.  Returns `MyTaskZeroResponse`.
+
+- `DELETE /me/task-zero` → USER,PM,HR,ADMIN
+  Undo a Task 0 assignment.  Frees the task for someone else.
+
+* Onboarding - Metrics
+  Path: `/api/v1/onboarding/metrics`
+  Controller: `OnboardingMetricsController` (4 endpoints)
+
+Time-to-first-merged-PR, response latency, and stalls.
+
+- `GET /me` → USER,PM,HR,ADMIN
+  The caller’s own onboarding timeline.  Returns `HireTimelineResponse`.
+
+- `GET /projects/{projectId}` → ADMIN,PM,HR
+  Project-level metrics: medians, p90s, stalls, per-hire timelines.
+
+- `GET /projects/{projectId}/users/{userId}` → ADMIN,PM,HR
+  One hire’s timeline.
+
+- `GET /projects/{projectId}/attention` → ADMIN,PM,HR
+  Who needs a human today — open PRs kept waiting, stalls found.
+
+* User module - Project Roles (new endpoints)
+  Path: `/api/v1/admin`
+  Controller: `ProjectRoleController` (3 new endpoints)
+
+- `GET /projects/{projectId}/users/{userId}/project-roles` → ADMIN,PM,HR
+  The roles a user holds on one project.
+
+- `POST /projects/{projectId}/users/{userId}/project-roles` → ADMIN,PM,HR
+  Assign a role to a user, gated by project membership.
+
+- `DELETE /projects/{projectId}/users/{userId}/project-roles/{roleId}` → ADMIN,PM,HR
+  Remove a role from a user, gated by project membership.
+
+* Module API interfaces (internal)
+
+**UserApi — 6 new methods**
+
+- `getGithubLoginByUserId(userId)` → `String?`
+  The GitHub account a user contributes as.
+- `getDeclaredSkills(userId)` → `List<DeclaredSkill>`
+  Skills a user has self-declared with level.
+- `getGithubSeedingContext(userId)` → `GithubSeedingContext?`
+  Everything the GitHub-history seeder needs in one read.
+- `setGithubSeedingConsent(userId, consentedAt)`
+  Opt in or out of work-history calibration.
+- `setGithubLogin(userId, githubLogin)` → `String`
+  Record/update a user’s GitHub username.
+- `recordGithubLoginVerification(userId, verification)`
+  Record whether GitHub confirmed the login exists.
+
+**GithubRepositoryApi — 3 new methods**
+
+- `getRepositoryIdsByProject(projectId)` → `List<UUID>`
+  All repository connections for a project.
+- `getSourceInstances(projectId?)` → `List<GithubSourceInstanceDto>`
+  Connected repositories for status reporting.
+- `removeProjectFromAllRepositories(projectId)`
+  Cleanup on project deletion.  Idempotent.
+
+**ArtifactIngestionApi — ~10 new methods**
+
+- `getAuthoredWork(projectId, authorLogin)` → `List<AuthoredArtifact>`
+  What one GitHub account has authored in a project’s ingested corpus.
+- `getAuthoredPullRequests(projectId, authorLogin)` → `List<AuthoredPullRequest>`
+  Pull request lifecycle data for one author.
+- `getAssignedIssues(projectId, assigneeDisplayName)` → `List<AssignedIssue>`
+  Tracker issues assigned to one person, with lifecycle timestamps.
+- `getTaskSource(sourceId)` → `TaskSourceArtifact?`
+  The artifact text a starter-work task was mined from.
+- `getOpenIssues(projectId)` → `List<IngestedIssue>`
+  Every open tracker issue in a project’s corpus.
+- `getIssue(sourceId)` → `IngestedIssue?`
+  One ingested issue by source id, open or not.
+- `getRepositoryResponsiveness(projectId)` → `List<RepositoryResponsiveness>`
+  Median response time per repository from ingested data.
+- `exists(artifactId)` / `existsInProject(projectId, artifactId)`
+  Existence checks.
+- `getHash(artifactId)` / `getFirstIngestedAt(component)` (batch variant)
+  Cached metadata lookups.
+- `findArtifactById(artifactId)` → `ArtifactDto?`
+  Full artifact retrieval.
+
+**ProjectMembershipApi — new interface**
+
+- `getProjectMembers(projectId)` → `List<ProjectMember>`
+  Everyone on a project with displayName, githubLogin, joinedAt, and
+  jiraDisplayName.
+
+**New Spring events**
+
+- `UserDeletedEvent` — fired when a user is deleted; cleans up onboarding data
+- `UserSessionStartedEvent` — fired on authenticated request traffic; marks
+  session activity for idle detection
+
+@end
