@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubUserApi
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ArrivalDerivation
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStepState
@@ -36,7 +36,7 @@ class ArrivalEvidenceService(
     private val arrivalStepStateRepository: ArrivalStepStateRepository,
     private val contributionService: ContributionService,
     private val projectMembershipApi: ProjectMembershipApi,
-    private val githubClient: GithubClient,
+    private val githubUserApi: GithubUserApi,
     private val userApi: UserApi,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -75,10 +75,10 @@ class ArrivalEvidenceService(
                         .forHire(userId)
                         .filterNot { it.settled }
                         .mapNotNull { ArrivalDerivation.forStepKey(it.step.key) }
-                }.orEmpty()
+                }
 
         if (pending.isEmpty()) {
-            return readTxTemplate.execute { arrivalStepService.forHire(userId) }.orEmpty()
+            return readTxTemplate.execute { arrivalStepService.forHire(userId) }
         }
 
         val observed = pending.filter { observes(userId, it) }
@@ -88,7 +88,7 @@ class ArrivalEvidenceService(
                 observed.forEach { settle(userId, it) }
                 arrivalStepService.forHire(userId)
             }
-        }.orEmpty()
+        }
     }
 
     /** Whether this derivation can currently see that the step is done. */
@@ -112,7 +112,7 @@ class ArrivalEvidenceService(
 
         // Null means GitHub would not say -- a rate limit, an outage. Not an answer, so not recorded:
         // telling somebody their perfectly good username does not exist is worse than saying nothing.
-        val exists = githubClient.userExists(login) ?: return false
+        val exists = githubUserApi.userExistsInGithub(login) ?: return false
 
         withContext(Dispatchers.IO) {
             txTemplate.execute {

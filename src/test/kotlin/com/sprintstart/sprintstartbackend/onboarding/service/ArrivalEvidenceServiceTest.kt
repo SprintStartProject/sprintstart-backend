@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubUserApi
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionEvidenceKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionState
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
@@ -38,7 +38,7 @@ class ArrivalEvidenceServiceTest {
     private val arrivalStepStateRepository: ArrivalStepStateRepository = mockk()
     private val contributionService: ContributionService = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
-    private val githubClient: GithubClient = mockk()
+    private val githubUserApi: GithubUserApi = mockk()
     private val userApi: UserApi = mockk()
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
 
@@ -58,7 +58,7 @@ class ArrivalEvidenceServiceTest {
             arrivalStepStateRepository,
             contributionService,
             projectMembershipApi,
-            githubClient,
+            githubUserApi,
             userApi,
             transactionManager,
         )
@@ -73,7 +73,7 @@ class ArrivalEvidenceServiceTest {
     fun `a confirmed GitHub account settles the step as observed`() = runTest {
         steps(derived("github-account"))
         every { userApi.getGithubLoginByUserId(hireId) } returns "ada"
-        coEvery { githubClient.userExists("ada") } returns true
+        coEvery { githubUserApi.userExistsInGithub("ada") } returns true
         val saved = slot<ArrivalStepState>()
         every { arrivalStepStateRepository.save(capture(saved)) } answers { saved.captured }
 
@@ -88,7 +88,7 @@ class ArrivalEvidenceServiceTest {
     fun `a login GitHub does not recognise is recorded, and settles nothing`() = runTest {
         steps(derived("github-account"))
         every { userApi.getGithubLoginByUserId(hireId) } returns "nosuchuser"
-        coEvery { githubClient.userExists("nosuchuser") } returns false
+        coEvery { githubUserApi.userExistsInGithub("nosuchuser") } returns false
 
         service.refresh(hireId)
 
@@ -105,7 +105,7 @@ class ArrivalEvidenceServiceTest {
     fun `GitHub refusing to answer records nothing at all`() = runTest {
         steps(derived("github-account"))
         every { userApi.getGithubLoginByUserId(hireId) } returns "ada"
-        coEvery { githubClient.userExists("ada") } returns null
+        coEvery { githubUserApi.userExistsInGithub("ada") } returns null
 
         service.refresh(hireId)
 

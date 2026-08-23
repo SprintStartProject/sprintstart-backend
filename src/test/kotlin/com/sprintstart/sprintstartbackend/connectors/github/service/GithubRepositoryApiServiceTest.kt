@@ -1,28 +1,15 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.PullRequestFileResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.CommitMessage
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequestCommitNode
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequestCommitsConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequestFileNode
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.PullRequestFilesConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.StatusCheckRollup
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.time.Instant
@@ -31,8 +18,7 @@ import java.util.UUID
 
 class GithubRepositoryApiServiceTest {
     private val githubRepositoryConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
-    private val githubClient = mockk<GithubClient>()
-    private val service = GithubRepositoryApiService(githubRepositoryConnectionRepository, githubClient)
+    private val service = GithubRepositoryApiService(githubRepositoryConnectionRepository)
 
     private val repositoryId = UUID.randomUUID()
     private val repository = GithubRepositoryConnection(
@@ -42,89 +28,21 @@ class GithubRepositoryApiServiceTest {
         user = GithubUser(id = GithubUserPat("auth-id", "token-name"), token = "test-token"),
     )
 
-    private fun pullRequest(
-        statusCheckRollup: StatusCheckRollup? = StatusCheckRollup(state = "SUCCESS"),
-        files: List<String> = listOf("src/Main.kt"),
-        commitMessages: List<String> = listOf("fix: bug"),
-    ) = PullRequest(
-        number = 42,
-        title = "Fix bug",
-        body = "Closes #1",
-        state = "MERGED",
-        createdAt = "2024-01-01T00:00:00Z",
-        mergedAt = "2024-01-02T00:00:00Z",
-        url = "https://github.com/owner/repo/pull/42",
-        author = null,
-        labels = null,
-        reviews = null,
-        comments = null,
-        reviewThreads = null,
-        statusCheckRollup = statusCheckRollup,
-        files = PullRequestFilesConnection(files.map { PullRequestFileNode(it) }),
-        commits = PullRequestCommitsConnection(commitMessages.map { PullRequestCommitNode(CommitMessage(it)) }),
-    )
-
-    // Most of these tests are about the GraphQL half, so the diff call defaults to "GitHub
-    // said nothing" -- which is also the state the budgeting tests below start from.
-    @BeforeEach
-    fun stubDiffs() {
-        coEvery { githubClient.fetchPullRequestFiles(any(), any()) } returns emptyList()
-    }
-
     @Test
-    fun `getPullRequestEvidence maps a found pull request to evidence`() = runTest {
+    fun `getRepositoryProjectIdsById returns the connection's project ids`() {
+        val projectIds = setOf(UUID.randomUUID(), UUID.randomUUID())
+        repository.projectIdsInternal.addAll(projectIds)
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
 
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result).isNotNull()
-        assertThat(result?.title).isEqualTo("Fix bug")
-        assertThat(result?.body).isEqualTo("Closes #1")
-        assertThat(result?.state).isEqualTo("MERGED")
-        assertThat(result?.filesChanged).containsExactly("src/Main.kt")
-        assertThat(result?.checksPassed).isTrue()
-        assertThat(result?.commitMessages).containsExactly("fix: bug")
+        assertThat(service.getRepositoryProjectIdsById(repositoryId)).isEqualTo(projectIds)
     }
 
     @Test
-    fun `getPullRequestEvidence returns null when the PR does not exist`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 99) } returns null
-
-        val result = service.getPullRequestEvidence(repositoryId, 99)
-
-        assertThat(result).isNull()
-    }
-
-    @Test
-    fun `getPullRequestEvidence maps a failing status rollup to checksPassed false`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns
-            pullRequest(statusCheckRollup = StatusCheckRollup(state = "FAILURE"))
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result?.checksPassed).isFalse()
-    }
-
-    @Test
-    fun `getPullRequestEvidence maps a missing status rollup to checksPassed null`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns
-            pullRequest(statusCheckRollup = null)
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result?.checksPassed).isNull()
-    }
-
-    @Test
-    fun `getPullRequestEvidence throws when the repository connection does not exist`() {
+    fun `getRepositoryProjectIdsById throws when the repository connection does not exist`() {
         every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.empty()
 
         assertThrows<NoSuchElementException> {
-            runBlocking { service.getPullRequestEvidence(repositoryId, 42) }
+            service.getRepositoryProjectIdsById(repositoryId)
         }
     }
 
@@ -252,108 +170,4 @@ class GithubRepositoryApiServiceTest {
             every { this@mockk.connectionState } returns connectionState
             every { this@mockk.snapshot } returns snapshot
         }
-
-    /**
-     * The whole point of the slice. A filename says a hire *touched* AuthService.kt; only the
-     * diff says whether they fixed anything in it. Without this the judge was told "claims are not
-     * evidence, changed files are" — and a changed file is a very weak thing to rest that on.
-     */
-    @Test
-    fun `evidence carries the diff, not just the filename`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
-        coEvery { githubClient.fetchPullRequestFiles(repository, 42) } returns listOf(
-            PullRequestFileResponse(
-                filename = "src/Main.kt",
-                additions = 2,
-                deletions = 1,
-                patch = "@@ -1 +1 @@\n-old\n+new",
-            ),
-        )
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result?.fileDiffs).singleElement().satisfies({
-            assertThat(it.path).isEqualTo("src/Main.kt")
-            assertThat(it.patch).contains("+new")
-            assertThat(it.truncated).isFalse()
-        })
-        assertThat(result?.omittedFileCount).isZero()
-    }
-
-    /**
-     * A cut patch must not read as a small one. The flag is what lets the judge tell "this
-     * file changed a little" from "this file changed more than I was shown".
-     */
-    @Test
-    fun `an oversized patch is cut and says so`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
-        coEvery { githubClient.fetchPullRequestFiles(repository, 42) } returns listOf(
-            PullRequestFileResponse(filename = "huge.lock", patch = "x".repeat(9_000)),
-        )
-
-        val diff = service.getPullRequestEvidence(repositoryId, 42)?.fileDiffs?.single()
-
-        assertThat(diff?.truncated).isTrue()
-        assertThat(diff?.patch).hasSize(4_000)
-    }
-
-    /**
-     * What did not fit is counted, never silently dropped. A judge shown a partial diff and
-     * not told it is partial reads absence as proof the work was not done — and fails a hire for
-     * the part it was never given.
-     */
-    @Test
-    fun `files past the budget are counted rather than dropped in silence`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
-        coEvery { githubClient.fetchPullRequestFiles(repository, 42) } returns
-            (1..6).map { PullRequestFileResponse(filename = "f$it.kt", patch = "y".repeat(4_000)) }
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        // 12k total at 4k a file: three fit, three are named as missing.
-        assertThat(result?.fileDiffs).hasSize(3)
-        assertThat(result?.omittedFileCount).isEqualTo(3)
-    }
-
-    /**
-     * A binary or over-large file has no patch, and that is evidence in itself — "this changed and
-     * I cannot show you how" is a different statement from "this did not change". It costs no
-     * budget, so it never displaces a diff that could have been read.
-     */
-    @Test
-    fun `a file with no patch is kept without spending budget`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
-        coEvery { githubClient.fetchPullRequestFiles(repository, 42) } returns listOf(
-            PullRequestFileResponse(filename = "logo.png", patch = null),
-            PullRequestFileResponse(filename = "src/Main.kt", patch = "@@ -1 +1 @@"),
-        )
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result?.fileDiffs).hasSize(2)
-        assertThat(result?.fileDiffs?.first()?.patch).isNull()
-        assertThat(result?.omittedFileCount).isZero()
-    }
-
-    /**
-     * An unavailable diff is not an empty one. `fetchPullRequestFiles` swallows a transport
-     * failure into an empty list, so evidence still carries the pull request itself — a network
-     * blip must not turn into a hire's work being failed.
-     */
-    @Test
-    fun `evidence survives a diff GitHub would not give`() = runTest {
-        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
-        coEvery { githubClient.fetchPullRequest(repository, 42) } returns pullRequest()
-        coEvery { githubClient.fetchPullRequestFiles(repository, 42) } returns emptyList()
-
-        val result = service.getPullRequestEvidence(repositoryId, 42)
-
-        assertThat(result?.title).isEqualTo("Fix bug")
-        assertThat(result?.fileDiffs).isEmpty()
-        assertThat(result?.omittedFileCount).isZero()
-    }
 }

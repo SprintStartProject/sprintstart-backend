@@ -388,56 +388,6 @@ class GithubClientTest {
     }
 
     @Nested
-    inner class FetchPullRequest {
-        @Test
-        fun `fetchPullRequest returns the pull request's full detail on demand, without listing first`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
-            mockWebServer.enqueue(singlePrResponse(prNumber = 42, checkState = "SUCCESS"))
-
-            val result = runBlocking { githubClient.fetchPullRequest(repository, 42) }
-
-            assertThat(result).isNotNull()
-            assertThat(result?.number).isEqualTo(42)
-            assertThat(result?.statusCheckRollup?.state).isEqualTo("SUCCESS")
-            assertThat(result?.files?.nodes?.map { it.path }).containsExactly("src/Main.kt")
-            assertThat(result?.commits?.nodes?.map { it.commit.message }).containsExactly("fix: bug")
-            verify(exactly = 0) { queryLoader.load("github/graphql/pullrequests-since.graphql") }
-        }
-
-        @Test
-        fun `fetchPullRequest returns null when the PR does not exist`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
-            mockWebServer.enqueue(nullSinglePrResponse())
-
-            val result = runBlocking { githubClient.fetchPullRequest(repository, 404) }
-
-            assertThat(result).isNull()
-        }
-
-        @Test
-        fun `fetchPullRequest surfaces a null statusCheckRollup when GitHub reports no combined status`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
-            mockWebServer.enqueue(singlePrResponse(prNumber = 7, checkState = null))
-
-            val result = runBlocking { githubClient.fetchPullRequest(repository, 7) }
-
-            assertThat(result?.statusCheckRollup).isNull()
-        }
-    }
-
-    @Nested
     inner class DiscoverRepositoriesOfOrg {
         @Test
         fun `discoverRepositoriesOfOrg returns empty list when user has no repos`() {
