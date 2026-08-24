@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -51,6 +52,21 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
      * @param projectId The project the owning chat belongs to.
      */
     fun findAllByRoleAndChatProjectId(role: ChatRole, projectId: UUID): List<ChatMessage>
+
+    /**
+     * Deletes all messages linked to a specific chat.
+     *
+     * @param chatId The ID of the chat the deleted messages belong to.
+     */
+    @Modifying
+    @Query(
+        """
+        DELETE FROM chat_messages
+        WHERE chat_id = :chatId
+        """,
+        nativeQuery = true,
+    )
+    fun deleteAllByChatId(@Param("chatId") chatId: UUID)
 
     /**
      * Counts what [findAllByRoleAndChatProjectId] would return, without loading the messages.
