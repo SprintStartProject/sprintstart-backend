@@ -19,7 +19,6 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.Bluepr
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.ranges.contains
@@ -31,7 +30,7 @@ class BlueprintPhaseService(
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintPhasesForPath(
-        @PathVariable pathId: UUID,
+        pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
         return blueprintPhaseRepository
             .findAllByBlueprintPathId(pathId)

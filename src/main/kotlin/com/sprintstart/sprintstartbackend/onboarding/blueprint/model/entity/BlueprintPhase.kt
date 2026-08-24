@@ -52,4 +52,10 @@ class BlueprintPhase(
     )
     @OrderBy("position ASC")
     val blueprintCheckQuestions: MutableList<BlueprintCheckQuestion> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "blueprintPhase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val requirements: MutableSet<BlueprintPhaseRequirement> = mutableSetOf(),
 )

@@ -18,6 +18,7 @@ fun BlueprintPhase.toGetResponse(): GetBlueprintPhaseResponse {
         type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
+        blueprintPhaseRequirements = this.requirements.map { it.toGetResponse() }.toSet(),
     )
 }
 
@@ -33,6 +34,7 @@ fun BlueprintPhase.toCreateResponse(): CreateBlueprintPhaseResponse {
         type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
+        blueprintPhaseRequirements = this.requirements.map { it.toGetResponse() }.toSet(),
     )
 }
 
@@ -48,6 +50,7 @@ fun BlueprintPhase.toUpdateResponse(): UpdateBlueprintPhaseResponse {
         type = this.type,
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
+        blueprintPhaseRequirements = this.requirements.map { it.toGetResponse() }.toSet(),
     )
 }
 

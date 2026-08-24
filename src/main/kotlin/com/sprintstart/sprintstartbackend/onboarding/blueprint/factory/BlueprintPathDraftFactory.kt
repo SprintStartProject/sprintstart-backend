@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhaseRequirement
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
@@ -41,6 +42,10 @@ class BlueprintPathDraftFactory {
             type = phase.type,
         )
 
+        phase.requirements
+            .map { copyRequirement(it, newPhase) }
+            .forEach(newPhase.requirements::add)
+
         phase.blueprintSteps
             .map { copyStep(it, newPhase) }
             .forEach(newPhase.blueprintSteps::add)
@@ -50,6 +55,18 @@ class BlueprintPathDraftFactory {
             .forEach(newPhase.blueprintCheckQuestions::add)
 
         return newPhase
+    }
+
+    fun copyRequirement(
+        requirement: BlueprintPhaseRequirement,
+        newPhase: BlueprintPhase,
+    ): BlueprintPhaseRequirement {
+        return BlueprintPhaseRequirement(
+            blueprintPhase = newPhase,
+            type = requirement.type,
+            referenceId = requirement.referenceId,
+            displayName = requirement.displayName,
+        )
     }
 
     fun copyStep(

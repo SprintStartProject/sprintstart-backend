@@ -278,9 +278,9 @@ class BlueprintPathService(
 //  - [x] Add an extra endpoint to every blueprint entity with a position
 //      -> this should return the complete changed List of entities
 //  - [x] Add delete endpoint for drafts
-//  - [] Add role and skill "requirements" to phases
+//  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
-//  - [] Think about a teamoverview phase with : (Name, roles, Ai worksummary) per person
+//  - [] Make everything tied to a project id
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
@@ -290,6 +290,9 @@ class BlueprintPathService(
 //  - [] ( Add an option to make phases be blocked by a previous one or not )
 //  - [] ( Add authors to the Blueprint, as a Set with all the people that edited the draft )
 //  - [] ( Add filter options to the phase query )
+//  -
+//  - [] Think about a teamOverview phase with : (Name, roles, Ai worksummary) per person
+//      -> TeamMemberProfile (I think i will move this into the user)
 
 /*
 Blueprint(
@@ -305,4 +308,7 @@ codex resume 019fe621-6d7a-7c92-90a3-d7c2993d7d28
 
 Frontend session:
 codex resume 01a0005d-d842-7f40-ab68-a6d9c08d7ead
+
+Errors for requirements:
+codex resume 01a01911-9be0-7973-b087-069dc9990e52
  */
