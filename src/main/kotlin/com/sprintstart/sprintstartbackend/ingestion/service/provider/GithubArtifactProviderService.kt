@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -90,7 +91,10 @@ class GithubArtifactProviderService(
         if (!linked && !contentChanged) return
 
         val ingestionRun = lockRun(runId)
-        if (contentChanged) ingestionRun.updatedCount++
+        if (contentChanged) {
+            artifact.lastChangedAt = Instant.now()
+            ingestionRun.updatedCount++
+        }
         ingestionRun.artifactIdsToReingest.add(artifact.id)
     }
 
@@ -130,12 +134,19 @@ class GithubArtifactProviderService(
                 }
             }
 
-            // Pull requests carry no content hash, so they stay mutable records: every re-fetch
-            // overwrites title and body and counts as an update.
+            // Pull requests carry no content hash, so the stored title and body are compared
+            // directly. Overwriting them unconditionally, as this did before, counted every
+            // re-fetch as an update: it inflated the run's update count, re-sent unchanged pull
+            // requests to be embedded again, and would make `lastChangedAt` move on a sync that
+            // changed nothing.
             ArtifactType.PULL_REQUEST -> {
-                artifact.title = command.title
-                artifact.content = command.bodyText
-                true
+                if (artifact.title == command.title && artifact.content == command.bodyText) {
+                    false
+                } else {
+                    artifact.title = command.title
+                    artifact.content = command.bodyText
+                    true
+                }
             }
         }
 

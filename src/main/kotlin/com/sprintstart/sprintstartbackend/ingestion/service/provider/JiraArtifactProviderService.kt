@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.time.Instant
 
 /**
  * Owns writes to the ingestion artifact store for Jira issue artifacts and the mutable parts
@@ -42,14 +43,24 @@ class JiraArtifactProviderService(
 
         val existing = artifactRepository.findBySourceId(command.issueId)
         if (existing != null) {
-            existing.title = command.summary
-            existing.content = command.description
-            existing.addProjectIds(command.projectIds)
+            val linked = existing.addProjectIds(command.projectIds)
+            // Jira issues carry no content hash, so the stored fields are compared directly rather
+            // than overwritten blindly: a re-import that changed nothing must not count as an
+            // update, move `lastChangedAt`, or pay to embed the issue again.
+            val contentChanged = existing.title != command.summary || existing.content != command.description
+            if (contentChanged) {
+                existing.title = command.summary
+                existing.content = command.description
+                existing.lastChangedAt = Instant.now()
+            }
             existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
+
+            if (!linked && !contentChanged) return
+
             val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
                 IngestionRunNotFoundException(runId)
             }
-            ingestionRun.updatedCount++
+            if (contentChanged) ingestionRun.updatedCount++
             // The artifact still belongs to the run that first stored it, so the AI sync would not
             // pick up this update -- nor a project this import just linked it to.
             ingestionRun.artifactIdsToReingest.add(existing.id)

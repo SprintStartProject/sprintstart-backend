@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -47,6 +48,7 @@ class UploadArtifactProviderService(
             if (contentChanged) {
                 artifact.content = command.content
                 artifact.hash = command.hash
+                artifact.lastChangedAt = Instant.now()
             }
             if (linked || contentChanged) {
                 val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {

@@ -51,6 +51,12 @@ class Artifact(
     val updatedAtSource: Instant?,
     @Column(name = "ingested_at", nullable = false)
     val ingestedAt: Instant = Instant.now(),
+    // When ingestion last saw this artifact's content actually change. Null while it still matches
+    // what was first imported. Deliberately our own observation rather than a timestamp from the
+    // source: not every connector reports one, and `ingestedAt` cannot carry it -- that is the
+    // first-import time, which `findFirstIngestedAt` depends on staying put.
+    @Column(name = "last_changed_at")
+    var lastChangedAt: Instant? = null,
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
     val ingestionRun: IngestionRun,

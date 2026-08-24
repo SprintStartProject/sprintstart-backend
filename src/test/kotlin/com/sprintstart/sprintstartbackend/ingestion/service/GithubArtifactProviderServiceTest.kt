@@ -136,6 +136,7 @@ class GithubArtifactProviderServiceTest {
         assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
         // Linking a repository to a second project changes nothing about what was fetched.
         assertThat(run.updatedCount).isZero()
+        assertThat(existing.lastChangedAt).isNull()
     }
 
     @Test
@@ -155,12 +156,34 @@ class GithubArtifactProviderServiceTest {
 
         assertThat(existing.content).isEqualTo("new content")
         assertThat(existing.hash).isEqualTo("new-hash")
+        assertThat(existing.lastChangedAt).isNotNull()
         assertThat(existing.projectIds).containsExactly(projectId)
         assertThat(run.updatedCount).isEqualTo(1)
         // Stored by an earlier run, so `findAllByIngestionRunId` cannot see it: without this the
         // updated content would never reach the AI index.
         assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
         verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact ignores a pull request whose title and body are unchanged`() {
+        val existing = artifact(artifactType = ArtifactType.PULL_REQUEST, hash = null, projectIds = setOf(projectId))
+        existing.title = "App.kt"
+        existing.content = "content"
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.PULL_REQUEST,
+                hash = null,
+            ),
+        )
+
+        // Overwriting unconditionally used to count every re-fetch as an update and re-embed the
+        // pull request for nothing.
+        assertThat(existing.lastChangedAt).isNull()
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
     }
 
     @Test
@@ -182,6 +205,7 @@ class GithubArtifactProviderServiceTest {
         assertThat(existing.content).isEqualTo("new body")
         assertThat(run.updatedCount).isEqualTo(1)
         assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(existing.lastChangedAt).isNotNull()
     }
 
     @Test
