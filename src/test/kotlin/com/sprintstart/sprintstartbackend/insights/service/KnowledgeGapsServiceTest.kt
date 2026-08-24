@@ -95,7 +95,6 @@ class KnowledgeGapsServiceTest {
         avatarUrl = null,
         profileIcon = null,
         projects = emptySet(),
-        skills = emptyList(),
         projectRoles = if (role == null) {
             emptyList()
         } else {

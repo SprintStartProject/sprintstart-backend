@@ -18,5 +18,8 @@ class ArtifactAiMapper {
         bodyText = artifact.content,
         mime = artifact.mime,
         language = artifact.language,
+        state = artifact.state,
+        hasAssignee = artifact.hasAssignee,
+        labels = artifact.labels.toList(),
     )
 }

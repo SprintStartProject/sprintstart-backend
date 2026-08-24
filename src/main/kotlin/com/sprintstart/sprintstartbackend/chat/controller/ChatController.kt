@@ -238,6 +238,7 @@ internal class ChatController(
                         schema = Schema(
                             examples = [
                                 "data: {\"type\": \"tool_use\", \"name\": \"retrieve\", \"kind\": \"tool\"}",
+                                "data: {\"type\": \"reasoning\", \"reasoning\": \"Checking relevant sources...\"}",
                                 "data: {\"type\": \"token\", \"content\": \"The main\"}",
                                 "data: {\"type\": \"citation\", \"artifact_id\": \"artifact-1\"," +
                                     "\"start_line\": 12}",

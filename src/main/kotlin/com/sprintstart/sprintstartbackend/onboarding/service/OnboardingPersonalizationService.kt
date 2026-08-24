@@ -64,10 +64,6 @@ class OnboardingPersonalizationService(
             .getOnboardingProfileByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
 
-        if (profile.projectRoles.size != 1) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "User must have exactly one project role assigned")
-        }
-
         // Retrieval, blueprint selection and the generated path are all scoped to one project.
         // With several assignments there is no basis for picking one, and picking wrongly would
         // build the path from a corpus the user should not be onboarded against.
@@ -77,7 +73,16 @@ class OnboardingPersonalizationService(
                 "User must be assigned to exactly one project to generate an onboarding path",
             )
 
-        val scope = profile.projectRoles.single().toAiScope()
+        // The role that drives the blueprint scope is the one held on this project
+        val projectRoles = profile.projectRoles[projectId].orEmpty()
+        if (projectRoles.size != 1) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "User must have exactly one project role assigned on their project",
+            )
+        }
+
+        val scope = projectRoles.single().toAiScope()
         val skills = profile.skills.map { SkillAssessmentSchema(name = it.name, level = it.level.lowercase()) }
         val requiredScopes = listOf("global", "area:$scope")
 

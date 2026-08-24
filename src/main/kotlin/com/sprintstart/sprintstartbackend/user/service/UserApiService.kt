@@ -1,25 +1,33 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.DeclaredSkill
+import com.sprintstart.sprintstartbackend.user.external.GithubSeedingContext
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
-import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
+import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginSource
+import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import com.sprintstart.sprintstartbackend.user.repository.UserSkillAssessmentRepository
 import jakarta.persistence.criteria.JoinType
 import jakarta.persistence.criteria.Predicate
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.domain.Specification
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -30,9 +38,12 @@ import java.util.UUID
  * controller DTOs or internal user service workflows.
  */
 @Service
+@Suppress("TooManyFunctions")
 class UserApiService(
     private val userRepository: UserRepository,
+    private val userSkillAssessmentRepository: UserSkillAssessmentRepository,
     private val projectRepository: ProjectRepository,
+    private val githubLoginService: GithubLoginService,
 ) : UserApi {
     /**
      * Checks whether a user with the given identifier exists.
@@ -106,8 +117,16 @@ class UserApiService(
             }
 
             if (!roleIds.isNullOrEmpty()) {
-                val projectRolesJoin = root.join<User, ProjectRole>("projectRoles", JoinType.INNER)
-                predicates.add(projectRolesJoin.get<UUID>("id").`in`(roleIds))
+                // Roles are scoped to the project membership, so this travels through the
+                // assignment: "holds one of these roles on *some* project". That is the question a
+                // user search asks — narrowing it to a project would need a project to narrow to,
+                // which this filter does not take. Combining it with `projectIds` still works, but
+                // the two are independent: they can match via different projects, which is the
+                // pre-existing behaviour of two separate joins.
+                val roleJoin = root
+                    .join<User, ProjectUserAssignment>("projectAssignments", JoinType.INNER)
+                    .join<ProjectUserAssignment, ProjectRole>("projectRoles", JoinType.INNER)
+                predicates.add(roleJoin.get<UUID>("id").`in`(roleIds))
             }
 
             if (!projectIds.isNullOrEmpty()) {
@@ -149,42 +168,17 @@ class UserApiService(
             UserOnboardingProfile(
                 id = user.id,
                 projectIds = user.projects.map { it.id }.toSet(),
-                projectRoles = user.projectRoles.map { role ->
-                    ProjectRoleDto(
-                        roleId = role.id,
-                        name = role.name,
-                        description = role.description,
-                    )
-                },
-                skills = user.skillAssessments.map { assessment ->
-                    UserSkillDto(
-                        skillId = assessment.skill.id,
-                        name = assessment.skill.name,
-                        level = assessment.level.name,
-                    )
+                projectRoles = user.projectAssignments.associate { assignment ->
+                    assignment.project.id to assignment.projectRoles.map { role ->
+                        ProjectRoleDto(
+                            roleId = role.id,
+                            name = role.name,
+                            description = role.description,
+                        )
+                    }
                 },
             )
         }
-
-    /**
-     * Marks the given user's onboarding as completed.
-     *
-     * Idempotent: when the user is already flagged nothing is written. The change is
-     * flushed by the surrounding transaction on the managed entity.
-     *
-     * @param userId Internal SprintStart user identifier.
-     * @throws NoSuchElementException if no user is found with the provided identifier.
-     */
-    @Transactional
-    @Tracked("Marking user onboarding as completed")
-    override fun markOnboardingCompleted(userId: UUID) {
-        val user = userRepository.findById(userId).orElseThrow {
-            NoSuchElementException("User with id $userId not found")
-        }
-        if (!user.hasCompletedOnboarding) {
-            user.hasCompletedOnboarding = true
-        }
-    }
 
     /**
      * Determines whether a user with the given authentication identifier has access to the specified project.
@@ -197,6 +191,54 @@ class UserApiService(
      * @param projectId The unique identifier of the project to check access for.
      * @return `true` if the user has access to the project, otherwise `false`.
      */
+    @Transactional(readOnly = true)
+    override fun getGithubSeedingContext(userId: UUID): GithubSeedingContext? {
+        val user = userRepository.findById(userId).orElse(null) ?: return null
+
+        return GithubSeedingContext(
+            githubLogin = user.githubLogin,
+            projectIds = user.projects.map { it.id }.toSet(),
+            seedingConsentAt = user.githubSeedingConsentAt,
+        )
+    }
+
+    @Transactional
+    override fun setGithubSeedingConsent(userId: UUID, consentedAt: Instant?) {
+        userRepository.findById(userId).ifPresent { it.githubSeedingConsentAt = consentedAt }
+    }
+
+    @Transactional
+    override fun setGithubLogin(userId: UUID, githubLogin: String): String {
+        val user = userRepository.findById(userId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
+        // Delegated rather than reimplemented: GithubLoginService owns normalisation, the syntax
+        // and uniqueness rules, and the rule that changing the login discards the verification
+        // verdict about the old one. SELF_DECLARED because the hire said it themselves -- being
+        // told it in conversation is not a PM confirming it.
+        githubLoginService.apply(user, githubLogin, GithubLoginSource.SELF_DECLARED)
+        return userRepository.save(user).githubLogin.orEmpty()
+    }
+
+    @Transactional
+    override fun recordGithubLoginVerification(userId: UUID, verification: GithubLoginVerification) {
+        userRepository.findById(userId).ifPresent {
+            it.githubLoginVerification = verification
+            it.githubLoginVerifiedAt = Instant.now()
+        }
+    }
+
+    @Transactional(readOnly = true)
+    override fun getGithubLoginByUserId(userId: UUID): String? =
+        userRepository.findById(userId).map { it.githubLogin }.orElse(null)
+
+    @Transactional(readOnly = true)
+    @Tracked("Reading a user's declared skills")
+    override fun getDeclaredSkills(userId: UUID): List<DeclaredSkill> =
+        userSkillAssessmentRepository
+            .findByUserId(userId)
+            .map { DeclaredSkill(name = it.skill.name, level = it.level) }
+
     @Transactional(readOnly = true)
     @Tracked("Checking if user has access to project")
     override fun userHasAccessToProject(authId: String, projectId: UUID): Boolean {
@@ -213,5 +255,21 @@ class UserApiService(
             .findManagerAuthId(projectId)
             .map { it == authId }
             .orElse(false)
+    }
+
+    /**
+     * Marks the given user's onboarding as completed.
+     *
+     * Idempotent: when the user is already flagged nothing is written.
+     */
+    @Transactional
+    @Tracked("Marking user onboarding as completed")
+    override fun markOnboardingCompleted(userId: UUID) {
+        val user = userRepository.findById(userId).orElseThrow {
+            NoSuchElementException("User with id $userId not found")
+        }
+        if (!user.hasCompletedOnboarding) {
+            user.hasCompletedOnboarding = true
+        }
     }
 }

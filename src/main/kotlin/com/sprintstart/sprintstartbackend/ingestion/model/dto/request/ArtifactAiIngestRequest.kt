@@ -24,4 +24,7 @@ data class ArtifactAiIngestRequest(
     var bodyText: String?,
     val mime: String?,
     val language: String?,
+    val state: String? = null,
+    val hasAssignee: Boolean? = null,
+    val labels: List<String> = emptyList(),
 )

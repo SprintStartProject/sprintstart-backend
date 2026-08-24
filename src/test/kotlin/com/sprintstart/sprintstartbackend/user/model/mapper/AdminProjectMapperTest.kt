@@ -10,11 +10,10 @@ import java.util.UUID
 
 class AdminProjectMapperTest {
     @Test
-    fun `toProjectUserResponse reports the roles the user actually holds`() {
-        val user = user()
-        user.projectRoles.add(ProjectRole(name = "Developer", description = "Writes code"))
-        user.projectRoles.add(ProjectRole(name = "Architect", description = "Designs"))
-        val assignment = ProjectUserAssignment(user = user, project = project())
+    fun `toProjectUserResponse reports the roles the user holds on this project`() {
+        val assignment = ProjectUserAssignment(user = user(), project = project())
+        assignment.projectRoles.add(ProjectRole(name = "Developer", description = "Writes code"))
+        assignment.projectRoles.add(ProjectRole(name = "Architect", description = "Designs"))
 
         val response = assignment.toProjectUserResponse()
 
@@ -22,16 +21,14 @@ class AdminProjectMapperTest {
     }
 
     @Test
-    fun `toProjectUserResponse ignores the never-written assignment roles`() {
-        val user = user()
-        val assignment = ProjectUserAssignment(user = user, project = project())
-        // Roles are assigned to the user, never to the membership row, so
-        // anything sitting here must not reach the response.
-        assignment.projectRoles.add(ProjectRole(name = "Stale", description = "Unused"))
+    fun `toProjectUserResponse exposes the same roles with ids for removal`() {
+        val assignment = ProjectUserAssignment(user = user(), project = project())
+        val developer = ProjectRole(name = "Developer", description = "Writes code")
+        assignment.projectRoles.add(developer)
 
         val response = assignment.toProjectUserResponse()
 
-        assertThat(response.projectRoles).isEmpty()
+        assertThat(response.projectRoleRefs.map { it.id }).containsExactly(developer.id)
     }
 
     private fun project(id: UUID = UUID.randomUUID()) = Project(
