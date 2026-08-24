@@ -144,10 +144,6 @@ class GithubArtifactProviderService(
         artifact.title = command.title
         artifact.content = command.bodyText
 
-        // Lifecycle facts, not content. They change on almost every crawl of an active repository
-        // and are not part of what the AI embeds, so they are written unconditionally and
-        // deliberately do *not* mark the artifact pending -- otherwise merging one pull request
-        // would re-embed it for no reason.
         artifact.state = command.state
         artifact.mergedAtSource = command.mergedAtSource
         artifact.firstResponseAtSource = command.firstResponseAtSource

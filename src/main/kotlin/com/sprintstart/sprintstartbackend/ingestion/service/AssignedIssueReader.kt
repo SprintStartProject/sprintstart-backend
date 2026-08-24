@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.AssignedIssue
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AssignedIssue
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraArtifactMetadataWrapper
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueHistoryItem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
@@ -27,6 +27,15 @@ import java.time.Instant
 class AssignedIssueReader(
     private val artifactMetadataJsonMapper: ArtifactMetadataJsonMapper,
 ) {
+    private companion object {
+        const val STATUS_FIELD = "status"
+        const val ASSIGNEE_FIELD = "assignee"
+
+        // Jira's own category name for "finished", independent of whatever a team called the
+        // status itself -- one board's "Done" is another's "Shipped" or "Akzeptiert".
+        const val DONE_CATEGORY = "Done"
+    }
+
     /**
      * The issue as [assigneeDisplayName]'s, or null when it is not theirs.
      *
@@ -145,13 +154,4 @@ class AssignedIssueReader(
 
     private fun JiraIssueHistoryItem.touches(field: String): Boolean =
         items.any { it.field.equals(field, ignoreCase = true) }
-
-    private companion object {
-        const val STATUS_FIELD = "status"
-        const val ASSIGNEE_FIELD = "assignee"
-
-        // Jira's own category name for "finished", independent of whatever a team called the
-        // status itself -- one board's "Done" is another's "Shipped" or "Akzeptiert".
-        const val DONE_CATEGORY = "Done"
-    }
 }

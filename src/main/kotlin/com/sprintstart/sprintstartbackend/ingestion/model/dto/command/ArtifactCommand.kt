@@ -73,6 +73,10 @@ data class JiraArtifactCommand(
     val statusCategory: String,
     val projectIds: Set<UUID> = emptySet(),
 ) : ArtifactCommand {
+    private companion object {
+        const val DONE_CATEGORY = "Done"
+    }
+
     /**
      * The issue's open/closed state in the vocabulary `Artifact.state` uses.
      *
@@ -94,10 +98,6 @@ data class JiraArtifactCommand(
      * withhold taken work without withholding everything it cannot see.
      */
     fun toHasAssignee(): Boolean = assignee != null
-
-    private companion object {
-        const val DONE_CATEGORY = "Done"
-    }
 
     fun toMetadata(): JiraArtifactMetadataWrapper = JiraArtifactMetadataWrapper(
         issueType = issueType,

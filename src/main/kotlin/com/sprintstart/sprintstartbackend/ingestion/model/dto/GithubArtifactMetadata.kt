@@ -15,15 +15,7 @@ import java.util.UUID
  * Without this, `objectMapper.readValue(json, ArtifactMetadata::class.java)` cannot construct the
  * abstract interface and throws — which is what stalled the buddy's `get_suggested_tasks` tool.
  *
- * Every wrapper ingestion writes must be registered here. [JiraArtifactMetadataWrapper]
- * once was not, so reading a Jira issue's metadata back threw: deduction saw two candidates and
- * matched neither. It stayed hidden because most readers reach artifacts through `authorLogin`,
- * which is GitHub-only and never selects a Jira row.
- *
- * The other Jira DTOs — project, issue type, comment, history — implement this interface too but
- * are deliberately *not* registered: they are fields inside the wrapper, deserialized as their own
- * concrete types, and adding them as candidates would only give deduction more ways to be
- * ambiguous.
+ * Every wrapper ingestion writes must be registered here.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.DEDUCTION)
 @JsonSubTypes(

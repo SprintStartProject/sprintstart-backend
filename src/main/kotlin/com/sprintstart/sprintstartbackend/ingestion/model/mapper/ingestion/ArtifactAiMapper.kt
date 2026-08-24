@@ -7,11 +7,6 @@ import java.util.UUID
 
 @Component
 class ArtifactAiMapper {
-    // .toList() copies out of the Hibernate-managed lazy collection into a plain immutable list
-    // *while the session is still open* (the caller must run this within a transaction). Handing
-    // out the live PersistentBag instead throws LazyInitializationException whenever the request
-    // is later serialized -- e.g. for the outbound AI sync call, which runs after the read
-    // transaction has already closed.
     fun toIngestRequest(artifact: Artifact) = ArtifactAiIngestRequest(
         artifactId = artifact.id.toString(),
         projectIds = artifact.projectIds.map(UUID::toString),
