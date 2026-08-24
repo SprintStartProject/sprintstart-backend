@@ -88,15 +88,13 @@ class AdminProjectServiceTest {
     @Test
     fun `getProjectById returns sources and project-specific users`() {
         val project = project()
-        // The role goes on the user, not on the membership row: that is where
-        // `POST /users/{userId}/project-roles` writes it, and therefore where
-        // `toProjectUserResponse` reads it from. The assignment's own
-        // `projectRoles` collection is never written to.
+        // Roles are scoped to the membership, so the role goes on the assignment — the same place
+        // `ProjectRoleService.assignRoleToUser` writes it and `toProjectUserResponse` reads it.
         val user = user().apply {
             roles.add(Role.USER)
-            projectRoles.add(ProjectRole(name = "MANAGER", description = "Manages the project"))
         }
         val assignment = ProjectUserAssignment(user = user, project = project)
+        assignment.projectRoles.add(ProjectRole(name = "MANAGER", description = "Manages the project"))
         val source = ProjectSourceDto(
             id = UUID.randomUUID().toString(),
             name = "Frontend GitHub Repo",
@@ -133,7 +131,7 @@ class AdminProjectServiceTest {
         val project = project()
         val user = user().apply { roles.add(Role.USER) }
         val assignment = ProjectUserAssignment(user = user, project = project)
-        assignment.user.projectRoles.add(ProjectRole(name = "DEVELOPER", description = "Ships code"))
+        assignment.projectRoles.add(ProjectRole(name = "DEVELOPER", description = "Ships code"))
 
         every { projectRepository.findById(project.id) } returns Optional.of(project)
         every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()

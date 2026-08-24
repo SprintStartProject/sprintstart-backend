@@ -15,7 +15,7 @@ fun User.toGetResponse(): GetUserResponse =
         lastName = this.lastname,
         projectIds = this.projects.map { it.id }.toSet(),
         roles = this.roles.toSet(),
-        projectRoles = this.projectRoles.map { ProjectRoleSummary(id = it.id, name = it.name) },
+        projectRoles = this.allProjectRoles().map { ProjectRoleSummary(id = it.id, name = it.name) },
         permissionGroup = this.effectivePermissionGroup(),
         enabled = this.enabled,
         hasCompletedOnboarding = this.hasCompletedOnboarding,

@@ -10,21 +10,26 @@ import java.util.UUID
 
 class AdminProjectMapperTest {
     @Test
-    fun `toProjectUserResponse reports the roles the user actually holds`() {
-        val user = user()
-        user.projectRoles.add(ProjectRole(name = "Developer", description = "Writes code"))
-        user.projectRoles.add(ProjectRole(name = "Architect", description = "Designs"))
-        val assignment = ProjectUserAssignment(user = user, project = project())
+    fun `toProjectUserResponse reports the roles the user holds on this project`() {
+        val assignment = ProjectUserAssignment(user = user(), project = project())
+        assignment.projectRoles.add(ProjectRole(name = "Developer", description = "Writes code"))
+        assignment.projectRoles.add(ProjectRole(name = "Architect", description = "Designs"))
 
         val response = assignment.toProjectUserResponse()
 
         assertThat(response.projectRoles).containsExactly("Architect", "Developer")
     }
 
-    // The companion test — "ignores the never-written assignment roles" — is gone with its subject.
-    // It guarded against a stale per-assignment role collection leaking into the response; that
-    // collection no longer exists, so there is no second place a role can be written and nothing
-    // left to leak. The invariant it checked is now held by the model rather than by a test.
+    @Test
+    fun `toProjectUserResponse exposes the same roles with ids for removal`() {
+        val assignment = ProjectUserAssignment(user = user(), project = project())
+        val developer = ProjectRole(name = "Developer", description = "Writes code")
+        assignment.projectRoles.add(developer)
+
+        val response = assignment.toProjectUserResponse()
+
+        assertThat(response.projectRoleRefs.map { it.id }).containsExactly(developer.id)
+    }
 
     private fun project(id: UUID = UUID.randomUUID()) = Project(
         id = id,

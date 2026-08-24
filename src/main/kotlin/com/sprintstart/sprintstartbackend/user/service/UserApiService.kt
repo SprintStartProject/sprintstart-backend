@@ -117,12 +117,12 @@ class UserApiService(
             }
 
             if (!roleIds.isNullOrEmpty()) {
-                // Roles hang off the assignment now, so this travels through it: "holds one of these
-                // roles on *some* project". That is the same question the flat user-level join used
-                // to answer, and the right one for a user search — narrowing it to a project would
-                // need a project to narrow to, which this filter does not take. Combining it with
-                // `projectIds` still works, but the two are independent: they can match via
-                // different projects, which is the pre-existing behaviour of two separate joins.
+                // Roles are scoped to the project membership, so this travels through the
+                // assignment: "holds one of these roles on *some* project". That is the question a
+                // user search asks — narrowing it to a project would need a project to narrow to,
+                // which this filter does not take. Combining it with `projectIds` still works, but
+                // the two are independent: they can match via different projects, which is the
+                // pre-existing behaviour of two separate joins.
                 val roleJoin = root
                     .join<User, ProjectUserAssignment>("projectAssignments", JoinType.INNER)
                     .join<ProjectUserAssignment, ProjectRole>("projectRoles", JoinType.INNER)
@@ -168,12 +168,14 @@ class UserApiService(
             UserOnboardingProfile(
                 id = user.id,
                 projectIds = user.projects.map { it.id }.toSet(),
-                projectRoles = user.projectRoles.map { role ->
-                    ProjectRoleDto(
-                        roleId = role.id,
-                        name = role.name,
-                        description = role.description,
-                    )
+                projectRoles = user.projectAssignments.associate { assignment ->
+                    assignment.project.id to assignment.projectRoles.map { role ->
+                        ProjectRoleDto(
+                            roleId = role.id,
+                            name = role.name,
+                            description = role.description,
+                        )
+                    }
                 },
             )
         }

@@ -96,7 +96,7 @@ class ProjectRoleServiceTest {
         val id = UUID.randomUUID()
         val role = ProjectRole(id = id, name = "Dev", description = "Test")
         val holder = assignmentFor(UUID.randomUUID(), UUID.randomUUID())
-        holder.user.projectRoles.add(role)
+        holder.projectRoles.add(role)
 
         every { projectRoleRepository.existsById(id) } returns true
         every { projectRoleRepository.deleteById(id) } just runs
@@ -105,7 +105,7 @@ class ProjectRoleServiceTest {
 
         service.deleteRole(id)
 
-        assertTrue(holder.user.projectRoles.isEmpty())
+        assertTrue(holder.projectRoles.isEmpty())
         verify(exactly = 1) { assignmentRepository.saveAll(listOf(holder)) }
     }
 
@@ -133,9 +133,9 @@ class ProjectRoleServiceTest {
 
         service.assignRoleToUser(userId, projectId, roleId)
 
-        // The role lands on the *person*, not on the assignment: the project was the guard on
-        // whether this write was allowed, not a scope narrowing what it wrote.
-        assertTrue(assignment.user.projectRoles.contains(role))
+        // The role lands on the assignment — it is scoped to this membership, so the same person
+        // can hold a different role on a different project.
+        assertTrue(assignment.projectRoles.contains(role))
         verify(exactly = 1) { assignmentRepository.save(assignment) }
     }
 
@@ -175,7 +175,7 @@ class ProjectRoleServiceTest {
         val projectId = UUID.randomUUID()
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
         val assignment = assignmentFor(userId, projectId)
-        assignment.user.projectRoles.add(role)
+        assignment.projectRoles.add(role)
 
         every { assignmentRepository.findByProjectIdAndUserId(projectId, userId) } returns assignment
         every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
@@ -183,15 +183,18 @@ class ProjectRoleServiceTest {
 
         service.unassignRoleFromUser(userId, projectId, roleId)
 
-        assertTrue(assignment.user.projectRoles.isEmpty())
+        assertTrue(assignment.projectRoles.isEmpty())
         verify(exactly = 1) { assignmentRepository.save(assignment) }
     }
 
     @Test
-    fun `assignRoleToUser without a project assigns to the person`() {
+    fun `assignRoleToUser without a project applies the role to every assignment`() {
         val userId = UUID.randomUUID()
         val roleId = UUID.randomUUID()
-        val user = assignmentFor(userId, UUID.randomUUID()).user
+        val first = assignmentFor(userId, UUID.randomUUID())
+        val second = assignmentFor(userId, UUID.randomUUID())
+        val user = first.user
+        user.projectAssignments.addAll(listOf(first, second))
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
 
         every { userRepository.findById(userId) } returns Optional.of(user)
@@ -200,11 +203,10 @@ class ProjectRoleServiceTest {
 
         service.assignRoleToUser(userId, roleId)
 
-        assertTrue(user.projectRoles.contains(role))
+        // Roles are scoped to memberships, so a projectless assignment lands on each of them.
+        assertTrue(first.projectRoles.contains(role))
+        assertTrue(second.projectRoles.contains(role))
         verify(exactly = 1) { userRepository.save(user) }
-        // No membership is consulted: a role is a fact about the person, so there is no project to
-        // check it against.
-        verify(exactly = 0) { assignmentRepository.findByProjectIdAndUserId(any(), any()) }
     }
 
     @Test
@@ -220,18 +222,22 @@ class ProjectRoleServiceTest {
     }
 
     @Test
-    fun `unassignRoleFromUser without a project takes the role off the person`() {
+    fun `unassignRoleFromUser without a project removes the role from every assignment`() {
         val userId = UUID.randomUUID()
         val roleId = UUID.randomUUID()
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
-        val user = assignmentFor(userId, UUID.randomUUID()).user.apply { projectRoles.add(role) }
+        val first = assignmentFor(userId, UUID.randomUUID()).apply { projectRoles.add(role) }
+        val second = assignmentFor(userId, UUID.randomUUID()).apply { projectRoles.add(role) }
+        val user = first.user
+        user.projectAssignments.addAll(listOf(first, second))
 
         every { userRepository.findById(userId) } returns Optional.of(user)
         every { userRepository.save(any()) } answers { firstArg() }
 
         service.unassignRoleFromUser(userId, roleId)
 
-        assertTrue(user.projectRoles.isEmpty())
+        assertTrue(first.projectRoles.isEmpty())
+        assertTrue(second.projectRoles.isEmpty())
         verify(exactly = 1) { userRepository.save(user) }
     }
 

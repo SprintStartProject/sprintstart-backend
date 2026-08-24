@@ -53,7 +53,7 @@ class ProjectRoleService(
         // constraint — and a DB-side cascade leaves loaded assignments holding a role that no longer
         // exists. Doing it here makes it the same everywhere.
         val holders = projectUserAssignmentRepository.findAllHoldingRole(roleId)
-        holders.forEach { it.user.projectRoles.removeIf { role -> role.id == roleId } }
+        holders.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
         projectUserAssignmentRepository.saveAll(holders)
         projectRoleRepository.deleteById(roleId)
     }
@@ -61,9 +61,9 @@ class ProjectRoleService(
     /**
      * The roles somebody holds on one project.
      *
-     * Needed because the per-person surfaces show the union across their projects, which cannot be
-     * edited: taking a role off has to say *where*. 404 rather than an empty list when they are not
-     * on the project, so "holds no role here" and "is not here" stay distinguishable.
+     * Roles are scoped to the membership, so this is the authoritative read of what a person does
+     * on a given project. 404 rather than an empty list when they are not on the project, so
+     * "holds no role here" and "is not here" stay distinguishable.
      */
     @Transactional(readOnly = true)
     fun getRolesForUserOnProject(userId: UUID, projectId: UUID): List<ProjectRoleSummary> {
@@ -72,7 +72,7 @@ class ProjectRoleService(
                 HttpStatus.NOT_FOUND,
                 "User $userId is not assigned to project $projectId",
             )
-        return assignment.user.projectRoles
+        return assignment.projectRoles
             .map { ProjectRoleSummary(id = it.id, name = it.name) }
             .sortedBy { it.name }
     }
@@ -80,11 +80,10 @@ class ProjectRoleService(
     /**
      * Gives somebody a role, checking first that they are on [projectId].
      *
-     * The role itself is not scoped to that project — it is held on the person, and applies
-     * everywhere they work. [projectId] is a guard, not a scope: it refuses to set a role for
-     * somebody who is not on the project, rather than silently creating membership as a side effect.
-     * A caller with no project in hand wants the two-argument overload, which is the same write
-     * without the guard.
+     * The role is scoped to that membership: it is recorded on this assignment and applies only
+     * here, so the same person can hold a different role on a different project. 404 when they are
+     * not on the project. A caller with no project in hand wants the two-argument overload, which
+     * applies the role across every project they belong to.
      *
      * Adding a role they already hold is a no-op, not an error — the caller's intent is already
      * satisfied.
@@ -101,16 +100,15 @@ class ProjectRoleService(
             .findById(roleId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found") }
 
-        assignment.user.projectRoles.add(role)
+        assignment.projectRoles.add(role)
         projectUserAssignmentRepository.save(assignment)
     }
 
     /**
      * Takes a role off somebody, checking first that they are on [projectId].
      *
-     * Removes the role everywhere, not only on that project: a role is held on the person,
-     * so there is no per-project copy to take away. [projectId] guards who may be edited, it does
-     * not narrow what is edited.
+     * Removes the role from this membership only; the same role on any of their other projects is
+     * untouched. 404 when they are not on the project.
      */
     @Transactional
     @Tracked("Unassigning project role from user")
@@ -120,17 +118,17 @@ class ProjectRoleService(
                 HttpStatus.NOT_FOUND,
                 "User $userId is not assigned to project $projectId",
             )
-        assignment.user.projectRoles.removeIf { it.id == roleId }
+        assignment.projectRoles.removeIf { it.id == roleId }
         projectUserAssignmentRepository.save(assignment)
     }
 
     /**
-     * Gives somebody a role, without naming a project.
+     * Gives somebody a role on every project they belong to.
      *
-     * The plain form of the write the guarded overload performs: a role is a fact about the person
-     * and applies on every project they work on, so a project is not needed to express it. Use this
-     * when the caller has no project in hand; use the guarded overload when it does and wants the
-     * membership check.
+     * The projectless form kept for callers (and the existing frontend) that have no project in
+     * hand: roles are scoped to memberships, so "the person" is not a place a role can live, and
+     * the closest faithful reading of a projectless assignment is to apply it to each of their
+     * current memberships. Memberships created afterwards do not inherit it.
      */
     @Transactional
     @Tracked("Assigning project role to user")
@@ -142,18 +140,23 @@ class ProjectRoleService(
             .findById(roleId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found") }
 
-        user.projectRoles.add(role)
+        user.projectAssignments.forEach { it.projectRoles.add(role) }
         userRepository.save(user)
     }
 
-    /** Takes a role off somebody, without naming a project. The counterpart to [assignRoleToUser]. */
+    /**
+     * Takes a role off somebody on every project they belong to.
+     *
+     * The projectless counterpart to [assignRoleToUser]: removes the role from each of their
+     * memberships, so the person no longer holds it anywhere.
+     */
     @Transactional
     @Tracked("Unassigning project role from user")
     fun unassignRoleFromUser(userId: UUID, roleId: UUID) {
         val user = userRepository
             .findById(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id $userId not found") }
-        user.projectRoles.removeIf { it.id == roleId }
+        user.projectAssignments.forEach { assignment -> assignment.projectRoles.removeIf { it.id == roleId } }
         userRepository.save(user)
     }
 

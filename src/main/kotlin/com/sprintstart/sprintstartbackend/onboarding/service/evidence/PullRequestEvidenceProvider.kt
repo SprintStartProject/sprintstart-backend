@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service.evidence
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.AuthoredPullRequest
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredPullRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionEvidenceKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionState
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor

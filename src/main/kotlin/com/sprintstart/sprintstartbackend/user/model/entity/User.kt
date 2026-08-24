@@ -10,7 +10,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
-import jakarta.persistence.ForeignKey
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.JoinTable
@@ -124,44 +123,12 @@ class User(
      * This user's project assignments, read-only from here.
      *
      * The inverse side of [ProjectUserAssignment.user], so nothing is ever written through it —
-     * assignments are created and roled via `ProjectUserAssignment` itself. It exists so that the
-     * global question ("what roles does this person hold?") can be answered from the per-project
-     * data, which is now the only place roles live.
+     * assignments are created and roled via `ProjectUserAssignment` itself. Roles live on the
+     * assignment (scoped to the project), so the per-project and the whole-person questions are
+     * both answered from this collection: read one assignment's roles for the former, the union
+     * across all of them for the latter.
      */
     @OneToMany(mappedBy = "user", fetch = FetchType.LAZY)
-    @org.hibernate.annotations.BatchSize(size = 50)
+    @BatchSize(size = 50)
     val projectAssignments: MutableSet<ProjectUserAssignment> = mutableSetOf(),
-    /**
-     * Every role this person holds.
-     *
-     * Roles are a fact about the person, not about one of their memberships: a hire is only ever on
-     * one project, and a PM holds the same role on every project they run. Scoping roles per
-     * assignment would buy expressiveness this domain never uses, at the cost of a second place a
-     * role can be written.
-     */
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-        name = "user_project_roles",
-        joinColumns = [
-            JoinColumn(
-                name = "user_id",
-                foreignKey = ForeignKey(
-                    name = "fk_upr_user_id",
-                    foreignKeyDefinition = "FOREIGN KEY (user_id) REFERENCES sprintstart_users ON DELETE CASCADE",
-                ),
-            ),
-        ],
-        inverseJoinColumns = [
-            JoinColumn(
-                name = "role_id",
-                foreignKey = ForeignKey(
-                    name = "fk_upr_role_id",
-                    foreignKeyDefinition = "FOREIGN KEY (role_id) REFERENCES " +
-                        "sprintstart_project_roles ON DELETE CASCADE",
-                ),
-            ),
-        ],
-    )
-    @org.hibernate.annotations.BatchSize(size = 50)
-    var projectRoles: MutableSet<ProjectRole> = mutableSetOf(),
 )

@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
-import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -18,7 +17,6 @@ import java.util.UUID
 @Service
 internal class ProjectMembershipApiService(
     private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
-    private val projectRoleRepository: ProjectRoleRepository,
 ) : ProjectMembershipApi {
     @Transactional(readOnly = true)
     override fun getProjectMembers(projectId: UUID): List<ProjectMember> {

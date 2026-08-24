@@ -16,7 +16,7 @@ interface ProjectUserAssignmentRepository : JpaRepository<ProjectUserAssignment,
             FROM ProjectUserAssignment a
             JOIN FETCH a.user u
             LEFT JOIN FETCH u.roles
-            LEFT JOIN FETCH u.projectRoles
+            LEFT JOIN FETCH a.projectRoles
             WHERE a.project.id = :projectId
         """,
     )
@@ -28,7 +28,7 @@ interface ProjectUserAssignmentRepository : JpaRepository<ProjectUserAssignment,
             FROM ProjectUserAssignment a
             JOIN FETCH a.user u
             LEFT JOIN FETCH u.roles
-            LEFT JOIN FETCH u.projectRoles
+            LEFT JOIN FETCH a.projectRoles
             WHERE a.project.id IN :projectIds
         """,
     )
@@ -40,7 +40,7 @@ interface ProjectUserAssignmentRepository : JpaRepository<ProjectUserAssignment,
             FROM ProjectUserAssignment a
             JOIN FETCH a.user u
             LEFT JOIN FETCH u.roles
-            LEFT JOIN FETCH u.projectRoles
+            LEFT JOIN FETCH a.projectRoles
             WHERE a.project.id = :projectId AND a.user.id = :userId
         """,
     )
@@ -64,8 +64,8 @@ interface ProjectUserAssignmentRepository : JpaRepository<ProjectUserAssignment,
             SELECT DISTINCT a
             FROM ProjectUserAssignment a
             JOIN FETCH a.user u
-            LEFT JOIN FETCH u.projectRoles r
-            WHERE :roleId IN (SELECT r2.id FROM u.projectRoles r2)
+            LEFT JOIN FETCH a.projectRoles r
+            WHERE :roleId IN (SELECT r2.id FROM a.projectRoles r2)
         """,
     )
     fun findAllHoldingRole(@Param("roleId") roleId: UUID): List<ProjectUserAssignment>

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.AuthoredArtifact
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredArtifact
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.GithubHistoryPrior
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.user.external.GithubSeedingContext

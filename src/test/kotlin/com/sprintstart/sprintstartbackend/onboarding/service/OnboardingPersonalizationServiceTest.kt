@@ -54,8 +54,10 @@ class OnboardingPersonalizationServiceTest {
     private val profile = UserOnboardingProfile(
         id = userId,
         projectIds = setOf(projectId),
-        projectRoles = listOf(
-            ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
+        projectRoles = mapOf(
+            projectId to listOf(
+                ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
+            ),
         ),
     )
 
@@ -73,7 +75,7 @@ class OnboardingPersonalizationServiceTest {
         @Test
         fun `throws 400 when user has no project role assigned`() {
             val profileWithNoRoles =
-                UserOnboardingProfile(id = userId, projectIds = setOf(projectId), projectRoles = emptyList())
+                UserOnboardingProfile(id = userId, projectIds = setOf(projectId), projectRoles = emptyMap())
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileWithNoRoles)
 
             val ex = assertThrows<ResponseStatusException> { service.personalize(authId) }
@@ -86,9 +88,11 @@ class OnboardingPersonalizationServiceTest {
             val profileWithTwoRoles = UserOnboardingProfile(
                 id = userId,
                 projectIds = setOf(projectId),
-                projectRoles = listOf(
-                    ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
-                    ProjectRoleDto(roleId = UUID.randomUUID(), name = "Frontend", description = "Frontend work"),
+                projectRoles = mapOf(
+                    projectId to listOf(
+                        ProjectRoleDto(roleId = UUID.randomUUID(), name = "Backend", description = "Backend work"),
+                        ProjectRoleDto(roleId = UUID.randomUUID(), name = "Frontend", description = "Frontend work"),
+                    ),
                 ),
             )
             every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileWithTwoRoles)

@@ -82,11 +82,8 @@ fun ProjectUserAssignment.toProjectUserResponse(): ProjectUserResponse {
         firstName = user.firstname,
         lastName = user.lastname,
         roles = user.roles.toSet(),
-        // Names only, the same shape this endpoint already serves, so a client reading
-        // `projectRoles` keeps working. `projectRoleRefs` below carries the same roles with ids for
-        // clients that need to remove one without matching on its name.
-        projectRoles = user.projectRoles.map { it.name }.sorted(),
-        projectRoleRefs = user.projectRoles
+        projectRoles = projectRoles.map { it.name }.sorted(),
+        projectRoleRefs = projectRoles
             .map { ProjectRoleSummary(id = it.id, name = it.name) }
             .sortedBy { it.name },
         enabled = user.enabled,
