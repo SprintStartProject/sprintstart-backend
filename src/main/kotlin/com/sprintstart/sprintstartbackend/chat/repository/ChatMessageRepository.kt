@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.OffsetDateTime
 import java.util.UUID
 
 @Repository
@@ -50,4 +51,25 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
      * @param projectId The project the owning chat belongs to.
      */
     fun findAllByRoleAndChatProjectId(role: ChatRole, projectId: UUID): List<ChatMessage>
+
+    /**
+     * Counts what [findAllByRoleAndChatProjectId] would return, without loading the messages.
+     *
+     * @param role The role to filter messages by.
+     * @param projectId The project the owning chat belongs to.
+     */
+    fun countByRoleAndChatProjectId(role: ChatRole, projectId: UUID): Long
+
+    /**
+     * Same as [countByRoleAndChatProjectId], limited to messages from [createdAt] onwards.
+     *
+     * @param role The role to filter messages by.
+     * @param projectId The project the owning chat belongs to.
+     * @param createdAt The oldest moment to count from, inclusive.
+     */
+    fun countByRoleAndChatProjectIdAndCreatedAtGreaterThanEqual(
+        role: ChatRole,
+        projectId: UUID,
+        createdAt: OffsetDateTime,
+    ): Long
 }

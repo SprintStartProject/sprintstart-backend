@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
+import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import io.mockk.coEvery
@@ -13,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -21,9 +23,14 @@ class IngestionEventListenerTest {
     private val runArtifactsIngestionService = mockk<RunArtifactsIngestionService>()
     private val ingestionRunLifeCycleService = mockk<IngestionRunLifeCycleService>(relaxed = true)
 
+    private val artifactRepository = mockk<ArtifactRepository>(relaxed = true)
+    private val publisher = mockk<ApplicationEventPublisher>(relaxed = true)
+
     private val listener = IngestionEventListener(
         runArtifactsIngestionService,
         ingestionRunLifeCycleService,
+        artifactRepository,
+        publisher,
         testScope,
     )
 

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqDocument
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -15,15 +16,50 @@ import java.util.UUID
  */
 @Component
 class AiFaqGroupMapper {
-    fun toEntity(aiGroup: AiFaqGroup, projectId: UUID): FaqGroup {
+    /**
+     * @param askedAtByQuestionId when each question was asked, keyed by the id it was sent to the
+     * AI service under. The service holds no history and returns none, so a group's recency can
+     * only be recovered here — without it every rebuilt group would look equally fresh and the
+     * panel would lose its sense of which topics are actually active.
+     */
+    fun toEntity(
+        aiGroup: AiFaqGroup,
+        projectId: UUID,
+        askedAtByQuestionId: Map<String, Instant>,
+    ): FaqGroup {
+        val askedAt = aiGroup.questionIds.mapNotNull { askedAtByQuestionId[it] }
+        val now = Instant.now()
+
         val group = FaqGroup(
             projectId = projectId,
             question = aiGroup.question,
             occurrenceCount = aiGroup.count,
+            // Falls back to the redacted representative question: wordy, but it still says what
+            // the entry is about, and it can never leak an unredacted name.
+            title = aiGroup.title?.takeIf { it.isNotBlank() } ?: aiGroup.question,
+            firstAskedAt = askedAt.minOrNull() ?: now,
+            lastAskedAt = askedAt.maxOrNull() ?: now,
         )
 
-        aiGroup.questions.forEach { text ->
-            group.questions.add(FaqQuestion(text = text, group = group))
+        // One row per ask, not per sampled phrasing. A sample carries every id asked in that
+        // exact wording, so a question repeated verbatim keeps all of its asks — each with its own
+        // timestamp, which is what the trend counts and what makes "last asked" true. Rows for ids
+        // the sampling did not cover carry no text; they exist to be counted.
+        val sampleTexts = aiGroup.questions
+            .flatMap { sample ->
+                sample.ids.map { it to sample.text }
+            }.toMap()
+        val questionIds = (aiGroup.questionIds + sampleTexts.keys).distinct()
+
+        questionIds.forEach { questionId ->
+            group.questions.add(
+                FaqQuestion(
+                    text = sampleTexts[questionId].orEmpty(),
+                    askedAt = askedAtByQuestionId[questionId] ?: now,
+                    sourceMessageId = parseUuidOrNull(questionId),
+                    group = group,
+                ),
+            )
         }
 
         aiGroup.documents.forEach { document ->
@@ -40,3 +76,17 @@ class AiFaqGroupMapper {
         return group
     }
 }
+
+/**
+ * Parses [value] as a [UUID], or null if it isn't one.
+ *
+ * The question ids handed to the AI service are chat message ids, but nothing stops it from
+ * returning something else. A malformed one costs the group its idempotence marker; it must not
+ * cost the whole refresh.
+ */
+private fun parseUuidOrNull(value: String): UUID? =
+    try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
