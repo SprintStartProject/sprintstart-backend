@@ -80,7 +80,7 @@ class ChatAiClient(
             ).map { chunk ->
                 when (chunk.type) {
                     "error" -> throw AiResponseException("AI responded with error: ${chunk.message}")
-                    else -> chunk // token, citation, tool_use — pass through
+                    else -> chunk // token, citation, tool_use, reasoning — pass through
                 }
             }
 
