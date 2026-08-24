@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubUserApi
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.AddPatRequest
@@ -28,7 +30,18 @@ import org.springframework.transaction.annotation.Transactional
 class GithubUserService(
     private val githubUserRepository: GithubUserRepository,
     private val githubRepositoryConnectionRepository: GithubRepositoryConnectionRepository,
-) {
+    private val githubClient: GithubClient,
+) : GithubUserApi {
+    /**
+     * Checks if a user with the given username exists on GitHub.
+     *
+     * @param username The username to check if it corresponds to a GitHub account.
+     * @return true, if a user withe given username exists on GitHub, otherwise false.
+     */
+    override suspend fun userExistsInGithub(username: String): Boolean? {
+        return githubClient.userExists(username)
+    }
+
     /**
      * Retrieves the names of all personal access tokens (PATs) associated with the given authentication ID.
      *

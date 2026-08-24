@@ -183,7 +183,6 @@ class KnowledgeGapsController(
     // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
     // It does not reach the service: component ownership is keyed by component name alone and is
     // not yet project-partitioned, so two projects sharing a component name share its owners.
-    // Scoping ComponentOwner is deliberately left out of #166 §4.
     @Suppress("UnusedParameter")
     fun getComponentOwners(
         @RequestParam projectId: UUID,
@@ -215,7 +214,6 @@ class KnowledgeGapsController(
     // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
     // It does not reach the service: component ownership is keyed by component name alone and is
     // not yet project-partitioned, so two projects sharing a component name share its owners.
-    // Scoping ComponentOwner is deliberately left out of #166 §4.
     @Suppress("UnusedParameter")
     fun setComponentOwners(
         @RequestParam projectId: UUID,

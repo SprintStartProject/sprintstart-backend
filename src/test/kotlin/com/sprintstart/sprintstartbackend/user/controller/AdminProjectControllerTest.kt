@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectMan
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserSummaryResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
 import io.mockk.every
@@ -113,6 +114,7 @@ class AdminProjectControllerTest(
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.users[0].roles[0]").value("USER"))
             .andExpect(jsonPath("$.users[0].projectRoles[0]").value("MANAGER"))
+            .andExpect(jsonPath("$.users[0].projectRoleRefs[0].name").value("MANAGER"))
             .andExpect(jsonPath("$.users[0].enabled").value(true))
 
         verify(exactly = 1) { adminProjectService.getProjectById(projectId) }
@@ -274,6 +276,7 @@ class AdminProjectControllerTest(
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].roles[0]").value("USER"))
             .andExpect(jsonPath("$[0].projectRoles[0]").value("MANAGER"))
+            .andExpect(jsonPath("$[0].projectRoleRefs[0].name").value("MANAGER"))
 
         verify(exactly = 1) { adminProjectService.getProjectUsers(projectId) }
     }
@@ -552,6 +555,7 @@ class AdminProjectControllerTest(
         lastName = "Mustermann",
         roles = setOf(Role.USER),
         projectRoles = listOf("MANAGER"),
+        projectRoleRefs = listOf(ProjectRoleSummary(id = UUID.randomUUID(), name = "MANAGER")),
         enabled = true,
     )
 }

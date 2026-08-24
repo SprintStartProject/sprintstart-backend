@@ -22,6 +22,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphq
 import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
@@ -44,14 +45,15 @@ import tools.jackson.module.kotlin.jacksonObjectMapper
  * @param applicationConfig Application-level configuration parameters, including GitHub-specific configurations.
  * @param queryLoader Responsible for loading pre-defined GitHub GraphQL queries.
  */
-@Suppress("TooManyFunctions")
 @Component
+@Suppress("TooManyFunctions")
 class GithubClient(
     private val webClient: WebClient,
     private val applicationConfig: ApplicationConfig,
     private val queryLoader: GithubQueryLoader,
 ) {
     private val objectMapper = jacksonObjectMapper()
+    private val logger = LoggerFactory.getLogger(GithubClient::class.java)
 
     /**
      * Retrieves the list of members belonging to the specified GitHub organization.
@@ -191,6 +193,33 @@ class GithubClient(
             } else {
                 throw e // propagate unexpected errors
             }
+        }
+    }
+
+    /**
+     * Whether a GitHub account with this login exists — or `null` when GitHub would not say.
+     *
+     * Three-valued, and unauthenticated — no token is threaded through here. The cost is
+     * GitHub's unauthenticated rate limit (60/hour per IP), affordable only because the answer is
+     * *stored* against the user and re-checked when their login changes or a previous check could
+     * not run.
+     *
+     * Only a 404 means "no such account". A rate limit, a 5xx or a dropped connection all
+     * return null, never false — an outage is not evidence about the world.
+     *
+     * @return true when it exists, false when GitHub says it does not, null when GitHub would not
+     * answer.
+     */
+    suspend fun userExists(login: String): Boolean? {
+        return try {
+            webClient
+                .get()
+                .uri("${applicationConfig.github.baseUrl}/users/$login")
+                .sync()
+                .performRaw()
+            true
+        } catch (e: WebClientException) {
+            if (e.statusCode == 404) false else null
         }
     }
 

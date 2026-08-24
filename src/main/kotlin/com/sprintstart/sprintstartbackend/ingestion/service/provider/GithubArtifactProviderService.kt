@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.util.UUID
 
 /**
  * Owns writes to the ingestion artifact store and the mutable parts of `IngestionRun`.
@@ -36,7 +37,9 @@ class GithubArtifactProviderService(
      * Business rules:
      * - commits are idempotent by `sourceId`; an already-known commit is ignored
      * - files are updated only when the incoming content hash changes
-     * - issues are updated only when the computed issue hash changes
+     * - issues are updated only when the computed issue hash changes; `state`/`labels` are the
+     *   exception -- they refresh on every fetch regardless of the hash, since a label or
+     *   open/closed change doesn't move title/body
      * - pull requests are always treated as mutable and overwrite title/body on re-fetch
      *
      * Counter side effects happen inside the same transaction:
@@ -54,80 +57,29 @@ class GithubArtifactProviderService(
         } else {
             mutableSetOf()
         }
-        var artifact: Artifact?
-        when (command.artifactType) {
-            ArtifactType.COMMIT,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
-                }
-            }
 
-            ArtifactType.FILE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
+        val existing = artifactRepository.findBySourceId(command.sourceId)
+        if (existing != null) {
+            existing.addProjectIds(projectIds)
+            // Backfills rows ingested before the column existed. Not part of the AI payload, so it
+            // deliberately does not mark the artifact for re-embedding.
+            if (existing.authorLogin == null) {
+                existing.authorLogin = command.authorLogin
             }
-
-            ArtifactType.ISSUE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.title = command.title
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
+            when (command.artifactType) {
+                ArtifactType.COMMIT -> Unit
+                ArtifactType.FILE -> updateFile(existing, command, runId)
+                ArtifactType.ISSUE -> updateIssue(existing, command, runId)
+                ArtifactType.PULL_REQUEST -> updatePullRequest(existing, command, runId)
+                ArtifactType.ORG_METADATA -> Unit
             }
-
-            ArtifactType.PULL_REQUEST,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    artifact.title = command.title
-                    artifact.content = command.bodyText
-                    val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                        IngestionRunNotFoundException(runId)
-                    }
-                    ingestionRun.updatedCount++
-                    return
-                }
-            }
-
-            ArtifactType.ORG_METADATA -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
-                }
-            }
+            return
         }
 
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
             IngestionRunNotFoundException(runId)
         }
-        artifact = Artifact(
+        val artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = command.sourceUrl,
@@ -136,15 +88,79 @@ class GithubArtifactProviderService(
             content = command.bodyText,
             mime = command.mime,
             language = command.language,
+            state = command.state,
+            labels = command.labels.toMutableList(),
             projectIdsInternal = projectIds,
             ingestionRun = ingestionRun,
             hash = command.hash,
             metadata = artifactMetadataJsonMapper.toJson(command.metadata),
-            createdAtSource = null,
-            updatedAtSource = null,
+            createdAtSource = command.createdAtSource,
+            updatedAtSource = command.updatedAtSource,
+            authorLogin = command.authorLogin,
+            mergedAtSource = command.mergedAtSource,
+            firstResponseAtSource = command.firstResponseAtSource,
+            changesRequestedCount = command.changesRequestedCount,
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
+    }
+
+    /** Files are content-addressed: nothing to do unless the incoming hash differs. */
+    private fun updateFile(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
+        if (artifact.hash == command.hash) {
+            return
+        }
+
+        artifact.content = command.bodyText
+        artifact.hash = command.hash
+        countUpdate(runId)
+    }
+
+    /**
+     * Issues carry two independently changing parts: the hashed title/body, and `state`/`labels`.
+     *
+     * State and labels are refreshed on every fetch, regardless of the hash. An issue being closed
+     * or re-labeled doesn't move its title or body, so gating them on hash equality would silently
+     * miss exactly the updates they exist for.
+     *
+     * Only a hash change counts as an update on the run. The counter reports how much *content*
+     * a crawl changed, and a re-labeled issue whose text is untouched has not changed any.
+     */
+    private fun updateIssue(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
+        artifact.state = command.state
+        artifact.labels.clear()
+        artifact.labels.addAll(command.labels)
+
+        if (artifact.hash != command.hash) {
+            artifact.title = command.title
+            artifact.content = command.bodyText
+            artifact.hash = command.hash
+            countUpdate(runId)
+        }
+    }
+
+    /** Pull requests are treated as mutable and overwritten on every re-fetch (they carry no hash). */
+    private fun updatePullRequest(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
+        artifact.title = command.title
+        artifact.content = command.bodyText
+
+        artifact.state = command.state
+        artifact.mergedAtSource = command.mergedAtSource
+        artifact.firstResponseAtSource = command.firstResponseAtSource
+        artifact.changesRequestedCount = command.changesRequestedCount
+        // Backfills rows written before these were persisted; a source creation time never changes.
+        if (artifact.createdAtSource == null) {
+            artifact.createdAtSource = command.createdAtSource
+        }
+
+        countUpdate(runId)
+    }
+
+    private fun countUpdate(runId: UUID) {
+        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
+            IngestionRunNotFoundException(runId)
+        }
+        ingestionRun.updatedCount++
     }
 
     /**
