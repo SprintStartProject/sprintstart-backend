@@ -10,7 +10,6 @@ import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
 import org.springframework.stereotype.Component
 import java.net.URI
 
