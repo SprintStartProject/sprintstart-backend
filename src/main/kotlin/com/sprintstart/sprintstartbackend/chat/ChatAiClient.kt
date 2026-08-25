@@ -9,7 +9,6 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import org.springframework.stereotype.Component
 import java.net.URI
 
@@ -77,12 +76,7 @@ class ChatAiClient(
                     System.err.println("AiClient: skipping malformed SSE chunk '$raw': ${err.message}")
                     true
                 },
-            ).map { chunk ->
-                when (chunk.type) {
-                    "error" -> throw AiResponseException("AI responded with error: ${chunk.message}")
-                    else -> chunk // token, citation, tool_use, reasoning — pass through
-                }
-            }
+            )
 
     // ── URI helpers ───────────────────────────────────────────────────────────
 
