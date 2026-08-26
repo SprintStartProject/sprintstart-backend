@@ -5,8 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface BlueprintStepRepository : JpaRepository<BlueprintStep, UUID> {
-    fun findAllByBlueprintPhaseId(blueprintPhaseId: UUID): MutableList<BlueprintStep>
-
     fun countByBlueprintPhaseId(blueprintPhaseId: UUID): Long
 
     fun findAllByBlueprintPhaseIdAndPositionGreaterThanEqualOrderByPositionDesc(
@@ -18,5 +16,15 @@ interface BlueprintStepRepository : JpaRepository<BlueprintStep, UUID> {
         blueprintPhaseId: UUID,
         positionAfter: Int,
         positionBefore: Int,
+    ): MutableList<BlueprintStep>
+
+    fun findByBlueprintPhaseBlueprintPathProjectIdAndId(
+        projectId: UUID,
+        id: UUID,
+    ): BlueprintStep?
+
+    fun findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(
+        projectId: UUID,
+        blueprintPhaseId: UUID,
     ): MutableList<BlueprintStep>
 }

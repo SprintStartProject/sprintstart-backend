@@ -214,10 +214,10 @@ class BlueprintPathService(
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [] Make everything tied to a project id
 //      - [x] Path
-//      - [] Phase
+//      - [x] Phase
 //      - [] Step
 //      - [] Resource
-//      - [] Requirement
+//      - [x] Requirement
 //      - [] Check
 //      - [] CheckQuestion
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)

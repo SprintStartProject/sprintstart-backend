@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.DeleteBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
@@ -78,7 +79,8 @@ class BlueprintPhaseController(
     fun deleteBlueprintPhaseById(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
+        @RequestBody request: DeleteBlueprintPhaseRequest,
     ) {
-        blueprintPhaseService.deleteBlueprintPhaseById(projectId, phaseId)
+        blueprintPhaseService.deleteBlueprintPhaseById(projectId, phaseId, request)
     }
 }

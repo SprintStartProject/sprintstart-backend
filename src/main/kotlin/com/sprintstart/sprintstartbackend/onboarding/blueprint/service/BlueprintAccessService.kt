@@ -3,8 +3,10 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -15,6 +17,7 @@ import java.util.UUID
 class BlueprintAccessService(
     private val blueprintPathRepository: BlueprintPathRepository,
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
+    private val blueprintStepRepository: BlueprintStepRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
@@ -105,14 +108,37 @@ class BlueprintAccessService(
 
     @Transactional(readOnly = true)
     fun getAuthorizedEditablePhase(projectId: UUID, phaseId: UUID): BlueprintPhase {
-        val draft = getAuthorizedPhase(projectId, phaseId)
+        val phase = getAuthorizedPhase(projectId, phaseId)
 
-        if (draft.blueprintPath.status != BlueprintStatus.DRAFT) {
+        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "Blueprint can only be modified while in DRAFT status",
             )
         }
-        return draft
+        return phase
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedStep(projectId: UUID, stepId: UUID): BlueprintStep {
+        return blueprintStepRepository
+            .findByBlueprintPhaseBlueprintPathProjectIdAndId(projectId, stepId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint step not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditableStep(projectId: UUID, stepId: UUID): BlueprintStep {
+        val step = getAuthorizedStep(projectId, stepId)
+
+        if (step.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return step
     }
 }

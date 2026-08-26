@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGe
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.DeleteBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
@@ -79,12 +80,7 @@ class BlueprintPhaseService(
     ): UpdateBlueprintPhaseResponse {
         val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
-        if (phase.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint phase has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(phase, request.revision)
 
         shiftPhasesBetween(phase, request.position)
 
@@ -105,12 +101,7 @@ class BlueprintPhaseService(
     ): List<UpdateBlueprintPhasePositionResponse> {
         val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
-        if (phase.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint phase has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(phase, request.revision)
 
         val shiftedPhases = shiftPhasesBetween(phase, request.position)
         phase.position = request.position
@@ -124,13 +115,28 @@ class BlueprintPhaseService(
     fun deleteBlueprintPhaseById(
         projectId: UUID,
         phaseId: UUID,
+        request: DeleteBlueprintPhaseRequest,
     ) {
         val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
+
+        validateRevision(phase, request.revision)
 
         blueprintPhaseRepository.delete(phase)
     }
 
 //  ========================== Helper Methods ==========================
+
+    private fun validateRevision(
+        phase: BlueprintPhase,
+        revision: Long,
+    ) {
+        if (phase.revision != revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint phase has been modified by another request. Please reload and try again.",
+            )
+        }
+    }
 
     private fun shiftPhasesRight(
         blueprintPath: BlueprintPath,

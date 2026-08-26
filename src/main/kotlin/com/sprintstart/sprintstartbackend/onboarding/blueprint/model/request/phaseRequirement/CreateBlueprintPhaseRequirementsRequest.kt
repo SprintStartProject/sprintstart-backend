@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase
+package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phaseRequirement
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.RequirementType
 import java.util.UUID
