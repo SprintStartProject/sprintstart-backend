@@ -5,10 +5,5 @@ import java.util.UUID
 
 data class DeleteBlueprintPhaseRequirementsRequest(
     val revision: Long,
-    val requirements: Set<DeleteBlueprintPhaseRequirementRequest>,
-)
-
-data class DeleteBlueprintPhaseRequirementRequest(
-    val id: UUID,
-    val type: RequirementType,
+    val requirementIds: Set<UUID>,
 )

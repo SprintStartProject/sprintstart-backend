@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.RequirementType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhaseRequirement
@@ -10,7 +9,6 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.pha
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.DeleteBlueprintPhaseRequirementsRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseRequirementsResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.DeleteBlueprintPhaseRequirementsResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.SkillsApi
 import jakarta.persistence.EntityManager
@@ -24,34 +22,39 @@ import kotlin.collections.orEmpty
 
 @Service
 class BlueprintPhaseRequirementService(
-    private val blueprintPhaseRepository: BlueprintPhaseRepository,
+    private val blueprintAccessService: BlueprintAccessService,
     private val skillsApi: SkillsApi,
     private val projectRoleApi: ProjectRoleApi,
     private val entityManager: EntityManager,
 ) {
     @Transactional
     fun createBlueprintPhaseRequirementsForPhase(
+        projectId: UUID,
         phaseId: UUID,
         request: CreateBlueprintPhaseRequirementsRequest,
     ): CreateBlueprintPhaseRequirementsResponse {
-        val phase = getDraftPhase(phaseId, request.revision)
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
-        val requestedRequirements = resolveRequirements(
+        validateRevision(phase, request.revision)
+
+        val resolvedRequirements = resolveRequirements(
             phase = phase,
             requirements = request.requirements,
         )
 
-        val requirementsToAdd = filterNewRequirements(
+        val newRequirements = filterNewRequirements(
             phase = phase,
-            requirements = requestedRequirements,
+            requirements = resolvedRequirements,
         )
 
-        addRequirements(phase, requirementsToAdd)
-
-        val newRevision = phase.revision + 1
+        if (newRequirements.isNotEmpty()) {
+            markPhaseModified(phase)
+            phase.requirements.addAll(newRequirements)
+            entityManager.flush()
+        }
 
         return CreateBlueprintPhaseRequirementsResponse(
-            revision = newRevision,
+            revision = phase.revision + if (newRequirements.isNotEmpty()) 1 else 0,
             requirements = phase.requirements
                 .map { it.toCreateResponse() }
                 .toSet(),
@@ -60,98 +63,47 @@ class BlueprintPhaseRequirementService(
 
     @Transactional
     fun deleteBlueprintPhaseRequirementsForPhase(
+        projectId: UUID,
         phaseId: UUID,
         request: DeleteBlueprintPhaseRequirementsRequest,
     ): DeleteBlueprintPhaseRequirementsResponse {
-        val phase = getDraftPhase(phaseId, request.revision)
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
-        val requirementsByType = request.requirements.groupBy { it.type }
+        validateRevision(phase, request.revision)
 
-        val skillRequirementIds = requirementsByType[RequirementType.SKILL]
-            .orEmpty()
-            .map { it.id }
-            .toSet()
+        validateAllIdsExist(
+            request.requirementIds,
+            phase.requirements.map { it.id }.toSet(),
+            "Parts of the selected requirement do not exist",
+        )
 
-        val projectRoleRequirementIds = requirementsByType[RequirementType.PROJECT_ROLE]
-            .orEmpty()
-            .map { it.id }
-            .toSet()
-
-        val requirementsToRemove = mutableSetOf<UUID>()
-
-        if (skillRequirementIds.isNotEmpty()) {
-            validateAllIdsExist(
-                skillRequirementIds,
-                phase.requirements
-                    .filter { it.type == RequirementType.SKILL }
-                    .map { it.id }
-                    .toSet(),
-                "Parts of the selected requirements do not exist",
+        if (request.requirementIds.isEmpty()) {
+            return DeleteBlueprintPhaseRequirementsResponse(
+                revision = request.revision,
             )
-
-            requirementsToRemove.addAll(skillRequirementIds)
         }
 
-        if (projectRoleRequirementIds.isNotEmpty()) {
-            validateAllIdsExist(
-                projectRoleRequirementIds,
-                phase.requirements
-                    .filter { it.type == RequirementType.PROJECT_ROLE }
-                    .map { it.id }
-                    .toSet(),
-                "Parts of the selected requirements do not exist",
-            )
+        markPhaseModified(phase)
+        phase.requirements.removeIf { it.id in request.requirementIds }
+        entityManager.flush()
 
-            requirementsToRemove.addAll(projectRoleRequirementIds)
-        }
-
-        var newRevision = phase.revision
-        if (requirementsToRemove.isNotEmpty()) {
-            entityManager.lock(
-                phase,
-                LockModeType.OPTIMISTIC_FORCE_INCREMENT,
-            )
-
-            phase.requirements.removeIf { it.id in requirementsToRemove }
-
-            entityManager.flush()
-
-            newRevision++
-        }
-
-        return DeleteBlueprintPhaseRequirementsResponse(newRevision)
+        return DeleteBlueprintPhaseRequirementsResponse(
+            revision = request.revision + 1,
+        )
     }
 
     // Helper methods
 
-    private fun getDraftPhase(
-        phaseId: UUID,
-        expectedRevision: Long,
-    ): BlueprintPhase {
-        val phase = blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow {
-                ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Phase not found with id: $phaseId",
-                )
-            }
-
-        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (phase.revision != expectedRevision) {
+    private fun validateRevision(
+        phase: BlueprintPhase,
+        revision: Long,
+    ) {
+        if (phase.revision != revision) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "The blueprint phase has been modified by another request. Please reload and try again.",
             )
         }
-
-        return phase
     }
 
     private fun resolveRequirements(
@@ -265,21 +217,10 @@ class BlueprintPhaseRequirementService(
         }
     }
 
-    private fun addRequirements(
-        phase: BlueprintPhase,
-        requirements: List<BlueprintPhaseRequirement>,
-    ) {
-        if (requirements.isEmpty()) {
-            return
-        }
-
+    private fun markPhaseModified(phase: BlueprintPhase) {
         entityManager.lock(
             phase,
             LockModeType.OPTIMISTIC_FORCE_INCREMENT,
         )
-
-        phase.requirements.addAll(requirements)
-
-        entityManager.flush()
     }
 }

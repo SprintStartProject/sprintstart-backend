@@ -15,25 +15,27 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("api/v1/onboarding/blueprints/")
+@RequestMapping("api/v1/projects/{projectId}/onboarding/blueprints/")
 class BlueprintPhaseRequirementController(
     private val blueprintPhaseRequirementService: BlueprintPhaseRequirementService,
 ) {
     @PostMapping("/phases/{phaseId}/requirements")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun addRequirementList(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @RequestBody request: CreateBlueprintPhaseRequirementsRequest,
     ): CreateBlueprintPhaseRequirementsResponse {
-        return blueprintPhaseRequirementService.createBlueprintPhaseRequirementsForPhase(phaseId, request)
+        return blueprintPhaseRequirementService.createBlueprintPhaseRequirementsForPhase(projectId, phaseId, request)
     }
 
     @DeleteMapping("/phases/{phaseId}/requirements")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deleteRequirementList(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequirementsRequest,
     ): DeleteBlueprintPhaseRequirementsResponse {
-        return blueprintPhaseRequirementService.deleteBlueprintPhaseRequirementsForPhase(phaseId, request)
+        return blueprintPhaseRequirementService.deleteBlueprintPhaseRequirementsForPhase(projectId, phaseId, request)
     }
 }
