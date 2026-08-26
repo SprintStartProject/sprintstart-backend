@@ -4,26 +4,43 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.Bl
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.util.UUID
 
 interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
-    fun findByBlueprintKeyAndStatus(blueprintKey: UUID, status: BlueprintStatus): MutableList<BlueprintPath>
+    fun findByProjectIdAndBlueprintKeyAndStatus(
+        projectId: UUID,
+        blueprintKey: UUID,
+        status: BlueprintStatus,
+    ): MutableList<BlueprintPath>
 
-    fun findByBlueprintKeyAndVersion(blueprintKey: UUID, version: Int): MutableList<BlueprintPath>
+    fun findByProjectIdAndBlueprintKeyAndVersion(
+        projectId: UUID,
+        blueprintKey: UUID,
+        version: Int,
+    ): MutableList<BlueprintPath>
 
-    fun deleteAllByBlueprintKeyAndVersionAfter(blueprintKey: UUID, versionAfter: Int)
+    fun deleteAllByProjectIdAndBlueprintKeyAndVersionAfter(projectId: UUID, blueprintKey: UUID, versionAfter: Int)
 
     @Query(
         value = """
         SELECT DISTINCT ON (blueprint_key) *
         FROM blueprint_paths
+        WHERE project_id = :projectId
         ORDER BY blueprint_key, version DESC
     """,
         nativeQuery = true,
     )
-    fun findLatestVersionForEachBlueprintKey(): List<BlueprintPath>
+    fun findLatestVersionForEachBlueprintKeyAndProjectId(
+        @Param("projectId") projectId: UUID,
+    ): List<BlueprintPath>
 
-    fun countByBlueprintKey(blueprintKey: UUID): Long
+    fun findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(
+        projectId: UUID,
+        blueprintKey: UUID,
+    ): MutableList<BlueprintPath>
 
-    fun findAllByBlueprintKeyOrderByVersionDesc(blueprintKey: UUID): MutableList<BlueprintPath>
+    fun findAllByProjectId(projectId: UUID): MutableList<BlueprintPath>
+
+    fun findByProjectIdAndId(projectId: UUID, id: UUID): BlueprintPath?
 }

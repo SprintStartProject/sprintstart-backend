@@ -18,49 +18,55 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
-import java.util.Optional
 import java.util.UUID
 
 @Service
 class BlueprintPathService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintPathRepository: BlueprintPathRepository,
     private val blueprintPathDraftFactory: BlueprintPathDraftFactory,
 ) {
     @Transactional(readOnly = true)
-    fun getBlueprintPathOverviewsByBlueprintKeys(): List<GetBlueprintPathOverviewResponse> {
+    fun getBlueprintPathOverviewsForProjectGroupedByBlueprintKey(
+        projectId: UUID,
+    ): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathRepository
-            .findLatestVersionForEachBlueprintKey()
+            .findLatestVersionForEachBlueprintKeyAndProjectId(projectId)
             .map { it.toGetOverviewResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintPathHistoryByBlueprintKey(blueprintKey: UUID): List<GetBlueprintPathResponse> {
+    fun getBlueprintPathHistoryForProjectByBlueprintKey(
+        projectId: UUID,
+        blueprintKey: UUID,
+    ): List<GetBlueprintPathResponse> {
         return blueprintPathRepository
-            .findAllByBlueprintKeyOrderByVersionDesc(blueprintKey)
+            .findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(projectId, blueprintKey)
             .map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintPathOverviews(): List<GetBlueprintPathOverviewResponse> {
+    fun getBlueprintPathOverviewsForProjectId(projectId: UUID): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathRepository
-            .findAll()
+            .findAllByProjectId(projectId)
             .map { it.toGetOverviewResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintPathById(pathId: UUID): GetBlueprintPathResponse {
-        return blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found with id: $pathId") }
+    fun getBlueprintPathByProjectIdAndId(projectId: UUID, pathId: UUID): GetBlueprintPathResponse {
+        return blueprintAccessService
+            .getAuthorizedPath(projectId, pathId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintPath(
+        projectId: UUID,
         request: CreateBlueprintPathRequest,
     ): CreateBlueprintPathResponse {
         val path = BlueprintPath(
             blueprintKey = UUID.randomUUID(),
+            projectId = projectId,
             title = request.title,
             description = request.description,
             version = 0,
@@ -72,25 +78,26 @@ class BlueprintPathService(
     }
 
     @Transactional
-    fun openBlueprintPathDraftById(pathId: UUID): GetBlueprintPathResponse {
-        val path = blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found with id: $pathId") }
+    fun openBlueprintPathDraftByBlueprintKey(projectId: UUID, blueprintKey: UUID): GetBlueprintPathResponse {
+        val activePath = blueprintAccessService
+            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No active path found")
 
-        val draft = getDraftBlueprintPath(path.blueprintKey)
+        val draft = blueprintAccessService
+            .findDraftForAuthorizedBlueprintKey(projectId, blueprintKey)
 
-        return if (draft.isEmpty) {
-            blueprintPathRepository.save(blueprintPathDraftFactory.createDraftFrom(path)).toGetResponse()
-        } else {
-            draft.get().toGetResponse()
-        }
+        return draft?.toGetResponse()
+            ?: blueprintPathRepository
+                .save(blueprintPathDraftFactory.createDraftFrom(activePath))
+                .toGetResponse()
     }
 
     @Transactional
-    fun publishBlueprintPathDraftById(pathId: UUID): GetBlueprintPathResponse {
-        val draft = blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found with id: $pathId") }
+    fun publishBlueprintPathDraftById(
+        projectId: UUID,
+        pathId: UUID,
+    ): GetBlueprintPathResponse {
+        val draft = blueprintAccessService.getAuthorizedPath(projectId, pathId)
 
         if (draft.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -99,19 +106,9 @@ class BlueprintPathService(
             )
         }
 
-        val pathForBlueprintKeyCount = blueprintPathRepository.countByBlueprintKey(draft.blueprintKey)
-
-        if (pathForBlueprintKeyCount > 1) {
-            val currentPath = getActiveBlueprintPath(draft.blueprintKey)
-                .orElseThrow {
-                    ResponseStatusException(
-                        HttpStatus.INTERNAL_SERVER_ERROR,
-                        "No active path found for blueprintKey: ${draft.blueprintKey}",
-                    )
-                }
-            currentPath.status = BlueprintStatus.ARCHIVED
-            blueprintPathRepository.save(currentPath)
-        }
+        blueprintAccessService
+            .findActiveForAuthorizedBlueprintKey(projectId, pathId)
+            ?.let { activePath -> activePath.status = draft.status }
 
         draft.status = BlueprintStatus.ACTIVE
 
@@ -120,13 +117,16 @@ class BlueprintPathService(
 
     @Transactional
     fun rollbackBlueprintPathByBlueprintKey(
+        projectId: UUID,
         blueprintKey: UUID,
         rollbackVersion: Int,
     ): GetBlueprintPathResponse {
-        val activePath = getActiveBlueprintPath(blueprintKey)
-            .orElseThrow {
-                ResponseStatusException(HttpStatus.NOT_FOUND, "No active path found for blueprintKey: $blueprintKey")
-            }
+        val activePath = blueprintAccessService
+            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "No active path found for blueprintKey: $blueprintKey",
+            )
 
         if (rollbackVersion < 0 || rollbackVersion >= activePath.version) {
             throw ResponseStatusException(
@@ -135,9 +135,11 @@ class BlueprintPathService(
             )
         }
 
-        val rollbackPath = getArchivedBlueprintPath(blueprintKey, rollbackVersion)
+        val rollbackPath = blueprintAccessService
+            .getArchivedForAuthorizedBlueprintKey(projectId, blueprintKey, rollbackVersion)
 
-        blueprintPathRepository.deleteAllByBlueprintKeyAndVersionAfter(blueprintKey, rollbackVersion)
+        blueprintPathRepository
+            .deleteAllByProjectIdAndBlueprintKeyAndVersionAfter(projectId, blueprintKey, rollbackVersion)
         rollbackPath.status = BlueprintStatus.ACTIVE
 
         return rollbackPath.toGetResponse()
@@ -145,12 +147,11 @@ class BlueprintPathService(
 
     @Transactional
     fun updateBlueprintPathById(
+        projectId: UUID,
         pathId: UUID,
         request: UpdateBlueprintPathRequest,
     ): UpdateBlueprintPathResponse {
-        val path = blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found with id: $pathId") }
+        val path = blueprintAccessService.getAuthorizedPath(projectId, pathId)
 
         if (path.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -173,10 +174,11 @@ class BlueprintPathService(
     }
 
     @Transactional
-    fun deleteBlueprintPathDraftById(pathId: UUID) {
-        val path = blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found with id: $pathId") }
+    fun deleteBlueprintPathDraftById(
+        projectId: UUID,
+        pathId: UUID,
+    ) {
+        val path = blueprintAccessService.getAuthorizedPath(projectId, pathId)
 
         if (path.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Path with id: $pathId is not a draft!")
@@ -186,76 +188,20 @@ class BlueprintPathService(
     }
 
     @Transactional
-    fun archiveBlueprintPathByBlueprintKey(blueprintKey: UUID) {
-        val path = getActiveBlueprintPath(blueprintKey)
-            .orElseThrow {
-                ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "No active path found for blueprintKey: $blueprintKey",
-                )
-            }
+    fun archiveBlueprintPathByBlueprintKey(projectId: UUID, blueprintKey: UUID) {
+        val path = blueprintAccessService
+            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "No active path found for blueprintKey: $blueprintKey",
+            )
 
         path.status = BlueprintStatus.ARCHIVED
 
         // find and delet any draft
-        getDraftBlueprintPath(blueprintKey)
-            .ifPresent { blueprintPathRepository.delete(it) }
-    }
-
-//  ========================== Helper methods ==========================
-
-    private fun getActiveBlueprintPath(blueprintKey: UUID): Optional<BlueprintPath> {
-        val activePathList = blueprintPathRepository
-            .findByBlueprintKeyAndStatus(blueprintKey, BlueprintStatus.ACTIVE)
-
-        if (activePathList.isEmpty()) return Optional.empty()
-
-        if (activePathList.size > 1) {
-            throw ResponseStatusException(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "More than one active path found for blueprintKey: $blueprintKey, please contact support",
-            )
-        }
-
-        return Optional.of(activePathList.first())
-    }
-
-    private fun getDraftBlueprintPath(blueprintKey: UUID): Optional<BlueprintPath> {
-        val draftList = blueprintPathRepository
-            .findByBlueprintKeyAndStatus(blueprintKey, BlueprintStatus.DRAFT)
-
-        if (draftList.isEmpty()) return Optional.empty()
-
-        if (draftList.size > 1) {
-            throw ResponseStatusException(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "More than one draft path found for blueprintKey: $blueprintKey, please contact support",
-            )
-        }
-
-        return Optional.of(draftList.first())
-    }
-
-    private fun getArchivedBlueprintPath(blueprintKey: UUID, version: Int): BlueprintPath {
-        val archivedList = blueprintPathRepository
-            .findByBlueprintKeyAndVersion(blueprintKey, version)
-
-        if (archivedList.isEmpty()) {
-            throw ResponseStatusException(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "Archived blueprint path with blueprintKey: $blueprintKey and version: $version not found",
-            )
-        }
-
-        if (archivedList.size > 1) {
-            throw ResponseStatusException(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "More than one archived path found for blueprintKey: " +
-                    "$blueprintKey and version $version, please contact support",
-            )
-        }
-
-        return archivedList.first()
+        blueprintAccessService
+            .findDraftForAuthorizedBlueprintKey(projectId, blueprintKey)
+            ?.let { blueprintPathRepository.delete(it) }
     }
 }
 
@@ -281,6 +227,13 @@ class BlueprintPathService(
 //  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [] Make everything tied to a project id
+//      - [x] Path
+//      - [] Phase
+//      - [] Step
+//      - [] Resource
+//      - [] Requirement
+//      - [] Check
+//      - [] CheckQuestion
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service

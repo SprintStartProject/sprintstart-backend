@@ -16,6 +16,7 @@ class BlueprintPathDraftFactory {
     fun createDraftFrom(path: BlueprintPath): BlueprintPath {
         val draft = BlueprintPath(
             blueprintKey = path.blueprintKey,
+            projectId = path.projectId,
             title = path.title,
             description = path.description,
             version = path.version + 1,
