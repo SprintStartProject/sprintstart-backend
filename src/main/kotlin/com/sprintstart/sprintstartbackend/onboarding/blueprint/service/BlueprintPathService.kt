@@ -217,7 +217,7 @@ class BlueprintPathService(
 //      - [x] Phase
 //      - [x] Step
 //      - [x] Resource
-//      - [] Task
+//      - [x] Task
 //      - [x] Requirement
 //      - [] Check
 //      - [] CheckQuestion

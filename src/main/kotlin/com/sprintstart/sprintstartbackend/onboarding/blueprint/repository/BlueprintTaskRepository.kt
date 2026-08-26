@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.repository
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import org.springframework.data.jpa.repository.JpaRepository
-import java.util.Optional
 import java.util.UUID
 
 @Suppress("ktlint:standard:function-naming")
@@ -20,5 +19,13 @@ interface BlueprintTaskRepository : JpaRepository<BlueprintTask, UUID> {
 
     fun countByBlueprintStepId(blueprintStepId: UUID): Long
 
-    fun findAllByBlueprintStepId(blueprintStepId: UUID): MutableList<BlueprintTask>
+    fun findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(
+        projectId: UUID,
+        stepId: UUID,
+    ): MutableList<BlueprintTask>
+
+    fun findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(
+        projectId: UUID,
+        id: UUID,
+    ): BlueprintTask?
 }

@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.CreateBlueprintTaskRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.DeleteBlueprintTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.CreateBlueprintTaskResponse
@@ -20,58 +21,65 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprints")
+@RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintTaskController(
     private val blueprintTaskService: BlueprintTaskService,
 ) {
     @GetMapping("/steps/{stepId}/tasks")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getBlueprintTasksForStep(
+        @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
     ): List<GetBlueprintTaskResponse> {
-        return blueprintTaskService.getBlueprintTasksForStep(stepId)
+        return blueprintTaskService.getBlueprintTasksForStep(projectId, stepId)
     }
 
     @GetMapping("/tasks/{taskId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getTaskById(
+        @PathVariable projectId: UUID,
         @PathVariable taskId: UUID,
     ): GetBlueprintTaskResponse {
-        return blueprintTaskService.getBlueprintTaskById(taskId)
+        return blueprintTaskService.getBlueprintTaskById(projectId, taskId)
     }
 
     @PostMapping("/steps/{stepId}/task")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun createTaskForStep(
+        @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
         @RequestBody request: CreateBlueprintTaskRequest,
     ): CreateBlueprintTaskResponse {
-        return blueprintTaskService.createBlueprintTaskForStep(stepId, request)
+        return blueprintTaskService.createBlueprintTaskForStep(projectId, stepId, request)
     }
 
     @PutMapping("/tasks/{taskId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun updateTaskById(
+        @PathVariable projectId: UUID,
         @PathVariable taskId: UUID,
         @RequestBody request: UpdateBlueprintTaskRequest,
     ): UpdateBlueprintTaskResponse {
-        return blueprintTaskService.updateBlueprintTaskById(taskId, request)
+        return blueprintTaskService.updateBlueprintTaskById(projectId, taskId, request)
     }
 
     @PutMapping("/tasks/{taskId}/position")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun updateBlueprintTaskPositionById(
+        @PathVariable projectId: UUID,
         @PathVariable taskId: UUID,
         @RequestBody request: UpdateBlueprintTaskPositionRequest,
     ): List<UpdateBlueprintTaskPositionResponse> {
-        return blueprintTaskService.updateBlueprintTaskPositionById(taskId, request)
+        return blueprintTaskService.updateBlueprintTaskPositionById(projectId, taskId, request)
     }
 
     @DeleteMapping("/tasks/{taskId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun deleteTaskById(
+        @PathVariable projectId: UUID,
         @PathVariable taskId: UUID,
+        @RequestBody request: DeleteBlueprintTaskRequest,
     ) {
-        blueprintTaskService.deleteBlueprintTaskById(taskId)
+        blueprintTaskService.deleteBlueprintTaskById(projectId, taskId, request)
     }
 }

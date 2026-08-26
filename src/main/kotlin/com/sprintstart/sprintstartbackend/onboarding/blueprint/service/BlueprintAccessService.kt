@@ -5,10 +5,12 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintResourceRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintTaskRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -21,6 +23,7 @@ class BlueprintAccessService(
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
     private val blueprintStepRepository: BlueprintStepRepository,
     private val blueprintResourceRepository: BlueprintResourceRepository,
+    private val blueprintTaskRepository: BlueprintTaskRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
@@ -165,5 +168,28 @@ class BlueprintAccessService(
             )
         }
         return resource
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedTask(projectId: UUID, taskId: UUID): BlueprintTask {
+        return blueprintTaskRepository
+            .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(projectId, taskId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint task not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditableTask(projectId: UUID, taskId: UUID): BlueprintTask {
+        val task = getAuthorizedTask(projectId, taskId)
+
+        if (task.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return task
     }
 }

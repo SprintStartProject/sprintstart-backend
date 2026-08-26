@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGe
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.CreateBlueprintTaskRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.DeleteBlueprintTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.task.UpdateBlueprintTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.CreateBlueprintTaskResponse
@@ -25,40 +26,37 @@ import kotlin.ranges.contains
 
 @Service
 class BlueprintTaskService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintTaskRepository: BlueprintTaskRepository,
     private val blueprintStepRepository: BlueprintStepRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getBlueprintTasksForStep(stepId: UUID): List<GetBlueprintTaskResponse> {
+    fun getBlueprintTasksForStep(
+        projectId: UUID,
+        stepId: UUID,
+    ): List<GetBlueprintTaskResponse> {
         return blueprintTaskRepository
-            .findAllByBlueprintStepId(stepId)
+            .findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(projectId, stepId)
             .map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintTaskById(taskId: UUID): GetBlueprintTaskResponse {
-        return blueprintTaskRepository
-            .findById(taskId)
-            .orElseThrow {
-                ResponseStatusException(HttpStatus.NOT_FOUND, "Blueprint task not Found")
-            }.toGetResponse()
+    fun getBlueprintTaskById(
+        projectId: UUID,
+        taskId: UUID,
+    ): GetBlueprintTaskResponse {
+        return blueprintAccessService
+            .getAuthorizedTask(projectId, taskId)
+            .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintTaskForStep(
+        projectId: UUID,
         stepId: UUID,
         request: CreateBlueprintTaskRequest,
     ): CreateBlueprintTaskResponse {
-        val blueprintStep = blueprintStepRepository
-            .findById(stepId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
-
-        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(projectId, stepId)
 
         shiftTasksRight(blueprintStep, request)
 
@@ -73,24 +71,14 @@ class BlueprintTaskService(
     }
 
     @Transactional
-    fun updateBlueprintTaskById(taskId: UUID, request: UpdateBlueprintTaskRequest): UpdateBlueprintTaskResponse {
-        val blueprintTask = blueprintTaskRepository
-            .findById(taskId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
+    fun updateBlueprintTaskById(
+        projectId: UUID,
+        taskId: UUID,
+        request: UpdateBlueprintTaskRequest,
+    ): UpdateBlueprintTaskResponse {
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
 
-        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (blueprintTask.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint task has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(blueprintTask, request.revision)
 
         shiftTasksBetween(blueprintTask, request.position)
 
@@ -103,26 +91,13 @@ class BlueprintTaskService(
 
     @Transactional
     fun updateBlueprintTaskPositionById(
+        projectId: UUID,
         taskId: UUID,
         request: UpdateBlueprintTaskPositionRequest,
     ): List<UpdateBlueprintTaskPositionResponse> {
-        val blueprintTask = blueprintTaskRepository
-            .findById(taskId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
 
-        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (blueprintTask.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint task has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(blueprintTask, request.revision)
 
         val shiftedTasks = shiftTasksBetween(blueprintTask, request.position)
         blueprintTask.position = request.position
@@ -133,22 +108,31 @@ class BlueprintTaskService(
     }
 
     @Transactional
-    fun deleteBlueprintTaskById(taskId: UUID) {
-        val blueprintTask = blueprintTaskRepository
-            .findById(taskId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found with id: $taskId") }
+    fun deleteBlueprintTaskById(
+        projectId: UUID,
+        taskId: UUID,
+        request: DeleteBlueprintTaskRequest,
+    ) {
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
 
-        if (blueprintTask.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        validateRevision(blueprintTask, request.revision)
 
         blueprintTaskRepository.delete(blueprintTask)
     }
 
     // Helper Methods
+
+    private fun validateRevision(
+        task: BlueprintTask,
+        revision: Long,
+    ) {
+        if (task.revision != revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint task has been modified by another request. Please reload and try again.",
+            )
+        }
+    }
 
     private fun shiftTasksRight(
         step: BlueprintStep,
