@@ -21,58 +21,64 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprints")
+@RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintPhaseController(
     private val blueprintPhaseService: BlueprintPhaseService,
 ) {
     @GetMapping("/path/{pathId}/phases")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun getBlueprintPhasesForPath(
+        @PathVariable projectId: UUID,
         @PathVariable pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
-        return blueprintPhaseService.getBlueprintPhasesForPath(pathId)
+        return blueprintPhaseService.getBlueprintPhasesForPath(projectId, pathId)
     }
 
     @GetMapping("/phases/{phaseId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun getBlueprintPhaseById(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
     ): GetBlueprintPhaseResponse {
-        return blueprintPhaseService.getBlueprintPhaseById(phaseId)
+        return blueprintPhaseService.getBlueprintPhaseById(projectId, phaseId)
     }
 
     @PostMapping("/path/{pathId}/phases")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun createBlueprintPhaseForPath(
+        @PathVariable projectId: UUID,
         @PathVariable pathId: UUID,
         @Valid @RequestBody request: CreateBlueprintPhaseRequest,
     ): CreateBlueprintPhaseResponse {
-        return blueprintPhaseService.createBlueprintPhaseForPath(pathId, request)
+        return blueprintPhaseService.createBlueprintPhaseForPath(projectId, pathId, request)
     }
 
     @PutMapping("/phases/{phaseId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun updateBlueprintPhaseById(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @Valid @RequestBody request: UpdateBlueprintPhaseRequest,
     ): UpdateBlueprintPhaseResponse {
-        return blueprintPhaseService.updateBlueprintPhaseById(phaseId, request)
+        return blueprintPhaseService.updateBlueprintPhaseById(projectId, phaseId, request)
     }
 
     @PutMapping("/phases/{phaseId}/position")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun updateBlueprintPhasePositionById(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @Valid @RequestBody request: UpdateBlueprintPhasePositionRequest,
     ): List<UpdateBlueprintPhasePositionResponse> {
-        return blueprintPhaseService.updateBlueprintPhasePositionById(phaseId, request)
+        return blueprintPhaseService.updateBlueprintPhasePositionById(projectId, phaseId, request)
     }
 
     @DeleteMapping("/phases/{phaseId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deleteBlueprintPhaseById(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
     ) {
-        blueprintPhaseService.deleteBlueprintPhaseById(phaseId)
+        blueprintPhaseService.deleteBlueprintPhaseById(projectId, phaseId)
     }
 }

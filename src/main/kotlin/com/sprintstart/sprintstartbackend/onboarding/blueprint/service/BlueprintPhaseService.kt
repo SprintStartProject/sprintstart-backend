@@ -25,43 +25,37 @@ import kotlin.ranges.contains
 
 @Service
 class BlueprintPhaseService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
     private val blueprintPathRepository: BlueprintPathRepository,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintPhasesForPath(
+        projectId: UUID,
         pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
         return blueprintPhaseRepository
-            .findAllByBlueprintPathId(pathId)
+            .findAllByProjectIdAndBlueprintPathId(projectId, pathId)
             .map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
     fun getBlueprintPhaseById(
+        projectId: UUID,
         phaseId: UUID,
     ): GetBlueprintPhaseResponse {
-        return blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
+        return blueprintAccessService
+            .getAuthorizedPhase(projectId, phaseId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintPhaseForPath(
+        projectId: UUID,
         pathId: UUID,
         request: CreateBlueprintPhaseRequest,
     ): CreateBlueprintPhaseResponse {
-        val path = blueprintPathRepository
-            .findById(pathId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Path not found: $pathId") }
-
-        if (path.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val path = blueprintAccessService.getAuthorizedDraftPath(projectId, pathId)
 
         shiftPhasesRight(path, request)
 
@@ -79,19 +73,11 @@ class BlueprintPhaseService(
 
     @Transactional
     fun updateBlueprintPhaseById(
+        projectId: UUID,
         phaseId: UUID,
         request: UpdateBlueprintPhaseRequest,
     ): UpdateBlueprintPhaseResponse {
-        val phase = blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
-
-        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
         if (phase.revision != request.revision) {
             throw ResponseStatusException(
@@ -113,19 +99,11 @@ class BlueprintPhaseService(
 
     @Transactional
     fun updateBlueprintPhasePositionById(
+        projectId: UUID,
         phaseId: UUID,
         request: UpdateBlueprintPhasePositionRequest,
     ): List<UpdateBlueprintPhasePositionResponse> {
-        val phase = blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
-
-        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
         if (phase.revision != request.revision) {
             throw ResponseStatusException(
@@ -144,18 +122,10 @@ class BlueprintPhaseService(
 
     @Transactional
     fun deleteBlueprintPhaseById(
+        projectId: UUID,
         phaseId: UUID,
     ) {
-        val phase = blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
-
-        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
         blueprintPhaseRepository.delete(phase)
     }

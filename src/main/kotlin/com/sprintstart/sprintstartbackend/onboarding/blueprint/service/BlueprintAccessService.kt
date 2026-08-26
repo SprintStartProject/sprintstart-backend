@@ -2,7 +2,9 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -12,15 +14,31 @@ import java.util.UUID
 @Service
 class BlueprintAccessService(
     private val blueprintPathRepository: BlueprintPathRepository,
+    private val blueprintPhaseRepository: BlueprintPhaseRepository,
 ) {
+    @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
         return blueprintPathRepository.findByProjectIdAndId(projectId, pathId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
-                "Blueprint step not found for this project",
+                "Blueprint Path not found for this project",
             )
     }
 
+    @Transactional(readOnly = true)
+    fun getAuthorizedDraftPath(projectId: UUID, pathId: UUID): BlueprintPath {
+        val draft = getAuthorizedPath(projectId, pathId)
+
+        if (draft.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return draft
+    }
+
+    @Transactional(readOnly = true)
     fun findActiveForAuthorizedBlueprintKey(projectId: UUID, blueprintKey: UUID): BlueprintPath? {
         val activePathList = blueprintPathRepository
             .findByProjectIdAndBlueprintKeyAndStatus(projectId, blueprintKey, BlueprintStatus.ACTIVE)
@@ -73,5 +91,28 @@ class BlueprintAccessService(
                     "$blueprintKey and version $version, please contact support",
             )
         }
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedPhase(projectId: UUID, phaseId: UUID): BlueprintPhase {
+        return blueprintPhaseRepository
+            .findByBlueprintPathProjectIdAndId(projectId, phaseId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint Phase not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditablePhase(projectId: UUID, phaseId: UUID): BlueprintPhase {
+        val draft = getAuthorizedPhase(projectId, phaseId)
+
+        if (draft.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return draft
     }
 }

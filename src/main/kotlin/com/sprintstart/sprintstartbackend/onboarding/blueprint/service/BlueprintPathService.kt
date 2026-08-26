@@ -97,14 +97,7 @@ class BlueprintPathService(
         projectId: UUID,
         pathId: UUID,
     ): GetBlueprintPathResponse {
-        val draft = blueprintAccessService.getAuthorizedPath(projectId, pathId)
-
-        if (draft.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Selected path has status: ${draft.status}, expected status: ${BlueprintStatus.DRAFT}",
-            )
-        }
+        val draft = blueprintAccessService.getAuthorizedDraftPath(projectId, pathId)
 
         blueprintAccessService
             .findActiveForAuthorizedBlueprintKey(projectId, pathId)
@@ -151,14 +144,7 @@ class BlueprintPathService(
         pathId: UUID,
         request: UpdateBlueprintPathRequest,
     ): UpdateBlueprintPathResponse {
-        val path = blueprintAccessService.getAuthorizedPath(projectId, pathId)
-
-        if (path.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val path = blueprintAccessService.getAuthorizedDraftPath(projectId, pathId)
 
         if (path.revision != request.revision) {
             throw ResponseStatusException(
