@@ -5,5 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface BlueprintResourceRepository : JpaRepository<BlueprintResource, UUID> {
-    fun findAllByBlueprintStepId(blueprintStepId: UUID): MutableList<BlueprintResource>
+    fun findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(
+        projectId: UUID,
+        blueprintStepId: UUID,
+    ): MutableList<BlueprintResource>
+
+    fun findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(
+        projectId: UUID,
+        id: UUID,
+    ): BlueprintResource?
 }

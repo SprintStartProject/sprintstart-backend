@@ -3,9 +3,11 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintResourceRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -18,6 +20,7 @@ class BlueprintAccessService(
     private val blueprintPathRepository: BlueprintPathRepository,
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
     private val blueprintStepRepository: BlueprintStepRepository,
+    private val blueprintResourceRepository: BlueprintResourceRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
@@ -140,5 +143,27 @@ class BlueprintAccessService(
             )
         }
         return step
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedResource(projectId: UUID, resourceId: UUID): BlueprintResource {
+        return blueprintResourceRepository
+            .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(projectId, resourceId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint resource not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditableResource(projectId: UUID, resourceId: UUID): BlueprintResource {
+        val resource = getAuthorizedResource(projectId, resourceId)
+        if (resource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return resource
     }
 }

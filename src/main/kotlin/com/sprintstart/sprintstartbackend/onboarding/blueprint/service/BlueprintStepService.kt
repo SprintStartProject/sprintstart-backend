@@ -122,7 +122,6 @@ class BlueprintStepService(
     ) {
         val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(projectId, stepId)
 
-        // Todo: Add revision check for all delete operations
         validateRevision(blueprintStep, request.revision)
 
         blueprintStepRepository.delete(blueprintStep)

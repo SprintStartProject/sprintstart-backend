@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCr
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.CreateBlueprintResourceRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.DeleteBlueprintResourceRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.UpdateBlueprintResourceRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.CreateBlueprintResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.GetBlueprintResourceResponse
@@ -20,39 +21,36 @@ import java.util.UUID
 
 @Service
 class BlueprintResourceService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintResourceRepository: BlueprintResourceRepository,
-    private val blueprintStepRepository: BlueprintStepRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getBlueprintResourcesForStep(stepId: UUID): List<GetBlueprintResourceResponse> {
+    fun getBlueprintResourcesForStep(
+        projectId: UUID,
+        stepId: UUID,
+    ): List<GetBlueprintResourceResponse> {
         return blueprintResourceRepository
-            .findAllByBlueprintStepId(stepId)
+            .findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(projectId, stepId)
             .map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintResourceById(resourceId: UUID): GetBlueprintResourceResponse {
-        return blueprintResourceRepository
-            .findById(resourceId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
+    fun getBlueprintResourceById(
+        projectId: UUID,
+        resourceId: UUID,
+    ): GetBlueprintResourceResponse {
+        return blueprintAccessService
+            .getAuthorizedResource(projectId, resourceId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintResourceForStep(
+        projectId: UUID,
         stepId: UUID,
         request: CreateBlueprintResourceRequest,
     ): CreateBlueprintResourceResponse {
-        val blueprintStep = blueprintStepRepository
-            .findById(stepId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found with id: $stepId") }
-
-        if (blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(projectId, stepId)
 
         val blueprintResource = BlueprintResource(
             blueprintStep = blueprintStep,
@@ -66,26 +64,13 @@ class BlueprintResourceService(
 
     @Transactional
     fun updateBlueprintResourceById(
+        projectId: UUID,
         resourceId: UUID,
         request: UpdateBlueprintResourceRequest,
     ): UpdateBlueprintResourceResponse {
-        val blueprintResource = blueprintResourceRepository
-            .findById(resourceId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
+        val blueprintResource = blueprintAccessService.getAuthorizedEditableResource(projectId, resourceId)
 
-        if (blueprintResource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (blueprintResource.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint resource has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(blueprintResource, request.revision)
 
         blueprintResource.title = request.title
         blueprintResource.description = request.description
@@ -95,18 +80,29 @@ class BlueprintResourceService(
     }
 
     @Transactional
-    fun deleteBlueprintResourceById(resourceId: UUID) {
-        val blueprintResource = blueprintResourceRepository
-            .findById(resourceId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found with id: $resourceId") }
+    fun deleteBlueprintResourceById(
+        projectId: UUID,
+        resourceId: UUID,
+        request: DeleteBlueprintResourceRequest,
+    ) {
+        val blueprintResource = blueprintAccessService.getAuthorizedEditableResource(projectId, resourceId)
 
-        if (blueprintResource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        validateRevision(blueprintResource, request.revision)
 
         blueprintResourceRepository.delete(blueprintResource)
+    }
+
+    // Helper methods
+
+    private fun validateRevision(
+        resource: BlueprintResource,
+        revision: Long,
+    ) {
+        if (resource.revision != revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint resource has been modified by another request. Please reload and try again.",
+            )
+        }
     }
 }

@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.CreateBlueprintResourceRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.DeleteBlueprintResourceRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.resource.UpdateBlueprintResourceRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.CreateBlueprintResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.GetBlueprintResourceResponse
@@ -18,47 +19,55 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprints")
+@RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintResourceController(
     private val blueprintResourceService: BlueprintResourceService,
 ) {
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @GetMapping("/step/{stepId}/resources")
     fun getBlueprintResourcesForStep(
+        @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
     ): List<GetBlueprintResourceResponse> {
-        return blueprintResourceService.getBlueprintResourcesForStep(stepId)
+        return blueprintResourceService.getBlueprintResourcesForStep(projectId, stepId)
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @GetMapping("/resources/{resourceId}")
-    fun getBlueprintResource(@PathVariable resourceId: UUID): GetBlueprintResourceResponse {
-        return blueprintResourceService.getBlueprintResourceById(resourceId)
+    fun getBlueprintResource(
+        @PathVariable projectId: UUID,
+        @PathVariable resourceId: UUID,
+    ): GetBlueprintResourceResponse {
+        return blueprintResourceService.getBlueprintResourceById(projectId, resourceId)
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @PostMapping("/step/{stepId}/resources")
     fun createBlueprintResource(
+        @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
         @RequestBody request: CreateBlueprintResourceRequest,
     ): CreateBlueprintResourceResponse {
-        return blueprintResourceService.createBlueprintResourceForStep(stepId, request)
+        return blueprintResourceService.createBlueprintResourceForStep(projectId, stepId, request)
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @PutMapping("/resources/{resourceId}")
     fun updateBlueprintResourceById(
+        @PathVariable projectId: UUID,
         @PathVariable resourceId: UUID,
         @RequestBody request: UpdateBlueprintResourceRequest,
     ): UpdateBlueprintResourceResponse {
-        return blueprintResourceService.updateBlueprintResourceById(resourceId, request)
+        return blueprintResourceService.updateBlueprintResourceById(projectId, resourceId, request)
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @DeleteMapping("/resources/{resourceId}")
     fun deleteBlueprintResourceById(
+        @PathVariable projectId: UUID,
         @PathVariable resourceId: UUID,
+        @RequestBody request: DeleteBlueprintResourceRequest,
     ) {
-        return blueprintResourceService.deleteBlueprintResourceById(resourceId)
+        return blueprintResourceService.deleteBlueprintResourceById(projectId, resourceId, request)
     }
 }

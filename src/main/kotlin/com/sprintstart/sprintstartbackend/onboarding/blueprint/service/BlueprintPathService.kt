@@ -215,8 +215,9 @@ class BlueprintPathService(
 //  - [] Make everything tied to a project id
 //      - [x] Path
 //      - [x] Phase
-//      - [] Step
-//      - [] Resource
+//      - [x] Step
+//      - [x] Resource
+//      - [] Task
 //      - [x] Requirement
 //      - [] Check
 //      - [] CheckQuestion
