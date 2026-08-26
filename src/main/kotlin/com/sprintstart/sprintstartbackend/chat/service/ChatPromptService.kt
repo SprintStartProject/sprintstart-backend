@@ -139,6 +139,7 @@ internal class ChatPromptService(
 
         val sb = StringBuilder()
         val citations = mutableListOf<PendingCitation>()
+        var streamFailed = false
 
         // Define stream handler
         // - On each token we collect the token and emit it to the controller
@@ -174,6 +175,11 @@ internal class ChatPromptService(
                         }
                     }
 
+                    "error" -> {
+                        streamFailed = true
+                        event
+                    }
+
                     else -> {
                         event
                     }
@@ -186,6 +192,7 @@ internal class ChatPromptService(
                         chat = chat,
                         content = sb.toString(),
                         createdAt = OffsetDateTime.now(),
+                        isIncomplete = streamFailed,
                     )
 
                     messageRepository.save(msg)
@@ -204,7 +211,7 @@ internal class ChatPromptService(
 
                     citationRepository.saveAll(citationEntities)
                 } else {
-                    println("Stream either got killed or experienced an error: ${cause.message}")
+                    logger.error("Stream either got killed or experienced an error", cause)
                 }
             }
     }

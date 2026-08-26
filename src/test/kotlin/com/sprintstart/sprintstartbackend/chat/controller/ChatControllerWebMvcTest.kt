@@ -24,6 +24,8 @@ import io.mockk.verify
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.Json
+import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -37,6 +39,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.crypto.keygen.KeyGenerators.string
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
@@ -45,6 +48,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
@@ -843,6 +847,82 @@ class ChatControllerWebMvcTest(
                     match { it.filters == null },
                 )
             }
+        }
+
+        @Test
+        fun `forwards AI error event after streamed token and completes stream`() {
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(
+                AiStreamMessage(
+                    type = "token",
+                    content = "Partial answer",
+                ),
+                AiStreamMessage(
+                    type = "error",
+                    message = "An unexpected error occurred",
+                ),
+            )
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/me/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(
+                    content().string(
+                        allOf(
+                            containsString("\"type\":\"token\""),
+                            containsString("\"content\":\"Partial answer\""),
+                            containsString("\"type\":\"error\""),
+                            containsString("\"message\":\"An unexpected error occurred\""),
+                        ),
+                    ),
+                )
+        }
+
+        @Test
+        fun `forwards AI error event when AI service fails before stream starts`() {
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(
+                AiStreamMessage(
+                    type = "error",
+                    message = "AI service returned status 500",
+                ),
+            )
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/me/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(
+                    content().string(
+                        allOf(
+                            containsString("\"type\":\"error\""),
+                            containsString("\"message\":\"AI service returned status 500\""),
+                        ),
+                    ),
+                )
         }
     }
 }
