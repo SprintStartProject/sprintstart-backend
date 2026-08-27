@@ -212,15 +212,15 @@ class BlueprintPathService(
 //  - [x] Add delete endpoint for drafts
 //  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
-//  - [] Make everything tied to a project id
+//  - [x] Make everything tied to a project id
 //      - [x] Path
 //      - [x] Phase
 //      - [x] Step
 //      - [x] Resource
 //      - [x] Task
 //      - [x] Requirement
-//      - [] Check
-//      - [] CheckQuestion
+//      - [x] CheckOption
+//      - [x] CheckQuestion
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service

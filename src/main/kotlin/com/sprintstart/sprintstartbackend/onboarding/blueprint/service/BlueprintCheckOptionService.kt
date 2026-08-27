@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -8,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGe
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.CreateBlueprintCheckOptionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.DeleteBlueprintCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkoption.UpdateBlueprintCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.CreateBlueprintCheckOptionResponse
@@ -15,7 +15,6 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ch
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkoption.UpdateBlueprintCheckOptionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckOptionRepository
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,39 +24,38 @@ import kotlin.collections.forEach
 
 @Service
 class BlueprintCheckOptionService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
-    private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getBlueprintCheckOptionsForQuestion(questionId: UUID): List<GetBlueprintCheckOptionResponse> {
+    fun getBlueprintCheckOptionsForQuestion(
+        projectId: UUID,
+        questionId: UUID,
+    ): List<GetBlueprintCheckOptionResponse> {
         return blueprintCheckOptionRepository
-            .findAllByBlueprintCheckQuestionId(questionId)
-            .map { it.toGetResponse() }
+            .findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndBlueprintCheckQuestionId(
+                projectId,
+                questionId,
+            ).map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintCheckOptionById(optionId: UUID): GetBlueprintCheckOptionResponse {
-        return blueprintCheckOptionRepository
-            .findById(optionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+    fun getBlueprintCheckOptionById(
+        projectId: UUID,
+        optionId: UUID,
+    ): GetBlueprintCheckOptionResponse {
+        return blueprintAccessService
+            .getAuthorizedCheckOption(projectId, optionId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintCheckOptionForQuestion(
+        projectId: UUID,
         questionId: UUID,
         request: CreateBlueprintCheckOptionRequest,
     ): CreateBlueprintCheckOptionResponse {
-        val question = blueprintCheckQuestionRepository
-            .findById(questionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
-
-        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
 
         shiftOptionsRight(question, request)
 
@@ -73,26 +71,13 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun updateBlueprintCheckOptionById(
+        projectId: UUID,
         optionId: UUID,
         request: UpdateBlueprintCheckOptionRequest,
     ): UpdateBlueprintCheckOptionResponse {
-        val option = blueprintCheckOptionRepository
-            .findById(optionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
 
-        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (option.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint check option has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(option, request.revision)
 
         shiftOptionsBetween(option, request.position)
 
@@ -105,26 +90,13 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun updateBlueprintCheckOptionPositionById(
+        projectId: UUID,
         optionId: UUID,
         request: UpdateBlueprintCheckOptionPositionRequest,
     ): List<UpdateBlueprintCheckOptionPositionResponse> {
-        val option = blueprintCheckOptionRepository
-            .findById(optionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
 
-        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (option.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint check option has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(option, request.revision)
 
         val shiftedOptions = shiftOptionsBetween(option, request.position)
         option.position = request.position
@@ -137,23 +109,30 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun deleteBlueprintCheckOptionById(
+        projectId: UUID,
         optionId: UUID,
+        request: DeleteBlueprintCheckOptionRequest,
     ) {
-        val option = blueprintCheckOptionRepository
-            .findById(optionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Option not found with id: $optionId") }
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
 
-        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        validateRevision(option, request.revision)
 
         blueprintCheckOptionRepository.delete(option)
     }
 
     // Helper Methods
+
+    private fun validateRevision(
+        option: BlueprintCheckOption,
+        revision: Long,
+    ) {
+        if (option.revision != revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint check option has been modified by another request. Please reload and try again.",
+            )
+        }
+    }
 
     private fun shiftOptionsRight(
         question: BlueprintCheckQuestion,

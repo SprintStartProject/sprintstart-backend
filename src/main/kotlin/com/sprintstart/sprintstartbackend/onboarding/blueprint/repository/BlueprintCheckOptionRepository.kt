@@ -1,13 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.repository
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import org.springframework.data.jpa.repository.JpaRepository
-import java.util.List
 import java.util.UUID
 
 interface BlueprintCheckOptionRepository : JpaRepository<BlueprintCheckOption, UUID> {
-    fun findAllByBlueprintCheckQuestionId(blueprintCheckQuestionId: UUID): MutableList<BlueprintCheckOption>
+    fun findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndBlueprintCheckQuestionId(
+        projectId: UUID,
+        questionId: UUID,
+    ): MutableList<BlueprintCheckOption>
 
     fun countByBlueprintCheckQuestionId(blueprintCheckQuestionId: UUID): Long
 
@@ -21,4 +22,9 @@ interface BlueprintCheckOptionRepository : JpaRepository<BlueprintCheckOption, U
         positionAfter: Int,
         positionBefore: Int,
     ): MutableList<BlueprintCheckOption>
+
+    fun findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndId(
+        projectId: UUID,
+        id: UUID,
+    ): BlueprintCheckOption?
 }

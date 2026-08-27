@@ -1,12 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckOptionRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
@@ -28,6 +30,7 @@ class BlueprintAccessService(
     private val blueprintResourceRepository: BlueprintResourceRepository,
     private val blueprintTaskRepository: BlueprintTaskRepository,
     private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
+    private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
@@ -218,5 +221,28 @@ class BlueprintAccessService(
             )
         }
         return question
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedCheckOption(projectId: UUID, optionId: UUID): BlueprintCheckOption {
+        return blueprintCheckOptionRepository
+            .findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndId(projectId, optionId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint check option not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditableCheckOption(projectId: UUID, optionId: UUID): BlueprintCheckOption {
+        val option = getAuthorizedCheckOption(projectId, optionId)
+
+        if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return option
     }
 }
