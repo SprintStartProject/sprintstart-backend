@@ -1,11 +1,13 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintResourceRepository
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+@Suppress("TooManyFunctions")
 @Service
 class BlueprintAccessService(
     private val blueprintPathRepository: BlueprintPathRepository,
@@ -24,6 +27,7 @@ class BlueprintAccessService(
     private val blueprintStepRepository: BlueprintStepRepository,
     private val blueprintResourceRepository: BlueprintResourceRepository,
     private val blueprintTaskRepository: BlueprintTaskRepository,
+    private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
@@ -191,5 +195,28 @@ class BlueprintAccessService(
             )
         }
         return task
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedCheckQuestion(projectId: UUID, questionId: UUID): BlueprintCheckQuestion {
+        return blueprintCheckQuestionRepository
+            .findByBlueprintPhaseBlueprintPathProjectIdAndId(projectId, questionId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Blueprint check question not found for this project",
+            )
+    }
+
+    @Transactional(readOnly = true)
+    fun getAuthorizedEditableCheckQuestion(projectId: UUID, questionId: UUID): BlueprintCheckQuestion {
+        val question = getAuthorizedCheckQuestion(projectId, questionId)
+
+        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Blueprint can only be modified while in DRAFT status",
+            )
+        }
+        return question
     }
 }

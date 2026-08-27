@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.CreateBlueprintCheckQuestionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.DeleteBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.CreateBlueprintCheckQuestionResponse
@@ -19,52 +20,59 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/onboarding/blueprints/")
+@RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints/")
 class BlueprintCheckQuestionController(
     private val blueprintCheckQuestionService: BlueprintCheckQuestionService,
 ) {
     @GetMapping("/phase/{phaseId}/checks/questions")
     fun getBlueprintCheckQuestionsForPhase(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
     ): List<GetBlueprintCheckQuestionResponse> {
-        return blueprintCheckQuestionService.getBlueprintCheckQuestionsForPhase(phaseId)
+        return blueprintCheckQuestionService.getBlueprintCheckQuestionsForPhase(projectId, phaseId)
     }
 
     @GetMapping("/checks/questions/{questionId}")
     fun getBlueprintCheckQuestionById(
+        @PathVariable projectId: UUID,
         @PathVariable questionId: UUID,
     ): GetBlueprintCheckQuestionResponse {
-        return blueprintCheckQuestionService.getBlueprintCheckQuestionById(questionId)
+        return blueprintCheckQuestionService.getBlueprintCheckQuestionById(projectId, questionId)
     }
 
     @PostMapping("/phase/{phaseId}/checks/questions")
     fun createBlueprintCheckQuestionForPhase(
+        @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @RequestBody request: CreateBlueprintCheckQuestionRequest,
     ): CreateBlueprintCheckQuestionResponse {
-        return blueprintCheckQuestionService.createBlueprintCheckQuestionForPhase(phaseId, request)
+        return blueprintCheckQuestionService.createBlueprintCheckQuestionForPhase(projectId, phaseId, request)
     }
 
     @PutMapping("/checks/question/{questionId}")
     fun updateBlueprintCheckQuestionById(
+        @PathVariable projectId: UUID,
         @PathVariable questionId: UUID,
         @RequestBody request: UpdateBlueprintCheckQuestionRequest,
     ): UpdateBlueprintCheckQuestionResponse {
-        return blueprintCheckQuestionService.updateBlueprintCheckQuestionById(questionId, request)
+        return blueprintCheckQuestionService.updateBlueprintCheckQuestionById(projectId, questionId, request)
     }
 
     @PutMapping("/checks/question/{questionId}/position")
     fun updateBlueprintCheckQuestionPositionById(
+        @PathVariable projectId: UUID,
         @PathVariable questionId: UUID,
         @RequestBody request: UpdateBlueprintCheckQuestionPositionRequest,
     ): List<UpdateBlueprintCheckQuestionPositionResponse> {
-        return blueprintCheckQuestionService.updateBlueprintCheckQuestionPositionById(questionId, request)
+        return blueprintCheckQuestionService.updateBlueprintCheckQuestionPositionById(projectId, questionId, request)
     }
 
     @DeleteMapping("/checks/question/{questionId}")
     fun deleteBlueprintCheckQuestionById(
+        @PathVariable projectId: UUID,
         @PathVariable questionId: UUID,
+        @RequestBody request: DeleteBlueprintCheckQuestionRequest,
     ) {
-        blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(questionId)
+        blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(projectId, questionId, request)
     }
 }

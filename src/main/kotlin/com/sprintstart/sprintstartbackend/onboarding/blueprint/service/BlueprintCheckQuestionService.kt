@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -8,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGe
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.CreateBlueprintCheckQuestionRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.DeleteBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.CreateBlueprintCheckQuestionResponse
@@ -15,7 +15,6 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ch
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -27,30 +26,32 @@ import kotlin.ranges.contains
 
 @Service
 class BlueprintCheckQuestionService(
+    private val blueprintAccessService: BlueprintAccessService,
     private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
-    private val blueprintPhaseRepository: BlueprintPhaseRepository,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintCheckQuestionsForPhase(
+        projectId: UUID,
         phaseId: UUID,
     ): List<GetBlueprintCheckQuestionResponse> {
         return blueprintCheckQuestionRepository
-            .findAllByBlueprintPhaseId(phaseId)
+            .findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(projectId, phaseId)
             .map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
     fun getBlueprintCheckQuestionById(
+        projectId: UUID,
         questionId: UUID,
     ): GetBlueprintCheckQuestionResponse {
-        return blueprintCheckQuestionRepository
-            .findById(questionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
+        return blueprintAccessService
+            .getAuthorizedCheckQuestion(projectId, questionId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintCheckQuestionForPhase(
+        projectId: UUID,
         phaseId: UUID,
         request: CreateBlueprintCheckQuestionRequest,
     ): CreateBlueprintCheckQuestionResponse {
@@ -61,16 +62,7 @@ class BlueprintCheckQuestionService(
             )
         }
 
-        val phase = blueprintPhaseRepository
-            .findById(phaseId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Phase not found with id: $phaseId") }
-
-        if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
 
         shiftQuestionsRight(phase, request)
 
@@ -88,6 +80,7 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun updateBlueprintCheckQuestionById(
+        projectId: UUID,
         questionId: UUID,
         request: UpdateBlueprintCheckQuestionRequest,
     ): UpdateBlueprintCheckQuestionResponse {
@@ -98,23 +91,9 @@ class BlueprintCheckQuestionService(
             )
         }
 
-        val question = blueprintCheckQuestionRepository
-            .findById(questionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
 
-        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (question.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint check question has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(question, request.revision)
 
         shiftQuestionsBetween(question, request.position)
 
@@ -129,26 +108,13 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun updateBlueprintCheckQuestionPositionById(
+        projectId: UUID,
         questionId: UUID,
         request: UpdateBlueprintCheckQuestionPositionRequest,
     ): List<UpdateBlueprintCheckQuestionPositionResponse> {
-        val question = blueprintCheckQuestionRepository
-            .findById(questionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
 
-        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
-
-        if (question.revision != request.revision) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "The blueprint check question has been modified by another request. Please reload and try again.",
-            )
-        }
+        validateRevision(question, request.revision)
 
         val shiftedQuestions = shiftQuestionsBetween(question, request.position)
         question.position = request.position
@@ -160,23 +126,30 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun deleteBlueprintCheckQuestionById(
+        projectId: UUID,
         questionId: UUID,
+        request: DeleteBlueprintCheckQuestionRequest,
     ) {
-        val question = blueprintCheckQuestionRepository
-            .findById(questionId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Question not found with id: $questionId") }
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
 
-        if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Blueprint can only be modified while in DRAFT status",
-            )
-        }
+        validateRevision(question, request.revision)
 
         blueprintCheckQuestionRepository.delete(question)
     }
 
     // Helper Methods
+
+    private fun validateRevision(
+        question: BlueprintCheckQuestion,
+        revision: Long,
+    ) {
+        if (question.revision != revision) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "The blueprint check question has been modified by another request. Please reload and try again.",
+            )
+        }
+    }
 
     private fun shiftQuestionsRight(
         phase: BlueprintPhase,
