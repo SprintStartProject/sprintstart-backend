@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -36,7 +35,7 @@ class BlueprintPhaseService(
         pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
         return blueprintPhaseRepository
-            .findAllByProjectIdAndBlueprintPathId(projectId, pathId)
+            .findAllByBlueprintPathProjectIdAndBlueprintPathId(projectId, pathId)
             .map { it.toGetResponse() }
     }
 

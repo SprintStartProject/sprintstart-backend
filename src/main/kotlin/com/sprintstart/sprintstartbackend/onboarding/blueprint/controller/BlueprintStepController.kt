@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
-@RequestMapping("/api/v1/project/{projectId}/onboarding/blueprints")
+@RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintStepController(
     private val blueprintStepService: BlueprintStepService,
 ) {

@@ -193,10 +193,6 @@ class BlueprintPathService(
 
 // Todo:
 //  - [x] Finish the rest of the data structures with simple services
-//      - [x] Step
-//      - [x] Questions
-//      - [x] Option
-//      - [x] Phase
 //  - [x] Add an umbrella Blueprint structure that holds all the paths -> needs a Stable Key separate from the ID
 //  - [x] Add a check for the revision in every update
 //  - [x] Create an endpoint for editing the blueprint with /blueprint/paths/{pathId}/drafts
@@ -213,42 +209,16 @@ class BlueprintPathService(
 //  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [x] Make everything tied to a project id
-//      - [x] Path
-//      - [x] Phase
-//      - [x] Step
-//      - [x] Resource
-//      - [x] Task
-//      - [x] Requirement
-//      - [x] CheckOption
-//      - [x] CheckQuestion
-//  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
+//  - [] Add an option to make phases be blocked by a previous one or not
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
-//  - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
+//      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
 //  - [] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
-//  - [] ( Add an option to make phases be blocked by a previous one or not )
 //  - [] ( Add authors to the Blueprint, as a Set with all the people that edited the draft )
+
+// Backlog:
+//  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] ( Add filter options to the phase query )
-//  -
 //  - [] Think about a teamOverview phase with : (Name, roles, Ai worksummary) per person
 //      -> TeamMemberProfile (I think i will move this into the user)
-
-/*
-Blueprint(
-      id: UUID,              // identity of this concrete version
-      blueprintKey: UUID,    // stable identity across versions
-      version: Int,
-      status: DRAFT | ACTIVE | RETIRED,
-      @Version revision: Long // optimistic-locking revision
-  )
-
-Chat session:
-codex resume 019fe621-6d7a-7c92-90a3-d7c2993d7d28
-
-Frontend session:
-codex resume 01a0005d-d842-7f40-ab68-a6d9c08d7ead
-
-Errors for requirements:
-codex resume 01a01911-9be0-7973-b087-069dc9990e52
- */
