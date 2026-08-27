@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -14,6 +15,11 @@ import java.util.UUID
  */
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
+
+    fun findAllBySourceSystemAndSourceIdIn(
+        sourceSystem: SourceSystem,
+        sourceIds: Collection<String>,
+    ): List<Artifact>
 
     fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
 

@@ -14,6 +14,16 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class ConfluenceArtifactMetadata(
+    val connectionId: String? = null,
+    val tenantBaseUrl: String? = null,
+    val spaceId: String? = null,
+    val spaceKey: String? = null,
+    val pageId: String? = null,
+    val versionNumber: Int? = null,
+    val versionCreatedAt: String? = null,
+    val parentId: String? = null,
+    val parentType: String? = null,
+    val webUiPath: String? = null,
     val sections: List<ArtifactSection> = emptyList(),
     val tables: List<String> = emptyList(),
     val codeBlocks: List<ArtifactCodeBlock> = emptyList(),

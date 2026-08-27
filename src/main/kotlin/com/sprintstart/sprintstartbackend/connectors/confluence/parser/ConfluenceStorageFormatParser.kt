@@ -7,6 +7,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Parser
+import org.springframework.stereotype.Component
 
 data class ParsedConfluenceBody(
     val bodyText: String,
@@ -32,6 +33,7 @@ data class ParsedConfluenceCodeBlock(
  * tree before reading `bodyText`. That keeps code macro bodies, unsupported macro markup, and table
  * markup from leaking into the clean text that will later be indexed.
  */
+@Component
 class ConfluenceStorageFormatParser {
     fun parse(storageXhtml: String?): ParsedConfluenceBody {
         if (storageXhtml.isNullOrBlank()) {
