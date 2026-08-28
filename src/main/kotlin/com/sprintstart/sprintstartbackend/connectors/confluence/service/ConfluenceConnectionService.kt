@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceExternalServiceException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceResourceNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
@@ -17,10 +18,12 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceCredentialRepository
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.UUID
 
 /** Validates and persists project-scoped Confluence Cloud space connections. */
@@ -30,6 +33,8 @@ internal class ConfluenceConnectionService(
     private val connectionRepository: ConfluenceSpaceConnectionRepository,
     private val credentialRepository: ConfluenceCredentialRepository,
     private val userApi: UserApi,
+    private val cronBuilder: CronBuilder,
+    private val scheduleCalculator: ConfluenceScheduleCalculator,
 ) {
     /**
      * Validates the selected remote space before atomically storing its connection and credential.
@@ -88,6 +93,27 @@ internal class ConfluenceConnectionService(
     fun getConnection(authId: String, projectId: UUID, connectionId: UUID): ConfluenceConnectionResponse {
         requireProjectAccess(authId, projectId)
         return findConnection(projectId, connectionId).toResponse()
+    }
+
+    /** Updates automatic synchronization settings for one project-owned connection. */
+    @Transactional
+    fun configureSchedule(
+        authId: String,
+        projectId: UUID,
+        connectionId: UUID,
+        request: ConfigureConfluenceScheduleRequest,
+    ): ConfluenceConnectionResponse {
+        requireProjectAccess(authId, projectId)
+        val connection = findConnection(projectId, connectionId)
+        val schedule = cronBuilder.build(request.schedule)
+        val nextSyncAt = scheduleCalculator.calculateNextSyncAt(schedule, Instant.now())
+            ?: throw ConfluenceConnectionConfigurationException("Confluence schedule is invalid")
+
+        connection.spec = request.schedule
+        connection.schedule = schedule
+        connection.autoUpdate = request.autoUpdate
+        connection.nextSyncAt = nextSyncAt
+        return connection.toResponse()
     }
 
     /** Returns decrypted credentials only for internal Confluence client construction. */

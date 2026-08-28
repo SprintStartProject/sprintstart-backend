@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.connectors.confluence.ConfluenceConnector
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
@@ -11,6 +12,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionResult
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluenceConnectionService
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -30,10 +32,12 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
+import java.time.LocalTime
 import java.util.UUID
 
 @WebMvcTest(controllers = [ConfluenceConnectorController::class])
@@ -206,6 +210,52 @@ internal class ConfluenceConnectorControllerTest {
     }
 
     @Test
+    fun `PM can configure project scoped automatic synchronization`() {
+        val request = ConfigureConfluenceScheduleRequest(ScheduleSpec.Interval(30), autoUpdate = true)
+        val response = connectionResponse().copy(
+            autoUpdate = true,
+            spec = request.schedule,
+            schedule = "0 */30 * * * *",
+            nextSyncAt = Instant.parse("2026-08-28T13:00:00Z"),
+        )
+        every {
+            connectionService.configureSchedule("pm-id", projectId, connectionId, request)
+        } returns response
+
+        mockMvc
+            .perform(
+                put("${basePath()}/$connectionId/schedule")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+                    .with(pmJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.autoUpdate").value(true))
+            .andExpect(jsonPath("$.spec.type").value("INTERVAL"))
+            .andExpect(jsonPath("$.nextSyncAt").value("2026-08-28T13:00:00Z"))
+    }
+
+    @Test
+    fun `invalid nested schedule returns bad request`() {
+        val invalidRequest =
+            """
+            {
+              "schedule": {"type": "INTERVAL", "everyMinutes": 0},
+              "autoUpdate": true
+            }
+            """.trimIndent()
+
+        mockMvc
+            .perform(
+                put("${basePath()}/$connectionId/schedule")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(invalidRequest)
+                    .with(adminJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { connectionService.configureSchedule(any(), any(), any(), any()) }
+    }
+
+    @Test
     fun `update delegates to existing ingestion and preserves all terminal item statuses`() {
         ConfluenceIngestionStatus.entries.forEach { ingestionStatus ->
             val result = ingestionResult(ingestionStatus)
@@ -261,6 +311,9 @@ internal class ConfluenceConnectorControllerTest {
         createdAt = Instant.parse("2026-08-28T08:00:00Z"),
         updatedAt = Instant.parse("2026-08-28T08:00:00Z"),
         version = 0,
+        spec = ScheduleSpec.Daily(LocalTime.of(2, 0)),
+        schedule = "0 0 2 * * *",
+        nextSyncAt = null,
     )
 
     private fun ingestionResult(status: ConfluenceIngestionStatus) = ConfluenceIngestionResult(

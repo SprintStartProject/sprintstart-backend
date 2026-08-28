@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.controller
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.ConfluenceConnector
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionResult
@@ -22,6 +23,7 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -109,6 +111,37 @@ internal class ConfluenceConnectorController(
         @PathVariable connectionId: UUID,
     ): ResponseEntity<ConfluenceConnectionResponse> {
         return ResponseEntity.ok(connectionService.getConnection(jwt.subject, projectId, connectionId))
+    }
+
+    /** Configures automatic synchronization for one project-owned Confluence connection. */
+    @Operation(
+        summary = "Configure Confluence synchronization",
+        description = "Stores a validated schedule and enables or disables automatic synchronization.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Schedule updated",
+                content = [Content(schema = Schema(implementation = ConfluenceConnectionResponse::class))],
+            ),
+            ApiResponse(responseCode = "400", description = "Invalid schedule"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Project management permission required"),
+            ApiResponse(responseCode = "404", description = "Connection not found in the project"),
+        ],
+    )
+    @PutMapping("/{connectionId}/schedule")
+    @PreAuthorize(MANAGE_PROJECT)
+    fun configureSchedule(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable projectId: UUID,
+        @PathVariable connectionId: UUID,
+        @Valid @RequestBody request: ConfigureConfluenceScheduleRequest,
+    ): ResponseEntity<ConfluenceConnectionResponse> {
+        return ResponseEntity.ok(
+            connectionService.configureSchedule(jwt.subject, projectId, connectionId, request),
+        )
     }
 
     /** Runs the existing retry-aware ingestion flow for one project-owned connection. */

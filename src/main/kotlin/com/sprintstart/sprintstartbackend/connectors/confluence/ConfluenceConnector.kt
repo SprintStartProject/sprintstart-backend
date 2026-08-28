@@ -26,7 +26,7 @@ internal class ConfluenceConnector(
     val sourceSystem: SourceSystem = SourceSystem.CONFLUENCE
 
     override fun getSources(): List<ConnectorSource> {
-        throw SourcePatchValidationException("projectId is required for Confluence source discovery")
+        return emptyList()
     }
 
     override fun getSources(projectId: UUID): List<ConnectorSource> {

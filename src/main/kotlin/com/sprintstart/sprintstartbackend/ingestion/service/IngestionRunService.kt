@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -10,7 +11,9 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
+import jakarta.persistence.criteria.Root
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
@@ -34,6 +37,7 @@ class IngestionRunService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
+    private val confluenceConnectionApi: ConfluenceConnectionApi,
 ) {
     /**
      * Returns the newest ingestion runs first.
@@ -68,9 +72,9 @@ class IngestionRunService(
     /**
      * Returns a filtered, paginated page of ingestion runs, newest first.
      *
-     * All filters are optional and combined with AND semantics. `projectId` is resolved to the set
-     * of repositories connected to that project and matched against each run's `repositoryId`; a
-     * project with no connected repositories yields an empty page.
+     * All filters are optional and combined with AND semantics. `projectId` is resolved to the
+     * GitHub repositories, Jira instances, and Confluence connections owned by that project. A
+     * project with no connected sources yields an empty page.
      *
      * @param page The 1-based page number to return.
      * @param size The maximum number of runs to include in one page.
@@ -78,8 +82,7 @@ class IngestionRunService(
      * @param repositoryId Optional connected-repository filter (GitHub, matched on the UUID instance id).
      * @param sourceRef Optional source-instance filter matched on the connector-neutral reference
      * (for Jira the instance URL).
-     * @param projectId Optional project filter, resolved via the project's connected repositories and
-     * Jira instances.
+     * @param projectId Optional project filter, resolved via the project's connected source instances.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -109,22 +112,7 @@ class IngestionRunService(
                 status?.let { predicates.add(cb.equal(root.get<IngestionRunStatus>("status"), it)) }
                 since?.let { predicates.add(cb.greaterThanOrEqualTo(root.get<Instant>("startedAt"), it)) }
                 projectSources?.let { sources ->
-                    val matches = buildList {
-                        if (sources.repositoryIds.isNotEmpty()) {
-                            add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
-                        }
-                        if (sources.jiraRefs.isNotEmpty()) {
-                            add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
-                        }
-                    }
-                    // An empty project (no connected sources at all) matches no run.
-                    predicates.add(
-                        when (matches.size) {
-                            0 -> cb.disjunction()
-                            1 -> matches.single()
-                            else -> cb.or(matches[0], matches[1])
-                        },
-                    )
+                    predicates.add(projectSourcesPredicate(root, cb, sources))
                 }
                 if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
             }
@@ -149,11 +137,54 @@ class IngestionRunService(
         ProjectSources(
             repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
             jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
+            confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
         )
+
+    private fun projectSourcesPredicate(
+        root: Root<IngestionRun>,
+        cb: CriteriaBuilder,
+        sources: ProjectSources,
+    ): Predicate {
+        val matches = buildList {
+            if (sources.repositoryIds.isNotEmpty()) {
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.GITHUB, sources.repositoryIds))
+            }
+            if (sources.jiraRefs.isNotEmpty()) {
+                add(
+                    cb.and(
+                        cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.JIRA),
+                        root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs),
+                    ),
+                )
+            }
+            if (sources.confluenceConnectionIds.isNotEmpty()) {
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.CONFLUENCE, sources.confluenceConnectionIds))
+            }
+        }
+
+        return when (matches.size) {
+            0 -> cb.disjunction()
+            1 -> matches.single()
+            else -> cb.or(*matches.toTypedArray())
+        }
+    }
+
+    private fun sourceInstanceIdPredicate(
+        root: Root<IngestionRun>,
+        cb: CriteriaBuilder,
+        sourceSystem: SourceSystem,
+        sourceInstanceIds: List<UUID>,
+    ): Predicate {
+        return cb.and(
+            cb.equal(root.get<SourceSystem>("sourceSystem"), sourceSystem),
+            root.get<UUID>("sourceInstanceId").`in`(sourceInstanceIds),
+        )
+    }
 
     private data class ProjectSources(
         val repositoryIds: List<UUID>,
         val jiraRefs: List<String>,
+        val confluenceConnectionIds: List<UUID>,
     )
 }
 

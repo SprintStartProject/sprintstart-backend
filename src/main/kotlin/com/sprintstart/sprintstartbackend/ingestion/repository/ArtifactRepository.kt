@@ -13,6 +13,7 @@ import java.util.UUID
 /**
  * Persistence access for stored artifacts and project-scoped artifact searches.
  */
+@Suppress("TooManyFunctions")
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
@@ -121,4 +122,16 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countJiraArtifactsByInstanceUrl(
         @Param("instanceUrl") instanceUrl: String,
     ): Long
+
+    /** Counts Confluence page artifacts belonging to one stored space connection. */
+    @Query(CONFLUENCE_ARTIFACT_COUNT_QUERY)
+    fun countConfluenceArtifactsByConnectionId(
+        @Param("connectionId") connectionId: String,
+    ): Long
 }
+
+private const val CONFLUENCE_ARTIFACT_COUNT_QUERY =
+    "SELECT COUNT(a) FROM Artifact a " +
+        "WHERE a.sourceSystem = " +
+        "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.CONFLUENCE " +
+        "AND a.sourceId LIKE CONCAT('confluence:', :connectionId, ':page:%')"

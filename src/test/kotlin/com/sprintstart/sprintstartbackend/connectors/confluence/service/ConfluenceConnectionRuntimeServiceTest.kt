@@ -9,11 +9,34 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.UUID
 
 internal class ConfluenceConnectionRuntimeServiceTest {
     private val repository = mockk<ConfluenceSpaceConnectionRepository>()
     private val service = ConfluenceConnectionRuntimeService(repository)
+
+    @Test
+    fun `module API returns safe project scoped source instances and connection ids`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG").also { stored ->
+            stored.createdAt = Instant.parse("2026-08-28T10:00:00Z")
+        }
+        every { repository.findAllByProjectIdOrderByCreatedAtAsc(projectId) } returns listOf(connection)
+
+        val ids = service.getConnectionIdsByProject(projectId)
+        val source = service.getSourceInstances(projectId).single()
+
+        assertThat(ids).containsExactly(connection.id)
+        assertThat(source.connectionId).isEqualTo(connection.id)
+        assertThat(source.sourceRef).isEqualTo("https://tenant.invalid|${connection.spaceId}")
+        assertThat(source.spaceKey).isEqualTo("ENG")
+        assertThat(source.sourceUrl).isEqualTo("https://tenant.invalid/wiki/spaces/ENG")
+        assertThat(source.status).isEqualTo("CONNECTED")
+        assertThat(source.enabled).isTrue()
+        assertThat(source.toString()).doesNotContain("token", "credential", "Authorization")
+        verify(exactly = 2) { repository.findAllByProjectIdOrderByCreatedAtAsc(projectId) }
+    }
 
     @Test
     fun `batch patch loads once updates atomically and preserves request order`() {

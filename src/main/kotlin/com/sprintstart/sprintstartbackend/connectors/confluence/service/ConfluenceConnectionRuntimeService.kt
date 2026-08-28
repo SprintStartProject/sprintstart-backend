@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientCredentials
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
@@ -12,7 +14,24 @@ import java.util.UUID
 @Service
 internal class ConfluenceConnectionRuntimeService(
     private val connectionRepository: ConfluenceSpaceConnectionRepository,
-) {
+) : ConfluenceConnectionApi {
+    @Transactional(readOnly = true)
+    override fun getConnectionIdsByProject(projectId: UUID): List<UUID> {
+        return connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId).map { connection -> connection.id }
+    }
+
+    @Transactional(readOnly = true)
+    override fun getSourceInstances(projectId: UUID?): List<ConfluenceSourceInstanceDto> {
+        val connections =
+            if (projectId == null) {
+                connectionRepository.findAll().sortedBy { connection -> connection.createdAt }
+            } else {
+                connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId)
+            }
+
+        return connections.map { connection -> connection.toSourceInstanceDto() }
+    }
+
     @Transactional(readOnly = true)
     fun getSourceConnections(projectId: UUID): List<ConfluenceConnectionSourceSnapshot> {
         return connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId).map { connection ->
@@ -69,6 +88,18 @@ internal class ConfluenceConnectionRuntimeService(
             spaceId = spaceId,
             spaceKey = spaceKey,
             sourceEnabled = sourceEnabled,
+        )
+    }
+
+    private fun ConfluenceSpaceConnection.toSourceInstanceDto(): ConfluenceSourceInstanceDto {
+        return ConfluenceSourceInstanceDto(
+            connectionId = id,
+            sourceRef = "$baseUrl|$spaceId",
+            spaceId = spaceId,
+            spaceKey = spaceKey,
+            sourceUrl = safePageUrl(baseUrl, "/wiki/spaces/$spaceKey") ?: baseUrl,
+            status = if (sourceEnabled) "CONNECTED" else "DISABLED",
+            enabled = sourceEnabled,
         )
     }
 }

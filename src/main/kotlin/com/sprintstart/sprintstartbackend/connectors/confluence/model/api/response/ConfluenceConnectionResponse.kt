@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response
 
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID
@@ -20,4 +21,8 @@ data class ConfluenceConnectionResponse(
     val updatedAt: Instant,
     val version: Long,
     val sourceEnabled: Boolean = true,
+    val autoUpdate: Boolean = false,
+    val spec: ScheduleSpec,
+    val schedule: String,
+    val nextSyncAt: Instant?,
 )

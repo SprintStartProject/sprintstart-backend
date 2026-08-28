@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
@@ -20,12 +22,14 @@ import java.util.UUID
 class IngestionSourceStatusServiceTest {
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
     private val jiraInstanceApi = mockk<JiraInstanceApi>()
+    private val confluenceConnectionApi = mockk<ConfluenceConnectionApi>(relaxed = true)
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val service =
         IngestionSourceStatusService(
             githubRepositoryApi,
             jiraInstanceApi,
+            confluenceConnectionApi,
             ingestionRunRepository,
             artifactRepository,
         )
@@ -191,5 +195,52 @@ class IngestionSourceStatusServiceTest {
         assertThat(response.lastIssuesSyncAt).isEqualTo(instance.lastUpdate)
         assertThat(response.lastCommitsSyncAt).isNull()
         assertThat(response.lastPullRequestsSyncAt).isNull()
+    }
+
+    @Test
+    fun `maps project scoped Confluence space with latest run and artifact count`() {
+        val projectId = UUID.randomUUID()
+        val connectionId = UUID.randomUUID()
+        val sourceRef = "https://tenant.atlassian.net|5505028"
+        val instance = ConfluenceSourceInstanceDto(
+            connectionId = connectionId,
+            sourceRef = sourceRef,
+            spaceId = "5505028",
+            spaceKey = "ENG",
+            sourceUrl = "https://tenant.atlassian.net/wiki/spaces/ENG",
+            status = "CONNECTED",
+            enabled = true,
+        )
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.CONFLUENCE,
+            sourceInstanceId = connectionId,
+            sourceInstanceRef = sourceRef,
+            startedAt = Instant.parse("2026-08-28T12:30:00Z"),
+            ingestedCount = 7,
+            updatedCount = 1,
+            failedCount = 0,
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(projectId) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
+        every { confluenceConnectionApi.getSourceInstances(projectId) } returns listOf(instance)
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId) } returns run
+        every { artifactRepository.countConfluenceArtifactsByConnectionId(connectionId.toString()) } returns 7
+
+        val response = service.getStatusPerSourceInstance(projectId).single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
+        assertThat(response.sourceId).isEqualTo(sourceRef)
+        assertThat(response.displayName).isEqualTo("ENG")
+        assertThat(response.repositoryId).isNull()
+        assertThat(response.sourceUrl).isEqualTo("https://tenant.atlassian.net/wiki/spaces/ENG")
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(7)
+        assertThat(response.updatedCount).isEqualTo(1)
+        assertThat(response.artifactCount).isEqualTo(7)
     }
 }

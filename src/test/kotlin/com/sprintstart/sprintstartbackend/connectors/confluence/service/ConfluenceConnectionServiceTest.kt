@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.service
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceCredential
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
@@ -12,6 +13,8 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceCredentialRepository
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -24,6 +27,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.UUID
 
 class ConfluenceConnectionServiceTest {
@@ -31,11 +35,15 @@ class ConfluenceConnectionServiceTest {
     private val connectionRepository = mockk<ConfluenceSpaceConnectionRepository>()
     private val credentialRepository = mockk<ConfluenceCredentialRepository>()
     private val userApi = mockk<UserApi>()
+    private val cronBuilder = mockk<CronBuilder>()
+    private val scheduleCalculator = mockk<ConfluenceScheduleCalculator>()
     private val service = ConfluenceConnectionService(
         confluenceClient,
         connectionRepository,
         credentialRepository,
         userApi,
+        cronBuilder,
+        scheduleCalculator,
     )
     private val authId = "auth-subject"
     private val projectId = UUID.randomUUID()
@@ -164,6 +172,53 @@ class ConfluenceConnectionServiceTest {
         assertThat(thrown.toString()).doesNotContain(plaintextToken)
         coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
+    }
+
+    @Test
+    fun `configures project scoped schedule and calculates next sync`() {
+        val connection = connection(projectId)
+        val scheduleSpec = ScheduleSpec.Interval(30)
+        val cron = "0 */30 * * * *"
+        val nextSyncAt = Instant.parse("2026-08-28T13:00:00Z")
+        every { connectionRepository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every { cronBuilder.build(scheduleSpec) } returns cron
+        every { scheduleCalculator.calculateNextSyncAt(cron, any()) } returns nextSyncAt
+
+        val response = service.configureSchedule(
+            authId,
+            projectId,
+            connection.id,
+            ConfigureConfluenceScheduleRequest(scheduleSpec, autoUpdate = true),
+        )
+
+        assertThat(connection.autoUpdate).isTrue()
+        assertThat(connection.spec).isEqualTo(scheduleSpec)
+        assertThat(connection.schedule).isEqualTo(cron)
+        assertThat(connection.nextSyncAt).isEqualTo(nextSyncAt)
+        assertThat(response.autoUpdate).isTrue()
+        assertThat(response.nextSyncAt).isEqualTo(nextSyncAt)
+    }
+
+    @Test
+    fun `invalid schedule is rejected without mutating connection`() {
+        val connection = connection(projectId)
+        val scheduleSpec = ScheduleSpec.Custom("invalid")
+        every { connectionRepository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every { cronBuilder.build(scheduleSpec) } returns "invalid"
+        every { scheduleCalculator.calculateNextSyncAt("invalid", any()) } returns null
+
+        assertThatThrownBy {
+            service.configureSchedule(
+                authId,
+                projectId,
+                connection.id,
+                ConfigureConfluenceScheduleRequest(scheduleSpec, autoUpdate = true),
+            )
+        }.isInstanceOf(ConfluenceConnectionConfigurationException::class.java)
+            .hasMessage("Confluence schedule is invalid")
+
+        assertThat(connection.autoUpdate).isFalse()
+        assertThat(connection.nextSyncAt).isNull()
     }
 
     private fun request(pageAllowlist: List<String> = listOf(" 10 ", "20", "10")) =

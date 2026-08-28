@@ -1,8 +1,11 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.model.entity
 
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpecJpaConverter
 import jakarta.persistence.CascadeType
 import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column
+import jakarta.persistence.Convert
 import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
@@ -17,6 +20,7 @@ import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import java.time.Instant
+import java.time.LocalTime
 import java.util.UUID
 
 /**
@@ -49,6 +53,15 @@ internal class ConfluenceSpaceConnection(
     var spaceKey: String,
     @Column(name = "source_enabled", nullable = false)
     var sourceEnabled: Boolean = true,
+    @Column(name = "auto_update", nullable = false)
+    var autoUpdate: Boolean = false,
+    @Column(nullable = false)
+    var schedule: String = DEFAULT_CONFLUENCE_SCHEDULE,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    @Convert(converter = ScheduleSpecJpaConverter::class)
+    var spec: ScheduleSpec = ScheduleSpec.Daily(time = LocalTime.of(2, 0)),
+    @Column(name = "next_sync_at")
+    var nextSyncAt: Instant? = null,
     @ElementCollection(fetch = FetchType.LAZY)
     @CollectionTable(
         name = "confluence_connection_page_allowlist",
@@ -117,3 +130,5 @@ internal class ConfluenceSpaceConnection(
             "id=$id, projectId=$projectId, baseUrl=$baseUrl, spaceId=$spaceId, sourceEnabled=$sourceEnabled)"
     }
 }
+
+internal const val DEFAULT_CONFLUENCE_SCHEDULE = "0 0 2 * * *"

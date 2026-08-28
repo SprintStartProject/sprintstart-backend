@@ -17,5 +17,9 @@ internal fun ConfluenceSpaceConnection.toResponse(): ConfluenceConnectionRespons
         updatedAt = updatedAt,
         version = version,
         sourceEnabled = sourceEnabled,
+        autoUpdate = autoUpdate,
+        spec = spec,
+        schedule = schedule,
+        nextSyncAt = nextSyncAt,
     )
 }

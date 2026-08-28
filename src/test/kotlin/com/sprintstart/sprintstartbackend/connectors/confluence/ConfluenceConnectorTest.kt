@@ -50,10 +50,8 @@ class ConfluenceConnectorTest {
     }
 
     @Test
-    fun `unscoped source operations fail closed`() {
-        assertFailsWith<SourcePatchValidationException> {
-            connector.getSources()
-        }
+    fun `unscoped discovery is empty while unscoped updates fail closed`() {
+        assertThat(connector.getSources()).isEmpty()
         assertFailsWith<SourcePatchValidationException> {
             connector.patchSource(ConnectorSource(UUID.randomUUID().toString(), "ENG", "safe", true), false)
         }
