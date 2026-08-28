@@ -27,8 +27,8 @@ internal class ConfluenceArtifactIngestionApiService(
         return batchService.persist(command)
     }
 
-    override fun finishRun(runId: UUID) {
-        runLifeCycleService.finishRun(runId)
+    override fun finishRun(runId: UUID, successfulItemCount: Int) {
+        runLifeCycleService.finishRun(runId, successfulItemCount)
     }
 
     override fun failRun(runId: UUID, failureReason: String) {

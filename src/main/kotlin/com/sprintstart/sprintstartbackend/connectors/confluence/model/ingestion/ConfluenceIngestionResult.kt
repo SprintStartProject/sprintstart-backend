@@ -19,6 +19,8 @@ internal data class ConfluenceIngestionResult(
 internal data class ConfluenceIngestionFailure(
     val pageId: String,
     val stage: ConfluenceIngestionFailureStage,
+    val httpStatus: Int? = null,
+    val attempts: Int? = null,
     val message: String,
 )
 
@@ -26,6 +28,8 @@ internal enum class ConfluenceIngestionFailureStage {
     RESTRICTIONS,
     HIERARCHY,
     PARSING,
+    MAPPING,
+    PERSISTENCE,
 }
 
 internal enum class ConfluenceIngestionStatus {

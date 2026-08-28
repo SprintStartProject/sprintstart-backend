@@ -66,12 +66,24 @@ data class ConfluenceSourceAclCommand(
 data class ConfluencePageArtifactFailure(
     val pageId: String,
     val sourceUrl: String?,
+    val stage: ConfluenceArtifactFailureStage,
+    val httpStatus: Int? = null,
+    val attempts: Int? = null,
     val reason: String,
 )
+
+enum class ConfluenceArtifactFailureStage {
+    RESTRICTIONS,
+    HIERARCHY,
+    PARSING,
+    MAPPING,
+    PERSISTENCE,
+}
 
 data class ConfluenceArtifactBatchResult(
     val created: Int,
     val updated: Int,
     val unchanged: Int,
     val failed: Int,
+    val persistenceFailures: List<ConfluencePageArtifactFailure> = emptyList(),
 )

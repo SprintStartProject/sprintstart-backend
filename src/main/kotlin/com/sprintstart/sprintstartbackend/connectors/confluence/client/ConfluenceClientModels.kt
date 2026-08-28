@@ -80,7 +80,8 @@ internal data class ConfluencePageBatchResult(
 internal data class ConfluencePageFailure(
     val pageId: String,
     val stage: ConfluencePageFetchStage,
-    val httpStatus: Int,
+    val httpStatus: Int?,
+    val attempts: Int = 1,
     val message: String,
 )
 

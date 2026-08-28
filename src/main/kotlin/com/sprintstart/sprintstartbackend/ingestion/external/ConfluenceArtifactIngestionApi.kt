@@ -10,7 +10,7 @@ interface ConfluenceArtifactIngestionApi {
 
     fun persistBatch(command: ConfluenceArtifactBatchCommand): ConfluenceArtifactBatchResult
 
-    fun finishRun(runId: UUID)
+    fun finishRun(runId: UUID, successfulItemCount: Int)
 
     fun failRun(runId: UUID, failureReason: String)
 }

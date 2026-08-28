@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.client
 
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
-import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.serialization.SerializationException
 import org.springframework.stereotype.Component
 import java.net.URI
@@ -16,6 +15,7 @@ import java.net.URI
 @Component
 internal class ConfluenceClient(
     private val webClient: WebClient,
+    private val retryExecutor: ConfluenceRetryExecutor,
 ) {
     /**
      * Validates credentials by requesting one visible Confluence space.
@@ -96,8 +96,15 @@ internal class ConfluenceClient(
                     pageId = page.id,
                     stage = ConfluencePageFetchStage.RESTRICTIONS,
                     httpStatus = exception.httpStatus,
+                    attempts = exception.attempts,
                     message = CONFLUENCE_RESTRICTIONS_NOT_FOUND_MESSAGE,
                 )
+            } catch (exception: ConfluenceExternalServiceException) {
+                if (!exception.retryExhausted) throw exception
+                failures += exception.toRestrictionsFailure(page.id)
+            } catch (exception: ConfluenceTransportException) {
+                if (!exception.retryExhausted) throw exception
+                failures += exception.toRestrictionsFailure(page.id)
             }
         }
 
@@ -175,17 +182,27 @@ internal class ConfluenceClient(
         requestContext: String,
     ): T {
         try {
-            return webClient
-                .get()
-                .uri(uri)
-                .header("Authorization", credentials.basicAuthorizationHeader())
-                .header("Accept", "application/json")
-                .sync()
-                .perform<T>()
-        } catch (exception: WebClientException) {
-            throw exception.toSafeConfluenceException(requestContext)
+            return retryExecutor.execute(requestContext) {
+                webClient
+                    .get()
+                    .uri(uri)
+                    .header("Authorization", credentials.basicAuthorizationHeader())
+                    .header("Accept", "application/json")
+                    .sync()
+                    .perform<T>()
+            }
         } catch (@Suppress("SwallowedException") exception: SerializationException) {
             throw ConfluenceInvalidResponseException(requestContext)
         }
+    }
+
+    private fun ConfluenceClientException.toRestrictionsFailure(pageId: String): ConfluencePageFailure {
+        return ConfluencePageFailure(
+            pageId = pageId,
+            stage = ConfluencePageFetchStage.RESTRICTIONS,
+            httpStatus = httpStatus,
+            attempts = attempts,
+            message = CONFLUENCE_RESTRICTIONS_RETRY_EXHAUSTED_MESSAGE,
+        )
     }
 }

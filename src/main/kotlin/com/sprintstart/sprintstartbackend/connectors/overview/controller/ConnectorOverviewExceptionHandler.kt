@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.overview.controller
 
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import jakarta.validation.ConstraintViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -17,6 +18,12 @@ import org.springframework.web.bind.annotation.ExceptionHandler
  */
 @ControllerAdvice
 class ConnectorOverviewExceptionHandler {
+    @ExceptionHandler(SourcePatchValidationException::class)
+    fun handleSourcePatchValidation(ex: SourcePatchValidationException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(ex.message))
+
     /**
      * Handles exceptions of type [ConnectorNotFoundException] and converts them into a standardized error response
      * with a 404 NOT FOUND HTTP status code.

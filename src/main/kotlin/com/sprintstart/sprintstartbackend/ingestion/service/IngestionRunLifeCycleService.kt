@@ -109,12 +109,14 @@ class IngestionRunLifeCycleService(
      * though AI sync had already been dispatched and marked succeeded.
      *
      * @param transactionId The ingestion run id to finish. No-op when the run is unknown.
+     * @param successfulItemCount Source-specific successful items, including unchanged items that
+     * do not increment the canonical write counters.
      */
     @Transactional
     @Tracked("Finishing ingestion run")
-    fun finishRun(transactionId: UUID) {
+    fun finishRun(transactionId: UUID, successfulItemCount: Int = 0) {
         val run = ingestionRunRepository.findByIdOrNull(transactionId) ?: return
-        finishRun(run)
+        finishRun(run, successfulItemCount)
     }
 
     /**
@@ -128,12 +130,15 @@ class IngestionRunLifeCycleService(
      * run id must use [finishRun] with the id so the mutation is actually persisted.
      *
      * @param run The managed ingestion run entity whose terminal status should be calculated.
+     * @param successfulItemCount Source-specific successful items, including unchanged items.
      */
     @Transactional
     @Tracked("Finishing ingestion run")
-    fun finishRun(run: IngestionRun) {
+    fun finishRun(run: IngestionRun, successfulItemCount: Int = 0) {
+        require(successfulItemCount >= 0) { "Successful item count must not be negative" }
+        val changedArtifactCount = run.ingestedCount + run.updatedCount + run.deletedCount
         if (run.failedCount > 0) {
-            if (run.ingestedCount > 0 || run.updatedCount > 0 || run.deletedCount > 0) {
+            if (changedArtifactCount > 0 || successfulItemCount > 0) {
                 run.status = IngestionRunStatus.PARTIAL
             } else {
                 run.status = IngestionRunStatus.FAILED
@@ -143,7 +148,9 @@ class IngestionRunLifeCycleService(
         }
 
         run.finishedAt = Instant.now()
-        if (run.status in setOf(IngestionRunStatus.COMPLETED, IngestionRunStatus.PARTIAL)) {
+        if (run.status == IngestionRunStatus.COMPLETED ||
+            (run.status == IngestionRunStatus.PARTIAL && changedArtifactCount > 0)
+        ) {
             publisher.publishEvent(RunFinishedEvent(run.id))
         } else {
             // Nothing was ingested, updated, or deleted, so there is nothing for the AI

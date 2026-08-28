@@ -12,6 +12,12 @@ sprintstart:
   upload:
     directory: uploads
     max-file-size-bytes: 10485760
+  confluence:
+    retry:
+      max-attempts: 4
+      initial-delay: 500ms
+      max-delay: 30s
+      multiplier: 2.0
 
 spring:
   config:

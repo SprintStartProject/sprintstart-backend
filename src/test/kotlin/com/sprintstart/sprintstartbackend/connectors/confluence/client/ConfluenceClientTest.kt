@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.time.Duration
 import java.time.Instant
 
 internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
@@ -19,6 +20,62 @@ internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
         assertThat(decodeBasicAuthorization(authorization)).isEqualTo("$TEST_EMAIL:$TEST_TOKEN")
         assertThat(request.getHeader("Accept")).isEqualTo("application/json")
         assertThat(request.path).isEqualTo("/wiki/api/v2/spaces?limit=1")
+        assertThat(mockWebServer.requestCount).isEqualTo(1)
+        assertThat(retryDelays).isEmpty()
+    }
+
+    @Test
+    fun `429 retries once and then succeeds using numeric Retry-After`() = runTest {
+        enqueueError(429, "sensitive rate-limit body $TEST_TOKEN", retryAfter = "5")
+        enqueueJson(spacesResponse())
+
+        client.validateConnection(baseUrl, credentials)
+
+        assertThat(mockWebServer.requestCount).isEqualTo(2)
+        assertThat(retryDelays).containsExactly(Duration.ofSeconds(5))
+    }
+
+    @Test
+    fun `503 retries with HTTP-date Retry-After relative to injected clock`() = runTest {
+        enqueueError(503, "temporary", retryAfter = "Wed, 21 Oct 2026 07:28:00 GMT")
+        enqueueJson(spacesResponse())
+
+        client.validateConnection(baseUrl, credentials)
+
+        assertThat(retryDelays).containsExactly(Duration.ofSeconds(10))
+    }
+
+    @Test
+    fun `invalid and past Retry-After values fall back to exponential backoff`() = runTest {
+        enqueueError(500, "temporary", retryAfter = "invalid")
+        enqueueError(500, "temporary", retryAfter = "Wed, 21 Oct 2026 07:27:00 GMT")
+        enqueueJson(spacesResponse())
+
+        client.validateConnection(baseUrl, credentials)
+
+        assertThat(retryDelays).containsExactly(Duration.ofMillis(100), Duration.ofMillis(200))
+    }
+
+    @Test
+    fun `failed page-list pagination retries only the failed cursor request`() = runTest {
+        enqueueJson(
+            pagesResponse(
+                pages = listOf(pageJson(id = "100")),
+                next = "/wiki/api/v2/spaces/42/pages?body-format=storage&limit=100&cursor=retry-me",
+            ),
+        )
+        enqueueError(503, "temporary")
+        enqueueJson(pagesResponse(listOf(pageJson(id = "101"))))
+        enqueueJson(restrictionsResponse())
+        enqueueJson(restrictionsResponse())
+
+        val result = client.getPages(baseUrl, credentials, "42")
+
+        assertThat(result.successfulPages.map { page -> page.id }).containsExactly("100", "101")
+        val paths = List(5) { mockWebServer.takeRequest().path }
+        assertThat(paths.count { path -> path?.contains("cursor=retry-me") == true }).isEqualTo(2)
+        assertThat(paths.count { path -> path?.startsWith("/wiki/api/v2/spaces/42/pages?") == true }).isEqualTo(3)
+        assertThat(retryDelays).containsExactly(Duration.ofMillis(100))
     }
 
     @Test
@@ -427,6 +484,30 @@ internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
         assertThat(result.failures.single().message)
             .doesNotContain(upstreamBody, TEST_EMAIL, TEST_TOKEN, basicAuthorizationValue())
         assertThat(mockWebServer.requestCount).isEqualTo(5)
+        assertThat(retryDelays).isEmpty()
+    }
+
+    @Test
+    fun `exhausted restriction retries create one typed failure and continue`() = runTest {
+        enqueueJson(pagesResponse(listOf(pageJson(id = "100"), pageJson(id = "101"))))
+        enqueueError(503, "secret first $TEST_TOKEN")
+        enqueueError(503, "secret second $TEST_TOKEN")
+        enqueueError(503, "secret final $TEST_TOKEN")
+        enqueueJson(restrictionsResponse())
+
+        val result = client.getPages(baseUrl, credentials, "42")
+
+        assertThat(result.successfulPages.map { page -> page.id }).containsExactly("101")
+        val failure = result.failures.single()
+        assertThat(failure.pageId).isEqualTo("100")
+        assertThat(failure.stage).isEqualTo(ConfluencePageFetchStage.RESTRICTIONS)
+        assertThat(failure.httpStatus).isEqualTo(503)
+        assertThat(failure.attempts).isEqualTo(3)
+        assertThat(failure.message)
+            .isEqualTo(CONFLUENCE_RESTRICTIONS_RETRY_EXHAUSTED_MESSAGE)
+            .doesNotContain(TEST_TOKEN, "secret")
+        assertThat(retryDelays).containsExactly(Duration.ofMillis(100), Duration.ofMillis(200))
+        assertThat(mockWebServer.requestCount).isEqualTo(5)
     }
 
     @Test
@@ -535,7 +616,7 @@ internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
     @Test
     fun `other HTTP errors use sanitized typed Confluence exception`() = runTest {
         val upstreamBody = "upstream included $TEST_EMAIL and $TEST_TOKEN"
-        enqueueError(500, upstreamBody)
+        repeat(3) { enqueueError(500, upstreamBody) }
         val basicAuthorization = basicAuthorizationValue()
 
         val exception = assertThrows<ConfluenceExternalServiceException> {
@@ -543,9 +624,12 @@ internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
         }
 
         assertThat(exception.httpStatus).isEqualTo(500)
+        assertThat(exception.attempts).isEqualTo(3)
+        assertThat(exception.retryExhausted).isTrue()
         assertThat(exception.requestContext).isEqualTo("validating the connection")
         assertThat(exception.message)
             .doesNotContain(TEST_EMAIL, TEST_TOKEN, basicAuthorization, upstreamBody, "upstream included")
         assertThat(exception.cause).isNull()
+        assertThat(retryDelays).containsExactly(Duration.ofMillis(100), Duration.ofMillis(200))
     }
 }

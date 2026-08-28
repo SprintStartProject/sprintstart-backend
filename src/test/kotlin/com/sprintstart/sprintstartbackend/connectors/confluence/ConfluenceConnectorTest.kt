@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.service.Confluen
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluenceConnectionSourceSnapshot
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluencePageIngestionService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
 import io.mockk.every
@@ -15,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.UUID
+import kotlin.test.assertFailsWith
 
 class ConfluenceConnectorTest {
     private val connectionService = mockk<ConfluenceConnectionRuntimeService>()
@@ -48,13 +50,34 @@ class ConfluenceConnectorTest {
     }
 
     @Test
-    fun `patch delegates by stable connection ID`() {
-        val connectionId = UUID.randomUUID()
-        every { connectionService.patchSource(connectionId, false) } returns Unit
+    fun `unscoped source operations fail closed`() {
+        assertFailsWith<SourcePatchValidationException> {
+            connector.getSources()
+        }
+        assertFailsWith<SourcePatchValidationException> {
+            connector.patchSource(ConnectorSource(UUID.randomUUID().toString(), "ENG", "safe", true), false)
+        }
+        verify(exactly = 0) { connectionService.getSourceConnections(any()) }
+        verify(exactly = 0) { connectionService.patchSources(any(), any()) }
+    }
 
-        connector.patchSource(ConnectorSource(connectionId.toString(), "ENG", "safe", true), false)
+    @Test
+    fun `project scoped batch patch delegates normalized ids and preserves order`() {
+        val projectId = UUID.randomUUID()
+        val firstId = UUID.randomUUID()
+        val secondId = UUID.randomUUID()
+        val requested = linkedMapOf(secondId.toString() to false, firstId.toString() to true)
+        every {
+            connectionService.patchSources(projectId, linkedMapOf(secondId to false, firstId to true))
+        } returns listOf(
+            sourceSnapshot(secondId, "TWO", false),
+            sourceSnapshot(firstId, "ONE", true),
+        )
 
-        verify { connectionService.patchSource(connectionId, false) }
+        val result = connector.patchSources(projectId, requested)
+
+        assertThat(result.map { source -> source.id }).containsExactly(secondId.toString(), firstId.toString())
+        assertThat(result.map { source -> source.enabled }).containsExactly(false, true)
     }
 
     @Test
@@ -78,4 +101,12 @@ class ConfluenceConnectorTest {
 
         assertThat(connector.ingest(projectId, connectionId)).isEqualTo(expected)
     }
+
+    private fun sourceSnapshot(id: UUID, key: String, enabled: Boolean) = ConfluenceConnectionSourceSnapshot(
+        id = id,
+        baseUrl = "https://tenant.atlassian.net",
+        spaceId = "42",
+        spaceKey = key,
+        sourceEnabled = enabled,
+    )
 }

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientCredentials
-import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import org.springframework.stereotype.Service
@@ -14,13 +14,8 @@ internal class ConfluenceConnectionRuntimeService(
     private val connectionRepository: ConfluenceSpaceConnectionRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getSourceConnections(projectId: UUID? = null): List<ConfluenceConnectionSourceSnapshot> {
-        val connections = if (projectId == null) {
-            connectionRepository.findAllByOrderByCreatedAtAsc()
-        } else {
-            connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId)
-        }
-        return connections.map { connection ->
+    fun getSourceConnections(projectId: UUID): List<ConfluenceConnectionSourceSnapshot> {
+        return connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId).map { connection ->
             ConfluenceConnectionSourceSnapshot(
                 id = connection.id,
                 baseUrl = connection.baseUrl,
@@ -31,12 +26,22 @@ internal class ConfluenceConnectionRuntimeService(
         }
     }
 
+    /** Atomically patches a validated batch of project-owned connection statuses. */
     @Transactional
-    fun patchSource(connectionId: UUID, sourceEnabled: Boolean) {
-        val connection = connectionRepository.findById(connectionId).orElseThrow {
-            ConfluenceConnectionConfigurationException("Confluence connection $connectionId was not found", 404)
+    fun patchSources(
+        projectId: UUID,
+        requestedStatuses: Map<UUID, Boolean>,
+    ): List<ConfluenceConnectionSourceSnapshot> {
+        val connections = connectionRepository.findAllByIdInAndProjectId(requestedStatuses.keys, projectId)
+        val connectionsById = connections.associateBy { connection -> connection.id }
+        requestedStatuses.keys.firstOrNull { connectionId -> connectionId !in connectionsById }?.let { missingId ->
+            throw ConfluenceConnectionNotFoundException(missingId, projectId)
         }
-        connection.sourceEnabled = sourceEnabled
+        return requestedStatuses.map { (connectionId, enabled) ->
+            val connection = requireNotNull(connectionsById[connectionId])
+            connection.sourceEnabled = enabled
+            connection.toSourceSnapshot()
+        }
     }
 
     /** Loads one project-scoped connection and decrypts its credential for trusted ingestion code. */
@@ -54,6 +59,16 @@ internal class ConfluenceConnectionRuntimeService(
             pageAllowlist = connection.pageAllowlist,
             pageDenylist = connection.pageDenylist,
             credentials = ConfluenceClientCredentials(connection.credential.email, connection.credential.apiToken),
+        )
+    }
+
+    private fun ConfluenceSpaceConnection.toSourceSnapshot(): ConfluenceConnectionSourceSnapshot {
+        return ConfluenceConnectionSourceSnapshot(
+            id = id,
+            baseUrl = baseUrl,
+            spaceId = spaceId,
+            spaceKey = spaceKey,
+            sourceEnabled = sourceEnabled,
         )
     }
 }

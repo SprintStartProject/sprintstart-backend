@@ -14,20 +14,19 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
-import jakarta.persistence.EntityManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
-import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 import tools.jackson.databind.ObjectMapper
 import java.time.Instant
 import java.util.UUID
 
 @ActiveProfiles("test")
 @SpringBootTest
-@Transactional
 class ConfluenceArtifactBatchServiceIntegrationTest {
     @Autowired
     private lateinit var batchService: ConfluenceArtifactBatchService
@@ -39,10 +38,10 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
     private lateinit var runRepository: IngestionRunRepository
 
     @Autowired
-    private lateinit var entityManager: EntityManager
+    private lateinit var objectMapper: ObjectMapper
 
     @Autowired
-    private lateinit var objectMapper: ObjectMapper
+    private lateinit var transactionManager: PlatformTransactionManager
 
     @Test
     fun `identical second run performs no update and preserves artifact identity and ingestion time`() {
@@ -51,7 +50,6 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
         val firstRun = createRun()
 
         val firstResult = batchService.persist(batch(firstRun.id, projectId, command))
-        flushAndClear()
         val firstArtifact = requireNotNull(artifactRepository.findBySourceId(command.sourceId))
         val firstId = firstArtifact.id
         val firstIngestedAt = firstArtifact.ingestedAt
@@ -72,7 +70,6 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
                 ),
             ),
         )
-        flushAndClear()
         val unchangedArtifact = requireNotNull(artifactRepository.findBySourceId(command.sourceId))
 
         assertThat(firstResult.created).isEqualTo(1)
@@ -114,12 +111,10 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
             val base = pageCommand(sourceId = "confluence:${UUID.randomUUID()}:page:$index")
             val firstRun = createRun()
             batchService.persist(batch(firstRun.id, projectId, base))
-            flushAndClear()
             val originalId = requireNotNull(artifactRepository.findBySourceId(base.sourceId)).id
 
             val updateRun = createRun()
             val result = batchService.persist(batch(updateRun.id, projectId, change(base)))
-            flushAndClear()
             val updated = requireNotNull(artifactRepository.findBySourceId(base.sourceId))
 
             assertThat(result.updated).isEqualTo(1)
@@ -140,14 +135,16 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
         )
 
         batchService.persist(batch(run.id, projectId, command))
-        flushAndClear()
         val artifact = requireNotNull(artifactRepository.findBySourceId(command.sourceId))
+        val projectIds = TransactionTemplate(transactionManager).execute {
+            requireNotNull(artifactRepository.findBySourceId(command.sourceId)).projectIds
+        }
         val metadata = objectMapper.readTree(artifact.metadata)
         val acl = objectMapper.readTree(metadata["sourceAcl"].stringValue())
 
         assertThat(artifact.sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
         assertThat(artifact.artifactType).isEqualTo(ArtifactType.PAGE)
-        assertThat(artifact.projectIds).containsExactly(projectId)
+        assertThat(projectIds).containsExactly(projectId)
         assertThat(artifact.sourceVersion).isEqualTo("7")
         assertThat(metadata["spaceId"].stringValue()).isEqualTo("42")
         assertThat(metadata["pageId"].stringValue()).isEqualTo("200")
@@ -156,6 +153,37 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
         assertThat(acl["hasPageRestrictions"].booleanValue()).isFalse()
         assertThat(acl["users"]).isEmpty()
         assertThat(acl["groups"]).isEmpty()
+    }
+
+    @Test
+    fun `page-local persistence failure does not roll back a previously committed page`() {
+        val projectId = UUID.randomUUID()
+        val run = createRun()
+        val successful = pageCommand(sourceId = "confluence:${UUID.randomUUID()}:page:successful")
+        val rejected = pageCommand(sourceId = "x".repeat(300)).copy(
+            metadata = pageCommand().metadata.copy(pageId = "rejected-page"),
+        )
+
+        val result = batchService.persist(
+            ConfluenceArtifactBatchCommand(
+                runId = run.id,
+                projectId = projectId,
+                artifacts = listOf(successful, rejected),
+            ),
+        )
+
+        assertThat(result.created).isEqualTo(1)
+        assertThat(result.failed).isEqualTo(1)
+        assertThat(result.persistenceFailures.single().pageId).isEqualTo("rejected-page")
+        assertThat(result.persistenceFailures.single().reason)
+            .isEqualTo("Confluence page artifact could not be persisted")
+        assertThat(artifactRepository.findBySourceId(successful.sourceId)).isNotNull()
+        val persistedFailure = TransactionTemplate(transactionManager).execute {
+            val persistedRun = requireNotNull(runRepository.findById(run.id).orElse(null))
+            persistedRun.failedItems.single()
+        }
+        assertThat(persistedFailure?.sourceId).isEqualTo("rejected-page")
+        assertThat(persistedFailure?.reason).contains("stage=PERSISTENCE")
     }
 
     private fun batch(runId: UUID, projectId: UUID, command: ConfluencePageArtifactCommand) =
@@ -169,11 +197,6 @@ class ConfluenceArtifactBatchServiceIntegrationTest {
                 status = IngestionRunStatus.RUNNING,
             ),
         )
-    }
-
-    private fun flushAndClear() {
-        entityManager.flush()
-        entityManager.clear()
     }
 
     private fun pageCommand(

@@ -12,10 +12,12 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ConfluenceStorageFormatParser
 import com.sprintstart.sprintstartbackend.ingestion.external.ConfluenceArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactBatchCommand
+import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactFailureStage
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluencePageArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluencePageArtifactFailure
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipType
+import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -51,6 +53,8 @@ internal class ConfluencePageIngestionService(
                     ConfluenceIngestionFailure(
                         pageId = failure.pageId,
                         stage = ConfluenceIngestionFailureStage.RESTRICTIONS,
+                        httpStatus = failure.httpStatus,
+                        attempts = failure.attempts,
                         message = RESTRICTIONS_FAILURE_MESSAGE,
                     )
                 }.toMutableList()
@@ -64,6 +68,9 @@ internal class ConfluencePageIngestionService(
                 ConfluencePageArtifactFailure(
                     pageId = failure.pageId,
                     sourceUrl = null,
+                    stage = failure.stage.toArtifactFailureStage(),
+                    httpStatus = failure.httpStatus,
+                    attempts = failure.attempts,
                     reason = failure.message,
                 )
             }
@@ -75,7 +82,18 @@ internal class ConfluencePageIngestionService(
                     failures = failureCommands,
                 ),
             )
-            ingestionApi.finishRun(runId)
+            val persistenceFailures = persisted.persistenceFailures.map { failure ->
+                ConfluenceIngestionFailure(
+                    pageId = failure.pageId,
+                    stage = ConfluenceIngestionFailureStage.PERSISTENCE,
+                    httpStatus = failure.httpStatus,
+                    attempts = failure.attempts,
+                    message = PERSISTENCE_FAILURE_MESSAGE,
+                )
+            }
+            val allFailures = failures + persistenceFailures
+            val successfulItemCount = persisted.created + persisted.updated + persisted.unchanged
+            ingestionApi.finishRun(runId, successfulItemCount)
             return ConfluenceIngestionResult(
                 runId = runId,
                 connectionId = connectionId,
@@ -86,9 +104,13 @@ internal class ConfluencePageIngestionService(
                 updated = persisted.updated,
                 unchanged = persisted.unchanged,
                 failed = persisted.failed,
-                failures = failures,
-                status = resultStatus(persisted.created, persisted.updated, persisted.failed),
+                failures = allFailures,
+                status = resultStatus(successfulItemCount, persisted.failed),
             )
+        } catch (exception: CancellationException) {
+            markFailedAndPropagate(runId, exception)
+        } catch (exception: InterruptedException) {
+            markFailedAndPropagateInterruption(runId, exception)
         } catch (exception: RuntimeException) {
             markRunFailed(runId)
             throw sanitizedTerminalException(exception)
@@ -110,19 +132,32 @@ internal class ConfluencePageIngestionService(
                 )
                 return@mapNotNull null
             }
+            val parsedBody = try {
+                parser.parse(page.storage.value)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (@Suppress("SwallowedException") exception: RuntimeException) {
+                failures += ConfluenceIngestionFailure(
+                    pageId = page.id,
+                    stage = ConfluenceIngestionFailureStage.PARSING,
+                    message = PARSING_FAILURE_MESSAGE,
+                )
+                return@mapNotNull null
+            }
             try {
-                val parsedBody = parser.parse(page.storage.value)
                 pageMapper.toCommand(
                     connection = connection,
                     page = page,
                     parsedBody = parsedBody,
                     relationships = relationshipIndex.byPageId[page.id].orEmpty(),
                 )
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (@Suppress("SwallowedException") exception: RuntimeException) {
                 failures += ConfluenceIngestionFailure(
                     pageId = page.id,
-                    stage = ConfluenceIngestionFailureStage.PARSING,
-                    message = PARSING_FAILURE_MESSAGE,
+                    stage = ConfluenceIngestionFailureStage.MAPPING,
+                    message = MAPPING_FAILURE_MESSAGE,
                 )
                 null
             }
@@ -164,11 +199,11 @@ internal class ConfluencePageIngestionService(
         return RelationshipIndex(byPageId, selfParentPageIds)
     }
 
-    private fun resultStatus(created: Int, updated: Int, failed: Int): ConfluenceIngestionStatus {
+    private fun resultStatus(successfulItemCount: Int, failed: Int): ConfluenceIngestionStatus {
         if (failed == 0) {
             return ConfluenceIngestionStatus.COMPLETED
         }
-        return if (created > 0 || updated > 0) {
+        return if (successfulItemCount > 0) {
             ConfluenceIngestionStatus.PARTIAL
         } else {
             ConfluenceIngestionStatus.FAILED
@@ -196,6 +231,27 @@ internal class ConfluencePageIngestionService(
         }
     }
 
+    private fun markFailedAndPropagate(runId: UUID, exception: CancellationException): Nothing {
+        markRunFailed(runId)
+        throw exception
+    }
+
+    private fun markFailedAndPropagateInterruption(runId: UUID, exception: InterruptedException): Nothing {
+        Thread.currentThread().interrupt()
+        markRunFailed(runId)
+        throw exception
+    }
+
+    private fun ConfluenceIngestionFailureStage.toArtifactFailureStage(): ConfluenceArtifactFailureStage {
+        return when (this) {
+            ConfluenceIngestionFailureStage.RESTRICTIONS -> ConfluenceArtifactFailureStage.RESTRICTIONS
+            ConfluenceIngestionFailureStage.HIERARCHY -> ConfluenceArtifactFailureStage.HIERARCHY
+            ConfluenceIngestionFailureStage.PARSING -> ConfluenceArtifactFailureStage.PARSING
+            ConfluenceIngestionFailureStage.MAPPING -> ConfluenceArtifactFailureStage.MAPPING
+            ConfluenceIngestionFailureStage.PERSISTENCE -> ConfluenceArtifactFailureStage.PERSISTENCE
+        }
+    }
+
     private data class RelationshipIndex(
         val byPageId: Map<String, List<ConfluenceRelationshipCommand>>,
         val selfParentPageIds: Set<String>,
@@ -205,6 +261,8 @@ internal class ConfluencePageIngestionService(
         const val RESTRICTIONS_FAILURE_MESSAGE = "Confluence page restrictions were unavailable"
         const val SELF_PARENT_FAILURE_MESSAGE = "Confluence page cannot be its own parent"
         const val PARSING_FAILURE_MESSAGE = "Confluence page storage format could not be parsed"
+        const val MAPPING_FAILURE_MESSAGE = "Confluence page could not be mapped to an artifact"
+        const val PERSISTENCE_FAILURE_MESSAGE = "Confluence page artifact could not be persisted"
         const val TERMINAL_FAILURE_MESSAGE = "Confluence page ingestion terminated before persistence"
     }
 }

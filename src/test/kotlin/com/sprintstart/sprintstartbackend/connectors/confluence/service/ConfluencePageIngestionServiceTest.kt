@@ -25,6 +25,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -44,7 +45,7 @@ class ConfluencePageIngestionServiceTest {
     fun setUp() {
         every { connectionService.getConnectionForIngestion(projectId, connection.id) } returns connection
         every { ingestionApi.startRun(any(), connection.id, any()) } just Runs
-        every { ingestionApi.finishRun(any()) } just Runs
+        every { ingestionApi.finishRun(any(), any()) } just Runs
         every { ingestionApi.failRun(any(), any()) } just Runs
     }
 
@@ -72,6 +73,7 @@ class ConfluencePageIngestionServiceTest {
                     pageId = "400",
                     stage = ConfluencePageFetchStage.RESTRICTIONS,
                     httpStatus = 404,
+                    attempts = 1,
                     message = "safe client message",
                 ),
             ),
@@ -113,6 +115,9 @@ class ConfluencePageIngestionServiceTest {
         assertThat(result.eligible).isEqualTo(2)
         assertThat(result.filtered).isEqualTo(1)
         assertThat(result.status).isEqualTo(ConfluenceIngestionStatus.PARTIAL)
+        assertThat(result.failures.single().httpStatus).isEqualTo(404)
+        assertThat(result.failures.single().attempts).isEqualTo(1)
+        verify(exactly = 1) { ingestionApi.finishRun(any(), 2) }
     }
 
     @Test
@@ -167,6 +172,63 @@ class ConfluencePageIngestionServiceTest {
             .doesNotContain("sensitive body", "raw sensitive parser detail")
         val resultFailure = result.failures.single()
         assertThat(resultFailure.stage).isEqualTo(ConfluenceIngestionFailureStage.PARSING)
+        assertThat(result.status).isEqualTo(ConfluenceIngestionStatus.FAILED)
+        verify(exactly = 1) { ingestionApi.finishRun(any(), 0) }
+    }
+
+    @Test
+    fun `mapping failure is recorded once without retrying or persisting the page`() = runTest {
+        val mapper = mockk<ConfluencePageArtifactMapper>()
+        coEvery { client.getPages(any(), any(), any()) } returns ConfluencePageBatchResult(
+            successfulPages = listOf(page("100", null, "body")),
+            failures = emptyList(),
+        )
+        every { mapper.toCommand(any(), any(), any(), any()) } throws
+            IllegalStateException("sensitive mapping detail")
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns
+            ConfluenceArtifactBatchResult(0, 0, 0, 1)
+
+        val result = service(ConfluenceStorageFormatParser(), mapper).ingest(projectId, connection.id)
+
+        assertThat(batchSlot.captured.artifacts).isEmpty()
+        val persistedStage = batchSlot.captured
+            .failures
+            .single()
+            .stage
+        assertThat(persistedStage).isEqualTo(
+            com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactFailureStage.MAPPING,
+        )
+        assertThat(result.failures.single().stage).isEqualTo(ConfluenceIngestionFailureStage.MAPPING)
+        assertThat(result.failures.single().message)
+            .isEqualTo("Confluence page could not be mapped to an artifact")
+            .doesNotContain("sensitive mapping detail")
+        verify(exactly = 1) { mapper.toCommand(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `unchanged page plus failed restriction finishes partial`() = runTest {
+        coEvery { client.getPages(any(), any(), any()) } returns ConfluencePageBatchResult(
+            successfulPages = listOf(page("100", null, "body")),
+            failures = listOf(
+                ConfluencePageFailure(
+                    pageId = "200",
+                    stage = ConfluencePageFetchStage.RESTRICTIONS,
+                    httpStatus = 503,
+                    attempts = 3,
+                    message = "safe client message",
+                ),
+            ),
+        )
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns
+            ConfluenceArtifactBatchResult(0, 0, 1, 1)
+
+        val result = service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id)
+
+        assertThat(result.status).isEqualTo(ConfluenceIngestionStatus.PARTIAL)
+        assertThat(result.unchanged).isEqualTo(1)
+        assertThat(result.failed).isEqualTo(1)
+        assertThat(result.failures.single().attempts).isEqualTo(3)
+        verify(exactly = 1) { ingestionApi.finishRun(any(), 1) }
     }
 
     @Test
@@ -197,14 +259,31 @@ class ConfluencePageIngestionServiceTest {
         assertThat(thrown).isSameAs(exception)
         verify(exactly = 1) { ingestionApi.failRun(any(), "Confluence page ingestion terminated before persistence") }
         verify(exactly = 0) { ingestionApi.persistBatch(any()) }
-        verify(exactly = 0) { ingestionApi.finishRun(any()) }
+        verify(exactly = 0) { ingestionApi.finishRun(any(), any()) }
     }
 
-    private fun service(parser: ConfluenceStorageFormatParser) = ConfluencePageIngestionService(
+    @Test
+    fun `cancellation marks the run failed and propagates unchanged`() = runTest {
+        val cancellation = CancellationException("cancel ingestion")
+        coEvery { client.getPages(any(), any(), any()) } throws cancellation
+
+        val thrown = runCatching { service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id) }
+            .exceptionOrNull()
+
+        assertThat(thrown).isSameAs(cancellation)
+        verify(exactly = 1) { ingestionApi.failRun(any(), "Confluence page ingestion terminated before persistence") }
+        verify(exactly = 0) { ingestionApi.persistBatch(any()) }
+        verify(exactly = 0) { ingestionApi.finishRun(any(), any()) }
+    }
+
+    private fun service(
+        parser: ConfluenceStorageFormatParser,
+        mapper: ConfluencePageArtifactMapper = ConfluencePageArtifactMapper(),
+    ) = ConfluencePageIngestionService(
         connectionService,
         client,
         parser,
-        ConfluencePageArtifactMapper(),
+        mapper,
         ingestionApi,
     )
 

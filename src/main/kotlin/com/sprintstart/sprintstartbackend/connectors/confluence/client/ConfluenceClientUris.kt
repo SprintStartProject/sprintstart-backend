@@ -7,6 +7,8 @@ internal const val CONFLUENCE_COLLECTION_PAGE_LIMIT = 100
 internal const val CONFLUENCE_RESTRICTION_PAGE_LIMIT = 100
 internal const val CONFLUENCE_RESTRICTIONS_NOT_FOUND_MESSAGE =
     "Confluence page disappeared while retrieving read restrictions"
+internal const val CONFLUENCE_RESTRICTIONS_RETRY_EXHAUSTED_MESSAGE =
+    "Confluence page restrictions remained unavailable after retry attempts"
 
 internal fun confluenceValidationUri(baseUrl: String): URI {
     return confluenceTenantUri(baseUrl, "/wiki/api/v2/spaces?limit=1")

@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response
 
+import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID
 
 /** Safe external representation of a persisted Confluence space connection. */
+@Schema(description = "Project-scoped Confluence space connection without credential material.")
 data class ConfluenceConnectionResponse(
     val id: UUID,
     val projectId: UUID,
@@ -12,6 +14,7 @@ data class ConfluenceConnectionResponse(
     val spaceKey: String,
     val pageAllowlist: List<String>,
     val pageDenylist: List<String>,
+    @field:Schema(description = "Whether encrypted credentials are configured; no credential value is returned.")
     val credentialsConfigured: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant,

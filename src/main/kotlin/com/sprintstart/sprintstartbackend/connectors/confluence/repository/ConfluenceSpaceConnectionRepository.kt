@@ -11,7 +11,7 @@ internal interface ConfluenceSpaceConnectionRepository : JpaRepository<Confluenc
 
     fun findAllByProjectIdOrderByCreatedAtAsc(projectId: UUID): List<ConfluenceSpaceConnection>
 
-    fun findAllByOrderByCreatedAtAsc(): List<ConfluenceSpaceConnection>
+    fun findAllByIdInAndProjectId(ids: Collection<UUID>, projectId: UUID): List<ConfluenceSpaceConnection>
 
     fun existsByProjectIdAndBaseUrlAndSpaceId(projectId: UUID, baseUrl: String, spaceId: String): Boolean
 }
