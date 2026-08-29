@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceExternalServiceException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceResourceNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.event.ConfluenceConnectionCreatedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
@@ -20,6 +21,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.repository.Confl
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,6 +37,7 @@ internal class ConfluenceConnectionService(
     private val userApi: UserApi,
     private val cronBuilder: CronBuilder,
     private val scheduleCalculator: ConfluenceScheduleCalculator,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Validates the selected remote space before atomically storing its connection and credential.
@@ -74,11 +77,19 @@ internal class ConfluenceConnectionService(
         )
         connection.configureCredential(credentials.email.trim(), credentials.apiToken.trim())
 
-        return try {
-            connectionRepository.saveAndFlush(connection).toResponse()
+        val saved = try {
+            connectionRepository.saveAndFlush(connection)
         } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
             throw ConfluenceConnectionAlreadyExistsException(projectId, canonicalSpaceId)
         }
+
+        eventPublisher.publishEvent(
+            ConfluenceConnectionCreatedEvent(
+                projectId = projectId,
+                connectionId = saved.id,
+            ),
+        )
+        return saved.toResponse()
     }
 
     @Transactional(readOnly = true)

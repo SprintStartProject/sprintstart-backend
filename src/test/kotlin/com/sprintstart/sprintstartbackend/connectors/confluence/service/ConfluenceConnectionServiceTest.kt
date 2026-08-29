@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.service
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
+import com.sprintstart.sprintstartbackend.connectors.confluence.event.ConfluenceConnectionCreatedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceCredential
@@ -27,6 +28,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import java.time.Instant
 import java.util.UUID
 
@@ -37,6 +39,7 @@ class ConfluenceConnectionServiceTest {
     private val userApi = mockk<UserApi>()
     private val cronBuilder = mockk<CronBuilder>()
     private val scheduleCalculator = mockk<ConfluenceScheduleCalculator>()
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val service = ConfluenceConnectionService(
         confluenceClient,
         connectionRepository,
@@ -44,6 +47,7 @@ class ConfluenceConnectionServiceTest {
         userApi,
         cronBuilder,
         scheduleCalculator,
+        eventPublisher,
     )
     private val authId = "auth-subject"
     private val projectId = UUID.randomUUID()
@@ -82,6 +86,13 @@ class ConfluenceConnectionServiceTest {
         coVerify(exactly = 1) {
             confluenceClient.getSpace("https://tenant.atlassian.net", any(), "123")
         }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<ConfluenceConnectionCreatedEvent> { event ->
+                    event.projectId == projectId && event.connectionId == saved.captured.id
+                },
+            )
+        }
     }
 
     @Test
@@ -100,6 +111,7 @@ class ConfluenceConnectionServiceTest {
 
         coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
     }
 
     @Test
@@ -116,6 +128,7 @@ class ConfluenceConnectionServiceTest {
         assertThat(thrown.toString()).doesNotContain(plaintextToken, "Basic ", "fake-user@example.invalid")
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
         verify(exactly = 0) { credentialRepository.save(any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
     }
 
     @Test
