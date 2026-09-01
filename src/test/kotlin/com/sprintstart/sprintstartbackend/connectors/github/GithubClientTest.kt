@@ -48,7 +48,6 @@ class GithubClientTest {
             ai = AiConfig(baseUrl = "http://unused"),
             github = GithubConfig(
                 baseUrl = baseUrl,
-                cron = "0 0 * * *",
             ),
             crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
             upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),

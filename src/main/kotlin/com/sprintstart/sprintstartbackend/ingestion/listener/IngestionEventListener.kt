@@ -3,12 +3,15 @@ package com.sprintstart.sprintstartbackend.ingestion.listener
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.events.ArtifactsIndexedEvent
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.boot.context.event.ApplicationStartedEvent
 import org.springframework.context.ApplicationEventPublisher
+import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import org.springframework.transaction.event.TransactionPhase
 import org.springframework.transaction.event.TransactionalEventListener
@@ -19,6 +22,7 @@ class IngestionEventListener(
     private val runArtifactsIngestionService: RunArtifactsIngestionService,
     private val ingestionRunLifeCycleService: IngestionRunLifeCycleService,
     private val artifactRepository: ArtifactRepository,
+    private val ingestionRunRepository: IngestionRunRepository,
     private val publisher: ApplicationEventPublisher,
     private val applicationScope: CoroutineScope,
 ) {
@@ -47,6 +51,21 @@ class IngestionEventListener(
                 logger.error("AI sync failed for ingestion run {}", event.runId, e)
                 ingestionRunLifeCycleService.markAiSyncFailed(event.runId, e.message)
             }
+        }
+    }
+
+    /**
+     * Defines action performed after application startup.
+     *
+     * In this case, we want to clean up the state after application startup. That means, all ingestion runs that still
+     * have the [com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus.RUNNING] are marked as
+     * failed, because if the run was still running on application close, it ended ungracefully.
+     */
+    @EventListener(ApplicationStartedEvent::class)
+    fun handleApplicationStartedEvent() {
+        val staleRuns = ingestionRunRepository.findAllRunning()
+        for (run in staleRuns) {
+            ingestionRunLifeCycleService.markSyncFailed(run, "Status running on application startup")
         }
     }
 
