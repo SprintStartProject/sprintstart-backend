@@ -312,13 +312,15 @@ class ConnectorConfigurationServiceTest {
         }
 
         @Test
-        fun `project scoped connector requires project id for discovery`() {
+        fun `project scoped connector returns its global source view when project id is omitted`() {
             val projectConnector = projectScopedConnector()
             val scopedService = ConnectorConfigurationService(repository, listOf(projectConnector), sourceClient)
+            every { projectConnector.getSources() } returns emptyList()
 
-            assertFailsWith<SourcePatchValidationException> {
-                scopedService.getSourcesOfConnector("confluence")
-            }
+            val result = scopedService.getSourcesOfConnector("confluence")
+
+            assertThat(result.connectorId).isEqualTo("confluence")
+            assertThat(result.sources).isEmpty()
         }
     }
 

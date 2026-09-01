@@ -127,7 +127,7 @@ class ConnectorConfigurationService(
      * Retrieves all sources of a given connector.
      *
      * @param connectorId The id of the connector to retrieve all sources of.
-     * @param projectId Optional project scope. Required by connectors that own project-scoped sources.
+     * @param projectId Optional project scope. Connectors may return an empty global source list when omitted.
      * @return [GetSourcesOfConnectorResponse] all sources of the given connector.
      * @throws ConnectorNotFoundException if no connector with the given id could be found.
      */
@@ -137,10 +137,6 @@ class ConnectorConfigurationService(
         val connector = connectors.stream().filter { it.id == connectorId }.findFirst().orElseThrow {
             ConnectorNotFoundException("Unable to load up connector with id $connectorId")
         }
-        if (connector is IProjectScopedSourcePatcher && projectId == null) {
-            throw SourcePatchValidationException("projectId is required for this connector")
-        }
-
         return GetSourcesOfConnectorResponse(
             connectorId = connectorId,
             sources = projectId?.let { connector.getSources(it) } ?: connector.getSources(),
