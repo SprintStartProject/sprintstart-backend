@@ -7,12 +7,15 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.service.KnowledgeGapsService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -25,14 +28,17 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * PM-only endpoints exposing knowledge gaps (components missing runbooks/ADRs).
+ * Endpoints exposing knowledge gaps (components missing runbooks/ADRs).
  *
- * All endpoints are restricted to project managers (and admins). Reads are served from the cached
- * classification; the refresh endpoint triggers a reclassification via the AI service.
+ * Everything that shows or changes the project's full gap panel is restricted to project managers
+ * (and admins). The single exception is `/mine`, which is scoped to the caller's own component
+ * ownership and is therefore open to every member of the project — it can only ever return gaps the
+ * caller was already assigned. Reads are served from the cached classification; the refresh endpoint
+ * triggers a reclassification via the AI service.
  */
 @RestController
 @RequestMapping("/api/v1/insights/knowledge-gaps")
-@Tag(name = "Insights - Knowledge Gaps", description = "PM insights into components missing documentation")
+@Tag(name = "Insights - Knowledge Gaps", description = "Insights into components missing documentation")
 class KnowledgeGapsController(
     private val knowledgeGapsService: KnowledgeGapsService,
 ) {
@@ -59,6 +65,47 @@ class KnowledgeGapsController(
         @RequestParam projectId: UUID,
     ): KnowledgeGapsOverviewResponse {
         return knowledgeGapsService.getKnowledgeGaps(projectId)
+    }
+
+    /**
+     * Returns the caller's own knowledge gaps in the given project.
+     *
+     * Filtered by component ownership rather than by role, so a regular team member sees exactly the
+     * components they were made owner of and nothing else. A caller who owns nothing gets an empty
+     * list, which is a valid answer and not a 404.
+     */
+    @Operation(
+        summary = "Get the knowledge gaps assigned to me",
+        description =
+            "Returns the components in this project that the calling user owns and that are missing " +
+                "documentation, most severe first. Available to every member of the project, whatever " +
+                "their permission group — managers own components too.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Knowledge gaps returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "No access to the given project"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/mine")
+    // Every permission group named, because this endpoint is open to all of them on purpose:
+    // ownership decides what comes back, not role, and a manager owns components too.
+    // `hasRole('USER')` — what the rest of the codebase writes for "any signed-in user" — would
+    // pass here as well, but only because `user` is a realm default role and so reaches every
+    // token through the `default-roles-<realm>` composite. Naming the groups says what is meant
+    // without leaning on that realm config staying as it is.
+    @PreAuthorize(
+        "hasAnyRole('USER', 'PM', 'HR', 'ADMIN') and " +
+            "@projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    fun getMyKnowledgeGaps(
+        @RequestParam projectId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): KnowledgeGapsOverviewResponse {
+        return knowledgeGapsService.getMyKnowledgeGaps(projectId, jwt.subject)
     }
 
     /**
@@ -136,7 +183,6 @@ class KnowledgeGapsController(
     // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
     // It does not reach the service: component ownership is keyed by component name alone and is
     // not yet project-partitioned, so two projects sharing a component name share its owners.
-    // Scoping ComponentOwner is deliberately left out of #166 §4.
     @Suppress("UnusedParameter")
     fun getComponentOwners(
         @RequestParam projectId: UUID,
@@ -168,7 +214,6 @@ class KnowledgeGapsController(
     // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
     // It does not reach the service: component ownership is keyed by component name alone and is
     // not yet project-partitioned, so two projects sharing a component name share its owners.
-    // Scoping ComponentOwner is deliberately left out of #166 §4.
     @Suppress("UnusedParameter")
     fun setComponentOwners(
         @RequestParam projectId: UUID,

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.chat.external
 
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -20,4 +21,15 @@ interface ChatQuestionApi {
      * @param projectId The project whose chats to collect questions from.
      */
     fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion>
+
+    /**
+     * Counts the questions [getUserQuestionsForProject] would return, optionally only recent ones.
+     *
+     * Exists so a caller can tell a user how much material an operation would work on without
+     * loading every question's text to find out.
+     *
+     * @param projectId The project whose chats to count questions in.
+     * @param since Only count questions asked at or after this moment; null counts all of them.
+     */
+    fun countUserQuestionsForProject(projectId: UUID, since: Instant? = null): Long
 }

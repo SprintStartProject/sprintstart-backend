@@ -65,8 +65,7 @@ class IngestionRunLifeCycleServiceTest {
 
     @Test
     fun `finishRun by id loads the managed run so its terminal status is persisted`() {
-        // Regression guard: the Jira listeners used to finish a detached entity
-        // loaded in a separate read-only transaction, so the run stayed
+        // Finishing a detached entity loaded in a separate read-only transaction leaves the run
         // in-progress. The id overload must load the run here and complete it.
         val run = IngestionRun(
             id = UUID.randomUUID(),

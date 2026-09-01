@@ -37,7 +37,9 @@ class GithubArtifactProviderService(
      * Business rules:
      * - commits are idempotent by `sourceId`; an already-known commit is ignored
      * - files are updated only when the incoming content hash changes
-     * - issues are updated only when the computed issue hash changes
+     * - issues are updated only when the computed issue hash changes; `state`/`labels` are the
+     *   exception -- they refresh on every fetch regardless of the hash, since a label or
+     *   open/closed change doesn't move title/body
      * - pull requests are always treated as mutable and overwrite title/body on re-fetch
      *
      * Counter side effects happen inside the same transaction:
@@ -56,7 +58,22 @@ class GithubArtifactProviderService(
             mutableSetOf()
         }
 
-        if (handleExistingArtifact(command, projectIds)) {
+        val existing = artifactRepository.findBySourceId(command.sourceId)
+        if (existing != null) {
+            existing.addProjectIds(projectIds)
+            // Backfills rows ingested before the column existed. Not part of the AI payload, so it
+            // deliberately does not mark the artifact for re-embedding.
+            if (existing.authorLogin == null) {
+                existing.authorLogin = command.authorLogin
+            }
+            when (command.artifactType) {
+                ArtifactType.COMMIT -> Unit
+                ArtifactType.FILE -> updateFile(existing, command, runId)
+                ArtifactType.ISSUE -> updateIssue(existing, command, runId)
+                ArtifactType.PULL_REQUEST -> updatePullRequest(existing, command, runId)
+                ArtifactType.ORG_METADATA -> Unit
+                ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+            }
             return
         }
 
@@ -72,88 +89,75 @@ class GithubArtifactProviderService(
             content = command.bodyText,
             mime = command.mime,
             language = command.language,
+            state = command.state,
+            labels = command.labels.toMutableList(),
             projectIdsInternal = projectIds,
             ingestionRun = ingestionRun,
             hash = command.hash,
             metadata = artifactMetadataJsonMapper.toJson(command.metadata),
-            createdAtSource = null,
-            updatedAtSource = null,
+            createdAtSource = command.createdAtSource,
+            updatedAtSource = command.updatedAtSource,
+            authorLogin = command.authorLogin,
+            mergedAtSource = command.mergedAtSource,
+            firstResponseAtSource = command.firstResponseAtSource,
+            changesRequestedCount = command.changesRequestedCount,
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
     }
 
-    private fun handleExistingArtifact(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Boolean {
-        return when (command.artifactType) {
-            ArtifactType.COMMIT,
-            ArtifactType.ORG_METADATA,
-            -> attachProjectsIfExisting(command, projectIds)
-
-            ArtifactType.FILE -> updateExistingFileIfChanged(command, projectIds)
-            ArtifactType.ISSUE -> updateExistingIssueIfChanged(command, projectIds)
-            ArtifactType.PULL_REQUEST -> updateExistingPullRequest(command, projectIds)
-            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+    /** Files are content-addressed: nothing to do unless the incoming hash differs. */
+    private fun updateFile(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
+        if (artifact.hash == command.hash) {
+            return
         }
+
+        artifact.content = command.bodyText
+        artifact.hash = command.hash
+        countUpdate(runId)
     }
 
-    private fun attachProjectsIfExisting(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Boolean {
-        return findExistingArtifact(command, projectIds) != null
-    }
+    /**
+     * Issues carry two independently changing parts: the hashed title/body, and `state`/`labels`.
+     *
+     * State and labels are refreshed on every fetch, regardless of the hash. An issue being closed
+     * or re-labeled doesn't move its title or body, so gating them on hash equality would silently
+     * miss exactly the updates they exist for.
+     *
+     * Only a hash change counts as an update on the run. The counter reports how much *content*
+     * a crawl changed, and a re-labeled issue whose text is untouched has not changed any.
+     */
+    private fun updateIssue(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
+        artifact.state = command.state
+        artifact.labels.clear()
+        artifact.labels.addAll(command.labels)
 
-    private fun updateExistingFileIfChanged(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Boolean {
-        val artifact = findExistingArtifact(command, projectIds) ?: return false
-        if (artifact.hash != command.hash) {
-            artifact.content = command.bodyText
-            artifact.hash = command.hash
-            incrementUpdatedCount(command.ingestionRunId)
-        }
-        return true
-    }
-
-    private fun updateExistingIssueIfChanged(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Boolean {
-        val artifact = findExistingArtifact(command, projectIds) ?: return false
         if (artifact.hash != command.hash) {
             artifact.title = command.title
             artifact.content = command.bodyText
             artifact.hash = command.hash
-            incrementUpdatedCount(command.ingestionRunId)
+            countUpdate(runId)
         }
-        return true
     }
 
-    private fun updateExistingPullRequest(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Boolean {
-        val artifact = findExistingArtifact(command, projectIds) ?: return false
+    /** Pull requests are treated as mutable and overwritten on every re-fetch (they carry no hash). */
+    private fun updatePullRequest(artifact: Artifact, command: GithubArtifactCommand, runId: UUID) {
         artifact.title = command.title
         artifact.content = command.bodyText
-        incrementUpdatedCount(command.ingestionRunId)
-        return true
+
+        artifact.state = command.state
+        artifact.mergedAtSource = command.mergedAtSource
+        artifact.firstResponseAtSource = command.firstResponseAtSource
+        artifact.changesRequestedCount = command.changesRequestedCount
+        // Backfills rows written before these were persisted; a source creation time never changes.
+        if (artifact.createdAtSource == null) {
+            artifact.createdAtSource = command.createdAtSource
+        }
+
+        countUpdate(runId)
     }
 
-    private fun findExistingArtifact(
-        command: GithubArtifactCommand,
-        projectIds: Set<UUID>,
-    ): Artifact? {
-        val artifact = artifactRepository.findBySourceId(command.sourceId) ?: return null
-        artifact.addProjectIds(projectIds)
-        return artifact
-    }
-
-    private fun incrementUpdatedCount(runId: UUID) {
+    private fun countUpdate(runId: UUID) {
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
             IngestionRunNotFoundException(runId)
         }

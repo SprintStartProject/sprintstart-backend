@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -26,6 +27,7 @@ import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -42,6 +44,7 @@ import java.util.UUID
 @Validated
 internal class ChatController(
     private val chatService: ChatService,
+    private val chatPromptService: ChatPromptService,
 ) {
     @Operation(
         summary = "Retrieves chats with their metadata (No messages!)",
@@ -235,6 +238,7 @@ internal class ChatController(
                         schema = Schema(
                             examples = [
                                 "data: {\"type\": \"tool_use\", \"name\": \"retrieve\", \"kind\": \"tool\"}",
+                                "data: {\"type\": \"reasoning\", \"reasoning\": \"Checking relevant sources...\"}",
                                 "data: {\"type\": \"token\", \"content\": \"The main\"}",
                                 "data: {\"type\": \"citation\", \"artifact_id\": \"artifact-1\"," +
                                     "\"start_line\": 12}",
@@ -260,6 +264,90 @@ internal class ChatController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<AiStreamMessage> {
-        return chatService.promptForCurrentUser(jwt.subject, request)
+        return chatPromptService.promptForCurrentUser(jwt.subject, request)
+    }
+
+    @Operation(
+        summary = "Deletes an existing chat",
+        description = "Deletes a chat and all its contained messages from the db.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Chat not found"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteChat(@PathVariable id: UUID) {
+        chatService.deleteChat(id)
+    }
+
+    @Operation(
+        summary = "Deletes an existing chat created by the current user",
+        description = "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
+            "the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Chat not found for authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/me/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMyChat(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        chatService.deleteChatForCurrentUser(jwt.subject, id)
+    }
+
+    @Operation(
+        summary = "Deletes a message from any chat",
+        description = "Deletes a message from the db.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Message not found"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteMessage(@PathVariable id: UUID) {
+        chatService.deleteMessage(id)
+    }
+
+    @Operation(
+        summary = "Deletes a message from a hat owned by the current user",
+        description = "Deletes a message from the db. Fails if the specified message does not belong to a chat owned" +
+            "by the user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access endpoint"),
+            ApiResponse(responseCode = "404", description = "Message not found for authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/me/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMyMessage(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        chatService.deleteMessageForCurrentUser(jwt.subject, id)
     }
 }

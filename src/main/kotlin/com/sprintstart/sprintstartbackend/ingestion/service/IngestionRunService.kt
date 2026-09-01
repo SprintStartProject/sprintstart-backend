@@ -70,19 +70,18 @@ class IngestionRunService(
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Ingestion run with id $runId not found")
 
     /**
-     * Returns a filtered, paginated page of ingestion runs, newest first.
+     * Searches and paginates ingestion runs matching the given filters.
      *
-     * All filters are optional and combined with AND semantics. `projectId` is resolved to the
-     * GitHub repositories, Jira instances, and Confluence connections owned by that project. A
-     * project with no connected sources yields an empty page.
+     * All filter parameters are optional and combined with `AND`. The result is ordered newest-first
+     * by [IngestionRun.startedAt].
      *
-     * @param page The 1-based page number to return.
-     * @param size The maximum number of runs to include in one page.
-     * @param sourceSystem Optional source-system filter, for example GITHUB.
-     * @param repositoryId Optional connected-repository filter (GitHub, matched on the UUID instance id).
-     * @param sourceRef Optional source-instance filter matched on the connector-neutral reference
-     * (for Jira the instance URL).
-     * @param projectId Optional project filter, resolved via the project's connected source instances.
+     * @param page 1-based page index.
+     * @param size Page size.
+     * @param sourceSystem Optional source-system filter (e.g. GITHUB, JIRA).
+     * @param repositoryId Optional GitHub repository filter.
+     * @param sourceRef Optional connector-neutral source reference filter (for Jira the instance URL).
+     * @param projectId Optional project filter, resolved via the project's connected repositories,
+     * Jira instances, Confluence connections, and uploaded artifacts.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -111,8 +110,8 @@ class IngestionRunService(
                 sourceRef?.let { predicates.add(cb.equal(root.get<String>("sourceInstanceRef"), it)) }
                 status?.let { predicates.add(cb.equal(root.get<IngestionRunStatus>("status"), it)) }
                 since?.let { predicates.add(cb.greaterThanOrEqualTo(root.get<Instant>("startedAt"), it)) }
-                projectSources?.let { sources ->
-                    predicates.add(projectSourcesPredicate(root, cb, sources))
+                projectId?.let { pId ->
+                    predicates.add(buildProjectPredicate(root, cb, pId, projectSources))
                 }
                 if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
             }
@@ -133,18 +132,13 @@ class IngestionRunService(
         )
     }
 
-    private fun resolveProjectSources(projectId: UUID): ProjectSources =
-        ProjectSources(
-            repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
-            jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
-            confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
-        )
-
-    private fun projectSourcesPredicate(
+    private fun buildProjectPredicate(
         root: Root<IngestionRun>,
         cb: CriteriaBuilder,
-        sources: ProjectSources,
+        projectId: UUID,
+        projectSources: ProjectSources?,
     ): Predicate {
+        val sources = projectSources ?: resolveProjectSources(projectId)
         val matches = buildList {
             if (sources.repositoryIds.isNotEmpty()) {
                 add(sourceInstanceIdPredicate(root, cb, SourceSystem.GITHUB, sources.repositoryIds))
@@ -160,14 +154,26 @@ class IngestionRunService(
             if (sources.confluenceConnectionIds.isNotEmpty()) {
                 add(sourceInstanceIdPredicate(root, cb, SourceSystem.CONFLUENCE, sources.confluenceConnectionIds))
             }
+            add(
+                cb.and(
+                    cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
+                    cb.equal(root.get<UUID>("sourceInstanceId"), projectId),
+                ),
+            )
         }
-
         return when (matches.size) {
             0 -> cb.disjunction()
             1 -> matches.single()
             else -> cb.or(*matches.toTypedArray())
         }
     }
+
+    private fun resolveProjectSources(projectId: UUID): ProjectSources =
+        ProjectSources(
+            repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
+            jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
+            confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
+        )
 
     private fun sourceInstanceIdPredicate(
         root: Root<IngestionRun>,

@@ -10,14 +10,14 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
-/**
- * The project ids carried here are what makes an artifact retrievable at all: the AI service
- * stores them on every chunk and its retrieval is fail-closed on them. An artifact synced without
- * them is invisible to *every* project rather than visible to all of them, so a silent drop in
- * this mapper would look like an empty knowledge base rather than an error.
- */
 class ArtifactAiMapperTest {
     private val mapper = ArtifactAiMapper()
+
+    private fun ingestionRun() = IngestionRun(
+        id = UUID.randomUUID(),
+        sourceSystem = SourceSystem.GITHUB,
+        status = IngestionRunStatus.RUNNING,
+    )
 
     private fun artifact(projectIds: Set<UUID>) = Artifact(
         id = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
@@ -41,6 +41,85 @@ class ArtifactAiMapperTest {
     ).apply { addProjectIds(projectIds) }
 
     @Test
+    fun `toIngestRequest forwards issue state and labels`() {
+        val artifact = Artifact(
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = "github:owner/repo:ISSUE:42",
+            sourceUrl = "https://github.com/owner/repo/issues/42",
+            artifactType = ArtifactType.ISSUE,
+            title = "Issue #42 Bug report",
+            content = "Something broke",
+            mime = null,
+            language = null,
+            state = "OPEN",
+            labels = mutableListOf("bug", "good first issue"),
+            ingestionRun = ingestionRun(),
+            hash = "hash",
+            createdAtSource = null,
+            updatedAtSource = null,
+        )
+
+        val result = mapper.toIngestRequest(artifact)
+
+        assertThat(result.state).isEqualTo("OPEN")
+        assertThat(result.labels).containsExactly("bug", "good first issue")
+    }
+
+    @Test
+    fun `toIngestRequest copies labels out instead of referencing the entity's live collection`() {
+        // Regression test: a real Hibernate-managed Artifact.labels is a lazy PersistentBag, not
+        // a plain List. Handing that reference straight to the DTO throws
+        // LazyInitializationException whenever it's serialized after the session that loaded it
+        // has closed (confirmed in a real ingestion run). Mutating the source after mapping and
+        // asserting the DTO is unaffected proves toIngestRequest copies rather than references.
+        val sourceLabels = mutableListOf("bug")
+        val artifact = Artifact(
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = "github:owner/repo:ISSUE:43",
+            sourceUrl = "https://github.com/owner/repo/issues/43",
+            artifactType = ArtifactType.ISSUE,
+            title = "Issue #43",
+            content = "Body",
+            mime = null,
+            language = null,
+            state = "OPEN",
+            labels = sourceLabels,
+            ingestionRun = ingestionRun(),
+            hash = "hash",
+            createdAtSource = null,
+            updatedAtSource = null,
+        )
+
+        val result = mapper.toIngestRequest(artifact)
+        sourceLabels.add("added after mapping")
+
+        assertThat(result.labels).containsExactly("bug")
+    }
+
+    @Test
+    fun `toIngestRequest defaults to null state and empty labels for a non-issue artifact`() {
+        val artifact = Artifact(
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = "github:owner/repo:FILE:src/main/App.kt",
+            sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
+            artifactType = ArtifactType.FILE,
+            title = "App.kt",
+            content = "fun main() = Unit",
+            mime = "text/x-kotlin",
+            language = "Kotlin",
+            ingestionRun = ingestionRun(),
+            hash = "hash",
+            createdAtSource = null,
+            updatedAtSource = null,
+        )
+
+        val result = mapper.toIngestRequest(artifact)
+
+        assertThat(result.state).isNull()
+        assertThat(result.labels).isEmpty()
+    }
+
+    @Test
     fun `carries every project membership of the artifact`() {
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
@@ -55,8 +134,6 @@ class ArtifactAiMapperTest {
     fun `sends an empty list for an artifact belonging to no project`() {
         val request = mapper.toIngestRequest(artifact(emptySet()))
 
-        // Not an error at this layer — the artifact genuinely has no membership yet. It simply
-        // stays unretrievable until a project assignment exists and it is re-synced.
         assertThat(request.projectIds).isEmpty()
     }
 

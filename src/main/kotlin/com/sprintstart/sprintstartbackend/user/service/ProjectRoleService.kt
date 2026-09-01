@@ -8,7 +8,9 @@ import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRe
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
+import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.SkillRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.http.HttpStatus
@@ -20,8 +22,9 @@ import java.util.UUID
 @Service
 class ProjectRoleService(
     private val projectRoleRepository: ProjectRoleRepository,
-    private val userRepository: UserRepository,
+    private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
     private val skillRepository: SkillRepository,
+    private val userRepository: UserRepository,
 ) {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
@@ -45,9 +48,88 @@ class ProjectRoleService(
         if (!projectRoleRepository.existsById(roleId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found")
         }
+        // Let every assignment go of the role first. The database would cascade (V4), but the entity
+        // mapping declares no cascade — so tests, which build schema from entities, would fail on the
+        // constraint — and a DB-side cascade leaves loaded assignments holding a role that no longer
+        // exists. Doing it here makes it the same everywhere.
+        val holders = projectUserAssignmentRepository.findAllHoldingRole(roleId)
+        holders.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
+        projectUserAssignmentRepository.saveAll(holders)
         projectRoleRepository.deleteById(roleId)
     }
 
+    /**
+     * The roles somebody holds on one project.
+     *
+     * Roles are scoped to the membership, so this is the authoritative read of what a person does
+     * on a given project. 404 rather than an empty list when they are not on the project, so
+     * "holds no role here" and "is not here" stay distinguishable.
+     */
+    @Transactional(readOnly = true)
+    fun getRolesForUserOnProject(userId: UUID, projectId: UUID): List<ProjectRoleSummary> {
+        val assignment = projectUserAssignmentRepository.findByProjectIdAndUserId(projectId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "User $userId is not assigned to project $projectId",
+            )
+        return assignment.projectRoles
+            .map { ProjectRoleSummary(id = it.id, name = it.name) }
+            .sortedBy { it.name }
+    }
+
+    /**
+     * Gives somebody a role, checking first that they are on [projectId].
+     *
+     * The role is scoped to that membership: it is recorded on this assignment and applies only
+     * here, so the same person can hold a different role on a different project. 404 when they are
+     * not on the project. A caller with no project in hand wants the two-argument overload, which
+     * applies the role across every project they belong to.
+     *
+     * Adding a role they already hold is a no-op, not an error — the caller's intent is already
+     * satisfied.
+     */
+    @Transactional
+    @Tracked("Assigning project role to user")
+    fun assignRoleToUser(userId: UUID, projectId: UUID, roleId: UUID) {
+        val assignment = projectUserAssignmentRepository.findByProjectIdAndUserId(projectId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "User $userId is not assigned to project $projectId",
+            )
+        val role = projectRoleRepository
+            .findById(roleId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found") }
+
+        assignment.projectRoles.add(role)
+        projectUserAssignmentRepository.save(assignment)
+    }
+
+    /**
+     * Takes a role off somebody, checking first that they are on [projectId].
+     *
+     * Removes the role from this membership only; the same role on any of their other projects is
+     * untouched. 404 when they are not on the project.
+     */
+    @Transactional
+    @Tracked("Unassigning project role from user")
+    fun unassignRoleFromUser(userId: UUID, projectId: UUID, roleId: UUID) {
+        val assignment = projectUserAssignmentRepository.findByProjectIdAndUserId(projectId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "User $userId is not assigned to project $projectId",
+            )
+        assignment.projectRoles.removeIf { it.id == roleId }
+        projectUserAssignmentRepository.save(assignment)
+    }
+
+    /**
+     * Gives somebody a role on every project they belong to.
+     *
+     * The projectless form kept for callers (and the existing frontend) that have no project in
+     * hand: roles are scoped to memberships, so "the person" is not a place a role can live, and
+     * the closest faithful reading of a projectless assignment is to apply it to each of their
+     * current memberships. Memberships created afterwards do not inherit it.
+     */
     @Transactional
     @Tracked("Assigning project role to user")
     fun assignRoleToUser(userId: UUID, roleId: UUID) {
@@ -58,17 +140,23 @@ class ProjectRoleService(
             .findById(roleId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found") }
 
-        user.projectRoles.add(role)
+        user.projectAssignments.forEach { it.projectRoles.add(role) }
         userRepository.save(user)
     }
 
+    /**
+     * Takes a role off somebody on every project they belong to.
+     *
+     * The projectless counterpart to [assignRoleToUser]: removes the role from each of their
+     * memberships, so the person no longer holds it anywhere.
+     */
     @Transactional
     @Tracked("Unassigning project role from user")
     fun unassignRoleFromUser(userId: UUID, roleId: UUID) {
         val user = userRepository
             .findById(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with id $userId not found") }
-        user.projectRoles.removeIf { it.id == roleId }
+        user.projectAssignments.forEach { assignment -> assignment.projectRoles.removeIf { it.id == roleId } }
         userRepository.save(user)
     }
 
