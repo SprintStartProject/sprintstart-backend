@@ -4,11 +4,13 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.KnowledgeReq
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.CanonicalAnswer
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.KnowledgeRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.CanonicalAnswerResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.EscalationHireResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.KnowledgeRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.CanonicalAnswerRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,6 +31,7 @@ class KnowledgeBaseService(
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val canonicalAnswerRepository: CanonicalAnswerRepository,
     private val userApi: UserApi,
+    private val onboardingPositionReader: OnboardingPositionReader,
 ) {
     /**
      * Records a hire's escalation of a question the buddy could not answer.
@@ -52,12 +55,44 @@ class KnowledgeBaseService(
         return saved.toResponse(answer = null)
     }
 
-    /** The PM inbox: the open queue for a project, longest-waiting first. */
+    /**
+     * The PM inbox: the open queue for a project, longest-waiting first, each question carrying who
+     * asked it and where they are.
+     *
+     * The identity was always stored and always serialised, but a UUID is not something a PM can act
+     * on: to answer well they need to know whether they are talking to somebody on their first day or
+     * somebody three weeks in. Resolved here rather than left to the client, which would turn one
+     * inbox into a request per row.
+     *
+     * Enriched in a fixed number of reads no matter how long the queue is — the users and the
+     * positions are each fetched once for the distinct askers, never once per question.
+     */
     @Transactional(readOnly = true)
-    fun listOpen(projectId: UUID): List<KnowledgeRequestResponse> =
-        knowledgeRequestRepository
+    fun listOpen(projectId: UUID): List<KnowledgeRequestResponse> {
+        val requests = knowledgeRequestRepository
             .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
-            .map { it.toResponse(answer = null) }
+        if (requests.isEmpty()) return emptyList()
+
+        val hireIds = requests.map { it.hireId }.distinct()
+        val usersById = userApi.getUsersByIds(hireIds).associateBy { it.id }
+        val positionsById = onboardingPositionReader.positionsFor(hireIds)
+
+        return requests.map { request ->
+            val user = usersById[request.hireId]
+            val hire = user?.let {
+                val position = positionsById[it.id]
+                EscalationHireResponse(
+                    userId = it.id,
+                    displayName = it.displayName(),
+                    profileIcon = it.profileIcon,
+                    currentPhase = position?.currentPhase,
+                    currentStep = position?.currentStep,
+                    progressPercentage = position?.progressPercentage ?: 0.0,
+                )
+            }
+            request.toResponse(answer = null, hire = hire)
+        }
+    }
 
     /** A hire's own escalations, newest first, each carrying its answer once one exists. */
     @Transactional(readOnly = true)
@@ -197,3 +232,14 @@ class KnowledgeBaseService(
         const val MIN_TOKEN_LENGTH = 3
     }
 }
+
+/**
+ * What to call somebody on screen.
+ *
+ * Falls back to the username rather than rendering an empty string: a blank name on a card reads as a
+ * bug in the card, and the username is at least something a PM can search for.
+ *
+ * A file-level helper rather than a method: it is a way of phrasing a [UserDto], not a thing the
+ * knowledge base does.
+ */
+private fun UserDto.displayName(): String = "$firstname $lastname".trim().ifEmpty { username }

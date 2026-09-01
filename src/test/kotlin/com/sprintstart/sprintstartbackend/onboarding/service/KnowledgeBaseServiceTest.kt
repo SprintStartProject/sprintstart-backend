@@ -1,17 +1,25 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.KnowledgeRequestStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.CanonicalAnswer
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.KnowledgeRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.repository.CanonicalAnswerRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.web.server.ResponseStatusException
@@ -22,10 +30,15 @@ class KnowledgeBaseServiceTest {
     private val knowledgeRequestRepository: KnowledgeRequestRepository = mockk()
     private val canonicalAnswerRepository: CanonicalAnswerRepository = mockk()
     private val userApi: UserApi = mockk()
+    private val onboardingPathRepository: OnboardingPathRepository = mockk()
+
+    // The real reader, not a mock: the point of extracting it was that one rule answers "where is
+    // this person", so a test that stubs the answer would stop covering the thing that broke.
     private val service = KnowledgeBaseService(
         knowledgeRequestRepository,
         canonicalAnswerRepository,
         userApi,
+        OnboardingPositionReader(onboardingPathRepository),
     )
 
     private val authId = "auth|hire"
@@ -137,5 +150,129 @@ class KnowledgeBaseServiceTest {
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
 
         assertThat(service.searchForUser(userId, "deploy")).isEmpty()
+    }
+
+    @Nested
+    inner class ListOpen {
+        private fun openRequest(hireId: UUID) = KnowledgeRequest(
+            projectId = projectId,
+            hireId = hireId,
+            question = "How do we deploy?",
+        )
+
+        private fun pathFor(hireId: UUID, stepStatus: StepStatus): OnboardingPath {
+            val path = OnboardingPath(userId = hireId)
+            val phase = OnboardingPhase(
+                path = path,
+                position = 0,
+                title = "Getting started",
+                description = "The first week",
+            )
+            path.phases += phase
+            phase.steps += OnboardingStep(
+                phase = phase,
+                position = 0,
+                title = "Set up your machine",
+                description = "Desc",
+                type = StepType.DOCUMENT,
+                estimatedMinutes = 30,
+                expectedOutcome = "Outcome",
+                status = stepStatus,
+            )
+            return path
+        }
+
+        @Test
+        fun `each open question carries who asked it and where they are`() {
+            every {
+                knowledgeRequestRepository
+                    .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
+            } returns listOf(openRequest(userId))
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+            every { onboardingPathRepository.findByUserIdIn(listOf(userId)) } returns
+                listOf(pathFor(userId, StepStatus.IN_PROGRESS))
+
+            val hire = service.listOpen(projectId).single().hire
+
+            assertThat(hire?.userId).isEqualTo(userId)
+            assertThat(hire?.displayName).isEqualTo("Sam Hire")
+            assertThat(hire?.currentPhase).isEqualTo("Getting started")
+            assertThat(hire?.currentStep).isEqualTo("Set up your machine")
+            assertThat(hire?.progressPercentage).isEqualTo(0.0)
+        }
+
+        @Test
+        fun `a hire with no onboarding path is reported as having no position, not as an error`() {
+            every {
+                knowledgeRequestRepository
+                    .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
+            } returns listOf(openRequest(userId))
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+            every { onboardingPathRepository.findByUserIdIn(listOf(userId)) } returns emptyList()
+
+            val hire = service.listOpen(projectId).single().hire
+
+            assertThat(hire?.displayName).isEqualTo("Sam Hire")
+            assertThat(hire?.currentPhase).isNull()
+            assertThat(hire?.currentStep).isNull()
+            assertThat(hire?.progressPercentage).isEqualTo(0.0)
+        }
+
+        @Test
+        fun `a question whose asker cannot be resolved still appears in the queue`() {
+            val ghost = UUID.randomUUID()
+            every {
+                knowledgeRequestRepository
+                    .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
+            } returns listOf(openRequest(ghost))
+            every { userApi.getUsersByIds(listOf(ghost)) } returns emptyList()
+            every { onboardingPathRepository.findByUserIdIn(listOf(ghost)) } returns emptyList()
+
+            val response = service.listOpen(projectId).single()
+
+            assertThat(response.hireId).isEqualTo(ghost)
+            assertThat(response.hire).isNull()
+        }
+
+        @Test
+        fun `the queue is enriched per distinct asker, not per question`() {
+            every {
+                knowledgeRequestRepository
+                    .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
+            } returns listOf(openRequest(userId), openRequest(userId), openRequest(userId))
+            // Stubbed with the distinct id exactly once: three questions from one hire that looked up
+            // the user three times would not match this, and would fail rather than merely be slow.
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+            every { onboardingPathRepository.findByUserIdIn(listOf(userId)) } returns
+                listOf(pathFor(userId, StepStatus.WAITING))
+
+            val responses = service.listOpen(projectId)
+
+            assertThat(responses).hasSize(3)
+            assertThat(responses.map { it.hire?.displayName }).containsOnly("Sam Hire")
+            verify(exactly = 1) { userApi.getUsersByIds(listOf(userId)) }
+            verify(exactly = 1) { onboardingPathRepository.findByUserIdIn(listOf(userId)) }
+        }
+
+        @Test
+        fun `an empty queue reads nothing beyond the queue itself`() {
+            every {
+                knowledgeRequestRepository
+                    .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
+            } returns emptyList()
+
+            assertThat(service.listOpen(projectId)).isEmpty()
+            verify(exactly = 0) { userApi.getUsersByIds(any()) }
+        }
+    }
+
+    @Test
+    fun `a hire reading their own escalations is told nothing new about themselves`() {
+        val request = KnowledgeRequest(projectId = projectId, hireId = userId, question = "How do we deploy?")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { knowledgeRequestRepository.findAllByHireIdOrderByCreatedAtDesc(userId) } returns listOf(request)
+        every { canonicalAnswerRepository.findAllById(emptyList()) } returns emptyList()
+
+        assertThat(service.listMine(authId).single().hire).isNull()
     }
 }

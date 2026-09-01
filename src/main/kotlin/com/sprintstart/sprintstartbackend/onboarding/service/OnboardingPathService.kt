@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
@@ -34,6 +33,7 @@ import java.util.UUID
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
     private val userApi: UserApi,
+    private val onboardingPositionReader: OnboardingPositionReader,
 ) {
 //  ========================== Methods for users ==========================
 
@@ -201,46 +201,33 @@ class OnboardingPathService(
         var currentStepDto: CurrentStepDto? = null
 
         if (path != null) {
-            val totalSteps = path.phases.sumOf { it.steps.size }
-            val completedSteps = path.phases.sumOf { phase ->
-                phase.steps.count {
-                    it.status == StepStatus.FINISHED ||
-                        it.status == StepStatus.SKIPPED
-                }
-            }
-            if (totalSteps > 0) {
-                progressPercentage = completedSteps.toDouble() / totalSteps.toDouble()
-            }
+            // Both derivations come from [OnboardingPositionReader] rather than living here: the
+            // escalation inbox needs the same two answers, and "which step is this person on" told
+            // two different ways is worse than not telling it at all.
+            progressPercentage = onboardingPositionReader.progressOf(path)
 
-            val sortedPhases = path.phases.sortedBy { it.position }
-            for (phase in sortedPhases) {
-                val sortedSteps = phase.steps.sortedBy { it.position }
-                val activeStep = sortedSteps.firstOrNull {
-                    it.status == StepStatus.WAITING ||
-                        it.status == StepStatus.IN_PROGRESS
-                }
-                if (activeStep != null) {
-                    currentPhase = phase.title
+            onboardingPositionReader.activeStepIn(path)?.let { active ->
+                currentPhase = active.phase.title
 
-                    val skipReq = activeStep.skips.lastOrNull()?.let { req ->
-                        SkipRequestDto(
-                            id = req.id.toString(),
-                            stepId = req.step.id.toString(),
-                            reason = req.reason,
-                            status = req.status.name,
-                            reviewComment = req.reviewComment,
-                            reviewedAt = req.resolvedAt,
-                        )
-                    }
-
-                    currentStepDto = CurrentStepDto(
-                        id = activeStep.id.toString(),
-                        title = activeStep.title,
-                        startedAt = activeStep.startedAt,
-                        skip = skipReq,
+                // Stays here: reviewing a skip needs the step entity, which is this service's
+                // business rather than the reader's.
+                val skipReq = active.step.skips.lastOrNull()?.let { req ->
+                    SkipRequestDto(
+                        id = req.id.toString(),
+                        stepId = req.step.id.toString(),
+                        reason = req.reason,
+                        status = req.status.name,
+                        reviewComment = req.reviewComment,
+                        reviewedAt = req.resolvedAt,
                     )
-                    break
                 }
+
+                currentStepDto = CurrentStepDto(
+                    id = active.step.id.toString(),
+                    title = active.step.title,
+                    startedAt = active.step.startedAt,
+                    skip = skipReq,
+                )
             }
         }
 
