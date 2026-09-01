@@ -118,6 +118,27 @@ class IngestionRunLifeCycleService(
     }
 
     /**
+     * Completes a successful run that performed no ingestion work.
+     *
+     * This is used for idempotent connector operations such as linking an already-connected
+     * source to another project. The run is persisted as completed, but no [RunFinishedEvent]
+     * is published because there are no artifacts to synchronize downstream.
+     *
+     * @param transactionId The ingestion run id to complete.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    @Transactional
+    @Tracked("Finishing empty ingestion run")
+    fun finishEmptyRun(transactionId: UUID) {
+        val run = ingestionRunRepository
+            .findByIdForUpdate(transactionId)
+            .orElseThrow { IngestionRunNotFoundException(transactionId) }
+        run.status = IngestionRunStatus.COMPLETED
+        run.finishedAt = Instant.now()
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+    }
+
+    /**
      * Applies the shared terminal-status rule for all source systems.
      *
      * A run with failures is `PARTIAL` when at least one artifact was ingested, updated, or deleted;
