@@ -254,6 +254,23 @@ class KnowledgeBaseServiceTest {
             verify(exactly = 1) { onboardingPathRepository.findByUserIdIn(listOf(userId)) }
         }
 
+        // The badge asks for this on every navigation, and the enriched read resolves a name and an
+        // onboarding position per asker -- a page of work to produce one integer.
+        @Test
+        fun `counting does not resolve anybody`() {
+            every {
+                knowledgeRequestRepository.countByProjectIdAndStatus(projectId, KnowledgeRequestStatus.OPEN)
+            } returns 3L
+
+            assertThat(service.countOpen(projectId)).isEqualTo(3L)
+
+            verify(exactly = 0) { userApi.getUsersByIds(any()) }
+            verify(exactly = 0) { onboardingPathRepository.findByUserIdIn(any()) }
+            verify(exactly = 0) {
+                knowledgeRequestRepository.findAllByProjectIdAndStatusOrderByCreatedAtAsc(any(), any())
+            }
+        }
+
         @Test
         fun `an empty queue reads nothing beyond the queue itself`() {
             every {

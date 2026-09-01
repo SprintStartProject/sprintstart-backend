@@ -64,8 +64,11 @@ class KnowledgeBaseService(
      * somebody three weeks in. Resolved here rather than left to the client, which would turn one
      * inbox into a request per row.
      *
-     * Enriched in a fixed number of reads no matter how long the queue is — the users and the
-     * positions are each fetched once for the distinct askers, never once per question.
+     * The users and the positions are each fetched once for the *distinct* askers, so a queue of
+     * twenty questions from three people costs three people's worth of lookups rather than twenty.
+     * Walking each path's phases and steps is still lazy, as the team overview's own derivation
+     * is, so this grows with the number of distinct askers and their phases — which is why the
+     * sidebar badge counts through [countOpen] instead of reading this and taking its length.
      */
     @Transactional(readOnly = true)
     fun listOpen(projectId: UUID): List<KnowledgeRequestResponse> {
@@ -93,6 +96,17 @@ class KnowledgeBaseService(
             request.toResponse(answer = null, hire = hire)
         }
     }
+
+    /**
+     * How many questions on a project are still waiting on a person.
+     *
+     * Deliberately not `listOpen(projectId).size`. The sidebar badge asks this on every navigation,
+     * and [listOpen] resolves every asker's name and onboarding position — a page of work to
+     * produce one integer. Counted in the database instead.
+     */
+    @Transactional(readOnly = true)
+    fun countOpen(projectId: UUID): Long =
+        knowledgeRequestRepository.countByProjectIdAndStatus(projectId, KnowledgeRequestStatus.OPEN)
 
     /** A hire's own escalations, newest first, each carrying its answer once one exists. */
     @Transactional(readOnly = true)
@@ -210,18 +224,6 @@ class KnowledgeBaseService(
             .map { it.first }
     }
 
-    private fun tokenize(text: String): Set<String> =
-        text
-            .lowercase()
-            .split(Regex("[^a-z0-9]+"))
-            .filter { it.length >= MIN_TOKEN_LENGTH }
-            .toSet()
-
-    private fun score(answer: CanonicalAnswer, tokens: Set<String>): Int {
-        val haystack = "${answer.question} ${answer.answer}".lowercase()
-        return tokens.count { haystack.contains(it) }
-    }
-
     private fun resolveUserId(authId: String): UUID =
         userApi.getUserIdByAuthId(authId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId")
@@ -229,8 +231,22 @@ class KnowledgeBaseService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 3
-        const val MIN_TOKEN_LENGTH = 3
     }
+}
+
+/** Words short enough to match anything are noise in a term-overlap score. */
+private const val MIN_TOKEN_LENGTH = 3
+
+private fun tokenize(text: String): Set<String> =
+    text
+        .lowercase()
+        .split(Regex("[^a-z0-9]+"))
+        .filter { it.length >= MIN_TOKEN_LENGTH }
+        .toSet()
+
+private fun score(answer: CanonicalAnswer, tokens: Set<String>): Int {
+    val haystack = "${answer.question} ${answer.answer}".lowercase()
+    return tokens.count { haystack.contains(it) }
 }
 
 /**

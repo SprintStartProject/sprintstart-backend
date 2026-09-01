@@ -64,10 +64,13 @@ class OnboardingPositionReader(
     /**
      * Where each of [userIds] stands, keyed by user.
      *
-     * One repository call for the whole set rather than one per user: callers reach for this while
+     * One repository call to find the paths, rather than one per user: callers reach for this while
      * decorating a list, and a per-row read is how a queue of ten questions becomes ten round trips.
-     * Traversing each path's phases and steps is still lazy, exactly as the team overview does it —
-     * that cost is the path model's, not this decoration's.
+     *
+     * **Not free beyond that.** `phases` and `steps` are lazy, so reading them costs a query per
+     * path and per phase — the same shape the team overview has always had. Fine for a page somebody
+     * opened; not fine for anything on a hot path, which is why the sidebar badge counts rows
+     * instead of calling through here.
      *
      * A user with no path is simply absent from the map. "Has not started" is a fact the caller
      * should get to phrase, not one this reader should invent a position for.

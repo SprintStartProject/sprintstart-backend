@@ -6,7 +6,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.KnowledgeReq
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.EscalationHireResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.KnowledgeRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.KnowledgeBaseService
+import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.every
+import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -31,6 +34,12 @@ class KnowledgeRequestControllerTest(
 ) {
     @MockkBean
     private lateinit var knowledgeBaseService: KnowledgeBaseService
+
+    // Required by the slice: the route's `@PreAuthorize` names this bean, and without it the
+    // expression fails to resolve at request time (see `ProjectAuthorization`'s KDoc). Registered
+    // under that exact name, because SpEL's `@projectAuth` is a lookup by name, not by type.
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -64,6 +73,11 @@ class KnowledgeRequestControllerTest(
             answer = null,
             hire = hire,
         )
+
+    @BeforeEach
+    fun allowTheProject() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns true
+    }
 
     @Test
     fun `the inbox serves who asked and where they are`() {
@@ -120,5 +134,44 @@ class KnowledgeRequestControllerTest(
             .with(userJwt)
 
         mockMvc.perform(asPlainMember).andExpect(status().isForbidden)
+    }
+
+    // The role alone used to be the whole gate, so any PM or HR user could read any project's queue
+    // by passing its id. That mattered less while the payload was a question and a bare UUID; it now
+    // carries the asker's name and how far through onboarding they are.
+    @Test
+    fun `a PM on another project cannot read this project's queue`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        val fromOutside = get("/api/v1/onboarding/knowledge-requests")
+            .param("projectId", projectId.toString())
+            .with(pmJwt)
+
+        mockMvc.perform(fromOutside).andExpect(status().isForbidden)
+        verify(exactly = 0) { knowledgeBaseService.listOpen(any()) }
+    }
+
+    @Test
+    fun `the count is served as a number, without resolving anybody`() {
+        every { knowledgeBaseService.countOpen(projectId) } returns 3L
+
+        mockMvc
+            .perform(
+                get("/api/v1/onboarding/knowledge-requests/count").param("projectId", projectId.toString()).with(pmJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.open").value(3))
+
+        verify(exactly = 0) { knowledgeBaseService.listOpen(any()) }
+    }
+
+    @Test
+    fun `the count is project-scoped too`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        val fromOutside = get("/api/v1/onboarding/knowledge-requests/count")
+            .param("projectId", projectId.toString())
+            .with(pmJwt)
+
+        mockMvc.perform(fromOutside).andExpect(status().isForbidden)
     }
 }

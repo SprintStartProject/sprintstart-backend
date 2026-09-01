@@ -18,6 +18,16 @@ data class CanonicalAnswerResponse(
 )
 
 /**
+ * How many questions are waiting on a person, for a badge.
+ *
+ * An object rather than a bare number so the endpoint has somewhere to grow -- a naked scalar body
+ * is the one shape that cannot gain a field without breaking every caller.
+ */
+data class OpenEscalationCountResponse(
+    val open: Long,
+)
+
+/**
  * Who asked, and where they are — so a PM can answer without going to look them up.
  *
  * Served on the PM queue only. A hire reading their own escalations already knows who they are, and
