@@ -14,9 +14,11 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.UnreviewedStarterWorkResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkTaskProposalService
 import com.sprintstart.sprintstartbackend.onboarding.service.UserGoalService
+import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.flow.flowOf
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -54,6 +56,9 @@ class StarterWorkControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
+
     private val objectMapper = jacksonObjectMapper()
 
     private fun jwtWithRoles(vararg roles: String): JwtRequestPostProcessor {
@@ -69,6 +74,12 @@ class StarterWorkControllerTest(
     private val userJwt = jwtWithRoles("USER")
 
     private val taskId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
+
+    @BeforeEach
+    fun setUp() {
+        every { projectAuth.canAccessProject(any(), any()) } returns true
+    }
 
     private fun taskResponse(): StarterWorkTaskProposalResponse =
         StarterWorkTaskProposalResponse(
@@ -320,14 +331,36 @@ class StarterWorkControllerTest(
     @Test
     fun `generate should return 401 when not authenticated`() {
         mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate"))
+            .perform(post("/api/v1/onboarding/starter-work/generate").param("projectId", projectId.toString()))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `generate should return 403 for a plain USER`() {
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate").with(userJwt))
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt),
+            )
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(mvcResult))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `generate should return 403 when user cannot access project`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        val mvcResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            )
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -338,11 +371,15 @@ class StarterWorkControllerTest(
 
     @Test
     fun `generate should return 200 for a PM`() {
-        coEvery { starterWorkTaskProposalService.generate() } returns
+        coEvery { starterWorkTaskProposalService.generate(projectId) } returns
             GenerateStarterWorkResponse(status = "proposed", tasksProposed = 1, notes = emptyList())
 
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate").with(pmJwt))
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            )
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -354,7 +391,11 @@ class StarterWorkControllerTest(
     @Test
     fun `streamGenerate should return 403 for a plain USER`() {
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate/stream").with(userJwt))
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate/stream")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt),
+            )
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -365,7 +406,7 @@ class StarterWorkControllerTest(
 
     @Test
     fun `streamGenerate streams progress events for a PM`() {
-        coEvery { starterWorkTaskProposalService.streamGenerate() } returns
+        coEvery { starterWorkTaskProposalService.streamGenerate(projectId) } returns
             flowOf(
                 AiProgressEvent(type = "stage", operation = "starter_work", stage = "retrieving", label = "…"),
                 AiProgressEvent(type = "item", operation = "starter_work", label = "Task: Fix typo"),
@@ -373,7 +414,11 @@ class StarterWorkControllerTest(
             )
 
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate/stream").with(pmJwt))
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate/stream")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            )
             .andExpect(request().asyncStarted())
             .andReturn()
 

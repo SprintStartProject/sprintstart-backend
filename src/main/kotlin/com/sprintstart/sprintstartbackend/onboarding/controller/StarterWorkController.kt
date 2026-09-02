@@ -73,8 +73,13 @@ class StarterWorkController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/generate")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    suspend fun generate(): GenerateStarterWorkResponse = starterWorkTaskProposalService.generate()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM', 'HR') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    suspend fun generate(
+        @Parameter(description = "Project whose open tracker issues to mine")
+        @RequestParam projectId: UUID,
+    ): GenerateStarterWorkResponse = starterWorkTaskProposalService.generate(projectId)
 
     /**
      * The streaming twin of [generate]: watch the starter-work pool fill one task at a time.
@@ -99,8 +104,13 @@ class StarterWorkController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/generate/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    suspend fun streamGenerate(): Flow<AiProgressEvent> = starterWorkTaskProposalService.streamGenerate()
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM', 'HR') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    suspend fun streamGenerate(
+        @Parameter(description = "Project whose open tracker issues to mine")
+        @RequestParam projectId: UUID,
+    ): Flow<AiProgressEvent> = starterWorkTaskProposalService.streamGenerate(projectId)
 
     /**
      * Creates a hand-authored starter-work task, with no AI mining in the loop.

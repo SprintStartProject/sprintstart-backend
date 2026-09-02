@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class MineStarterWorkRequest(
+    val projectIds: List<String> = emptyList(),
     @SerialName("active_source_ids") val activeSourceIds: List<String> = emptyList(),
     @SerialName("active_competency_keys") val activeCompetencyKeys: List<String> = emptyList(),
     @SerialName("last_fingerprint") val lastFingerprint: String? = null,

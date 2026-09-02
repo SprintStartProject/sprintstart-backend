@@ -191,6 +191,7 @@ class OnboardingAiClient(
      * non-2xx response is wrapped in an [OnboardingAiException] carrying the upstream status/body.
      */
     suspend fun proposeStarterWork(
+        projectIds: List<UUID> = emptyList(),
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): StarterWorkOutcome =
@@ -200,6 +201,7 @@ class OnboardingAiClient(
                 .uri(uri("/api/v1/onboarding/starter-work/mine"))
                 .body(
                     MineStarterWorkRequest(
+                        projectIds = projectIds.map { it.toString() },
                         activeSourceIds = activeSourceIds,
                         activeCompetencyKeys = activeCompetencyKeys,
                     ),
@@ -247,12 +249,14 @@ class OnboardingAiClient(
      * backend persists.
      */
     fun streamStarterWork(
+        projectIds: List<UUID> = emptyList(),
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): Flow<AiProgressEvent> =
         streamProgress(
             "/api/v1/onboarding/starter-work/mine/stream",
             MineStarterWorkRequest(
+                projectIds = projectIds.map { it.toString() },
                 activeSourceIds = activeSourceIds,
                 activeCompetencyKeys = activeCompetencyKeys,
             ),
