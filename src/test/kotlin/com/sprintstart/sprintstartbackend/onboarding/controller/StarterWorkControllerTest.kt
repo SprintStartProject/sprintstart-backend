@@ -342,8 +342,7 @@ class StarterWorkControllerTest(
                 post("/api/v1/onboarding/starter-work/generate")
                     .param("projectId", projectId.toString())
                     .with(userJwt),
-            )
-            .andExpect(request().asyncStarted())
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -360,8 +359,7 @@ class StarterWorkControllerTest(
                 post("/api/v1/onboarding/starter-work/generate")
                     .param("projectId", projectId.toString())
                     .with(pmJwt),
-            )
-            .andExpect(request().asyncStarted())
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -379,8 +377,7 @@ class StarterWorkControllerTest(
                 post("/api/v1/onboarding/starter-work/generate")
                     .param("projectId", projectId.toString())
                     .with(pmJwt),
-            )
-            .andExpect(request().asyncStarted())
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -395,8 +392,7 @@ class StarterWorkControllerTest(
                 post("/api/v1/onboarding/starter-work/generate/stream")
                     .param("projectId", projectId.toString())
                     .with(userJwt),
-            )
-            .andExpect(request().asyncStarted())
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -418,8 +414,7 @@ class StarterWorkControllerTest(
                 post("/api/v1/onboarding/starter-work/generate/stream")
                     .param("projectId", projectId.toString())
                     .with(pmJwt),
-            )
-            .andExpect(request().asyncStarted())
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         val body = mockMvc

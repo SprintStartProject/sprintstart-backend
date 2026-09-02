@@ -160,7 +160,11 @@ class StarterWorkTaskProposalServiceTest {
             val sourceIdsSlot = slot<List<String>>()
             val keysSlot = slot<List<String>>()
             coEvery {
-                onboardingAiClient.proposeStarterWork(capture(pidsSlot), capture(sourceIdsSlot), capture(keysSlot))
+                onboardingAiClient.proposeStarterWork(
+                    capture(pidsSlot),
+                    capture(sourceIdsSlot),
+                    capture(keysSlot),
+                )
             } returns StarterWorkOutcome(status = "unchanged")
 
             service.generate(projectId)
@@ -220,7 +224,9 @@ class StarterWorkTaskProposalServiceTest {
                 ),
             )
             every { competencyRepository.findAll() } returns emptyList()
-            every { onboardingAiClient.streamStarterWork(any(), any(), any()) } returns flowOf(doneEvent(proposedOutcome()))
+            every {
+                onboardingAiClient.streamStarterWork(any(), any(), any())
+            } returns flowOf(doneEvent(proposedOutcome()))
 
             val events = service.streamGenerate(projectId).toList()
 

@@ -291,7 +291,14 @@ class TaskOrientationServiceTest {
         val body = slot<String>()
         val labels = slot<List<String>>()
         coEvery {
-            onboardingAiClient.assembleOrientation(capture(title), capture(pids), capture(body), capture(labels), any(), any())
+            onboardingAiClient.assembleOrientation(
+                capture(title),
+                capture(pids),
+                capture(body),
+                capture(labels),
+                any(),
+                any(),
+            )
         } returns assembled(section("SET_UP"))
 
         service.getForHire(hireId, projectId)
@@ -308,7 +315,14 @@ class TaskOrientationServiceTest {
         val title = slot<String>()
         val body = slot<String>()
         coEvery {
-            onboardingAiClient.assembleOrientation(capture(title), any(), capture(body), any(), any(), any())
+            onboardingAiClient.assembleOrientation(
+                capture(title),
+                any(),
+                capture(body),
+                any(),
+                any(),
+                any(),
+            )
         } returns assembled(section("SET_UP"))
 
         service.getForHire(hireId, projectId)
