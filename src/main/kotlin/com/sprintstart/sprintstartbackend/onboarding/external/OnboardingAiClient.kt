@@ -83,6 +83,7 @@ class OnboardingAiClient(
      */
     suspend fun assembleOrientation(
         taskTitle: String,
+        projectIds: List<UUID> = emptyList(),
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -94,6 +95,7 @@ class OnboardingAiClient(
                 .uri(uri("/api/v1/onboarding/orientation"))
                 .body(
                     AssembleOrientationRequest(
+                        projectIds = projectIds.map { it.toString() },
                         taskTitle = taskTitle,
                         taskBody = taskBody,
                         labels = labels,
@@ -213,6 +215,7 @@ class OnboardingAiClient(
      */
     fun streamOrientation(
         taskTitle: String,
+        projectIds: List<UUID> = emptyList(),
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -221,6 +224,7 @@ class OnboardingAiClient(
         streamProgress(
             "/api/v1/onboarding/orientation/stream",
             AssembleOrientationRequest(
+                projectIds = projectIds.map { it.toString() },
                 taskTitle = taskTitle,
                 taskBody = taskBody,
                 labels = labels,
