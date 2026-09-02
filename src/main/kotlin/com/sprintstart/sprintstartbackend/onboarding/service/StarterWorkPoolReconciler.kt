@@ -84,20 +84,15 @@ class StarterWorkPoolReconciler(
                 return@forEach
             }
 
-            if (applyAssignee(proposal, issue.hasAssignee)) assigneeChanged++
-            when (transitionFor(proposal.status, issue.state)) {
-                Transition.TO_STALE -> {
-                    proposal.status = ProposalStatus.STALE
-                    markedStale++
-                }
-                Transition.TO_LIVE -> {
-                    proposal.status = ProposalStatus.LIVE
-                    revived++
-                }
+            val applied = apply(proposal, issue.state, issue.hasAssignee, now)
+            when (applied.transition) {
+                Transition.TO_STALE -> markedStale++
+                Transition.TO_LIVE -> revived++
                 Transition.NONE -> Unit
             }
-            proposal.sourceCheckedAt = now
-            starterWorkTaskProposalRepository.save(proposal)
+            // Counted separately rather than as an else-branch: a row can both go stale and change
+            // hands in the same pass, and collapsing the two would under-report the quieter one.
+            if (applied.assigneeChanged) assigneeChanged++
         }
 
         val outcome = Outcome(rows.size, markedStale, revived, assigneeChanged, skipped)
@@ -120,6 +115,57 @@ class StarterWorkPoolReconciler(
             )
         }
         return outcome
+    }
+
+    /**
+     * Brings one row in line with its source, if the corpus still holds it.
+     *
+     * The point of reconciling a single row is that a full pass, however often it runs, is still a
+     * clock — and there are moments where being out of date costs something specific. Claiming a
+     * task is the obvious one: a hire committing to an issue that closed an hour ago is the exact
+     * failure this whole change exists to prevent, and one local read is a cheap price at that
+     * moment.
+     *
+     * @return true when the row's status changed.
+     */
+    @Transactional
+    fun reconcileOne(proposal: StarterWorkTaskProposal): Boolean {
+        if (proposal.status == ProposalStatus.REJECTED) return false
+        val issue = artifactIngestionApi.getIssue(proposal.sourceId) ?: return false
+        return apply(proposal, issue.state, issue.hasAssignee, Instant.now()).transition != Transition.NONE
+    }
+
+    /** What one row's reconciliation did: the status move, if any, and whether it changed hands. */
+    private data class Applied(
+        val transition: Transition,
+        val assigneeChanged: Boolean,
+    )
+
+    /**
+     * Writes one row's source facts back onto it and says what that changed.
+     *
+     * Shared by the full pass and the single-row path so the two can never drift into disagreeing
+     * about what "closed" means — the asymmetry in [transitionFor] is subtle enough that a second
+     * copy of it would eventually be a different rule.
+     */
+    private fun apply(
+        proposal: StarterWorkTaskProposal,
+        state: String?,
+        hasAssignee: Boolean?,
+        now: Instant,
+    ): Applied {
+        val assigneeChanged = applyAssignee(proposal, hasAssignee)
+        // Read before the status is touched, or the transition would be decided against the answer
+        // it is about to produce.
+        val transition = transitionFor(proposal.status, state)
+        when (transition) {
+            Transition.TO_STALE -> proposal.status = ProposalStatus.STALE
+            Transition.TO_LIVE -> proposal.status = ProposalStatus.LIVE
+            Transition.NONE -> Unit
+        }
+        proposal.sourceCheckedAt = now
+        starterWorkTaskProposalRepository.save(proposal)
+        return Applied(transition, assigneeChanged)
     }
 
     /**

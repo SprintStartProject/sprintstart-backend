@@ -232,4 +232,43 @@ class StarterWorkPoolReconcilerTest {
 
         assertTrue(row.sourceCheckedAt != null)
     }
+
+    @Nested
+    inner class OneRow {
+        @Test
+        fun `a closed issue goes stale and says so`() {
+            val row = proposal()
+            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "CLOSED")
+
+            assertTrue(reconciler.reconcileOne(row))
+            assertEquals(ProposalStatus.STALE, row.status)
+        }
+
+        @Test
+        fun `an open issue changes nothing and says so`() {
+            val row = proposal()
+            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "OPEN")
+
+            assertEquals(false, reconciler.reconcileOne(row))
+            assertEquals(ProposalStatus.LIVE, row.status)
+        }
+
+        @Test
+        fun `a rejected row is never looked up, let alone changed`() {
+            val row = proposal(status = ProposalStatus.REJECTED)
+
+            assertEquals(false, reconciler.reconcileOne(row))
+            assertEquals(ProposalStatus.REJECTED, row.status)
+            verify(exactly = 0) { artifactIngestionApi.getIssue(any()) }
+        }
+
+        @Test
+        fun `an issue the corpus lost leaves the row alone`() {
+            val row = proposal()
+            every { artifactIngestionApi.getIssue(row.sourceId) } returns null
+
+            assertEquals(false, reconciler.reconcileOne(row))
+            assertEquals(ProposalStatus.LIVE, row.status)
+        }
+    }
 }

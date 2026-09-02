@@ -18,10 +18,14 @@ class StarterWorkScheduledExecutor(
     /**
      * Reconciles the starter-work pool against the ingested corpus.
      *
-     * Hourly rather than nightly, and deliberately not tied to an ingestion run. A pass reads only
-     * already-ingested rows, so it is cheap enough to run often, and running on its own clock means
-     * a project whose ingestion is failing still has its pool corrected from whatever was captured
-     * last — rather than freezing exactly when it is most likely to be wrong.
+     * This is the safety net, not the mechanism. The pool is normally corrected the moment a
+     * tracker fetch completes (`StarterWorkCorpusListener`), and a row a hire is about to commit to
+     * is checked individually at that moment (`UserGoalService.claimForMe`). What is left for a
+     * clock is everything those two miss: a corpus changed by something that published no event, a
+     * listener that failed, an instance that was down when the fetch happened.
+     *
+     * Hourly is therefore about right — often enough that a gap closes on its own within a working
+     * session, rare enough to be nearly free, given a pass reads only already-ingested rows.
      *
      * The first run is delayed so it does not compete with startup.
      */
