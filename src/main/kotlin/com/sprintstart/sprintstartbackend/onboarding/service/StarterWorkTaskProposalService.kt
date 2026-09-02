@@ -302,9 +302,13 @@ class StarterWorkTaskProposalService(
         when (this) {
             ProposalStatus.LIVE -> CandidatePoolState.IN_POOL
             ProposalStatus.REJECTED -> CandidatePoolState.REMOVED
-            // Still a pool row, so promoting it again would duplicate it. It is not REMOVED:
-            // nobody took it out, and it returns on its own when the issue reopens.
-            ProposalStatus.STALE -> CandidatePoolState.IN_POOL
+            // A stale row is only ever seen here when its issue has *reopened* — this browser lists
+            // open issues only — and that is exactly when promoting it should work. Promotion
+            // revives the row rather than duplicating it, so offering it is the honest answer:
+            // nothing is on offer to a hire right now, and the PM's click is what brings it back.
+            // Reporting IN_POOL would hide the one action that helps, and REMOVED would blame a
+            // person for something the tracker did.
+            ProposalStatus.STALE -> CandidatePoolState.AVAILABLE
         }
 
     /**

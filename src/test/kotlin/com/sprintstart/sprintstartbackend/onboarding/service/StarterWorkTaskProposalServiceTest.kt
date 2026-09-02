@@ -310,6 +310,23 @@ class StarterWorkTaskProposalServiceTest {
         }
 
         /**
+         * This browser lists open issues only, so a stale row shows up here exactly when its issue
+         * has reopened — which is when promoting it should work. It revives the row rather than
+         * duplicating it, so reporting IN_POOL would hide the one action that helps.
+         */
+        @Test
+        fun `a stale row whose issue reopened is offered for promotion`() {
+            every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "i:1", title = "closed, then not", status = ProposalStatus.STALE),
+            )
+            every { artifactIngestionApi.getOpenIssues(projectId) } returns listOf(ingestedIssue("i:1"))
+
+            val candidate = service.listCandidates(projectId).single()
+
+            assertEquals(CandidatePoolState.AVAILABLE, candidate.poolState)
+        }
+
+        /**
          * Nothing is dropped for being taken, pooled or removed. A person browsing has to be
          * able to tell "somebody has this" from "not ingested", and an issue that is simply absent
          * from the list says neither.
