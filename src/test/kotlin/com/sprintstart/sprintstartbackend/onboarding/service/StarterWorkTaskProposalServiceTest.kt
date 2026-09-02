@@ -394,6 +394,77 @@ class StarterWorkTaskProposalServiceTest {
         }
 
         /**
+         * A stale row is out of date, not unwanted, so promotion revives it rather than refusing.
+         * It must land in the same state a fresh promotion does — a person has just vouched for it,
+         * and a revived row still carrying the unreviewed demotion would contradict that.
+         */
+        @Test
+        fun `promoting a stale issue revives it as reviewed`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                status = ProposalStatus.STALE,
+                reviewed = false,
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(PromoteStarterWorkCandidateRequest(sourceId = "i:1"))
+
+            assertEquals(ProposalStatus.LIVE, stale.status)
+            assertTrue(stale.reviewed, "somebody just vouched for it")
+        }
+
+        @Test
+        fun `reviving applies what the promoter actually sent`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                status = ProposalStatus.STALE,
+                competencyKeys = mutableListOf("mined"),
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(
+                PromoteStarterWorkCandidateRequest(
+                    sourceId = "i:1",
+                    summary = "worth a newcomer's time",
+                    competencyKeys = listOf("docs"),
+                ),
+            )
+
+            assertEquals(listOf("docs"), stale.competencyKeys)
+            assertEquals("worth a newcomer's time", stale.summary)
+        }
+
+        /**
+         * Both fields are optional and default to empty, so silence must not be read as "clear
+         * this". Mined competency keys would otherwise be destroyed by a promotion that said
+         * nothing about them.
+         */
+        @Test
+        fun `reviving keeps what the promoter said nothing about`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                summary = "mined note",
+                status = ProposalStatus.STALE,
+                competencyKeys = mutableListOf("mined"),
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(PromoteStarterWorkCandidateRequest(sourceId = "i:1"))
+
+            assertEquals(listOf("mined"), stale.competencyKeys)
+            assertEquals("mined note", stale.summary)
+        }
+
+        /**
          * The issue's own body is deliberately not copied into `summary`: orientation reads that
          * text live from the corpus, so a copy taken at promotion time is a second version of it
          * that quietly goes stale.

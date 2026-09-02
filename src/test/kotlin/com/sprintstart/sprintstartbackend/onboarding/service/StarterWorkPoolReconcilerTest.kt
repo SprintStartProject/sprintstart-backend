@@ -106,6 +106,7 @@ class StarterWorkPoolReconcilerTest {
             assertEquals(ProposalStatus.LIVE, row.status)
             assertNull(row.sourceCheckedAt, "nothing was compared, so nothing was checked")
             assertEquals(0, outcome.markedStale)
+            assertEquals(1, outcome.skipped, "a vanished source is a finding, not a silent no-op")
         }
     }
 
@@ -217,7 +218,7 @@ class StarterWorkPoolReconcilerTest {
 
         val outcome = reconciler.reconcile()
 
-        assertEquals(StarterWorkPoolReconciler.Outcome(0, 0, 0, 0), outcome)
+        assertEquals(StarterWorkPoolReconciler.Outcome(0, 0, 0, 0, 0), outcome)
         verify(exactly = 0) { artifactIngestionApi.getIssue(any()) }
     }
 

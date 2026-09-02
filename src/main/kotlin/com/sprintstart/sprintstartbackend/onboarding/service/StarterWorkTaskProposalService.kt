@@ -329,7 +329,7 @@ class StarterWorkTaskProposalService(
         val sourceId = request.sourceId.trim()
         val issue = loadPromotableIssue(sourceId)
         val title = titleOf(sourceId, issue)
-        reviveOrRefuse(sourceId)?.let { return it.toResponse() }
+        reviveOrRefuse(sourceId, request)?.let { return it.toResponse() }
 
         val proposal = starterWorkTaskProposalRepository.save(
             StarterWorkTaskProposal(
@@ -384,13 +384,33 @@ class StarterWorkTaskProposalService(
      * than inserting is not a preference either — `sourceId` is unique per proposal, so a second
      * row for the same issue cannot exist.
      *
+     * A revived row lands in the same state a fresh promotion does: live *and reviewed*, because
+     * this endpoint's whole premise is that somebody looked at the issue and vouched for it. Coming
+     * back still carrying the unreviewed demotion would contradict the act that revived it.
+     *
+     * What the promoter sent is applied; what they left out is kept. Both fields are optional and
+     * default to empty, so reading silence as "clear this" would let a promotion that said nothing
+     * destroy competency keys mining had already worked out.
+     *
      * @return the revived proposal, or null when the issue has no proposal at all.
      */
-    private fun reviveOrRefuse(sourceId: String): StarterWorkTaskProposal? {
+    private fun reviveOrRefuse(
+        sourceId: String,
+        request: PromoteStarterWorkCandidateRequest,
+    ): StarterWorkTaskProposal? {
         val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId) ?: return null
         return when (existing.status) {
             ProposalStatus.STALE -> {
                 existing.status = ProposalStatus.LIVE
+                existing.reviewed = true
+                request.summary
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { existing.summary = it }
+                request.competencyKeys.takeIf { it.isNotEmpty() }?.let {
+                    existing.competencyKeys.clear()
+                    existing.competencyKeys.addAll(it)
+                }
                 existing.decidedAt = Instant.now()
                 starterWorkTaskProposalRepository.save(existing)
             }

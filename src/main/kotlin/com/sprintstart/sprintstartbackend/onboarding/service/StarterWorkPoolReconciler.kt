@@ -46,6 +46,14 @@ class StarterWorkPoolReconciler(
         val markedStale: Int,
         val revived: Int,
         val assigneeChanged: Int,
+        /**
+         * Rows whose issue the corpus no longer holds, so nothing could be compared.
+         *
+         * Counted separately because it is the one number here that is a problem rather than a
+         * result: a pool row whose source has vanished stays claimable forever on the strength of
+         * whatever was true when it was mined.
+         */
+        val skipped: Int = 0,
     )
 
     /**
@@ -63,6 +71,7 @@ class StarterWorkPoolReconciler(
         var markedStale = 0
         var revived = 0
         var assigneeChanged = 0
+        var skipped = 0
         val now = Instant.now()
 
         rows.forEach { proposal ->
@@ -71,6 +80,7 @@ class StarterWorkPoolReconciler(
                 // The corpus no longer holds the issue — a source disconnected, or an artifact
                 // pruned. That says nothing about whether the work is still open, so the row is
                 // left exactly as it is rather than guessed at.
+                skipped++
                 return@forEach
             }
 
@@ -90,7 +100,7 @@ class StarterWorkPoolReconciler(
             starterWorkTaskProposalRepository.save(proposal)
         }
 
-        val outcome = Outcome(rows.size, markedStale, revived, assigneeChanged)
+        val outcome = Outcome(rows.size, markedStale, revived, assigneeChanged, skipped)
         if (markedStale > 0 || revived > 0 || assigneeChanged > 0) {
             logger.info(
                 "Starter-work reconciliation examined {} rows: {} went stale, {} came back, {} changed assignee",
@@ -98,6 +108,15 @@ class StarterWorkPoolReconciler(
                 outcome.markedStale,
                 outcome.revived,
                 outcome.assigneeChanged,
+            )
+        }
+        if (skipped > 0) {
+            // Warned rather than folded into the line above: these rows were not reconciled at all,
+            // and a pool quietly serving work nobody can look up is worth somebody's attention.
+            logger.warn(
+                "Starter-work reconciliation could not find {} of {} pooled issues in the corpus",
+                skipped,
+                rows.size,
             )
         }
         return outcome

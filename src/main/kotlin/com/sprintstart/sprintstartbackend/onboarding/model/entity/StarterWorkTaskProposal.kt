@@ -31,8 +31,12 @@ class StarterWorkTaskProposal(
     val sourceId: String,
     @Column(nullable = false)
     val title: String,
+    // Mutable, unlike the fields around it: title, sourceId and sourceUrl are the tracker's facts
+    // and must never drift from it, while this is our own note about the issue. Promotion rewrites
+    // it when reviving a stale row, because the person vouching for it then is the one whose note
+    // it now is.
     @Column(nullable = true, columnDefinition = "TEXT")
-    val summary: String? = null,
+    var summary: String? = null,
     @Column(nullable = true, columnDefinition = "TEXT")
     val rationale: String? = null,
     @Column(name = "source_url", nullable = true)
