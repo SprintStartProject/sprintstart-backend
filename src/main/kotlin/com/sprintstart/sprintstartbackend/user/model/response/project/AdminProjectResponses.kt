@@ -8,6 +8,8 @@ data class AdminProjectListResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserSummaryResponse>,
@@ -17,6 +19,8 @@ data class AdminProjectDetailResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserResponse>,
@@ -40,6 +44,8 @@ data class ManagedProjectResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val memberCount: Int,
 )
 

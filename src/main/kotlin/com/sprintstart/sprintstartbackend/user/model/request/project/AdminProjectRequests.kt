@@ -9,11 +9,15 @@ data class CreateAdminProjectRequest(
     @field:NotBlank
     val name: String,
     val description: String? = null,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
 )
 
 data class PatchAdminProjectRequest(
     val name: String? = null,
     val description: String? = null,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
 )
 
 data class AssignProjectUsersRequest(
