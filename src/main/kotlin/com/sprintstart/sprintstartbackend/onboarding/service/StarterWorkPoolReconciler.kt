@@ -1,0 +1,143 @@
+package com.sprintstart.sprintstartbackend.onboarding.service
+
+import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
+import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+
+/**
+ * Brings the starter-work pool back in line with what the trackers now say.
+ *
+ * The pool is checked against its source exactly once today, on the way in
+ * ([StarterWorkTaskProposalService.promoteCandidate] refuses a closed issue). After that a row is
+ * never looked at again, so an issue the team closed yesterday keeps being offered to newcomers,
+ * and one somebody picked up keeps ranking as though it were free. This closes that gap.
+ *
+ * It reads only the ingested corpus — `ArtifactIngestionApi` serves what the last ingestion run
+ * captured — so a pass costs no tracker calls and can run as often as ingestion does.
+ *
+ * Three rules hold the whole thing together:
+ *
+ * 1. **Only a definite `CLOSED` closes anything.** An issue the corpus has no state for is
+ *    *unknown*, never finished — the same reading intake applies, and the reason a tracker this
+ *    system ingests only partially cannot silently empty the pool.
+ * 2. **[ProposalStatus.REJECTED] is never touched.** Rejection is a person's decision and sticky by
+ *    design. A pass that could revive one would undo somebody's refusal every time it ran.
+ * 3. **Nothing is deleted.** A stale row stays, so the pool can say *why* an issue is not on offer,
+ *    and so reopening it is a status change rather than a re-mining.
+ */
+@Component
+class StarterWorkPoolReconciler(
+    private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository,
+    private val artifactIngestionApi: ArtifactIngestionApi,
+) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * What one pass changed. Returned rather than only logged so a caller — a test, or an admin
+     * endpoint later — can assert on it.
+     */
+    data class Outcome(
+        val examined: Int,
+        val markedStale: Int,
+        val revived: Int,
+        val assigneeChanged: Int,
+    )
+
+    /**
+     * Compares every reconcilable row against its source and writes back what changed.
+     *
+     * [ProposalStatus.LIVE] and [ProposalStatus.STALE] are both examined: the first so it can go
+     * stale, the second so it can come back. Rejected rows are not even loaded.
+     */
+    @Transactional
+    fun reconcile(): Outcome {
+        val rows = starterWorkTaskProposalRepository
+            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.STALE))
+        if (rows.isEmpty()) return Outcome(0, 0, 0, 0)
+
+        var markedStale = 0
+        var revived = 0
+        var assigneeChanged = 0
+        val now = Instant.now()
+
+        rows.forEach { proposal ->
+            val issue = artifactIngestionApi.getIssue(proposal.sourceId)
+            if (issue == null) {
+                // The corpus no longer holds the issue — a source disconnected, or an artifact
+                // pruned. That says nothing about whether the work is still open, so the row is
+                // left exactly as it is rather than guessed at.
+                return@forEach
+            }
+
+            if (applyAssignee(proposal, issue.hasAssignee)) assigneeChanged++
+            when (transitionFor(proposal.status, issue.state)) {
+                Transition.TO_STALE -> {
+                    proposal.status = ProposalStatus.STALE
+                    markedStale++
+                }
+                Transition.TO_LIVE -> {
+                    proposal.status = ProposalStatus.LIVE
+                    revived++
+                }
+                Transition.NONE -> Unit
+            }
+            proposal.sourceCheckedAt = now
+            starterWorkTaskProposalRepository.save(proposal)
+        }
+
+        val outcome = Outcome(rows.size, markedStale, revived, assigneeChanged)
+        if (markedStale > 0 || revived > 0 || assigneeChanged > 0) {
+            logger.info(
+                "Starter-work reconciliation examined {} rows: {} went stale, {} came back, {} changed assignee",
+                outcome.examined,
+                outcome.markedStale,
+                outcome.revived,
+                outcome.assigneeChanged,
+            )
+        }
+        return outcome
+    }
+
+    /**
+     * Records what the tracker says about an assignee, returning whether that changed anything.
+     *
+     * A null from the corpus is *unknown* and never overwrites a definite answer already on the
+     * row: losing "somebody has this" because one pass could not tell would quietly promote a
+     * taken task back up the ranking.
+     */
+    private fun applyAssignee(proposal: StarterWorkTaskProposal, hasAssignee: Boolean?): Boolean {
+        if (hasAssignee == null || hasAssignee == proposal.sourceHasAssignee) return false
+        proposal.sourceHasAssignee = hasAssignee
+        return true
+    }
+
+    private enum class Transition { TO_STALE, TO_LIVE, NONE }
+
+    /**
+     * The status change one row's source state calls for, if any.
+     *
+     * Written as a decision on its own so the asymmetry is visible: going stale needs a *definite*
+     * `CLOSED`, and coming back needs a *definite* non-closed. An unknown state moves nothing in
+     * either direction, which is what keeps a partially-ingested tracker from emptying the pool on
+     * one pass and refilling it on the next.
+     */
+    private fun transitionFor(status: ProposalStatus, state: String?): Transition {
+        if (state == null) return Transition.NONE
+        val closed = CLOSED_STATE.equals(state, ignoreCase = true)
+        return when {
+            status == ProposalStatus.LIVE && closed -> Transition.TO_STALE
+            status == ProposalStatus.STALE && !closed -> Transition.TO_LIVE
+            else -> Transition.NONE
+        }
+    }
+
+    private companion object {
+        /** How the ingestion mappers spell "finished at the source", for GitHub and Jira alike. */
+        const val CLOSED_STATE = "CLOSED"
+    }
+}

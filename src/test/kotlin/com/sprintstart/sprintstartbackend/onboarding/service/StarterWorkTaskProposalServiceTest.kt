@@ -115,7 +115,7 @@ class StarterWorkTaskProposalServiceTest {
         fun `a rejected task is never mined back into existence`() = runTest {
             every {
                 starterWorkTaskProposalRepository.findAllByStatusIn(
-                    listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED),
+                    listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE),
                 )
             } returns listOf(
                 StarterWorkTaskProposal(

@@ -76,4 +76,29 @@ class StarterWorkTaskProposal(
     var decidedAt: Instant? = null,
     @Column(name = "rejection_reason", nullable = true, columnDefinition = "TEXT")
     var rejectionReason: String? = null,
+    /**
+     * Whether the issue had somebody on it when reconciliation last looked.
+     *
+     * Three-valued, mirroring `IngestedIssue.hasAssignee`: null means *nobody has checked, or the
+     * tracker never said*, and only a definite `true` means somebody has this. It is written by
+     * reconciliation rather than read live because
+     * [com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkMatcher] ranks the whole
+     * pool on every board load, and a per-task lookup there would put one read per pool row in
+     * front of a page.
+     *
+     * Note what it does *not* say: the corpus records that an issue is assigned, never to whom. So
+     * this reads as "somebody has this", and a hire who was assigned the issue at its source
+     * demotes their own task. That is the honest reading of the data available, and it demotes
+     * rather than hides, so the cost of being wrong is a lower rank and not a missing task.
+     */
+    @Column(name = "source_has_assignee", nullable = true)
+    var sourceHasAssignee: Boolean? = null,
+    /**
+     * When reconciliation last compared this row against its source. Null until it first has.
+     *
+     * Kept so that "nobody has checked" and "checked, and the tracker said nothing" stay
+     * distinguishable — the same distinction [sourceHasAssignee] draws, one level up.
+     */
+    @Column(name = "source_checked_at", nullable = true)
+    var sourceCheckedAt: Instant? = null,
 )
