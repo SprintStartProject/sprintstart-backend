@@ -135,7 +135,10 @@ class BuddyController(
 
     @Operation(
         summary = "Send a message to the buddy",
-        description = "Adds the message to the user's ongoing buddy session and streams a grounded reply.",
+        description = "Adds the message to the user's ongoing buddy session and streams a grounded reply. " +
+            "Set `capabilitiesEnabled` to false to ask the corpus rather than the mentor: the reply is still " +
+            "grounded and cited, but no tools are mounted, so nothing can be proposed or written. The setting " +
+            "is per message, and the conversation is the same one either way.",
     )
     @ApiResponses(
         value = [
@@ -169,7 +172,8 @@ class BuddyController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @Valid @RequestBody request: SendBuddyMessageRequest,
-    ): Flow<BuddyStreamEvent> = buddyService.sendMessageForMe(jwt.subject, request.content)
+    ): Flow<BuddyStreamEvent> =
+        buddyService.sendMessageForMe(jwt.subject, request.content, request.capabilitiesEnabled)
 
     @Operation(
         summary = "Confirm a buddy-proposed action",

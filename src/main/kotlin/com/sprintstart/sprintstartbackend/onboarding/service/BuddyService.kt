@@ -207,6 +207,15 @@ class BuddyService(
     /**
      * Sends the authenticated user's message to the buddy and streams the reply.
      *
+     * With [capabilitiesEnabled] false the mentor answers from the project's material and does
+     * nothing else: no tools are mounted, so none can be called, and the mode is enforced by what
+     * the model was given rather than by what the prompt asked of it. Retrieval is unaffected —
+     * `search_docs` runs AI-side — so this costs the hire nothing in what they can find.
+     *
+     * Per message rather than per session. A hire who looked something up and then wants the mentor
+     * back should not have to remember which state a switch was left in, and the transcript stays
+     * one conversation across the change.
+     *
      * The user's message is persisted immediately; the assistant's reply is persisted only once the
      * agent loop finishes, so a stream that errors or is cancelled leaves no garbage reply behind.
      *
@@ -220,7 +229,11 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun sendMessageForMe(authId: String, content: String): Flow<BuddyStreamEvent> {
+    suspend fun sendMessageForMe(
+        authId: String,
+        content: String,
+        capabilitiesEnabled: Boolean = true,
+    ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
         val session = getOrCreateSession(userId)
 
@@ -237,7 +250,15 @@ class BuddyService(
 
         // The AI reasoner sees the read-only tools *and* the action tools it may propose. An action
         // tool call never mutates here — it produces a proposal the hire must confirm out-of-band.
-        val tools = buddyToolExecutor.toolSpecs(userId) + buddyActionService.actionSpecs()
+        //
+        // With capabilities off the list is empty, which is the whole mechanism: a tool the model
+        // was never given is one it cannot call, so the mode is enforced here rather than asked for
+        // in the prompt. Retrieval is untouched — `search_docs` runs AI-side, not as a backend tool.
+        val tools = if (capabilitiesEnabled) {
+            buddyToolExecutor.toolSpecs(userId) + buddyActionService.actionSpecs()
+        } else {
+            emptyList()
+        }
 
         // Both resolved once per turn, not per hop: neither can change mid-conversation, and
         // re-reading would cost a membership lookup on every step of the agent loop.
@@ -253,7 +274,7 @@ class BuddyService(
             while (answer == null && step < MAX_AGENT_STEPS) {
                 step++
                 val response = onboardingAiClient.buddyAgentTurn(
-                    agentRequest(messages, tools, step, session, vocabulary, projectIds),
+                    agentRequest(messages, tools, step, session, vocabulary, projectIds, capabilitiesEnabled),
                 )
                 citations = response.citations
                 if (response.final) {
@@ -327,6 +348,7 @@ class BuddyService(
         session: BuddySession,
         vocabulary: BuddyVocabularyDto,
         projectIds: List<String>,
+        capabilitiesEnabled: Boolean,
     ): BuddyAgentRequest =
         BuddyAgentRequest(
             messages = messages,
@@ -339,6 +361,10 @@ class BuddyService(
             // Same reason, and the same every hop: retrieval happens on the AI side on any hop the
             // model chooses to search, so a scope sent only on the first would silently widen.
             projectIds = projectIds,
+            // Every hop too, and for the same reason as the persona: a resumed turn that lost the
+            // mode would rebuild a mentor offering to act, mid-conversation with a hire who asked
+            // it not to.
+            capabilitiesEnabled = capabilitiesEnabled,
         )
 
     /**
