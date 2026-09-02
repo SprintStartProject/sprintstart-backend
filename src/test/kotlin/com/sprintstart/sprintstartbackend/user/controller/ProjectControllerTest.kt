@@ -4,13 +4,17 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
+import com.sprintstart.sprintstartbackend.user.service.ProjectIndustryService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.runs
@@ -27,11 +31,13 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
@@ -57,6 +63,9 @@ class ProjectControllerTest(
 
     @MockkBean
     private lateinit var projectManagerService: ProjectManagerService
+
+    @MockkBean
+    private lateinit var projectIndustryService: ProjectIndustryService
 
     @MockkBean(name = "projectAuth")
     private lateinit var projectAuth: ProjectAuthorization
@@ -255,6 +264,102 @@ class ProjectControllerTest(
             .andExpect(status().isConflict)
 
         verify(exactly = 1) { adminProjectService.removeUser(managedProjectId, userId) }
+    }
+
+    @Test
+    fun `evaluateIndustry evaluates and returns industry for managed project`() {
+        coEvery { projectIndustryService.evaluateIndustry(managedProjectId) } returns
+            AiIndustryEvaluationResponse(
+                industry = "Fintech / Banking",
+                confidence = "high",
+                evidence = listOf("Ledger API", "Payment system"),
+            )
+
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$managedProjectId/industry/evaluate").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.industry").value("Fintech / Banking"))
+            .andExpect(jsonPath("$.confidence").value("high"))
+            .andExpect(jsonPath("$.evidence[0]").value("Ledger API"))
+            .andExpect(jsonPath("$.evidence[1]").value("Payment system"))
+
+        coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(managedProjectId) }
+    }
+
+    @Test
+    fun `evaluateIndustry succeeds for admin on any project`() {
+        every { projectAuth.canManageProject(any(), foreignProjectId) } returns true
+        coEvery { projectIndustryService.evaluateIndustry(foreignProjectId) } returns
+            AiIndustryEvaluationResponse(
+                industry = "Quantum Computing",
+                confidence = "medium",
+                evidence = emptyList(),
+            )
+
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$foreignProjectId/industry/evaluate").with(adminJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.industry").value("Quantum Computing"))
+            .andExpect(jsonPath("$.confidence").value("medium"))
+
+        coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(foreignProjectId) }
+    }
+
+    @Test
+    fun `evaluateIndustry rejects project the caller does not manage`() {
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$foreignProjectId/industry/evaluate").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isForbidden)
+
+        coVerify(exactly = 0) { projectIndustryService.evaluateIndustry(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustry rejects unprivileged users`() {
+        every { projectAuth.canManageProject(any(), managedProjectId) } returns false
+
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$managedProjectId/industry/evaluate").with(userJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isForbidden)
+
+        coVerify(exactly = 0) { projectIndustryService.evaluateIndustry(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustry returns 404 when project does not exist`() {
+        coEvery { projectIndustryService.evaluateIndustry(managedProjectId) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Project with id $managedProjectId not found")
+
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$managedProjectId/industry/evaluate").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isNotFound)
+
+        coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(managedProjectId) }
     }
 
     private fun managedProjectResponse() = ManagedProjectResponse(
