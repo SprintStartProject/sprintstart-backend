@@ -53,14 +53,20 @@ class OnboardingAiClient(
      */
     suspend fun assembleDiagram(
         subject: String,
+        projectIds: List<UUID> = emptyList(),
         lastFingerprint: String? = null,
     ): DiagramOutcome =
         try {
             webClient
                 .post()
                 .uri(uri("/api/v1/onboarding/diagram"))
-                .body(AssembleDiagramRequest(subject = subject, lastFingerprint = lastFingerprint))
-                .sync()
+                .body(
+                    AssembleDiagramRequest(
+                        projectIds = projectIds.map { it.toString() },
+                        subject = subject,
+                        lastFingerprint = lastFingerprint,
+                    ),
+                ).sync()
                 .perform<DiagramOutcome>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             val msg = "Failed to assemble diagram (HTTP ${e.statusCode}): ${e.body}"
