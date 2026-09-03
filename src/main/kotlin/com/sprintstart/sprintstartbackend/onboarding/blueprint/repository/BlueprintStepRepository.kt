@@ -31,4 +31,8 @@ interface BlueprintStepRepository : JpaRepository<BlueprintStep, UUID> {
         projectId: UUID,
         blueprintPhaseId: UUID,
     ): MutableList<BlueprintStep>
+
+    fun findAllByBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintPhaseId(
+        blueprintPhaseId: UUID,
+    ): MutableList<BlueprintStep>
 }

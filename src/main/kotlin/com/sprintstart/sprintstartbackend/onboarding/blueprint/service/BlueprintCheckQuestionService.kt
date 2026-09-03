@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -31,27 +32,35 @@ class BlueprintCheckQuestionService(
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintCheckQuestionsForPhase(
-        projectId: UUID,
+        scope: BlueprintScope,
         phaseId: UUID,
     ): List<GetBlueprintCheckQuestionResponse> {
-        return blueprintCheckQuestionRepository
-            .findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(projectId, phaseId)
-            .map { it.toGetResponse() }
+        return when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintCheckQuestionRepository
+                    .findAllByBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintPhaseId(phaseId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintCheckQuestionRepository
+                    .findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(scope.projectId, phaseId)
+            }
+        }.map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
     fun getBlueprintCheckQuestionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
     ): GetBlueprintCheckQuestionResponse {
         return blueprintAccessService
-            .getAuthorizedCheckQuestion(projectId, questionId)
+            .getAuthorizedCheckQuestion(scope, questionId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintCheckQuestionForPhase(
-        projectId: UUID,
+        scope: BlueprintScope,
         phaseId: UUID,
         request: CreateBlueprintCheckQuestionRequest,
     ): CreateBlueprintCheckQuestionResponse {
@@ -62,7 +71,7 @@ class BlueprintCheckQuestionService(
             )
         }
 
-        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(scope, phaseId)
 
         shiftQuestionsRight(phase, request)
 
@@ -80,7 +89,7 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun updateBlueprintCheckQuestionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
         request: UpdateBlueprintCheckQuestionRequest,
     ): UpdateBlueprintCheckQuestionResponse {
@@ -91,7 +100,7 @@ class BlueprintCheckQuestionService(
             )
         }
 
-        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(scope, questionId)
 
         validateRevision(question, request.revision)
 
@@ -108,11 +117,11 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun updateBlueprintCheckQuestionPositionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
         request: UpdateBlueprintCheckQuestionPositionRequest,
     ): List<UpdateBlueprintCheckQuestionPositionResponse> {
-        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(scope, questionId)
 
         validateRevision(question, request.revision)
 
@@ -126,11 +135,11 @@ class BlueprintCheckQuestionService(
 
     @Transactional
     fun deleteBlueprintCheckQuestionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
         request: DeleteBlueprintCheckQuestionRequest,
     ) {
-        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(scope, questionId)
 
         validateRevision(question, request.revision)
 

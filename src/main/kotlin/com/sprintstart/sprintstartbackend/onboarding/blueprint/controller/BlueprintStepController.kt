@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.DeleteBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
@@ -23,6 +24,64 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
+@RequestMapping("/api/v1/onboarding/blueprints")
+class BlueprintStepAdminController(
+    private val blueprintStepService: BlueprintStepService,
+) {
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/phases/{phaseId}/steps")
+    fun getBlueprintStepsForPhase(
+        @PathVariable phaseId: UUID,
+    ): List<GetBlueprintStepResponse> {
+        return blueprintStepService.getBlueprintStepForPhase(BlueprintScope.Global, phaseId)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/steps/{stepId}")
+    fun getBlueprintStepById(
+        @PathVariable stepId: UUID,
+    ): GetBlueprintStepResponse {
+        return blueprintStepService.getBlueprintStepById(BlueprintScope.Global, stepId)
+    }
+
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/phases/{phaseId}/steps")
+    fun createBlueprintStepForPhase(
+        @PathVariable phaseId: UUID,
+        @RequestBody request: CreateBlueprintStepRequest,
+    ): CreateBlueprintStepResponse {
+        return blueprintStepService.createBlueprintStepForPhase(BlueprintScope.Global, phaseId, request)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/steps/{stepId}")
+    fun updateBlueprintStepById(
+        @PathVariable stepId: UUID,
+        @RequestBody request: UpdateBlueprintStepRequest,
+    ): UpdateBlueprintStepResponse {
+        return blueprintStepService.updateBlueprintStepById(BlueprintScope.Global, stepId, request)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PutMapping("/steps/{stepId}/position")
+    fun updateBlueprintStepPositionById(
+        @PathVariable stepId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintStepPositionRequest,
+    ): List<UpdateBlueprintStepPositionResponse> {
+        return blueprintStepService.updateBlueprintStepPositionById(BlueprintScope.Global, stepId, request)
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/steps/{stepId}")
+    fun deleteBlueprintStepById(
+        @PathVariable stepId: UUID,
+        @RequestBody request: DeleteBlueprintStepRequest,
+    ) {
+        blueprintStepService.deleteBlueprintStepById(BlueprintScope.Global, stepId, request)
+    }
+}
+
+@RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintStepController(
     private val blueprintStepService: BlueprintStepService,
@@ -33,7 +92,7 @@ class BlueprintStepController(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
     ): List<GetBlueprintStepResponse> {
-        return blueprintStepService.getBlueprintStepForPhase(projectId, phaseId)
+        return blueprintStepService.getBlueprintStepForPhase(BlueprintScope.Project(projectId), phaseId)
     }
 
     @ResponseStatus(HttpStatus.OK)
@@ -42,7 +101,7 @@ class BlueprintStepController(
         @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
     ): GetBlueprintStepResponse {
-        return blueprintStepService.getBlueprintStepById(projectId, stepId)
+        return blueprintStepService.getBlueprintStepById(BlueprintScope.Project(projectId), stepId)
     }
 
     @ResponseStatus(HttpStatus.CREATED)
@@ -52,7 +111,7 @@ class BlueprintStepController(
         @PathVariable phaseId: UUID,
         @RequestBody request: CreateBlueprintStepRequest,
     ): CreateBlueprintStepResponse {
-        return blueprintStepService.createBlueprintStepForPhase(projectId, phaseId, request)
+        return blueprintStepService.createBlueprintStepForPhase(BlueprintScope.Project(projectId), phaseId, request)
     }
 
     @ResponseStatus(HttpStatus.OK)
@@ -62,7 +121,7 @@ class BlueprintStepController(
         @PathVariable stepId: UUID,
         @RequestBody request: UpdateBlueprintStepRequest,
     ): UpdateBlueprintStepResponse {
-        return blueprintStepService.updateBlueprintStepById(projectId, stepId, request)
+        return blueprintStepService.updateBlueprintStepById(BlueprintScope.Project(projectId), stepId, request)
     }
 
     @ResponseStatus(HttpStatus.OK)
@@ -72,7 +131,7 @@ class BlueprintStepController(
         @PathVariable stepId: UUID,
         @Valid @RequestBody request: UpdateBlueprintStepPositionRequest,
     ): List<UpdateBlueprintStepPositionResponse> {
-        return blueprintStepService.updateBlueprintStepPositionById(projectId, stepId, request)
+        return blueprintStepService.updateBlueprintStepPositionById(BlueprintScope.Project(projectId), stepId, request)
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -82,6 +141,6 @@ class BlueprintStepController(
         @PathVariable stepId: UUID,
         @RequestBody request: DeleteBlueprintStepRequest,
     ) {
-        blueprintStepService.deleteBlueprintStepById(projectId, stepId, request)
+        blueprintStepService.deleteBlueprintStepById(BlueprintScope.Project(projectId), stepId, request)
     }
 }

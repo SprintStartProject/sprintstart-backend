@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.RequirementType
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhaseRequirement
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -29,11 +30,11 @@ class BlueprintPhaseRequirementService(
 ) {
     @Transactional
     fun createBlueprintPhaseRequirementsForPhase(
-        projectId: UUID,
+        scope: BlueprintScope,
         phaseId: UUID,
         request: CreateBlueprintPhaseRequirementsRequest,
     ): CreateBlueprintPhaseRequirementsResponse {
-        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(scope, phaseId)
 
         validateRevision(phase, request.revision)
 
@@ -63,11 +64,11 @@ class BlueprintPhaseRequirementService(
 
     @Transactional
     fun deleteBlueprintPhaseRequirementsForPhase(
-        projectId: UUID,
+        scope: BlueprintScope,
         phaseId: UUID,
         request: DeleteBlueprintPhaseRequirementsRequest,
     ): DeleteBlueprintPhaseRequirementsResponse {
-        val phase = blueprintAccessService.getAuthorizedEditablePhase(projectId, phaseId)
+        val phase = blueprintAccessService.getAuthorizedEditablePhase(scope, phaseId)
 
         validateRevision(phase, request.revision)
 

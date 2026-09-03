@@ -10,6 +10,10 @@ interface BlueprintCheckOptionRepository : JpaRepository<BlueprintCheckOption, U
         questionId: UUID,
     ): MutableList<BlueprintCheckOption>
 
+    fun findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdNullAndBlueprintCheckQuestionId(
+        questionId: UUID,
+    ): MutableList<BlueprintCheckOption>
+
     fun countByBlueprintCheckQuestionId(blueprintCheckQuestionId: UUID): Long
 
     fun findAllByBlueprintCheckQuestionIdAndPositionGreaterThanEqualOrderByPositionDesc(

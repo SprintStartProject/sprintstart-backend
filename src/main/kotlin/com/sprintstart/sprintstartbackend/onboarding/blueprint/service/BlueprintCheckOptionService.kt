@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -29,33 +30,44 @@ class BlueprintCheckOptionService(
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintCheckOptionsForQuestion(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
     ): List<GetBlueprintCheckOptionResponse> {
-        return blueprintCheckOptionRepository
-            .findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndBlueprintCheckQuestionId(
-                projectId,
-                questionId,
-            ).map { it.toGetResponse() }
+        return when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintCheckOptionRepository
+                    .findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdNullAndBlueprintCheckQuestionId(
+                        questionId,
+                    )
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintCheckOptionRepository
+                    .findAllByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndBlueprintCheckQuestionId(
+                        scope.projectId,
+                        questionId,
+                    )
+            }
+        }.map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
     fun getBlueprintCheckOptionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         optionId: UUID,
     ): GetBlueprintCheckOptionResponse {
         return blueprintAccessService
-            .getAuthorizedCheckOption(projectId, optionId)
+            .getAuthorizedCheckOption(scope, optionId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintCheckOptionForQuestion(
-        projectId: UUID,
+        scope: BlueprintScope,
         questionId: UUID,
         request: CreateBlueprintCheckOptionRequest,
     ): CreateBlueprintCheckOptionResponse {
-        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(projectId, questionId)
+        val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(scope, questionId)
 
         shiftOptionsRight(question, request)
 
@@ -71,11 +83,11 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun updateBlueprintCheckOptionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         optionId: UUID,
         request: UpdateBlueprintCheckOptionRequest,
     ): UpdateBlueprintCheckOptionResponse {
-        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(scope, optionId)
 
         validateRevision(option, request.revision)
 
@@ -90,11 +102,11 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun updateBlueprintCheckOptionPositionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         optionId: UUID,
         request: UpdateBlueprintCheckOptionPositionRequest,
     ): List<UpdateBlueprintCheckOptionPositionResponse> {
-        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(scope, optionId)
 
         validateRevision(option, request.revision)
 
@@ -109,11 +121,11 @@ class BlueprintCheckOptionService(
 
     @Transactional
     fun deleteBlueprintCheckOptionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         optionId: UUID,
         request: DeleteBlueprintCheckOptionRequest,
     ) {
-        val option = blueprintAccessService.getAuthorizedEditableCheckOption(projectId, optionId)
+        val option = blueprintAccessService.getAuthorizedEditableCheckOption(scope, optionId)
 
         validateRevision(option, request.revision)
 

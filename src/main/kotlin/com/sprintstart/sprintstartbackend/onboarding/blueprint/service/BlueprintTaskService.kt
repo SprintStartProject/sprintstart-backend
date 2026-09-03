@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -15,7 +15,6 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ta
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.GetBlueprintTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.UpdateBlueprintTaskPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.task.UpdateBlueprintTaskResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintTaskRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -28,35 +27,45 @@ import kotlin.ranges.contains
 class BlueprintTaskService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintTaskRepository: BlueprintTaskRepository,
-    private val blueprintStepRepository: BlueprintStepRepository,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintTasksForStep(
-        projectId: UUID,
+        scope: BlueprintScope,
         stepId: UUID,
     ): List<GetBlueprintTaskResponse> {
-        return blueprintTaskRepository
-            .findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(projectId, stepId)
-            .map { it.toGetResponse() }
+        return when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintTaskRepository
+                    .findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintStepId(stepId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintTaskRepository
+                    .findAllByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndBlueprintStepId(
+                        scope.projectId,
+                        stepId,
+                    )
+            }
+        }.map { it.toGetResponse() }
     }
 
     @Transactional(readOnly = true)
     fun getBlueprintTaskById(
-        projectId: UUID,
+        scope: BlueprintScope,
         taskId: UUID,
     ): GetBlueprintTaskResponse {
         return blueprintAccessService
-            .getAuthorizedTask(projectId, taskId)
+            .getAuthorizedTask(scope, taskId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintTaskForStep(
-        projectId: UUID,
+        scope: BlueprintScope,
         stepId: UUID,
         request: CreateBlueprintTaskRequest,
     ): CreateBlueprintTaskResponse {
-        val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(projectId, stepId)
+        val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(scope, stepId)
 
         shiftTasksRight(blueprintStep, request)
 
@@ -72,11 +81,11 @@ class BlueprintTaskService(
 
     @Transactional
     fun updateBlueprintTaskById(
-        projectId: UUID,
+        scope: BlueprintScope,
         taskId: UUID,
         request: UpdateBlueprintTaskRequest,
     ): UpdateBlueprintTaskResponse {
-        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(scope, taskId)
 
         validateRevision(blueprintTask, request.revision)
 
@@ -91,11 +100,11 @@ class BlueprintTaskService(
 
     @Transactional
     fun updateBlueprintTaskPositionById(
-        projectId: UUID,
+        scope: BlueprintScope,
         taskId: UUID,
         request: UpdateBlueprintTaskPositionRequest,
     ): List<UpdateBlueprintTaskPositionResponse> {
-        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(scope, taskId)
 
         validateRevision(blueprintTask, request.revision)
 
@@ -109,11 +118,11 @@ class BlueprintTaskService(
 
     @Transactional
     fun deleteBlueprintTaskById(
-        projectId: UUID,
+        scope: BlueprintScope,
         taskId: UUID,
         request: DeleteBlueprintTaskRequest,
     ) {
-        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(projectId, taskId)
+        val blueprintTask = blueprintAccessService.getAuthorizedEditableTask(scope, taskId)
 
         validateRevision(blueprintTask, request.revision)
 

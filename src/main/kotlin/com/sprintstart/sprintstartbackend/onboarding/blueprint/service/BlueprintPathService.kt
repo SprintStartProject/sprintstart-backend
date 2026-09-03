@@ -244,7 +244,7 @@ class BlueprintPathService(
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [x] Make everything tied to a project id
 //  - [] Add a general blueprint path that is seeded on first bootup of SprintStart
-//      - [] make project Id Optional
+//      - [x] make project Id Optional
 //      - [] mostly ai prompt phases
 //  - [] Add an option to make phases be blocked by a previous one or not
 //  - [] Add the Blueprint -> AI Conversion service and controller

@@ -20,6 +20,10 @@ interface BlueprintCheckQuestionRepository : JpaRepository<BlueprintCheckQuestio
 
     fun findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(
         projectId: UUID,
+        phaseId: UUID,
+    ): MutableList<BlueprintCheckQuestion>
+
+    fun findAllByBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintPhaseId(
         blueprintPhaseId: UUID,
     ): MutableList<BlueprintCheckQuestion>
 

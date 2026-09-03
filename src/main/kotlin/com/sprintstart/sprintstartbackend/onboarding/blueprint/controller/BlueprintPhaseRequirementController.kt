@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phaseRequirement.CreateBlueprintPhaseRequirementsRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phaseRequirement.DeleteBlueprintPhaseRequirementsRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseRequirementsResponse
@@ -15,6 +16,38 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
+@RequestMapping("api/v1/onboarding/blueprints/")
+class BlueprintPhaseRequirementAdminController(
+    private val blueprintPhaseRequirementService: BlueprintPhaseRequirementService,
+) {
+    @PostMapping("/phases/{phaseId}/requirements")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun addRequirementList(
+        @PathVariable phaseId: UUID,
+        @RequestBody request: CreateBlueprintPhaseRequirementsRequest,
+    ): CreateBlueprintPhaseRequirementsResponse {
+        return blueprintPhaseRequirementService.createBlueprintPhaseRequirementsForPhase(
+            BlueprintScope.Global,
+            phaseId,
+            request,
+        )
+    }
+
+    @DeleteMapping("/phases/{phaseId}/requirements")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun deleteRequirementList(
+        @PathVariable phaseId: UUID,
+        @RequestBody request: DeleteBlueprintPhaseRequirementsRequest,
+    ): DeleteBlueprintPhaseRequirementsResponse {
+        return blueprintPhaseRequirementService.deleteBlueprintPhaseRequirementsForPhase(
+            BlueprintScope.Global,
+            phaseId,
+            request,
+        )
+    }
+}
+
+@RestController
 @RequestMapping("api/v1/projects/{projectId}/onboarding/blueprints/")
 class BlueprintPhaseRequirementController(
     private val blueprintPhaseRequirementService: BlueprintPhaseRequirementService,
@@ -26,7 +59,11 @@ class BlueprintPhaseRequirementController(
         @PathVariable phaseId: UUID,
         @RequestBody request: CreateBlueprintPhaseRequirementsRequest,
     ): CreateBlueprintPhaseRequirementsResponse {
-        return blueprintPhaseRequirementService.createBlueprintPhaseRequirementsForPhase(projectId, phaseId, request)
+        return blueprintPhaseRequirementService.createBlueprintPhaseRequirementsForPhase(
+            BlueprintScope.Project(projectId),
+            phaseId,
+            request,
+        )
     }
 
     @DeleteMapping("/phases/{phaseId}/requirements")
@@ -36,6 +73,10 @@ class BlueprintPhaseRequirementController(
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequirementsRequest,
     ): DeleteBlueprintPhaseRequirementsResponse {
-        return blueprintPhaseRequirementService.deleteBlueprintPhaseRequirementsForPhase(projectId, phaseId, request)
+        return blueprintPhaseRequirementService.deleteBlueprintPhaseRequirementsForPhase(
+            BlueprintScope.Project(projectId),
+            phaseId,
+            request,
+        )
     }
 }

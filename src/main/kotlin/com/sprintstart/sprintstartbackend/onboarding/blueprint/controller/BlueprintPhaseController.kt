@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.DeleteBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
@@ -22,6 +23,64 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
+@RequestMapping("/api/v1/onboarding/blueprints")
+class BlueprintPhaseAdminController(
+    private val blueprintPhaseService: BlueprintPhaseService,
+) {
+    @GetMapping("/path/{pathId}/phases")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun getBlueprintPhasesForPath(
+        @PathVariable pathId: UUID,
+    ): List<GetBlueprintPhaseResponse> {
+        return blueprintPhaseService.getBlueprintPhasesForPath(BlueprintScope.Global, pathId)
+    }
+
+    @GetMapping("/phases/{phaseId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun getBlueprintPhaseById(
+        @PathVariable phaseId: UUID,
+    ): GetBlueprintPhaseResponse {
+        return blueprintPhaseService.getBlueprintPhaseById(BlueprintScope.Global, phaseId)
+    }
+
+    @PostMapping("/path/{pathId}/phases")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun createBlueprintPhaseForPath(
+        @PathVariable pathId: UUID,
+        @Valid @RequestBody request: CreateBlueprintPhaseRequest,
+    ): CreateBlueprintPhaseResponse {
+        return blueprintPhaseService.createBlueprintPhaseForPath(BlueprintScope.Global, pathId, request)
+    }
+
+    @PutMapping("/phases/{phaseId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun updateBlueprintPhaseById(
+        @PathVariable phaseId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintPhaseRequest,
+    ): UpdateBlueprintPhaseResponse {
+        return blueprintPhaseService.updateBlueprintPhaseById(BlueprintScope.Global, phaseId, request)
+    }
+
+    @PutMapping("/phases/{phaseId}/position")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun updateBlueprintPhasePositionById(
+        @PathVariable phaseId: UUID,
+        @Valid @RequestBody request: UpdateBlueprintPhasePositionRequest,
+    ): List<UpdateBlueprintPhasePositionResponse> {
+        return blueprintPhaseService.updateBlueprintPhasePositionById(BlueprintScope.Global, phaseId, request)
+    }
+
+    @DeleteMapping("/phases/{phaseId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    fun deleteBlueprintPhaseById(
+        @PathVariable phaseId: UUID,
+        @RequestBody request: DeleteBlueprintPhaseRequest,
+    ) {
+        blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Global, phaseId, request)
+    }
+}
+
+@RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintPhaseController(
     private val blueprintPhaseService: BlueprintPhaseService,
@@ -32,7 +91,7 @@ class BlueprintPhaseController(
         @PathVariable projectId: UUID,
         @PathVariable pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
-        return blueprintPhaseService.getBlueprintPhasesForPath(projectId, pathId)
+        return blueprintPhaseService.getBlueprintPhasesForPath(BlueprintScope.Project(projectId), pathId)
     }
 
     @GetMapping("/phases/{phaseId}")
@@ -41,7 +100,7 @@ class BlueprintPhaseController(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
     ): GetBlueprintPhaseResponse {
-        return blueprintPhaseService.getBlueprintPhaseById(projectId, phaseId)
+        return blueprintPhaseService.getBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId)
     }
 
     @PostMapping("/path/{pathId}/phases")
@@ -51,7 +110,7 @@ class BlueprintPhaseController(
         @PathVariable pathId: UUID,
         @Valid @RequestBody request: CreateBlueprintPhaseRequest,
     ): CreateBlueprintPhaseResponse {
-        return blueprintPhaseService.createBlueprintPhaseForPath(projectId, pathId, request)
+        return blueprintPhaseService.createBlueprintPhaseForPath(BlueprintScope.Project(projectId), pathId, request)
     }
 
     @PutMapping("/phases/{phaseId}")
@@ -61,7 +120,7 @@ class BlueprintPhaseController(
         @PathVariable phaseId: UUID,
         @Valid @RequestBody request: UpdateBlueprintPhaseRequest,
     ): UpdateBlueprintPhaseResponse {
-        return blueprintPhaseService.updateBlueprintPhaseById(projectId, phaseId, request)
+        return blueprintPhaseService.updateBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId, request)
     }
 
     @PutMapping("/phases/{phaseId}/position")
@@ -71,7 +130,11 @@ class BlueprintPhaseController(
         @PathVariable phaseId: UUID,
         @Valid @RequestBody request: UpdateBlueprintPhasePositionRequest,
     ): List<UpdateBlueprintPhasePositionResponse> {
-        return blueprintPhaseService.updateBlueprintPhasePositionById(projectId, phaseId, request)
+        return blueprintPhaseService.updateBlueprintPhasePositionById(
+            BlueprintScope.Project(projectId),
+            phaseId,
+            request,
+        )
     }
 
     @DeleteMapping("/phases/{phaseId}")
@@ -81,6 +144,6 @@ class BlueprintPhaseController(
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequest,
     ) {
-        blueprintPhaseService.deleteBlueprintPhaseById(projectId, phaseId, request)
+        blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId, request)
     }
 }
