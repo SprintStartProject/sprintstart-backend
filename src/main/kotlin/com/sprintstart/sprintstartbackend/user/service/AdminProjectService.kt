@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.user.service
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminDetailResponse
@@ -18,6 +19,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -38,6 +40,7 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -102,6 +105,8 @@ class AdminProjectService(
                 description = request.description,
             ),
         )
+
+        eventPublisher.publishEvent(ProjectCreatedEvent(project.id))
 
         return project.toAdminDetailResponse(
             sources = emptyList(),

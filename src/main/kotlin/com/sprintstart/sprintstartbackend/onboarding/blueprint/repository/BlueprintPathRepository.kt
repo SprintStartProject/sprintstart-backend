@@ -70,4 +70,6 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
         nativeQuery = true,
     )
     fun findLatestVersionForEachBlueprintKeyAndProjectIdIsNull(): List<BlueprintPath>
+
+    fun findAllByProjectIdIsNull(): List<BlueprintPath>
 }

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.BlueprintPathDraftFactory
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.BlueprintPathCopyFactory
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
@@ -25,7 +25,7 @@ import java.util.UUID
 class BlueprintPathService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintPathRepository: BlueprintPathRepository,
-    private val blueprintPathDraftFactory: BlueprintPathDraftFactory,
+    private val blueprintPathCopyFactory: BlueprintPathCopyFactory,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintPathOverviewsGroupedByBlueprintKey(
@@ -112,8 +112,15 @@ class BlueprintPathService(
 
         return draft?.toGetResponse()
             ?: blueprintPathRepository
-                .save(blueprintPathDraftFactory.createDraftFrom(activePath))
-                .toGetResponse()
+                .save(
+                    blueprintPathCopyFactory.createCopyFrom(
+                        path = activePath,
+                        blueprintKey = blueprintKey,
+                        projectId = activePath.projectId,
+                        status = BlueprintStatus.DRAFT,
+                        version = activePath.version + 1,
+                    ),
+                ).toGetResponse()
     }
 
     @Transactional
@@ -246,6 +253,7 @@ class BlueprintPathService(
 //  - [] Add a general blueprint path that is seeded on first bootup of SprintStart
 //      - [x] make project Id Optional
 //      - [] mostly ai prompt phases
+//      - [] Add Seeder
 //  - [] Add an option to make phases be blocked by a previous one or not
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service

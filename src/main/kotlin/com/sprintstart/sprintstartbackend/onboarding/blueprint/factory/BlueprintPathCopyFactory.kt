@@ -10,27 +10,34 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import org.springframework.stereotype.Component
+import java.util.UUID
 
 @Component
-class BlueprintPathDraftFactory {
-    fun createDraftFrom(path: BlueprintPath): BlueprintPath {
-        val draft = BlueprintPath(
-            blueprintKey = path.blueprintKey,
-            projectId = path.projectId,
+class BlueprintPathCopyFactory {
+    fun createCopyFrom(
+        path: BlueprintPath,
+        blueprintKey: UUID,
+        projectId: UUID?,
+        status: BlueprintStatus,
+        version: Int,
+    ): BlueprintPath {
+        val copy = BlueprintPath(
+            blueprintKey = blueprintKey,
+            projectId = projectId,
             title = path.title,
             description = path.description,
-            version = path.version + 1,
-            status = BlueprintStatus.DRAFT,
+            version = version,
+            status = status,
         )
 
         path.blueprintPhases
-            .map { copyPhase(it, draft) }
-            .forEach(draft.blueprintPhases::add)
+            .map { copyPhase(it, copy) }
+            .forEach(copy.blueprintPhases::add)
 
-        return draft
+        return copy
     }
 
-    fun copyPhase(
+    private fun copyPhase(
         phase: BlueprintPhase,
         newPath: BlueprintPath,
     ): BlueprintPhase {
@@ -58,7 +65,7 @@ class BlueprintPathDraftFactory {
         return newPhase
     }
 
-    fun copyRequirement(
+    private fun copyRequirement(
         requirement: BlueprintPhaseRequirement,
         newPhase: BlueprintPhase,
     ): BlueprintPhaseRequirement {
@@ -70,7 +77,7 @@ class BlueprintPathDraftFactory {
         )
     }
 
-    fun copyStep(
+    private fun copyStep(
         step: BlueprintStep,
         newPhase: BlueprintPhase,
     ): BlueprintStep {
@@ -96,7 +103,7 @@ class BlueprintPathDraftFactory {
         return newStep
     }
 
-    fun copyTask(
+    private fun copyTask(
         task: BlueprintTask,
         newStep: BlueprintStep,
     ): BlueprintTask {
@@ -108,7 +115,7 @@ class BlueprintPathDraftFactory {
         )
     }
 
-    fun copyResource(
+    private fun copyResource(
         resource: BlueprintResource,
         newStep: BlueprintStep,
     ): BlueprintResource {
@@ -120,7 +127,7 @@ class BlueprintPathDraftFactory {
         )
     }
 
-    fun copyQuestion(
+    private fun copyQuestion(
         question: BlueprintCheckQuestion,
         newPhase: BlueprintPhase,
     ): BlueprintCheckQuestion {
@@ -140,7 +147,7 @@ class BlueprintPathDraftFactory {
         return newQuestion
     }
 
-    fun copyOption(
+    private fun copyOption(
         option: BlueprintCheckOption,
         newQuestion: BlueprintCheckQuestion,
     ): BlueprintCheckOption {
