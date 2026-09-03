@@ -7,6 +7,8 @@ import jakarta.persistence.Entity
 import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
+import jakarta.persistence.JoinTable
+import jakarta.persistence.ManyToMany
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
@@ -52,4 +54,19 @@ data class BlueprintStep(
     val blueprintResources: MutableList<BlueprintResource> = mutableListOf(),
     @Column(nullable = false, columnDefinition = "TEXT")
     var expectedOutcome: String,
+    @ManyToMany
+    @JoinTable(
+        name = "blueprint_step_blockers",
+        joinColumns = [
+            JoinColumn(name = "blueprint_step_id"),
+        ],
+        inverseJoinColumns = [
+            JoinColumn(name = "blocked_by_step_id"),
+        ],
+    )
+    val blockedBy: MutableSet<BlueprintStep> = mutableSetOf(),
+    @Column(name = "graph_x", nullable = true)
+    var graphX: Double? = null,
+    @Column(name = "graph_y", nullable = true)
+    var graphY: Double? = null,
 )

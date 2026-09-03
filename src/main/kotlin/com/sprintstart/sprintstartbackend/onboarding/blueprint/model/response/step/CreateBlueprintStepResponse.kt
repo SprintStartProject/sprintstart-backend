@@ -16,6 +16,9 @@ data class CreateBlueprintStepResponse(
     val aiAssisted: Boolean,
     val estimatedMinutes: Int,
     val expectedOutcome: String,
+    val blockerIds: Set<UUID>,
+    val graphX: Double?,
+    val graphY: Double?,
     val blueprintTasks: List<GetBlueprintTaskResponse>,
     val blueprintResources: List<GetBlueprintResourceResponse>,
 )

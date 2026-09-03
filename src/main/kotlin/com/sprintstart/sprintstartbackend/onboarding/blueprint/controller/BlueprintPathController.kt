@@ -184,7 +184,7 @@ class BlueprintPathController(
 
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    @PostMapping("{blueprintKey}/draft")
+    @PostMapping("/{blueprintKey}/draft")
     fun editBlueprintPathById(
         @PathVariable projectId: UUID,
         @PathVariable blueprintKey: UUID,

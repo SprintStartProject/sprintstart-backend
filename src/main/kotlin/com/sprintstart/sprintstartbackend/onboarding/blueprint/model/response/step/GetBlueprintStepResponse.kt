@@ -18,4 +18,7 @@ data class GetBlueprintStepResponse(
     val expectedOutcome: String,
     val blueprintTasks: List<GetBlueprintTaskResponse>,
     val blueprintResources: List<GetBlueprintResourceResponse>,
+    val blockerIds: Set<UUID>,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
 )

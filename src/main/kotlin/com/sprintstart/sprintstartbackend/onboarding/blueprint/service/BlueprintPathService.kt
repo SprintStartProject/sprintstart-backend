@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.pa
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.GetBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.UpdateBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -130,10 +131,12 @@ class BlueprintPathService(
     ): GetBlueprintPathResponse {
         val draft = blueprintAccessService.getAuthorizedDraftPath(scope, pathId)
 
-        blueprintAccessService
-            .findActiveForAuthorizedBlueprintKey(scope, pathId)
-            ?.let { activePath -> activePath.status = draft.status }
+        val activePath = blueprintAccessService.findActiveForAuthorizedBlueprintKey(
+            scope,
+            draft.blueprintKey,
+        ) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No active path found")
 
+        activePath.status = BlueprintStatus.ARCHIVED
         draft.status = BlueprintStatus.ACTIVE
 
         return draft.toGetResponse()
@@ -254,12 +257,13 @@ class BlueprintPathService(
 //      - [x] make project Id Optional
 //      - [] mostly ai prompt phases
 //      - [] Add Seeder
-//  - [] Add an option to make phases be blocked by a previous one or not
+//  - [x] Add an option to make phases be blocked by a previous one or not
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
 //      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
 //  - [x] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
+//  - [] Add Tests
 
 // Backlog:
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)

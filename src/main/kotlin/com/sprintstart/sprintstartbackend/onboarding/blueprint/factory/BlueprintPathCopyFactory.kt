@@ -29,10 +29,21 @@ class BlueprintPathCopyFactory {
             version = version,
             status = status,
         )
+        val newStepsByOldId = mutableMapOf<UUID, BlueprintStep>()
 
         path.blueprintPhases
-            .map { copyPhase(it, copy) }
+            .map { copyPhase(it, copy, newStepsByOldId) }
             .forEach(copy.blueprintPhases::add)
+
+        path.blueprintPhases
+            .flatMap { it.blueprintSteps }
+            .forEach { oldStep ->
+                val newStep = newStepsByOldId.getValue(oldStep.id)
+
+                oldStep.blockedBy.forEach { oldBlocker ->
+                    newStep.blockedBy.add(newStepsByOldId.getValue(oldBlocker.id))
+                }
+            }
 
         return copy
     }
@@ -40,6 +51,7 @@ class BlueprintPathCopyFactory {
     private fun copyPhase(
         phase: BlueprintPhase,
         newPath: BlueprintPath,
+        newStepsByOldId: MutableMap<UUID, BlueprintStep>,
     ): BlueprintPhase {
         val newPhase = BlueprintPhase(
             blueprintPath = newPath,
@@ -55,7 +67,7 @@ class BlueprintPathCopyFactory {
             .forEach(newPhase.requirements::add)
 
         phase.blueprintSteps
-            .map { copyStep(it, newPhase) }
+            .map { copyStep(it, newPhase, newStepsByOldId) }
             .forEach(newPhase.blueprintSteps::add)
 
         phase.blueprintCheckQuestions
@@ -80,6 +92,7 @@ class BlueprintPathCopyFactory {
     private fun copyStep(
         step: BlueprintStep,
         newPhase: BlueprintPhase,
+        newStepsByOldId: MutableMap<UUID, BlueprintStep>,
     ): BlueprintStep {
         val newStep = BlueprintStep(
             blueprintPhase = newPhase,
@@ -90,7 +103,11 @@ class BlueprintPathCopyFactory {
             aiAssisted = step.aiAssisted,
             estimatedMinutes = step.estimatedMinutes,
             expectedOutcome = step.expectedOutcome,
+            graphX = step.graphX,
+            graphY = step.graphY,
         )
+
+        newStepsByOldId[step.id] = newStep
 
         step.blueprintTasks
             .map { copyTask(it, newStep) }

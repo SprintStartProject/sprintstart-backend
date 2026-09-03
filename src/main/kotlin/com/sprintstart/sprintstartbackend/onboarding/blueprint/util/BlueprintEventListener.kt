@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.onboarding.blueprint.listener
+package com.sprintstart.sprintstartbackend.onboarding.blueprint.util
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.BlueprintPathCopyFactory
