@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.artifacts.service
 
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ArtifactDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.ArtifactDto
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AiArtifactSummaryStreamMessage
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactSummary
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactSummaryCitation

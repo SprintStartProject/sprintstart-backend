@@ -3,23 +3,53 @@ package com.sprintstart.sprintstartbackend.connectors.github.service
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.time.Instant
+import java.util.Optional
 import java.util.UUID
 
 class GithubRepositoryApiServiceTest {
-    private val repository = mockk<GithubRepositoryConnectionRepository>()
-    private val service = GithubRepositoryApiService(repository)
+    private val githubRepositoryConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
+    private val service = GithubRepositoryApiService(githubRepositoryConnectionRepository)
+
+    private val repositoryId = UUID.randomUUID()
+    private val repository = GithubRepositoryConnection(
+        id = repositoryId,
+        owner = "owner",
+        name = "repo",
+        user = GithubUser(id = GithubUserPat("auth-id", "token-name"), token = "test-token"),
+    )
+
+    @Test
+    fun `getRepositoryProjectIdsById returns the connection's project ids`() {
+        val projectIds = setOf(UUID.randomUUID(), UUID.randomUUID())
+        repository.projectIdsInternal.addAll(projectIds)
+        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(repository)
+
+        assertThat(service.getRepositoryProjectIdsById(repositoryId)).isEqualTo(projectIds)
+    }
+
+    @Test
+    fun `getRepositoryProjectIdsById throws when the repository connection does not exist`() {
+        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.empty()
+
+        assertThrows<NoSuchElementException> {
+            service.getRepositoryProjectIdsById(repositoryId)
+        }
+    }
 
     @Test
     fun `getRepositoryIdByOwnerAndName returns the connection id`() {
         val repositoryId = UUID.randomUUID()
-        every { repository.findByOwnerAndName("owner", "repo") } returns
+        every { githubRepositoryConnectionRepository.findByOwnerAndName("owner", "repo") } returns
             mockk { every { id } returns repositoryId }
 
         assertThat(service.getRepositoryIdByOwnerAndName("owner", "repo")).isEqualTo(repositoryId)
@@ -27,7 +57,7 @@ class GithubRepositoryApiServiceTest {
 
     @Test
     fun `getRepositoryIdByOwnerAndName returns null when no connection exists`() {
-        every { repository.findByOwnerAndName("owner", "repo") } returns null
+        every { githubRepositoryConnectionRepository.findByOwnerAndName("owner", "repo") } returns null
 
         assertThat(service.getRepositoryIdByOwnerAndName("owner", "repo")).isNull()
     }
@@ -37,7 +67,7 @@ class GithubRepositoryApiServiceTest {
         val projectId = UUID.randomUUID()
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
-        every { repository.findAllByProjectId(projectId) } returns listOf(
+        every { githubRepositoryConnectionRepository.findAllByProjectId(projectId) } returns listOf(
             mockk { every { id } returns first },
             mockk { every { id } returns second },
         )
@@ -70,7 +100,7 @@ class GithubRepositoryApiServiceTest {
             connectionState = ConnectionState.UP_TO_DATE,
             snapshot = null,
         )
-        every { repository.findAll() } returns listOf(connected, disabled)
+        every { githubRepositoryConnectionRepository.findAll() } returns listOf(connected, disabled)
 
         val result = service.getSourceInstances()
 
@@ -98,7 +128,7 @@ class GithubRepositoryApiServiceTest {
             connectionState = ConnectionState.OUT_OF_DATE,
             snapshot = null,
         )
-        every { repository.findAllByProjectId(projectId) } returns listOf(connection)
+        every { githubRepositoryConnectionRepository.findAllByProjectId(projectId) } returns listOf(connection)
 
         val result = service.getSourceInstances(projectId).single()
 
@@ -113,9 +143,9 @@ class GithubRepositoryApiServiceTest {
         val secondProjects = mutableSetOf(projectId)
         val first = mockk<GithubRepositoryConnection> { every { projectIdsInternal } returns firstProjects }
         val second = mockk<GithubRepositoryConnection> { every { projectIdsInternal } returns secondProjects }
-        every { repository.findAllByProjectId(projectId) } returns listOf(first, second)
+        every { githubRepositoryConnectionRepository.findAllByProjectId(projectId) } returns listOf(first, second)
         val saved = slot<List<GithubRepositoryConnection>>()
-        every { repository.saveAll(capture(saved)) } answers { firstArg() }
+        every { githubRepositoryConnectionRepository.saveAll(capture(saved)) } answers { firstArg() }
 
         service.removeProjectFromAllRepositories(projectId)
 

@@ -53,6 +53,14 @@ class JiraArtifactProviderService(
                 existing.content = command.description
                 existing.lastChangedAt = Instant.now()
             }
+            // Refreshed unconditionally, like GitHub's: a ticket moving to Done shifts no text, so
+            // gating this on the content check above would leave finished work in the starter-work
+            // pool until somebody happened to edit its description.
+            existing.state = command.toState()
+            // Refreshed with the state, and for the same reason: a ticket being picked up or
+            // handed back moves no text either, and starter work that somebody has since taken
+            // must stop being offered.
+            existing.hasAssignee = command.toHasAssignee()
             existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
 
             if (!linked && !contentChanged) return
@@ -79,6 +87,8 @@ class JiraArtifactProviderService(
             content = command.description,
             mime = null,
             language = null,
+            state = command.toState(),
+            hasAssignee = command.toHasAssignee(),
             projectIdsInternal = command.projectIds.toMutableSet(),
             ingestionRun = ingestionRun,
             createdAtSource = command.createdAt,

@@ -866,7 +866,12 @@ class GithubClientTest {
             """.trimIndent(),
         )
 
-    private fun singlePrResponse(prNumber: Int) = MockResponse()
+    private fun singlePrResponse(
+        prNumber: Int,
+        checkState: String? = "SUCCESS",
+        files: List<String> = listOf("src/Main.kt"),
+        commitMessages: List<String> = listOf("fix: bug"),
+    ) = MockResponse()
         .setResponseCode(200)
         .setHeader("Content-Type", "application/json")
         .setBody(
@@ -886,7 +891,14 @@ class GithubClientTest {
                             "labels": { "nodes": [] },
                             "reviews": { "nodes": [] },
                             "comments": { "nodes": [] },
-                            "reviewThreads": { "nodes": [] }
+                            "reviewThreads": { "nodes": [] },
+                            "statusCheckRollup": ${if (checkState != null) """{ "state": "$checkState" }""" else "null"},
+                            "files": { "nodes": [${files.joinToString(",") { """{ "path": "$it" }""" }}] },
+                            "commits": {
+                                "nodes": [
+                                    ${commitMessages.joinToString(",") { """{ "commit": { "message": "$it" } }""" }}
+                                ]
+                            }
                         }
                     }
                 }

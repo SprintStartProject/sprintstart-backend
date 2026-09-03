@@ -39,7 +39,9 @@ class GithubArtifactProviderService(
      * Business rules:
      * - commits are idempotent by `sourceId`; an already-known commit is ignored
      * - files are updated only when the incoming content hash changes
-     * - issues are updated only when the computed issue hash changes
+     * - issues are updated only when the computed issue hash changes; `state`/`labels` are the
+     *   exception -- they refresh on every fetch regardless of the hash, since a label or
+     *   open/closed change doesn't move title/body
      * - pull requests are always treated as mutable and overwrite title/body on re-fetch
      *
      * Counter side effects happen inside the same transaction:
@@ -86,6 +88,11 @@ class GithubArtifactProviderService(
         runId: UUID,
     ) {
         val linked = artifact.addProjectIds(projectIds)
+        // Backfills rows ingested before the column existed. Not part of the AI payload, so it
+        // deliberately does not mark the artifact for re-embedding.
+        if (artifact.authorLogin == null) {
+            artifact.authorLogin = command.authorLogin
+        }
         val contentChanged = applyContentChange(artifact, command)
 
         if (!linked && !contentChanged) return
@@ -123,7 +130,15 @@ class GithubArtifactProviderService(
                 }
             }
 
+            // State and labels are refreshed on every fetch, regardless of the hash: an issue being
+            // closed or re-labeled doesn't move its title or body, so gating them on hash equality
+            // would silently miss exactly the updates they exist for. Neither counts as a content
+            // change -- they leave `lastChangedAt` and the run's update count alone.
             ArtifactType.ISSUE -> {
+                artifact.state = command.state
+                artifact.labels.clear()
+                artifact.labels.addAll(command.labels)
+
                 if (artifact.hash == command.hash) {
                     false
                 } else {
@@ -140,6 +155,17 @@ class GithubArtifactProviderService(
             // requests to be embedded again, and would make `lastChangedAt` move on a sync that
             // changed nothing.
             ArtifactType.PULL_REQUEST -> {
+                // Refreshed on every fetch, for the same reason as an issue's state: a pull request
+                // being merged or reviewed moves none of its text.
+                artifact.state = command.state
+                artifact.mergedAtSource = command.mergedAtSource
+                artifact.firstResponseAtSource = command.firstResponseAtSource
+                artifact.changesRequestedCount = command.changesRequestedCount
+                // Backfills rows written before these were persisted; a source creation time never changes.
+                if (artifact.createdAtSource == null) {
+                    artifact.createdAtSource = command.createdAtSource
+                }
+
                 if (artifact.title == command.title && artifact.content == command.bodyText) {
                     false
                 } else {
@@ -148,6 +174,7 @@ class GithubArtifactProviderService(
                     true
                 }
             }
+            return
         }
 
     /**
@@ -172,12 +199,18 @@ class GithubArtifactProviderService(
             content = command.bodyText,
             mime = command.mime,
             language = command.language,
+            state = command.state,
+            labels = command.labels.toMutableList(),
             projectIdsInternal = projectIds,
             ingestionRun = ingestionRun,
             hash = command.hash,
             metadata = artifactMetadataJsonMapper.toJson(command.metadata),
-            createdAtSource = null,
-            updatedAtSource = null,
+            createdAtSource = command.createdAtSource,
+            updatedAtSource = command.updatedAtSource,
+            authorLogin = command.authorLogin,
+            mergedAtSource = command.mergedAtSource,
+            firstResponseAtSource = command.firstResponseAtSource,
+            changesRequestedCount = command.changesRequestedCount,
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++

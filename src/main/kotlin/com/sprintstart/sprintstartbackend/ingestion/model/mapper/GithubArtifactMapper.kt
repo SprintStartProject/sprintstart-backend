@@ -22,6 +22,9 @@ import java.time.Instant
 
 private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 
+/** GitHub's review state for "please change this before I approve it". */
+private const val CHANGES_REQUESTED = "CHANGES_REQUESTED"
+
 /**
  * Translates GitHub domain events into canonical artifact commands.
  *
@@ -36,6 +39,10 @@ class GithubArtifactMapper {
      *
      * The commit title is intentionally shortened to keep list views compact while preserving the
      * full message in `bodyText`.
+     *
+     * `authorLogin` is deliberately left null: commits are parsed from `git log --pretty=%an`, so
+     * `event.author` is a git author *name*, not a GitHub login. Storing it as one would attribute
+     * a commit to whoever happens to hold that login.
      */
     fun toCommand(event: GithubCommitFetchedEvent): GithubArtifactCommand {
         return GithubArtifactCommand(
@@ -118,7 +125,10 @@ class GithubArtifactMapper {
      * Maps a fetched GitHub issue and computes a hash from the visible issue content.
      *
      * The hash currently tracks title and body, which is the change signal used by
-     * `GithubArtifactProviderService` for issue updates.
+     * `GithubArtifactProviderService` for issue updates. `state`/`labels` are intentionally
+     * *not* part of that hash -- a label or open/closed change alone must still be refreshed on
+     * every fetch, so `GithubArtifactProviderService` applies them unconditionally rather than
+     * gating them on hash equality.
      * @throws java.time.format.DateTimeParseException when the issue creation timestamp is malformed.
      */
     fun toCommand(event: GithubIssueFetchedEvent): GithubArtifactCommand {
@@ -154,6 +164,9 @@ class GithubArtifactMapper {
                     name = event.repositoryName,
                 ),
             ),
+            state = event.state,
+            labels = event.labels,
+            authorLogin = event.author?.lowercase(),
         )
     }
 
@@ -190,7 +203,56 @@ class GithubArtifactMapper {
                     name = event.repositoryName,
                 ),
             ),
+            // GitHub reports MERGED as a state and the merge time separately; both are kept,
+            // because "closed without merging" and "merged" are different outcomes for a hire.
+            state = event.state,
+            authorLogin = event.author?.lowercase(),
+            mergedAtSource = event.mergedAt?.let(Instant::parse),
+            firstResponseAtSource = firstResponseAt(event),
+            changesRequestedCount = changesRequestedCount(event),
         )
+    }
+
+    /**
+     * How many times somebody asked the author to change this pull request.
+     *
+     * Self-reviews are excluded for the same reason they are excluded from the first response: an
+     * author asking themselves for changes is not the project sending work back.
+     */
+    private fun changesRequestedCount(event: GithubPullRequestFetchedEvent): Int {
+        val author = event.author?.lowercase()
+        return event.reviews
+            .orEmpty()
+            .count { it.author?.lowercase() != author && it.state.equals(CHANGES_REQUESTED, ignoreCase = true) }
+    }
+
+    /**
+     * The earliest response to a pull request from anyone other than its author.
+     *
+     * Reviews and plain comments both count. A newcomer waiting on their first pull request does
+     * not experience the two differently, and treating only reviews as a response would report a
+     * long silence on a PR somebody answered in a comment within the hour.
+     *
+     * Self-responses are excluded: an author commenting on their own pull request is not the
+     * project responding to them. Reviews GitHub reports without a timestamp are skipped rather
+     * than guessed at.
+     */
+    private fun firstResponseAt(event: GithubPullRequestFetchedEvent): Instant? {
+        val author = event.author?.lowercase()
+
+        val reviewTimes = event.reviews
+            .orEmpty()
+            .filter { it.author?.lowercase() != author }
+            .mapNotNull { it.submittedAt }
+
+        val commentTimes = event.comments
+            .orEmpty()
+            .filter { it.author?.lowercase() != author }
+            .map { it.createdAt }
+
+        return (reviewTimes + commentTimes)
+            .mapNotNull { runCatching { Instant.parse(it) }.getOrNull() }
+            .minOrNull()
     }
 
     fun toCommand(event: GithubOrgMetadataFetchedEvent): GithubArtifactCommand {

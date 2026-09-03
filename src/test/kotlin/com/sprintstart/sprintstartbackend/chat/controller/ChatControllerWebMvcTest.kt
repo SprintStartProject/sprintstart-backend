@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -23,6 +24,8 @@ import io.mockk.verify
 import jakarta.validation.ConstraintViolationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.json.Json
+import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.containsString
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -32,20 +35,25 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.crypto.keygen.KeyGenerators.string
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.server.ResponseStatusException
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -84,6 +92,9 @@ class ChatControllerWebMvcTest(
     private lateinit var chatService: ChatService
 
     @MockkBean
+    private lateinit var chatPromptService: ChatPromptService
+
+    @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
     /**
@@ -94,6 +105,7 @@ class ChatControllerWebMvcTest(
     private lateinit var projectAuth: ProjectAuthorization
 
     private val chatId: UUID = UUID.randomUUID()
+    private val messageId: UUID = UUID.randomUUID()
     private val userId: UUID = UUID.randomUUID()
     private val authId = "auth-user"
     private val projectId: UUID = UUID.randomUUID()
@@ -225,7 +237,7 @@ class ChatControllerWebMvcTest(
             every {
                 chatService.getChatForCurrentUser(authId, chatId, request)
             } returns GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
@@ -244,7 +256,7 @@ class ChatControllerWebMvcTest(
             every {
                 chatService.getChatForCurrentUser(authId, chatId, request)
             } returns GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
 
             mockMvc
@@ -398,6 +410,181 @@ class ChatControllerWebMvcTest(
     }
 
     @Nested
+    inner class DeleteChat {
+        @Test
+        fun `returns 204 when admin deletes chat`() {
+            every { chatService.deleteChat(chatId) } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/$chatId") {
+                    with(adminJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteChat(chatId)
+            }
+        }
+
+        @Test
+        fun `returns 403 when normal user tries to delete chat`() {
+            mockMvc
+                .delete("/api/v1/chats/$chatId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChat(any())
+            }
+        }
+
+        @Test
+        fun `returns 204 when current user deletes own chat`() {
+            every {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+        }
+
+        @Test
+        fun `returns 401 when current user endpoint is called without authentication`() {
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId")
+                .andExpect {
+                    status { isUnauthorized() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChatForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 403 when current user endpoint is called with wrong role`() {
+            mockMvc
+                .delete("/api/v1/chats/me/$chatId") {
+                    with(noUserRoleJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteChatForCurrentUser(any(), any())
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMessage {
+        @Test
+        fun `returns 204 when message is deleted successfully`() {
+            every {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }
+        }
+
+        @Test
+        fun `returns 401 when not authenticated`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId")
+                .andExpect {
+                    status { isUnauthorized() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteMessageForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 403 when authenticated with wrong role`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(noUserRoleJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+
+            verify(exactly = 0) {
+                chatService.deleteMessageForCurrentUser(any(), any())
+            }
+        }
+
+        @Test
+        fun `returns 404 when message does not exist`() {
+            every {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            } throws ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Message not found",
+            )
+
+            mockMvc
+                .delete("/api/v1/chats/messages/me/$messageId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isNotFound() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }
+        }
+
+        @Test
+        fun `explicit delete endpoint rejects normal user`() {
+            mockMvc
+                .delete("/api/v1/chats/messages/$messageId") {
+                    with(userJwt)
+                }.andExpect {
+                    status { isForbidden() }
+                }
+        }
+
+        @Test
+        fun `explicit delete endpoint allows admin`() {
+            every {
+                chatService.deleteMessage(messageId)
+            } returns Unit
+
+            mockMvc
+                .delete("/api/v1/chats/messages/$messageId") {
+                    with(adminJwt)
+                }.andExpect {
+                    status { isNoContent() }
+                }
+
+            verify(exactly = 1) {
+                chatService.deleteMessage(messageId)
+            }
+        }
+    }
+
+    @Nested
     inner class Prompt {
         @Test
         fun `returns 200 when valid msg`() {
@@ -406,7 +593,9 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -434,9 +623,10 @@ class ChatControllerWebMvcTest(
         }
 
         @Test
-        fun `forwards tool_use citation and error events untouched`() {
+        fun `forwards tool_use reasoning citation and error events untouched`() {
             val messages = listOf(
                 AiStreamMessage(type = "tool_use", name = "retrieve", kind = "tool"),
+                AiStreamMessage(type = "reasoning", reasoning = "I am checking the sources..."),
                 AiStreamMessage("token", "The main blocker"),
                 AiStreamMessage(
                     type = "citation",
@@ -445,7 +635,9 @@ class ChatControllerWebMvcTest(
                 ),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -468,8 +660,10 @@ class ChatControllerWebMvcTest(
             val expected = messages.joinToString("") { Json.encodeToString(it) }
 
             assertEquals(expected, actual)
+
             // Wire field names must mirror the AI service contract for the frontend.
             assert(actual.contains("""{"type":"tool_use","name":"retrieve","kind":"tool"}"""))
+            assert(actual.contains("""{"type":"reasoning","reasoning":"I am checking the sources..."}"""))
             assert(actual.contains(""""artifact_id":"artifact-1""""))
             assert(actual.contains(""""start_line":12"""))
         }
@@ -589,7 +783,9 @@ class ChatControllerWebMvcTest(
                 AiStreamMessage("done"),
             )
 
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(*messages.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(*messages.toTypedArray())
 
             val asyncResult = mockMvc
                 .perform(
@@ -616,7 +812,7 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.promptForCurrentUser(
+                chatPromptService.promptForCurrentUser(
                     authId,
                     match {
                         it.filters?.sourceSystems == listOf(SourceSystem.GITHUB) &&
@@ -628,7 +824,9 @@ class ChatControllerWebMvcTest(
 
         @Test
         fun `accepts prompt without filters`() {
-            coEvery { chatService.promptForCurrentUser(authId, any()) } returns flowOf(AiStreamMessage("done"))
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(AiStreamMessage("done"))
 
             val asyncResult = mockMvc
                 .perform(
@@ -644,11 +842,87 @@ class ChatControllerWebMvcTest(
                 .andExpect(status().isOk)
 
             coVerify {
-                chatService.promptForCurrentUser(
+                chatPromptService.promptForCurrentUser(
                     authId,
                     match { it.filters == null },
                 )
             }
+        }
+
+        @Test
+        fun `forwards AI error event after streamed token and completes stream`() {
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(
+                AiStreamMessage(
+                    type = "token",
+                    content = "Partial answer",
+                ),
+                AiStreamMessage(
+                    type = "error",
+                    message = "An unexpected error occurred",
+                ),
+            )
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/me/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(
+                    content().string(
+                        allOf(
+                            containsString("\"type\":\"token\""),
+                            containsString("\"content\":\"Partial answer\""),
+                            containsString("\"type\":\"error\""),
+                            containsString("\"message\":\"An unexpected error occurred\""),
+                        ),
+                    ),
+                )
+        }
+
+        @Test
+        fun `forwards AI error event when AI service fails before stream starts`() {
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, any())
+            } returns flowOf(
+                AiStreamMessage(
+                    type = "error",
+                    message = "AI service returned status 500",
+                ),
+            )
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/chats/me/prompt")
+                        .with(userJwt)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""{"chatId": "$chatId", "msg": "Hello"}"""),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(
+                    content().string(
+                        allOf(
+                            containsString("\"type\":\"error\""),
+                            containsString("\"message\":\"AI service returned status 500\""),
+                        ),
+                    ),
+                )
         }
     }
 }
