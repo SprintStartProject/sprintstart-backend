@@ -55,4 +55,11 @@ interface IngestionRunRepository :
     fun findWithAiSyncArtifactIdsById(
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
+
+    /**
+     * Returns all ingestion runs with the
+     * [com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus.RUNNING].
+     */
+    @Query("SELECT r FROM IngestionRun r WHERE r.status = IngestionRunStatus.RUNNING")
+    fun findAllRunning(): List<IngestionRun>
 }

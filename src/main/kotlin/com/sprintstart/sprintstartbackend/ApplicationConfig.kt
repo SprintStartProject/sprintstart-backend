@@ -126,14 +126,11 @@ data class AiConfig(
  * sprintstart:
  *     github:
  *         base-url: ...
- *         cron: ...
  * ´´´
  */
 data class GithubConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
-    @get:JsonProperty("cron")
-    val cron: String,
 )
 
 data class KeycloakConfig(
