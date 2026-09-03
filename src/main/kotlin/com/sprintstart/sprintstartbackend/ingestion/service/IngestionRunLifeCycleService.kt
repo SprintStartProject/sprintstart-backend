@@ -183,6 +183,23 @@ class IngestionRunLifeCycleService(
             run.aiSyncFailureReason = reason.truncateToDbLimit()
         }
     }
+
+    /**
+     * Records that an ingestion run failed on the backend site, so before the ai sync even happened. Status is changed
+     * to failed, finished at is set to now, and reason is applied.
+     *
+     * @param run The ingestion run to set failed.
+     * @param reason The reason why that run failed.
+     */
+    @Tracked("Marking ingestion run failed")
+    fun markSyncFailed(run: IngestionRun, reason: String?) {
+        run.status = IngestionRunStatus.FAILED
+        run.finishedAt = Instant.now()
+        run.failureReason = reason
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+
+        ingestionRunRepository.save(run)
+    }
 }
 
 private const val FAILURE_REASON_MAX_LENGTH = 255
