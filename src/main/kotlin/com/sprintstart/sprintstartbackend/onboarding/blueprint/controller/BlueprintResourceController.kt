@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.re
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.GetBlueprintResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.resource.UpdateBlueprintResourceResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintResourceService
+import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
@@ -24,6 +26,7 @@ import java.util.UUID
 class BlueprintResourceAdminController(
     private val blueprintResourceService: BlueprintResourceService,
 ) {
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/step/{stepId}/resources")
     fun getBlueprintResourcesForStep(
@@ -32,6 +35,7 @@ class BlueprintResourceAdminController(
         return blueprintResourceService.getBlueprintResourcesForStep(BlueprintScope.Global, stepId)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/resources/{resourceId}")
     fun getBlueprintResource(
@@ -40,6 +44,7 @@ class BlueprintResourceAdminController(
         return blueprintResourceService.getBlueprintResourceById(BlueprintScope.Global, resourceId)
     }
 
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/step/{stepId}/resources")
     fun createBlueprintResource(
@@ -49,6 +54,7 @@ class BlueprintResourceAdminController(
         return blueprintResourceService.createBlueprintResourceForStep(BlueprintScope.Global, stepId, request)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/resources/{resourceId}")
     fun updateBlueprintResourceById(
@@ -58,6 +64,7 @@ class BlueprintResourceAdminController(
         return blueprintResourceService.updateBlueprintResourceById(BlueprintScope.Global, resourceId, request)
     }
 
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/resources/{resourceId}")
     fun deleteBlueprintResourceById(
@@ -73,6 +80,7 @@ class BlueprintResourceAdminController(
 class BlueprintResourceController(
     private val blueprintResourceService: BlueprintResourceService,
 ) {
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @GetMapping("/step/{stepId}/resources")
     fun getBlueprintResourcesForStep(
@@ -82,6 +90,7 @@ class BlueprintResourceController(
         return blueprintResourceService.getBlueprintResourcesForStep(BlueprintScope.Project(projectId), stepId)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @GetMapping("/resources/{resourceId}")
     fun getBlueprintResource(
@@ -94,6 +103,7 @@ class BlueprintResourceController(
         )
     }
 
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @PostMapping("/step/{stepId}/resources")
     fun createBlueprintResource(
@@ -108,6 +118,7 @@ class BlueprintResourceController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @PutMapping("/resources/{resourceId}")
     fun updateBlueprintResourceById(
@@ -122,6 +133,7 @@ class BlueprintResourceController(
         )
     }
 
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     @DeleteMapping("/resources/{resourceId}")
     fun deleteBlueprintResourceById(

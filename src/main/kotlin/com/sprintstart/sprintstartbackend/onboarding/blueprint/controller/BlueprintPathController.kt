@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.pa
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.GetBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.UpdateBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintPathService
+import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
@@ -24,12 +26,14 @@ import java.util.UUID
 class BlueprintPathAdminController(
     private val blueprintPathService: BlueprintPathService,
 ) {
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     fun getBlueprints(): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathService.getBlueprintPathOverviewsGroupedByBlueprintKey(BlueprintScope.Global)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{blueprintKey}")
     fun getBlueprintHistoryByBlueprintKey(
@@ -38,6 +42,7 @@ class BlueprintPathAdminController(
         return blueprintPathService.getBlueprintPathHistoryByBlueprintKey(BlueprintScope.Global, blueprintKey)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/paths/{pathId}")
     fun getBlueprintPathById(
@@ -46,6 +51,7 @@ class BlueprintPathAdminController(
         return blueprintPathService.getBlueprintPathById(BlueprintScope.Global, pathId)
     }
 
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/paths")
     fun createBlueprintPath(
@@ -54,6 +60,7 @@ class BlueprintPathAdminController(
         return blueprintPathService.createBlueprintPath(BlueprintScope.Global, request)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("{blueprintKey}/draft")
     fun editBlueprintPathById(
@@ -62,6 +69,7 @@ class BlueprintPathAdminController(
         return blueprintPathService.openBlueprintPathDraftByBlueprintKey(BlueprintScope.Global, blueprintKey)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/paths/{pathId}/publish")
     fun publishBlueprintPathById(
@@ -70,6 +78,7 @@ class BlueprintPathAdminController(
         return blueprintPathService.publishBlueprintPathDraftById(BlueprintScope.Global, pathId)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{blueprintKey}/rollBack/{rollbackVersion}")
     fun rollBackBlueprintPathByBlueprintKey(
@@ -83,6 +92,7 @@ class BlueprintPathAdminController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/paths/{pathId}")
     fun updateBlueprintPathById(
@@ -93,6 +103,7 @@ class BlueprintPathAdminController(
     }
 
     // any unpublished drafts are deleted
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{blueprintKey}/archive")
     fun archiveBlueprintPathById(
@@ -101,6 +112,7 @@ class BlueprintPathAdminController(
         blueprintPathService.archiveBlueprintPathByBlueprintKey(BlueprintScope.Global, blueprintKey)
     }
 
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/paths/{pathId}")
     fun deleteBlueprintDraftById(
@@ -116,6 +128,7 @@ class BlueprintPathController(
     private val blueprintPathService: BlueprintPathService,
 ) {
     // This should return based on the blueprintKey
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping
     fun getBlueprints(
@@ -126,6 +139,7 @@ class BlueprintPathController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/{blueprintKey}")
     fun getBlueprintHistoryByBlueprintKey(
@@ -139,6 +153,7 @@ class BlueprintPathController(
     }
 
     // This should probably not be used
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/paths")
     fun getBlueprintPaths(
@@ -147,6 +162,7 @@ class BlueprintPathController(
         return blueprintPathService.getBlueprintPathOverviewsForProjectId(projectId)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/paths/{pathId}")
     fun getBlueprintPathById(
@@ -156,6 +172,7 @@ class BlueprintPathController(
         return blueprintPathService.getBlueprintPathById(BlueprintScope.Project(projectId), pathId)
     }
 
+    @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/paths")
     fun createBlueprintPath(
@@ -165,6 +182,7 @@ class BlueprintPathController(
         return blueprintPathService.createBlueprintPath(BlueprintScope.Project(projectId), request)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("{blueprintKey}/draft")
     fun editBlueprintPathById(
@@ -177,6 +195,7 @@ class BlueprintPathController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/paths/{pathId}/publish")
     fun publishBlueprintPathById(
@@ -186,6 +205,7 @@ class BlueprintPathController(
         return blueprintPathService.publishBlueprintPathDraftById(BlueprintScope.Project(projectId), pathId)
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/{blueprintKey}/rollBack/{rollbackVersion}")
     fun rollBackBlueprintPathByBlueprintKey(
@@ -200,6 +220,7 @@ class BlueprintPathController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/paths/{pathId}")
     fun updateBlueprintPathById(
@@ -211,6 +232,7 @@ class BlueprintPathController(
     }
 
     // any unpublished drafts are deleted
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/{blueprintKey}/archive")
     fun archiveBlueprintPathById(
@@ -220,6 +242,7 @@ class BlueprintPathController(
         blueprintPathService.archiveBlueprintPathByBlueprintKey(BlueprintScope.Project(projectId), blueprintKey)
     }
 
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @DeleteMapping("/paths/{pathId}")
     fun deleteBlueprintDraftById(

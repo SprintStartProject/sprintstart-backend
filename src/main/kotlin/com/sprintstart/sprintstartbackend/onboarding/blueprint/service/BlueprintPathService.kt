@@ -250,7 +250,7 @@ class BlueprintPathService(
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
 //      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
-//  - [] Add @PreAutherize and @ResponseStatus to every controller function
+//  - [x] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
 
 // Backlog:

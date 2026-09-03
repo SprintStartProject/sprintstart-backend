@@ -6,12 +6,14 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.pha
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseRequirementsResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.DeleteBlueprintPhaseRequirementsResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintPhaseRequirementService
+import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
@@ -20,8 +22,9 @@ import java.util.UUID
 class BlueprintPhaseRequirementAdminController(
     private val blueprintPhaseRequirementService: BlueprintPhaseRequirementService,
 ) {
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/phases/{phaseId}/requirements")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun addRequirementList(
         @PathVariable phaseId: UUID,
         @RequestBody request: CreateBlueprintPhaseRequirementsRequest,
@@ -33,8 +36,9 @@ class BlueprintPhaseRequirementAdminController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/phases/{phaseId}/requirements")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deleteRequirementList(
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequirementsRequest,
@@ -52,8 +56,9 @@ class BlueprintPhaseRequirementAdminController(
 class BlueprintPhaseRequirementController(
     private val blueprintPhaseRequirementService: BlueprintPhaseRequirementService,
 ) {
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @PostMapping("/phases/{phaseId}/requirements")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun addRequirementList(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
@@ -66,8 +71,9 @@ class BlueprintPhaseRequirementController(
         )
     }
 
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @DeleteMapping("/phases/{phaseId}/requirements")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deleteRequirementList(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,

@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.st
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintStepService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -29,6 +30,7 @@ class BlueprintStepAdminController(
     private val blueprintStepService: BlueprintStepService,
 ) {
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/phases/{phaseId}/steps")
     fun getBlueprintStepsForPhase(
         @PathVariable phaseId: UUID,
@@ -37,6 +39,7 @@ class BlueprintStepAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/steps/{stepId}")
     fun getBlueprintStepById(
         @PathVariable stepId: UUID,
@@ -45,6 +48,7 @@ class BlueprintStepAdminController(
     }
 
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/phases/{phaseId}/steps")
     fun createBlueprintStepForPhase(
         @PathVariable phaseId: UUID,
@@ -54,6 +58,7 @@ class BlueprintStepAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/steps/{stepId}")
     fun updateBlueprintStepById(
         @PathVariable stepId: UUID,
@@ -63,6 +68,7 @@ class BlueprintStepAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/steps/{stepId}/position")
     fun updateBlueprintStepPositionById(
         @PathVariable stepId: UUID,
@@ -72,6 +78,7 @@ class BlueprintStepAdminController(
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/steps/{stepId}")
     fun deleteBlueprintStepById(
         @PathVariable stepId: UUID,
@@ -87,6 +94,7 @@ class BlueprintStepController(
     private val blueprintStepService: BlueprintStepService,
 ) {
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/phases/{phaseId}/steps")
     fun getBlueprintStepsForPhase(
         @PathVariable projectId: UUID,
@@ -96,6 +104,7 @@ class BlueprintStepController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/steps/{stepId}")
     fun getBlueprintStepById(
         @PathVariable projectId: UUID,
@@ -105,6 +114,7 @@ class BlueprintStepController(
     }
 
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/phases/{phaseId}/steps")
     fun createBlueprintStepForPhase(
         @PathVariable projectId: UUID,
@@ -115,6 +125,7 @@ class BlueprintStepController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/steps/{stepId}")
     fun updateBlueprintStepById(
         @PathVariable projectId: UUID,
@@ -125,6 +136,7 @@ class BlueprintStepController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/steps/{stepId}/position")
     fun updateBlueprintStepPositionById(
         @PathVariable projectId: UUID,
@@ -135,6 +147,7 @@ class BlueprintStepController(
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @DeleteMapping("/steps/{stepId}")
     fun deleteBlueprintStepById(
         @PathVariable projectId: UUID,

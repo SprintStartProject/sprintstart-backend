@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ch
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintCheckOptionService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -29,6 +30,7 @@ class BlueprintCheckOptionAdminController(
     private val blueprintCheckOptionService: BlueprintCheckOptionService,
 ) {
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/questions/{questionId}/options")
     fun getBlueprintCheckOptionsForQuestion(
         @PathVariable questionId: UUID,
@@ -40,6 +42,7 @@ class BlueprintCheckOptionAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/options/{optionId}")
     fun getBlueprintCheckOptionById(
         @PathVariable optionId: UUID,
@@ -51,6 +54,7 @@ class BlueprintCheckOptionAdminController(
     }
 
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/questions/{questionId}/options")
     fun createBlueprintCheckOptionForQuestion(
         @PathVariable questionId: UUID,
@@ -64,6 +68,7 @@ class BlueprintCheckOptionAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/options/{optionId}")
     fun updateBlueprintCheckOptionById(
         @PathVariable optionId: UUID,
@@ -77,6 +82,7 @@ class BlueprintCheckOptionAdminController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/options/{optionId}/position")
     fun updateBlueprintCheckOptionPositionById(
         @PathVariable optionId: UUID,
@@ -90,6 +96,7 @@ class BlueprintCheckOptionAdminController(
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/options/{optionId}")
     fun deleteBlueprintCheckOptionById(
         @PathVariable optionId: UUID,
@@ -109,6 +116,7 @@ class BlueprintCheckOptionController(
     private val blueprintCheckOptionService: BlueprintCheckOptionService,
 ) {
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/questions/{questionId}/options")
     fun getBlueprintCheckOptionsForQuestion(
         @PathVariable projectId: UUID,
@@ -121,6 +129,7 @@ class BlueprintCheckOptionController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @GetMapping("/options/{optionId}")
     fun getBlueprintCheckOptionById(
         @PathVariable projectId: UUID,
@@ -133,6 +142,7 @@ class BlueprintCheckOptionController(
     }
 
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PostMapping("/questions/{questionId}/options")
     fun createBlueprintCheckOptionForQuestion(
         @PathVariable projectId: UUID,
@@ -147,6 +157,7 @@ class BlueprintCheckOptionController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/options/{optionId}")
     fun updateBlueprintCheckOptionById(
         @PathVariable projectId: UUID,
@@ -161,6 +172,7 @@ class BlueprintCheckOptionController(
     }
 
     @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/options/{optionId}/position")
     fun updateBlueprintCheckOptionPositionById(
         @PathVariable projectId: UUID,
@@ -175,6 +187,7 @@ class BlueprintCheckOptionController(
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @DeleteMapping("/options/{optionId}")
     fun deleteBlueprintCheckOptionById(
         @PathVariable projectId: UUID,
