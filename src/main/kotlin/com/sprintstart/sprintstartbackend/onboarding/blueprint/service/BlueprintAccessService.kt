@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
@@ -33,17 +34,25 @@ class BlueprintAccessService(
     private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
 ) {
     @Transactional(readOnly = true)
-    fun getAuthorizedPath(projectId: UUID, pathId: UUID): BlueprintPath {
-        return blueprintPathRepository.findByProjectIdAndId(projectId, pathId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint Path not found for this project",
-            )
+    fun getAuthorizedPath(scope: BlueprintScope, pathId: UUID): BlueprintPath {
+        val path = when (scope) {
+            BlueprintScope.Global -> {
+                blueprintPathRepository.findByProjectIdIsNullAndId(pathId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository.findByProjectIdAndId(scope.projectId, pathId)
+            }
+        }
+        return path ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint Path not found for this scope",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedDraftPath(projectId: UUID, pathId: UUID): BlueprintPath {
-        val draft = getAuthorizedPath(projectId, pathId)
+    fun getAuthorizedDraftPath(scope: BlueprintScope, pathId: UUID): BlueprintPath {
+        val draft = getAuthorizedPath(scope, pathId)
 
         if (draft.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -55,9 +64,18 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun findActiveForAuthorizedBlueprintKey(projectId: UUID, blueprintKey: UUID): BlueprintPath? {
-        val activePathList = blueprintPathRepository
-            .findByProjectIdAndBlueprintKeyAndStatus(projectId, blueprintKey, BlueprintStatus.ACTIVE)
+    fun findActiveForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID): BlueprintPath? {
+        val activePathList = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository
+                    .findByProjectIdNullAndBlueprintKeyAndStatus(blueprintKey, BlueprintStatus.ACTIVE)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository
+                    .findByProjectIdAndBlueprintKeyAndStatus(scope.projectId, blueprintKey, BlueprintStatus.ACTIVE)
+            }
+        }
 
         return when (activePathList.size) {
             0 -> null
@@ -72,9 +90,18 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun findDraftForAuthorizedBlueprintKey(projectId: UUID, blueprintKey: UUID): BlueprintPath? {
-        val draftList = blueprintPathRepository
-            .findByProjectIdAndBlueprintKeyAndStatus(projectId, blueprintKey, BlueprintStatus.DRAFT)
+    fun findDraftForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID): BlueprintPath? {
+        val draftList = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository
+                    .findByProjectIdNullAndBlueprintKeyAndStatus(blueprintKey, BlueprintStatus.DRAFT)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository
+                    .findByProjectIdAndBlueprintKeyAndStatus(scope.projectId, blueprintKey, BlueprintStatus.DRAFT)
+            }
+        }
 
         return when (draftList.size) {
             0 -> null
@@ -89,9 +116,18 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getArchivedForAuthorizedBlueprintKey(projectId: UUID, blueprintKey: UUID, version: Int): BlueprintPath {
-        val archivedList = blueprintPathRepository
-            .findByProjectIdAndBlueprintKeyAndVersion(projectId, blueprintKey, version)
+    fun getArchivedForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID, version: Int): BlueprintPath {
+        val archivedList = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository
+                    .findByProjectIdNullAndBlueprintKeyAndVersion(blueprintKey, version)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository
+                    .findByProjectIdAndBlueprintKeyAndVersion(scope.projectId, blueprintKey, version)
+            }
+        }
 
         return when (archivedList.size) {
             0 -> throw ResponseStatusException(
@@ -110,18 +146,26 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedPhase(projectId: UUID, phaseId: UUID): BlueprintPhase {
-        return blueprintPhaseRepository
-            .findByBlueprintPathProjectIdAndId(projectId, phaseId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint Phase not found for this project",
-            )
+    fun getAuthorizedPhase(scope: BlueprintScope, phaseId: UUID): BlueprintPhase {
+        val phase = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPhaseRepository.findByBlueprintPathProjectIdIsNullAndId(phaseId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPhaseRepository.findByBlueprintPathProjectIdAndId(scope.projectId, phaseId)
+            }
+        }
+
+        return phase ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint Phase not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditablePhase(projectId: UUID, phaseId: UUID): BlueprintPhase {
-        val phase = getAuthorizedPhase(projectId, phaseId)
+    fun getAuthorizedEditablePhase(scope: BlueprintScope, phaseId: UUID): BlueprintPhase {
+        val phase = getAuthorizedPhase(scope, phaseId)
 
         if (phase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -133,18 +177,27 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedStep(projectId: UUID, stepId: UUID): BlueprintStep {
-        return blueprintStepRepository
-            .findByBlueprintPhaseBlueprintPathProjectIdAndId(projectId, stepId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint step not found for this project",
-            )
+    fun getAuthorizedStep(scope: BlueprintScope, stepId: UUID): BlueprintStep {
+        val step = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintStepRepository
+                    .findByBlueprintPhaseBlueprintPathProjectIdIsNullAndId(stepId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintStepRepository
+                    .findByBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, stepId)
+            }
+        }
+        return step ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint step not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditableStep(projectId: UUID, stepId: UUID): BlueprintStep {
-        val step = getAuthorizedStep(projectId, stepId)
+    fun getAuthorizedEditableStep(scope: BlueprintScope, stepId: UUID): BlueprintStep {
+        val step = getAuthorizedStep(scope, stepId)
 
         if (step.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -156,18 +209,27 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedResource(projectId: UUID, resourceId: UUID): BlueprintResource {
-        return blueprintResourceRepository
-            .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(projectId, resourceId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint resource not found for this project",
-            )
+    fun getAuthorizedResource(scope: BlueprintScope, resourceId: UUID): BlueprintResource {
+        val resource = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintResourceRepository
+                    .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdIsNullAndId(resourceId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintResourceRepository
+                    .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, resourceId)
+            }
+        }
+        return resource ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint resource not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditableResource(projectId: UUID, resourceId: UUID): BlueprintResource {
-        val resource = getAuthorizedResource(projectId, resourceId)
+    fun getAuthorizedEditableResource(scope: BlueprintScope, resourceId: UUID): BlueprintResource {
+        val resource = getAuthorizedResource(scope, resourceId)
         if (resource.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
@@ -178,18 +240,27 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedTask(projectId: UUID, taskId: UUID): BlueprintTask {
-        return blueprintTaskRepository
-            .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(projectId, taskId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint task not found for this project",
-            )
+    fun getAuthorizedTask(scope: BlueprintScope, taskId: UUID): BlueprintTask {
+        val task = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintTaskRepository
+                    .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdIsNullAndId(taskId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintTaskRepository
+                    .findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, taskId)
+            }
+        }
+        return task ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint task not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditableTask(projectId: UUID, taskId: UUID): BlueprintTask {
-        val task = getAuthorizedTask(projectId, taskId)
+    fun getAuthorizedEditableTask(scope: BlueprintScope, taskId: UUID): BlueprintTask {
+        val task = getAuthorizedTask(scope, taskId)
 
         if (task.blueprintStep.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -201,18 +272,27 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedCheckQuestion(projectId: UUID, questionId: UUID): BlueprintCheckQuestion {
-        return blueprintCheckQuestionRepository
-            .findByBlueprintPhaseBlueprintPathProjectIdAndId(projectId, questionId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint check question not found for this project",
-            )
+    fun getAuthorizedCheckQuestion(scope: BlueprintScope, questionId: UUID): BlueprintCheckQuestion {
+        val question = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintCheckQuestionRepository
+                    .findByBlueprintPhaseBlueprintPathProjectIdIsNullAndId(questionId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintCheckQuestionRepository
+                    .findByBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, questionId)
+            }
+        }
+        return question ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint check question not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditableCheckQuestion(projectId: UUID, questionId: UUID): BlueprintCheckQuestion {
-        val question = getAuthorizedCheckQuestion(projectId, questionId)
+    fun getAuthorizedEditableCheckQuestion(scope: BlueprintScope, questionId: UUID): BlueprintCheckQuestion {
+        val question = getAuthorizedCheckQuestion(scope, questionId)
 
         if (question.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(
@@ -224,18 +304,27 @@ class BlueprintAccessService(
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedCheckOption(projectId: UUID, optionId: UUID): BlueprintCheckOption {
-        return blueprintCheckOptionRepository
-            .findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndId(projectId, optionId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Blueprint check option not found for this project",
-            )
+    fun getAuthorizedCheckOption(scope: BlueprintScope, optionId: UUID): BlueprintCheckOption {
+        val option = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintCheckOptionRepository
+                    .findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdIsNullAndId(optionId)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintCheckOptionRepository
+                    .findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, optionId)
+            }
+        }
+        return option ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Blueprint check option not found for this project",
+        )
     }
 
     @Transactional(readOnly = true)
-    fun getAuthorizedEditableCheckOption(projectId: UUID, optionId: UUID): BlueprintCheckOption {
-        val option = getAuthorizedCheckOption(projectId, optionId)
+    fun getAuthorizedEditableCheckOption(scope: BlueprintScope, optionId: UUID): BlueprintCheckOption {
+        val option = getAuthorizedCheckOption(scope, optionId)
 
         if (option.blueprintCheckQuestion.blueprintPhase.blueprintPath.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(

@@ -14,13 +14,38 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
         status: BlueprintStatus,
     ): MutableList<BlueprintPath>
 
+    fun findByProjectIdNullAndBlueprintKeyAndStatus(
+        blueprintKey: UUID,
+        status: BlueprintStatus,
+    ): MutableList<BlueprintPath>
+
     fun findByProjectIdAndBlueprintKeyAndVersion(
         projectId: UUID,
         blueprintKey: UUID,
         version: Int,
     ): MutableList<BlueprintPath>
 
+    fun findByProjectIdNullAndBlueprintKeyAndVersion(
+        blueprintKey: UUID,
+        version: Int,
+    ): MutableList<BlueprintPath>
+
+    fun findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(
+        projectId: UUID,
+        blueprintKey: UUID,
+    ): MutableList<BlueprintPath>
+
+    fun findAllByProjectIdNullAndBlueprintKeyOrderByVersionDesc(blueprintKey: UUID): MutableList<BlueprintPath>
+
+    fun findAllByProjectId(projectId: UUID): MutableList<BlueprintPath>
+
+    fun findByProjectIdAndId(projectId: UUID, id: UUID): BlueprintPath?
+
+    fun findByProjectIdIsNullAndId(id: UUID): BlueprintPath?
+
     fun deleteAllByProjectIdAndBlueprintKeyAndVersionAfter(projectId: UUID, blueprintKey: UUID, versionAfter: Int)
+
+    fun deleteAllByProjectIdIsNullAndBlueprintKeyAndVersionAfter(blueprintKey: UUID, versionAfter: Int)
 
     @Query(
         value = """
@@ -35,12 +60,14 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
         @Param("projectId") projectId: UUID,
     ): List<BlueprintPath>
 
-    fun findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(
-        projectId: UUID,
-        blueprintKey: UUID,
-    ): MutableList<BlueprintPath>
-
-    fun findAllByProjectId(projectId: UUID): MutableList<BlueprintPath>
-
-    fun findByProjectIdAndId(projectId: UUID, id: UUID): BlueprintPath?
+    @Query(
+        value = """
+        SELECT DISTINCT ON (blueprint_key) *
+        FROM blueprint_paths
+        WHERE project_id IS NULL
+        ORDER BY blueprint_key, version DESC
+    """,
+        nativeQuery = true,
+    )
+    fun findLatestVersionForEachBlueprintKeyAndProjectIdIsNull(): List<BlueprintPath>
 }

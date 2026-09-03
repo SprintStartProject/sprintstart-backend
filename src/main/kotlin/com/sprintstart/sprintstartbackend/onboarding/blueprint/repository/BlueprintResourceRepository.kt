@@ -14,4 +14,8 @@ interface BlueprintResourceRepository : JpaRepository<BlueprintResource, UUID> {
         projectId: UUID,
         id: UUID,
     ): BlueprintResource?
+
+    fun findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdIsNullAndId(
+        id: UUID,
+    ): BlueprintResource?
 }

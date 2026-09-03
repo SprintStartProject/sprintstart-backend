@@ -21,4 +21,6 @@ interface BlueprintPhaseRepository : JpaRepository<BlueprintPhase, UUID> {
     fun findAllByBlueprintPathProjectIdAndBlueprintPathId(projectId: UUID, blueprintPathId: UUID): MutableList<BlueprintPhase>
 
     fun findByBlueprintPathProjectIdAndId(projectId: UUID, id: UUID): BlueprintPhase?
+
+    fun findByBlueprintPathProjectIdIsNullAndId(id: UUID): BlueprintPhase?
 }

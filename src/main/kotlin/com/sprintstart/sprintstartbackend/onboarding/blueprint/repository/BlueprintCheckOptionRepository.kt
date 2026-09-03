@@ -27,4 +27,8 @@ interface BlueprintCheckOptionRepository : JpaRepository<BlueprintCheckOption, U
         projectId: UUID,
         id: UUID,
     ): BlueprintCheckOption?
+
+    fun findByBlueprintCheckQuestionBlueprintPhaseBlueprintPathProjectIdIsNullAndId(
+        id: UUID,
+    ): BlueprintCheckOption?
 }

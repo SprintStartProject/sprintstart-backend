@@ -28,4 +28,8 @@ interface BlueprintTaskRepository : JpaRepository<BlueprintTask, UUID> {
         projectId: UUID,
         id: UUID,
     ): BlueprintTask?
+
+    fun findByBlueprintStepBlueprintPhaseBlueprintPathProjectIdIsNullAndId(
+        id: UUID,
+    ): BlueprintTask?
 }

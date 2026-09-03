@@ -23,6 +23,10 @@ interface BlueprintStepRepository : JpaRepository<BlueprintStep, UUID> {
         id: UUID,
     ): BlueprintStep?
 
+    fun findByBlueprintPhaseBlueprintPathProjectIdIsNullAndId(
+        id: UUID,
+    ): BlueprintStep?
+
     fun findAllByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(
         projectId: UUID,
         blueprintPhaseId: UUID,

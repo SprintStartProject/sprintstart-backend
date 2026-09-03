@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.service
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.BlueprintPathDraftFactory
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetOverviewResponse
@@ -27,24 +28,41 @@ class BlueprintPathService(
     private val blueprintPathDraftFactory: BlueprintPathDraftFactory,
 ) {
     @Transactional(readOnly = true)
-    fun getBlueprintPathOverviewsForProjectGroupedByBlueprintKey(
-        projectId: UUID,
+    fun getBlueprintPathOverviewsGroupedByBlueprintKey(
+        scope: BlueprintScope,
     ): List<GetBlueprintPathOverviewResponse> {
-        return blueprintPathRepository
-            .findLatestVersionForEachBlueprintKeyAndProjectId(projectId)
-            .map { it.toGetOverviewResponse() }
+        val paths = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository.findLatestVersionForEachBlueprintKeyAndProjectIdIsNull()
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository.findLatestVersionForEachBlueprintKeyAndProjectId(scope.projectId)
+            }
+        }
+        return paths.map { it.toGetOverviewResponse() }
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintPathHistoryForProjectByBlueprintKey(
-        projectId: UUID,
+    fun getBlueprintPathHistoryByBlueprintKey(
+        scope: BlueprintScope,
         blueprintKey: UUID,
     ): List<GetBlueprintPathResponse> {
-        return blueprintPathRepository
-            .findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(projectId, blueprintKey)
-            .map { it.toGetResponse() }
+        val paths = when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository
+                    .findAllByProjectIdNullAndBlueprintKeyOrderByVersionDesc(blueprintKey)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository
+                    .findAllByProjectIdAndBlueprintKeyOrderByVersionDesc(scope.projectId, blueprintKey)
+            }
+        }
+        return paths.map { it.toGetResponse() }
     }
 
+    // remove soon
     @Transactional(readOnly = true)
     fun getBlueprintPathOverviewsForProjectId(projectId: UUID): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathRepository
@@ -53,20 +71,23 @@ class BlueprintPathService(
     }
 
     @Transactional(readOnly = true)
-    fun getBlueprintPathByProjectIdAndId(projectId: UUID, pathId: UUID): GetBlueprintPathResponse {
+    fun getBlueprintPathById(scope: BlueprintScope, pathId: UUID): GetBlueprintPathResponse {
         return blueprintAccessService
-            .getAuthorizedPath(projectId, pathId)
+            .getAuthorizedPath(scope, pathId)
             .toGetResponse()
     }
 
     @Transactional
     fun createBlueprintPath(
-        projectId: UUID,
+        scope: BlueprintScope,
         request: CreateBlueprintPathRequest,
     ): CreateBlueprintPathResponse {
         val path = BlueprintPath(
             blueprintKey = UUID.randomUUID(),
-            projectId = projectId,
+            projectId = when (scope) {
+                is BlueprintScope.Global -> null
+                is BlueprintScope.Project -> scope.projectId
+            },
             title = request.title,
             description = request.description,
             version = 0,
@@ -78,13 +99,16 @@ class BlueprintPathService(
     }
 
     @Transactional
-    fun openBlueprintPathDraftByBlueprintKey(projectId: UUID, blueprintKey: UUID): GetBlueprintPathResponse {
+    fun openBlueprintPathDraftByBlueprintKey(
+        scope: BlueprintScope,
+        blueprintKey: UUID,
+    ): GetBlueprintPathResponse {
         val activePath = blueprintAccessService
-            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            .findActiveForAuthorizedBlueprintKey(scope, blueprintKey)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No active path found")
 
         val draft = blueprintAccessService
-            .findDraftForAuthorizedBlueprintKey(projectId, blueprintKey)
+            .findDraftForAuthorizedBlueprintKey(scope, blueprintKey)
 
         return draft?.toGetResponse()
             ?: blueprintPathRepository
@@ -94,13 +118,13 @@ class BlueprintPathService(
 
     @Transactional
     fun publishBlueprintPathDraftById(
-        projectId: UUID,
+        scope: BlueprintScope,
         pathId: UUID,
     ): GetBlueprintPathResponse {
-        val draft = blueprintAccessService.getAuthorizedDraftPath(projectId, pathId)
+        val draft = blueprintAccessService.getAuthorizedDraftPath(scope, pathId)
 
         blueprintAccessService
-            .findActiveForAuthorizedBlueprintKey(projectId, pathId)
+            .findActiveForAuthorizedBlueprintKey(scope, pathId)
             ?.let { activePath -> activePath.status = draft.status }
 
         draft.status = BlueprintStatus.ACTIVE
@@ -110,12 +134,12 @@ class BlueprintPathService(
 
     @Transactional
     fun rollbackBlueprintPathByBlueprintKey(
-        projectId: UUID,
+        scope: BlueprintScope,
         blueprintKey: UUID,
         rollbackVersion: Int,
     ): GetBlueprintPathResponse {
         val activePath = blueprintAccessService
-            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            .findActiveForAuthorizedBlueprintKey(scope, blueprintKey)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "No active path found for blueprintKey: $blueprintKey",
@@ -129,10 +153,20 @@ class BlueprintPathService(
         }
 
         val rollbackPath = blueprintAccessService
-            .getArchivedForAuthorizedBlueprintKey(projectId, blueprintKey, rollbackVersion)
+            .getArchivedForAuthorizedBlueprintKey(scope, blueprintKey, rollbackVersion)
 
-        blueprintPathRepository
-            .deleteAllByProjectIdAndBlueprintKeyAndVersionAfter(projectId, blueprintKey, rollbackVersion)
+        when (scope) {
+            is BlueprintScope.Global -> {
+                blueprintPathRepository
+                    .deleteAllByProjectIdIsNullAndBlueprintKeyAndVersionAfter(blueprintKey, rollbackVersion)
+            }
+
+            is BlueprintScope.Project -> {
+                blueprintPathRepository
+                    .deleteAllByProjectIdAndBlueprintKeyAndVersionAfter(scope.projectId, blueprintKey, rollbackVersion)
+            }
+        }
+
         rollbackPath.status = BlueprintStatus.ACTIVE
 
         return rollbackPath.toGetResponse()
@@ -140,11 +174,11 @@ class BlueprintPathService(
 
     @Transactional
     fun updateBlueprintPathById(
-        projectId: UUID,
+        scope: BlueprintScope,
         pathId: UUID,
         request: UpdateBlueprintPathRequest,
     ): UpdateBlueprintPathResponse {
-        val path = blueprintAccessService.getAuthorizedDraftPath(projectId, pathId)
+        val path = blueprintAccessService.getAuthorizedDraftPath(scope, pathId)
 
         if (path.revision != request.revision) {
             throw ResponseStatusException(
@@ -161,10 +195,10 @@ class BlueprintPathService(
 
     @Transactional
     fun deleteBlueprintPathDraftById(
-        projectId: UUID,
+        scope: BlueprintScope,
         pathId: UUID,
     ) {
-        val path = blueprintAccessService.getAuthorizedPath(projectId, pathId)
+        val path = blueprintAccessService.getAuthorizedPath(scope, pathId)
 
         if (path.status != BlueprintStatus.DRAFT) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Path with id: $pathId is not a draft!")
@@ -174,9 +208,9 @@ class BlueprintPathService(
     }
 
     @Transactional
-    fun archiveBlueprintPathByBlueprintKey(projectId: UUID, blueprintKey: UUID) {
+    fun archiveBlueprintPathByBlueprintKey(scope: BlueprintScope, blueprintKey: UUID) {
         val path = blueprintAccessService
-            .findActiveForAuthorizedBlueprintKey(projectId, blueprintKey)
+            .findActiveForAuthorizedBlueprintKey(scope, blueprintKey)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "No active path found for blueprintKey: $blueprintKey",
@@ -186,7 +220,7 @@ class BlueprintPathService(
 
         // find and delet any draft
         blueprintAccessService
-            .findDraftForAuthorizedBlueprintKey(projectId, blueprintKey)
+            .findDraftForAuthorizedBlueprintKey(scope, blueprintKey)
             ?.let { blueprintPathRepository.delete(it) }
     }
 }
@@ -209,16 +243,19 @@ class BlueprintPathService(
 //  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [x] Make everything tied to a project id
+//  - [] Add a general blueprint path that is seeded on first bootup of SprintStart
+//      - [] make project Id Optional
+//      - [] mostly ai prompt phases
 //  - [] Add an option to make phases be blocked by a previous one or not
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
 //      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
 //  - [] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
-//  - [] ( Add authors to the Blueprint, as a Set with all the people that edited the draft )
 
 // Backlog:
 //  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
 //  - [] ( Add filter options to the phase query )
-//  - [] Think about a teamOverview phase with : (Name, roles, Ai worksummary) per person
-//      -> TeamMemberProfile (I think i will move this into the user)
+//  - [] Think about a teamOverview phase with : (Name, roles, Ai work summary) per person
+//      -> TeamMemberProfile (I think I will move this into the user)
+//  - [] (Add authors to the Blueprint, as a Set with all the people that edited the draft)

@@ -19,8 +19,8 @@ class BlueprintPath(
     val id: UUID = UUID.randomUUID(),
     @Column(nullable = false)
     val blueprintKey: UUID, // This should be created once on the initial create and then reused on edits
-    @Column(name = "project_id", nullable = false)
-    val projectId: UUID,
+    @Column(name = "project_id", nullable = true)
+    val projectId: UUID? = null,
     var title: String,
     var description: String? = null,
     @Column(nullable = false)
