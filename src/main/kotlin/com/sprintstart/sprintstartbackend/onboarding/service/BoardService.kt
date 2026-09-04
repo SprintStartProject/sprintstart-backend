@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
@@ -485,6 +486,9 @@ class BoardService(
             url = task?.sourceUrl,
             // True for a goal the hire claimed, false for a Task 0 they were handed.
             chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
+            // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
+            // card can say so without a lookup of its own.
+            closedAtSource = task?.status == ProposalStatus.STALE,
         )
     }
 
