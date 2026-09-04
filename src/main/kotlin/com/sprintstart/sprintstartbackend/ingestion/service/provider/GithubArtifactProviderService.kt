@@ -72,9 +72,10 @@ class GithubArtifactProviderService(
     /**
      * Applies a re-fetch to an artifact an earlier run already stored.
      *
-     * Both a content change and a newly linked project have to reach the AI index, so either marks
-     * the artifact for re-ingestion. Only a content change counts as an update of the run: linking a
-     * repository to a second project does not change what was fetched.
+     * Everything the AI payload carries has to reach the index, so a newly linked project, changed
+     * content, and a changed `state` or label set all mark the artifact for re-ingestion. Only a
+     * content change counts as an update of the run: linking a repository to a second project, or
+     * closing an issue, does not change what was fetched.
      *
      * @param artifact The stored artifact matching the command's source id.
      * @param command The mapped GitHub artifact command.
@@ -93,12 +94,12 @@ class GithubArtifactProviderService(
         if (artifact.authorLogin == null) {
             artifact.authorLogin = command.authorLogin
         }
-        val contentChanged = applyContentChange(artifact, command)
+        val change = applyChange(artifact, command)
 
-        if (!linked && !contentChanged) return
+        if (!linked && !change.reachesTheIndex) return
 
         val ingestionRun = lockRun(runId)
-        if (contentChanged) {
+        if (change.content) {
             artifact.lastChangedAt = Instant.now()
             ingestionRun.updatedCount++
         }
@@ -106,47 +107,49 @@ class GithubArtifactProviderService(
     }
 
     /**
-     * Overwrites the stored content when the source changed, per artifact type.
+     * Overwrites the stored fields the source changed, per artifact type.
      *
      * @param artifact The stored artifact to update in place.
      * @param command The mapped GitHub artifact command carrying the freshly fetched content.
-     * @return `true` when the artifact's effective content changed.
+     * @return What changed, see [ArtifactChange].
      */
-    private fun applyContentChange(artifact: Artifact, command: GithubArtifactCommand): Boolean =
+    private fun applyChange(artifact: Artifact, command: GithubArtifactCommand): ArtifactChange =
         when (command.artifactType) {
             // Immutable once fetched: a re-fetch yields the same content, so only a new project
             // link is ever worth acting on.
             ArtifactType.COMMIT,
             ArtifactType.ORG_METADATA,
-            -> false
+            -> ArtifactChange.NOTHING
 
             ArtifactType.FILE -> {
                 if (artifact.hash == command.hash) {
-                    false
+                    ArtifactChange.NOTHING
                 } else {
                     artifact.content = command.bodyText
                     artifact.hash = command.hash
-                    true
+                    ArtifactChange(content = true)
                 }
             }
 
             // State and labels are refreshed on every fetch, regardless of the hash: an issue being
             // closed or re-labeled doesn't move its title or body, so gating them on hash equality
             // would silently miss exactly the updates they exist for. Neither counts as a content
-            // change -- they leave `lastChangedAt` and the run's update count alone.
+            // change -- they leave `lastChangedAt` and the run's update count alone -- but both
+            // travel in the AI payload, so they still have to reach the index.
             ArtifactType.ISSUE -> {
+                val trackingChanged =
+                    artifact.state != command.state || artifact.labels != command.labels
                 artifact.state = command.state
                 artifact.labels.clear()
                 artifact.labels.addAll(command.labels)
 
-                if (artifact.hash == command.hash) {
-                    false
-                } else {
+                val contentChanged = artifact.hash != command.hash
+                if (contentChanged) {
                     artifact.title = command.title
                     artifact.content = command.bodyText
                     artifact.hash = command.hash
-                    true
                 }
+                ArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
 
             // Pull requests carry no content hash, so the stored title and body are compared
@@ -155,6 +158,7 @@ class GithubArtifactProviderService(
             // requests to be embedded again, and would make `lastChangedAt` move on a sync that
             // changed nothing.
             ArtifactType.PULL_REQUEST -> {
+                val trackingChanged = artifact.state != command.state
                 // Refreshed on every fetch, for the same reason as an issue's state: a pull request
                 // being merged or reviewed moves none of its text.
                 artifact.state = command.state
@@ -166,13 +170,13 @@ class GithubArtifactProviderService(
                     artifact.createdAtSource = command.createdAtSource
                 }
 
-                if (artifact.title == command.title && artifact.content == command.bodyText) {
-                    false
-                } else {
+                val contentChanged =
+                    artifact.title != command.title || artifact.content != command.bodyText
+                if (contentChanged) {
                     artifact.title = command.title
                     artifact.content = command.bodyText
-                    true
                 }
+                ArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
         }
 
@@ -255,5 +259,28 @@ class GithubArtifactProviderService(
         artifactRepository.deleteById(artifact.id)
         run.deletedCount++
         run.artifactIdsToDeindex.add(artifact.id.toString())
+    }
+}
+
+/**
+ * What a re-fetch changed about a stored artifact.
+ *
+ * The two are tracked apart because they answer different questions. [content] is what the run
+ * reports as an update and what moves `lastChangedAt`: it means new text was fetched. [tracking] is
+ * the issue-tracker state around that text -- `state`, labels -- which no amount of re-labelling
+ * makes a content change, but which the AI payload carries and starter-work mining reads.
+ *
+ * @property content Whether the artifact's text changed.
+ * @property tracking Whether its issue-tracker state changed.
+ */
+private data class ArtifactChange(
+    val content: Boolean = false,
+    val tracking: Boolean = false,
+) {
+    /** Whether anything changed that the AI service has to be told about. */
+    val reachesTheIndex: Boolean get() = content || tracking
+
+    companion object {
+        val NOTHING = ArtifactChange()
     }
 }

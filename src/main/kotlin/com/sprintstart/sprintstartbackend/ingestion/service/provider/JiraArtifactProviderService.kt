@@ -56,14 +56,19 @@ class JiraArtifactProviderService(
             // Refreshed unconditionally, like GitHub's: a ticket moving to Done shifts no text, so
             // gating this on the content check above would leave finished work in the starter-work
             // pool until somebody happened to edit its description.
-            existing.state = command.toState()
+            val state = command.toState()
             // Refreshed with the state, and for the same reason: a ticket being picked up or
             // handed back moves no text either, and starter work that somebody has since taken
             // must stop being offered.
-            existing.hasAssignee = command.toHasAssignee()
+            val hasAssignee = command.toHasAssignee()
+            // Both travel in the AI payload, and it is the AI service that does the offering, so
+            // the re-index has to follow them and not only the text.
+            val trackingChanged = existing.state != state || existing.hasAssignee != hasAssignee
+            existing.state = state
+            existing.hasAssignee = hasAssignee
             existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
 
-            if (!linked && !contentChanged) return
+            if (!linked && !contentChanged && !trackingChanged) return
 
             val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
                 IngestionRunNotFoundException(runId)

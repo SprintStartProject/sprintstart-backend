@@ -240,6 +240,7 @@ class GithubArtifactProviderServiceTest {
             labels.add("bug")
         }
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(ingestionRun())
 
         service.persistArtifact(
             artifactCommand(
@@ -256,6 +257,118 @@ class GithubArtifactProviderServiceTest {
         assertThat(existing.state).isEqualTo("CLOSED")
         assertThat(existing.labels).containsExactly("bug", "good first issue")
         verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact sends a closed issue back to the index`() {
+        val run = ingestionRun()
+        val existing = artifact(
+            artifactType = ArtifactType.ISSUE,
+            hash = "same-hash",
+            projectIds = setOf(projectId),
+        ).apply {
+            state = "OPEN"
+            labels.add("bug")
+        }
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.ISSUE,
+                hash = "same-hash",
+                state = "CLOSED",
+                labels = listOf("bug"),
+            ),
+        )
+
+        // `state` is part of the AI payload, and starter-work mining offers only OPEN issues.
+        // Refreshing it here and not re-indexing would keep the issue on offer forever.
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        // Still not a *content* change: no new text was fetched, so the run's update count and
+        // `lastChangedAt` stay where they are.
+        assertThat(run.updatedCount).isZero()
+        assertThat(existing.lastChangedAt).isNull()
+    }
+
+    @Test
+    fun `persistArtifact sends a re-labelled issue back to the index`() {
+        val run = ingestionRun()
+        val existing = artifact(
+            artifactType = ArtifactType.ISSUE,
+            hash = "same-hash",
+            projectIds = setOf(projectId),
+        ).apply {
+            state = "OPEN"
+            labels.add("bug")
+        }
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.ISSUE,
+                hash = "same-hash",
+                state = "OPEN",
+                labels = listOf("bug", "good first issue"),
+            ),
+        )
+
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(run.updatedCount).isZero()
+    }
+
+    @Test
+    fun `persistArtifact leaves an issue nothing changed on alone`() {
+        val existing = artifact(
+            artifactType = ArtifactType.ISSUE,
+            hash = "same-hash",
+            projectIds = setOf(projectId),
+        ).apply {
+            state = "OPEN"
+            labels.add("bug")
+        }
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.ISSUE,
+                hash = "same-hash",
+                state = "OPEN",
+                labels = listOf("bug"),
+            ),
+        )
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+    }
+
+    @Test
+    fun `persistArtifact sends a re-opened pull request back to the index`() {
+        val run = ingestionRun()
+        val existing = artifact(
+            artifactType = ArtifactType.PULL_REQUEST,
+            hash = null,
+            projectIds = setOf(projectId),
+        ).apply { state = "CLOSED" }
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.PULL_REQUEST,
+                bodyText = "old content",
+                hash = null,
+                state = "OPEN",
+            ),
+        )
+
+        assertThat(existing.state).isEqualTo("OPEN")
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(run.updatedCount).isZero()
     }
 
     @Test
