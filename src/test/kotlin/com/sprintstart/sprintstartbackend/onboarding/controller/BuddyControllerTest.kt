@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.encodeToString
@@ -160,6 +161,54 @@ class BuddyControllerTest(
         mockMvc
             .perform(post("/api/v1/onboarding/me/buddy/open/stream"))
             .andExpect(status().isUnauthorized)
+    }
+
+    /**
+     * The switch is the visible half of "just let me look something up", so it has to survive the
+     * wire. A request that silently lost it would mount the full mentor for a hire who asked for
+     * the corpus.
+     */
+    @Test
+    fun `sendMessageForMe passes the capability mode through`() {
+        coEvery { buddyService.sendMessageForMe(authId, "where are the deploy docs?", false) } returns
+            flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            SendBuddyMessageRequest("where are the deploy docs?", capabilitiesEnabled = false),
+                        ),
+                    ),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        coVerify { buddyService.sendMessageForMe(authId, "where are the deploy docs?", false) }
+    }
+
+    /** A client that has never heard of the switch gets the full mentor, as it always did. */
+    @Test
+    fun `sendMessageForMe defaults to the full mentor`() {
+        coEvery { buddyService.sendMessageForMe(authId, "hi", true) } returns
+            flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"content":"hi"}"""),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        coVerify { buddyService.sendMessageForMe(authId, "hi", true) }
     }
 
     @Test

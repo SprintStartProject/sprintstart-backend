@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenReq
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -78,6 +80,15 @@ class BuddyServiceTest {
     }
 
     private fun finalReply(text: String) = BuddyAgentResponse(final = true, text = text)
+
+    /** A resolvable hire with an existing, empty session — the starting point for a sent message. */
+    private fun stageConversation(session: BuddySession) {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddySessionRepository.findByUserId(userId) } returns session
+        every { buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns emptyList()
+        every { buddyMessageRepository.save(any()) } answers { firstArg() }
+        every { buddyToolExecutor.toolSpecs(any()) } returns emptyList()
+    }
 
     @Nested
     inner class GetOrCreateSession {
@@ -470,6 +481,112 @@ class BuddyServiceTest {
 
             assertThat(requests.first().projectIds)
                 .containsExactlyInAnyOrder(alpha.toString(), beta.toString())
+        }
+
+        /**
+         * The mode is enforced by what the model was handed, not by what the prompt asked of it.
+         * A tool the reasoner never received is one it cannot call, however the conversation goes.
+         */
+        @Test
+        fun `capabilities off mounts no tools at all`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
+                BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
+            )
+            every { buddyActionService.actionSpecs() } returns listOf(
+                BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
+            )
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, "how do we deploy?", capabilitiesEnabled = false).toList()
+
+            assertThat(requests.first().backendTools).isEmpty()
+        }
+
+        @Test
+        fun `capabilities on mounts the read tools and the action tools`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
+                BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
+            )
+            every { buddyActionService.actionSpecs() } returns listOf(
+                BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
+            )
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, "how do we deploy?").toList()
+
+            assertThat(requests.first().backendTools.map { it.name })
+                .containsExactlyInAnyOrder("get_arrival_steps", "escalate")
+        }
+
+        /**
+         * An empty tool list is a fact the model would have to invent a reason for. Saying which
+         * mode it is in is the reason -- without it the persona offers what it cannot do, and the
+         * refusal reads as a bug rather than as the mode the hire chose.
+         */
+        @Test
+        fun `the persona is told which mode it is in`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, "how do we deploy?", capabilitiesEnabled = false).toList()
+
+            assertThat(requests.first().capabilitiesEnabled).isFalse()
+        }
+
+        /**
+         * A resumed turn that lost the mode would rebuild a mentor offering to act, mid-answer.
+         *
+         * The tool call here is contrived — with no tools mounted the reasoner has none to call —
+         * but the loop is what is under test, not the tool: the mode has to survive a second hop
+         * however that hop came about.
+         */
+        @Test
+        fun `every hop of a turn carries the mode`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+                BuddyAgentResponse(
+                    final = false,
+                    messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                    pendingToolCalls = listOf(BuddyToolCallDto(id = "call-1", name = "get_arrival_steps")),
+                ),
+                finalReply("Here."),
+            )
+            every { buddyToolExecutor.execute(any(), any()) } returns "nothing outstanding"
+
+            service.sendMessageForMe(authId, "how do we deploy?", capabilitiesEnabled = false).toList()
+
+            assertThat(requests).hasSizeGreaterThan(1)
+            assertThat(requests).allMatch { !it.capabilitiesEnabled }
+        }
+
+        /**
+         * The switch is a mood, not a setting: it is sent per message and touches no session state,
+         * so a hire who looks something up and then asks the mentor to act stays in one
+         * conversation rather than starting a second.
+         */
+        @Test
+        fun `switching mode mid-conversation keeps one transcript`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            val saved = mutableListOf<BuddyMessage>()
+            every { buddyMessageRepository.save(capture(saved)) } answers { firstArg() }
+            coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, "where are the deploy docs?", capabilitiesEnabled = false).toList()
+            service.sendMessageForMe(authId, "escalate that for me", capabilitiesEnabled = true).toList()
+
+            assertThat(saved).allMatch { it.session.id == session.id }
+            verify(exactly = 0) { buddySessionRepository.save(any()) }
         }
 
         @Test
