@@ -43,6 +43,15 @@ class IngestionRun(
     @ElementCollection
     @Column(nullable = false)
     val artifactIdsToDeindex: MutableList<String> = mutableListOf(),
+    // Artifacts this run changed that were first stored by an *earlier* run. They keep pointing at
+    // that earlier run (`Artifact.ingestionRun` is immutable, so run history stays truthful), which
+    // means `findAllByIngestionRunId` does not return them -- and without this list they would
+    // never be sent to the AI service again: neither their new content nor a newly linked project
+    // would ever become searchable. A set, not a bag, because one run can touch an artifact
+    // repeatedly and because two bag-fetches in one entity graph cannot be loaded together.
+    @ElementCollection
+    @Column(nullable = false)
+    val artifactIdsToReingest: MutableSet<UUID> = mutableSetOf(),
     @ElementCollection
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)

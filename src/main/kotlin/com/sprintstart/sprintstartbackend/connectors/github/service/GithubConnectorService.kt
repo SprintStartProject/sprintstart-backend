@@ -5,10 +5,12 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.Gith
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
@@ -46,7 +48,7 @@ import java.util.UUID
  * This orchestrator service is needed to keep the connection transactions scoped per repository.
  * That means that each repository to connect will either be completely connected or not at all.
  * The magic for this behavior lies in the `@Transactional()` annotation, however, that annotation only works via
- * a service-level proxy, invoked at runtime. As [connectRepositoriesIfExist] just calls `connectRepositoryIfExists`,
+ * a service-level proxy, invoked at runtime. As [connectRepositoriesIfExist] just calls `connectRepositoryIfNecessary`,
  * for each requested repository, doing this from within the same service would lead to the necessary proxy to not spin
  * up, hence the transactions not to work. Therefore, this is done via this orchestrator class.
  */
@@ -69,11 +71,14 @@ class GithubRepositoryConnectionOrchestrator(
         request: ConnectRepositoriesRequest,
     ): ConnectRepositoriesResponse {
         val transactionIdsByRepoIds = mutableMapOf<String, UUID>() // "owner/name" -> transactionId
+        val reused = mutableSetOf<String>()
         request.repositories.forEach {
-            val transactionId = connectorService.connectRepositoryIfNecessary(authId, it)
-            transactionIdsByRepoIds["${it.owner}/${it.name}"] = transactionId
+            val outcome = connectorService.connectRepositoryIfNecessary(authId, it)
+            val repositoryId = "${it.owner}/${it.name}"
+            transactionIdsByRepoIds[repositoryId] = outcome.transactionId
+            if (outcome.wasReused) reused.add(repositoryId)
         }
-        return ConnectRepositoriesResponse(transactionIdsByRepoIds)
+        return ConnectRepositoriesResponse(transactionIdsByRepoIds, reused)
     }
 }
 
@@ -207,41 +212,30 @@ class GithubConnectorService(
      */
     @Tracked("Connecting GitHub repository")
     @Transactional
-    suspend fun connectRepositoryIfNecessary(authId: String, request: ConnectRepositoryRequest): UUID {
-        val transactionId = UUID.randomUUID()
+    suspend fun connectRepositoryIfNecessary(
+        authId: String,
+        request: ConnectRepositoryRequest,
+    ): RepositoryConnectionOutcome {
         if (!userApi.userHasAccessToProject(authId, request.projectId)) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
         }
 
-        val repository = withContext(Dispatchers.IO) {
+        val alreadyConnected = withContext(Dispatchers.IO) {
             repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
         }
-
-        if (repository != null) {
-            repository.projectIdsInternal.add(request.projectId)
-            withContext(Dispatchers.IO) {
-                repoConnectionRepository.save(repository)
-            }
-            eventPublisher.publishEvent(
-                GithubRepositoryAlreadyConnectedEvent(
-                    transactionId = transactionId,
-                    owner = request.owner,
-                    name = request.name,
-                ),
-            )
-
-            return transactionId
+        if (alreadyConnected != null) {
+            return reuseConnection(alreadyConnected, request.projectId)
         }
 
-        return connectRepositoryIfExists(authId, request, transactionId)
+        return connectNewRepository(authId, request, UUID.randomUUID())
     }
 
     /**
-     * Connect a new repository.
+     * Connects a repository nothing is connected to yet.
      *
-     * Given an authenticated user and a repository request, this validates project access,
-     * verifies that the named PAT exists for that user, persists the connection, and starts
-     * the initial background ingestion jobs if the repository exists.
+     * Given an authenticated user and a repository request, this verifies that the named PAT
+     * exists for that user, persists the connection, and starts the initial background
+     * ingestion jobs if the repository exists.
      *
      * Tasks started for background execution include:
      *
@@ -251,19 +245,18 @@ class GithubConnectorService(
      * - Fetching the repository pull requests
      * - Starting a CRON job that checks for updates every night.
      *
-     * _**Schema:** `https://github.com/{owner}/{name}`_
-     *
-     * @param authId The authenticated user subject used to resolve PAT ownership and project access.
+     * @param authId The authenticated user subject used to resolve PAT ownership.
      * @param request The request containing repository owner/name, PAT alias, and target project.
-     * @return A UUID representing the transaction ID assigned to this connection operation.
+     * @param transactionId The transaction this connection reports its progress under.
+     * @return The outcome, flagged as newly connected.
      * @throws IllegalStateException If on one of the processed file resources, the GitHub api
      * returns malformed responses.
      */
-    private suspend fun connectRepositoryIfExists(
+    private suspend fun connectNewRepository(
         authId: String,
         request: ConnectRepositoryRequest,
         transactionId: UUID,
-    ): UUID {
+    ): RepositoryConnectionOutcome {
         val userId = userApi.getUserIdByAuthId(authId).orElseThrow { UserWithAuthIdNotFoundException(authId) }
 
         eventPublisher.publishEvent(
@@ -298,7 +291,59 @@ class GithubConnectorService(
             throw ex
         }
 
-        return connectRepository(repoConnection, transactionId)
+        return RepositoryConnectionOutcome(connectRepository(repoConnection, transactionId), wasReused = false)
+    }
+
+    /**
+     * Links an already-connected repository to a further project instead of connecting it again.
+     *
+     * Connecting created a second connection row for the same repository every time, along with a
+     * second snapshot, a second config and a second nightly CRON job, and re-fetched every file,
+     * commit, issue and pull request that was already stored. The repository connection already
+     * supports several projects, so the project id is simply added and the artifacts are shared.
+     *
+     * The connection keeps the PAT of whoever connected it first (#257's option (a)): the simplest
+     * behaviour that works, with the known consequence that revoking that PAT stops future syncs
+     * for every linked project.
+     *
+     * No fetch is started, so no connection-initiated event is published. A
+     * `GithubRepositoryAlreadyConnectedEvent` still is: ingestion records the request as a run that
+     * completed with no work, so the returned transaction id resolves like every other one and the
+     * connect stays visible in the source's history. `wasReused` tells the caller there is no
+     * progress to follow.
+     *
+     * @param connection The existing connection for this owner and name.
+     * @param projectId The project to link it to.
+     * @return The outcome, flagged as reused.
+     */
+    private fun reuseConnection(
+        connection: GithubRepositoryConnection,
+        projectId: UUID,
+    ): RepositoryConnectionOutcome {
+        val transactionId = UUID.randomUUID()
+        connection.projectIdsInternal.add(projectId)
+        repoConnectionRepository.save(connection)
+
+        eventPublisher.publishEvent(
+            GithubRepositoryAlreadyConnectedEvent(
+                transactionId = transactionId,
+                owner = connection.owner,
+                name = connection.name,
+            ),
+        )
+
+        // Announced even when the project was already linked, so a repeated connect repairs a
+        // membership that never reached the artifacts or the AI index.
+        eventPublisher.publishEvent(
+            GithubRepositoryProjectLinkChangedEvent(
+                owner = connection.owner,
+                name = connection.name,
+                projectId = projectId,
+                linked = true,
+            ),
+        )
+
+        return RepositoryConnectionOutcome(transactionId, wasReused = true)
     }
 
     /**

@@ -142,8 +142,6 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
         @Param("filter") filter: String, pageable: Pageable,
     ): Page<Artifact>
 
-    fun deleteBySourceId(sourceId: String)
-
     /**
      * Returns one filtered artifact page across all projects.
      */

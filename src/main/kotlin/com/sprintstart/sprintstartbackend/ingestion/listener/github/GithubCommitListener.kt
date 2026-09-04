@@ -49,9 +49,10 @@ internal class GithubCommitListener(
     fun on(
         event: GithubCommitsFetchFailedEvent,
     ) {
-        githubIngestionRunService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFailed(
             event.transactionId,
             finishedType = FinishedTypes.COMMITS,
+            reason = event.reason,
         )
     }
 }
