@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class AssembleOrientationRequest(
-    val projectIds: List<String> = emptyList(),
+    val projectIds: List<String>,
     @SerialName("task_title") val taskTitle: String,
     @SerialName("task_body") val taskBody: String = "",
     val labels: List<String> = emptyList(),

@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AssembleDiagramRequest(
-    val projectIds: List<String> = emptyList(),
+    val projectIds: List<String>,
     val subject: String,
     /**
      * The corpus fingerprint the cached picture was drawn from, when there is one.

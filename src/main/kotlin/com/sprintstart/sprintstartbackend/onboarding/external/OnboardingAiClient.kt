@@ -53,7 +53,7 @@ class OnboardingAiClient(
      */
     suspend fun assembleDiagram(
         subject: String,
-        projectIds: List<UUID> = emptyList(),
+        projectIds: List<UUID>,
         lastFingerprint: String? = null,
     ): DiagramOutcome =
         try {
@@ -89,7 +89,7 @@ class OnboardingAiClient(
      */
     suspend fun assembleOrientation(
         taskTitle: String,
-        projectIds: List<UUID> = emptyList(),
+        projectIds: List<UUID>,
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -191,7 +191,7 @@ class OnboardingAiClient(
      * non-2xx response is wrapped in an [OnboardingAiException] carrying the upstream status/body.
      */
     suspend fun proposeStarterWork(
-        projectIds: List<UUID> = emptyList(),
+        projectIds: List<UUID>,
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): StarterWorkOutcome =
@@ -223,7 +223,7 @@ class OnboardingAiClient(
      */
     fun streamOrientation(
         taskTitle: String,
-        projectIds: List<UUID> = emptyList(),
+        projectIds: List<UUID>,
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -249,7 +249,7 @@ class OnboardingAiClient(
      * backend persists.
      */
     fun streamStarterWork(
-        projectIds: List<UUID> = emptyList(),
+        projectIds: List<UUID>,
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): Flow<AiProgressEvent> =
