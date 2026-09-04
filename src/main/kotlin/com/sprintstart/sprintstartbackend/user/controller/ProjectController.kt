@@ -1,11 +1,13 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
+import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
+import com.sprintstart.sprintstartbackend.user.service.ProjectIndustryService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -49,6 +51,7 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody as SwaggerRequestBod
 class ProjectController(
     private val adminProjectService: AdminProjectService,
     private val projectManagerService: ProjectManagerService,
+    private val projectIndustryService: ProjectIndustryService,
     private val projectAuth: ProjectAuthorization,
 ) {
     /**
@@ -207,5 +210,36 @@ class ProjectController(
         @PathVariable userId: UUID,
     ) {
         adminProjectService.removeUser(projectId, userId)
+    }
+
+    /**
+     * Evaluates the industry domain for a managed project via AI and persists the result.
+     *
+     * Manual evaluation always persists the detected industry and confidence, overriding any previous values.
+     *
+     * @param projectId Project identifier.
+     * @return The evaluated industry, confidence level, and grounding evidence.
+     */
+    @Operation(
+        summary = "Evaluate project industry",
+        description = "Evaluates the project industry domain from its corpus via AI and persists the result.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Industry evaluated and persisted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Caller does not manage this project"),
+            ApiResponse(responseCode = "404", description = "Project not found"),
+            ApiResponse(responseCode = "502", description = "The AI service failed to evaluate the project industry"),
+        ],
+    )
+    @PostMapping("/{projectId}/industry/evaluate")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
+    suspend fun evaluateIndustry(
+        @Parameter(description = "UUID of the project to evaluate")
+        @PathVariable projectId: UUID,
+    ): AiIndustryEvaluationResponse {
+        return projectIndustryService.evaluateIndustry(projectId)
     }
 }
