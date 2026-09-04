@@ -23,12 +23,14 @@ internal class JiraInstanceProjectsListener(
     /**
      * Re-scopes the instance's artifacts once the instance change is committed.
      *
-     * The Jira counterpart to the GitHub repository listener; see it for why this runs after commit
-     * and off the request thread.
+     * The Jira counterpart to the GitHub repository listener; see it for why this runs after commit,
+     * off the request thread, and with `fallbackExecution`. Jira reaches the same trap by the same
+     * route: `connectInstanceIfNeeded` is `@Transactional` and suspending, so it links an
+     * already-connected instance to a project with no transaction open at all.
      *
      * @param event The instance's project link change.
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: JiraInstanceProjectLinkChangedEvent) {
         applicationScope.launch {
             try {

@@ -27,9 +27,16 @@ internal class GithubRepositoryProjectsListener(
      * slow AI service does not hold up the caller. The operation is idempotent, so repeating the
      * link or unlink repairs a propagation that failed here.
      *
+     * `fallbackExecution` is what makes this run when nothing is committing, and it is not
+     * defensive: `connectRepositoryIfNecessary` announces the reuse of an already-connected
+     * repository from a `@Transactional` *suspending* function, and Spring opens no transaction for
+     * one of those against a JPA transaction manager. Without the fallback the event is dropped and
+     * the repository is linked to a project its content is not reachable from -- silently, because
+     * the connect itself succeeds.
+     *
      * @param event The repository's project link change.
      */
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: GithubRepositoryProjectLinkChangedEvent) {
         applicationScope.launch {
             try {
