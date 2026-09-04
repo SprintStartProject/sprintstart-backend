@@ -230,7 +230,7 @@ class ProjectController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Caller does not manage this project"),
             ApiResponse(responseCode = "404", description = "Project not found"),
-            ApiResponse(responseCode = "500", description = "The AI service failed to evaluate the project industry"),
+            ApiResponse(responseCode = "502", description = "The AI service failed to evaluate the project industry"),
         ],
     )
     @PostMapping("/{projectId}/industry/evaluate")

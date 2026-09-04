@@ -184,6 +184,24 @@ class AdminProjectControllerTest(
     }
 
     @Test
+    fun `createProject returns 400 when industryConfidence is invalid`() {
+        val request = CreateAdminProjectRequest(
+            name = "SprintStart Frontend",
+            industryConfidence = "invalid_confidence",
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/projects")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { adminProjectService.createProject(any()) }
+    }
+
+    @Test
     fun `patchProject returns updated project`() {
         val projectId = UUID.randomUUID()
         val request = PatchAdminProjectRequest(description = "Updated frontend web application")
@@ -220,6 +238,22 @@ class AdminProjectControllerTest(
             ).andExpect(status().isBadRequest)
 
         verify(exactly = 1) { adminProjectService.patchProject(projectId, request) }
+    }
+
+    @Test
+    fun `patchProject returns 400 when industryConfidence is invalid`() {
+        val projectId = UUID.randomUUID()
+        val request = PatchAdminProjectRequest(industryConfidence = "invalid_confidence")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/admin/projects/$projectId")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { adminProjectService.patchProject(any(), any()) }
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
+import com.sprintstart.sprintstartbackend.user.model.exceptions.ProjectIndustryAiException
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
@@ -358,6 +359,29 @@ class ProjectControllerTest(
         mockMvc
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isNotFound)
+
+        coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(managedProjectId) }
+    }
+
+    @Test
+    fun `evaluateIndustry returns 502 when AI service fails`() {
+        coEvery { projectIndustryService.evaluateIndustry(managedProjectId) } throws
+            ProjectIndustryAiException(
+                statusCode = 503,
+                body = "Service Unavailable",
+                message = "Failed to evaluate project industry (HTTP 503): Service Unavailable",
+            )
+
+        val asyncResult = mockMvc
+            .perform(post("/api/v1/projects/$managedProjectId/industry/evaluate").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        val expectedMessage = "Failed to evaluate project industry (HTTP 503): Service Unavailable"
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isBadGateway)
+            .andExpect(jsonPath("$.message").value(expectedMessage))
 
         coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(managedProjectId) }
     }

@@ -6,13 +6,16 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.exceptions.ProjectIndustryAiException
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
@@ -20,10 +23,12 @@ import java.util.UUID
 class ProjectIndustryServiceTest {
     private val projectRepository = mockk<ProjectRepository>()
     private val projectIndustryAiClient = mockk<ProjectIndustryAiClient>()
+    private val transactionManager = mockk<PlatformTransactionManager>(relaxed = true)
 
     private val service = ProjectIndustryService(
         projectRepository = projectRepository,
         projectIndustryAiClient = projectIndustryAiClient,
+        transactionManager = transactionManager,
     )
 
     private val projectId = UUID.randomUUID()
@@ -32,6 +37,7 @@ class ProjectIndustryServiceTest {
     fun `evaluates and persists industry on project`() = runTest {
         val project = Project(id = projectId, name = "Test Project")
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Fintech / Banking",
             confidence = "high",
@@ -45,6 +51,10 @@ class ProjectIndustryServiceTest {
         assertEquals(listOf("Payment gateway", "Ledger service"), result.evidence)
         assertEquals("Fintech / Banking", project.industry)
         assertEquals("high", project.industryConfidence)
+
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "Fintech / Banking" && it.industryConfidence == "high" })
+        }
     }
 
     @Test
@@ -56,6 +66,7 @@ class ProjectIndustryServiceTest {
             industryConfidence = "high",
         )
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "E-Commerce",
             confidence = "low",
@@ -68,6 +79,10 @@ class ProjectIndustryServiceTest {
         assertEquals("low", result.confidence)
         assertEquals("E-Commerce", project.industry)
         assertEquals("low", project.industryConfidence)
+
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "E-Commerce" && it.industryConfidence == "low" })
+        }
     }
 
     @Test
@@ -79,6 +94,8 @@ class ProjectIndustryServiceTest {
         }
 
         assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
     }
 
     @Test
@@ -86,10 +103,18 @@ class ProjectIndustryServiceTest {
         val project = Project(id = projectId, name = "Test Project")
         every { projectRepository.findById(projectId) } returns Optional.of(project)
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
-            ProjectIndustryAiException("AI service unavailable")
+            ProjectIndustryAiException(
+                statusCode = 503,
+                body = "Service Unavailable",
+                message = "AI service unavailable",
+            )
 
-        assertThrows<ProjectIndustryAiException> {
+        val exception = assertThrows<ProjectIndustryAiException> {
             service.evaluateIndustry(projectId)
         }
+
+        assertEquals(503, exception.statusCode)
+        assertEquals("Service Unavailable", exception.body)
+        verify(exactly = 0) { projectRepository.save(any()) }
     }
 }

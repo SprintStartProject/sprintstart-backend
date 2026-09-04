@@ -38,7 +38,11 @@ class ProjectIndustryAiClient(
                 .sync()
                 .perform<AiIndustryEvaluationResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw ProjectIndustryAiException("Failed to evaluate project industry (HTTP ${e.statusCode}): ${e.body}")
+            throw ProjectIndustryAiException(
+                statusCode = e.statusCode,
+                body = e.body,
+                message = "Failed to evaluate project industry (HTTP ${e.statusCode}): ${e.body}",
+            )
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")
