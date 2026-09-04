@@ -111,6 +111,42 @@ class IngestionRunLifeCycleServiceTest {
     }
 
     @Test
+    fun `finishRun marks mixed unchanged success and failure partial without AI event`() {
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.CONFLUENCE,
+            status = IngestionRunStatus.RUNNING,
+            failedCount = 1,
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id, successfulItemCount = 1)
+
+        assertThat(run.status).isEqualTo(IngestionRunStatus.PARTIAL)
+        assertThat(run.finishedAt).isNotNull()
+        assertThat(run.aiSyncStatus).isEqualTo(AiSyncStatus.NOT_APPLICABLE)
+        verify(exactly = 0) { publisher.publishEvent(any()) }
+    }
+
+    @Test
+    fun `finishRun marks all eligible failures failed`() {
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.CONFLUENCE,
+            status = IngestionRunStatus.RUNNING,
+            failedCount = 2,
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id, successfulItemCount = 0)
+
+        assertThat(run.status).isEqualTo(IngestionRunStatus.FAILED)
+        assertThat(run.finishedAt).isNotNull()
+        assertThat(run.aiSyncStatus).isEqualTo(AiSyncStatus.NOT_APPLICABLE)
+        verify(exactly = 0) { publisher.publishEvent(any()) }
+    }
+
+    @Test
     fun `markAiSyncFailed records the failure reason on the matching run`() {
         val run = run()
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)

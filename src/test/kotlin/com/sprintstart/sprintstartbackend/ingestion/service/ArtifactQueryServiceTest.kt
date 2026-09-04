@@ -52,6 +52,7 @@ class ArtifactQueryServiceTest {
         assertThat(result.items).hasSize(1)
         assertThat(result.items.single().id).isEqualTo(artifact.id)
         assertThat(result.items.single().metadata).isEqualTo("""{"repositoryFullName":"owner/repo"}""")
+        assertThat(result.items.single().sourceVersion).isEqualTo("v1")
         assertThat(result.page.number).isEqualTo(2)
         assertThat(result.page.size).isEqualTo(10)
         assertThat(result.page.totalElements).isEqualTo(21)
@@ -81,6 +82,7 @@ class ArtifactQueryServiceTest {
         sourceSystem = SourceSystem.GITHUB,
         sourceId = "github:owner/repo:FILE:README.md",
         sourceUrl = "https://github.com/owner/repo/blob/main/README.md",
+        sourceVersion = "v1",
         artifactType = ArtifactType.FILE,
         title = "README.md",
         content = "content",

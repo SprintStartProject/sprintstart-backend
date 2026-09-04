@@ -24,7 +24,9 @@ class Artifact(
     @Column(name = "source_id", nullable = false)
     val sourceId: String,
     @Column(name = "source_url", length = 2048)
-    val sourceUrl: String?,
+    var sourceUrl: String?,
+    @Column(name = "source_version")
+    var sourceVersion: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(name = "artifact_type", nullable = false)
     val artifactType: ArtifactType,
@@ -66,7 +68,7 @@ class Artifact(
     val ingestedAt: Instant = Instant.now(),
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
-    val ingestionRun: IngestionRun,
+    var ingestionRun: IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
     /**

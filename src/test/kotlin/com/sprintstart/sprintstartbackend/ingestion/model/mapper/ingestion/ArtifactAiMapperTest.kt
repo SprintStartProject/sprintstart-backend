@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.UUID
 
 class ArtifactAiMapperTest {
@@ -17,6 +18,27 @@ class ArtifactAiMapperTest {
         sourceSystem = SourceSystem.GITHUB,
         status = IngestionRunStatus.RUNNING,
     )
+
+    private fun artifact(projectIds: Set<UUID>) = Artifact(
+        id = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+        sourceSystem = SourceSystem.GITHUB,
+        sourceId = "github:owner/repo:FILE:README.md",
+        sourceUrl = "https://github.com/owner/repo/blob/main/README.md",
+        sourceVersion = "v1",
+        artifactType = ArtifactType.FILE,
+        title = "README.md",
+        content = "content",
+        mime = "text/markdown",
+        language = "Markdown",
+        createdAtSource = null,
+        updatedAtSource = Instant.parse("2026-06-19T09:15:30Z"),
+        ingestionRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.COMPLETED,
+        ),
+        hash = "hash",
+    ).apply { addProjectIds(projectIds) }
 
     @Test
     fun `toIngestRequest forwards issue state and labels`() {
@@ -95,5 +117,40 @@ class ArtifactAiMapperTest {
 
         assertThat(result.state).isNull()
         assertThat(result.labels).isEmpty()
+    }
+
+    @Test
+    fun `carries every project membership of the artifact`() {
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+
+        val request = mapper.toIngestRequest(artifact(setOf(first, second)))
+
+        assertThat(request.projectIds)
+            .containsExactlyInAnyOrder(first.toString(), second.toString())
+    }
+
+    @Test
+    fun `sends an empty list for an artifact belonging to no project`() {
+        val request = mapper.toIngestRequest(artifact(emptySet()))
+
+        assertThat(request.projectIds).isEmpty()
+    }
+
+    @Test
+    fun `maps the remaining artifact fields unchanged`() {
+        val projectId = UUID.randomUUID()
+
+        val request = mapper.toIngestRequest(artifact(setOf(projectId)))
+
+        assertThat(request.artifactId).isEqualTo("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        assertThat(request.sourceSystem).isEqualTo(SourceSystem.GITHUB)
+        assertThat(request.sourceId).isEqualTo("github:owner/repo:FILE:README.md")
+        assertThat(request.sourceUrl).isEqualTo("https://github.com/owner/repo/blob/main/README.md")
+        assertThat(request.artifactType).isEqualTo(ArtifactType.FILE)
+        assertThat(request.title).isEqualTo("README.md")
+        assertThat(request.bodyText).isEqualTo("content")
+        assertThat(request.mime).isEqualTo("text/markdown")
+        assertThat(request.language).isEqualTo("Markdown")
     }
 }

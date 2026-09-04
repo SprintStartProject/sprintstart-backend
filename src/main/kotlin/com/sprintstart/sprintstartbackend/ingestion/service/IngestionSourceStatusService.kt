@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
@@ -27,6 +29,7 @@ import java.util.UUID
 class IngestionSourceStatusService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
+    private val confluenceConnectionApi: ConfluenceConnectionApi,
     private val ingestionRunRepository: IngestionRunRepository,
     private val artifactRepository: ArtifactRepository,
 ) {
@@ -43,6 +46,7 @@ class IngestionSourceStatusService(
     fun getStatusPerSourceInstance(projectId: UUID? = null): List<SourceInstanceIngestionStatusResponse> {
         val githubStatuses = githubRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+        val confluenceStatuses = confluenceConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val uploadStatuses = if (projectId != null) {
             val uploadCount = artifactRepository.countUploadArtifactsByProjectId(projectId)
             val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
@@ -82,7 +86,7 @@ class IngestionSourceStatusService(
             emptyList()
         }
 
-        return githubStatuses + jiraStatuses + uploadStatuses
+        return githubStatuses + jiraStatuses + confluenceStatuses + uploadStatuses
     }
 
     private fun GithubSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
@@ -132,6 +136,31 @@ class IngestionSourceStatusService(
             artifactCount = artifactRepository.countJiraArtifactsByInstanceUrl(instanceUrl),
             lastCommitsSyncAt = null,
             lastIssuesSyncAt = lastUpdate,
+            lastPullRequestsSyncAt = null,
+        )
+    }
+
+    private fun ConfluenceSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
+        val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId)
+        return SourceInstanceIngestionStatusResponse(
+            sourceSystem = SourceSystem.CONFLUENCE,
+            sourceId = sourceRef,
+            displayName = spaceKey,
+            repositoryId = null,
+            owner = null,
+            name = null,
+            sourceUrl = sourceUrl,
+            connectionStatus = status,
+            enabled = enabled,
+            lastRunTime = lastRun?.startedAt,
+            ingestedCount = lastRun?.ingestedCount ?: 0,
+            updatedCount = lastRun?.updatedCount ?: 0,
+            deletedCount = lastRun?.deletedCount ?: 0,
+            failedCount = lastRun?.failedCount ?: 0,
+            failedItems = lastRun?.failedItems.orEmpty(),
+            artifactCount = artifactRepository.countConfluenceArtifactsByConnectionId(connectionId.toString()),
+            lastCommitsSyncAt = null,
+            lastIssuesSyncAt = null,
             lastPullRequestsSyncAt = null,
         )
     }

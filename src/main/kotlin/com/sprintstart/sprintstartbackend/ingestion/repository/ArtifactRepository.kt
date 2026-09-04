@@ -21,6 +21,13 @@ import java.util.UUID
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
+    fun findBySourceSystemAndSourceId(sourceSystem: SourceSystem, sourceId: String): Artifact?
+
+    fun findAllBySourceSystemAndSourceIdIn(
+        sourceSystem: SourceSystem,
+        sourceIds: Collection<String>,
+    ): List<Artifact>
+
     fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
 
     /**
@@ -204,9 +211,7 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
         @Param("instanceUrl") instanceUrl: String,
     ): Long
 
-    /**
-     * Counts stored upload artifacts belonging to a project.
-     */
+    /** Counts stored upload artifacts belonging to a project. */
     @Query(
         """
             SELECT COUNT(DISTINCT a)
@@ -219,4 +224,16 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countUploadArtifactsByProjectId(
         @Param("projectId") projectId: UUID,
     ): Long
+
+    /** Counts Confluence page artifacts belonging to one stored space connection. */
+    @Query(CONFLUENCE_ARTIFACT_COUNT_QUERY)
+    fun countConfluenceArtifactsByConnectionId(
+        @Param("connectionId") connectionId: String,
+    ): Long
 }
+
+private const val CONFLUENCE_ARTIFACT_COUNT_QUERY =
+    "SELECT COUNT(a) FROM Artifact a " +
+        "WHERE a.sourceSystem = " +
+        "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.CONFLUENCE " +
+        "AND a.sourceId LIKE CONCAT('confluence:', :connectionId, ':page:%')"

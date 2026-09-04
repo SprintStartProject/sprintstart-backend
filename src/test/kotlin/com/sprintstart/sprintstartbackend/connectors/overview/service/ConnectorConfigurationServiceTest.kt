@@ -4,10 +4,12 @@ import com.sprintstart.sprintstartbackend.connectors.overview.SourceClient
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorConfiguration
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
+import com.sprintstart.sprintstartbackend.connectors.overview.models.IProjectScopedSourcePatcher
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.ConfigureConnectorRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.PatchSourceRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.PatchSourcesRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.connectors.overview.repository.ConnectorConfigurationRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -209,7 +211,9 @@ class ConnectorConfigurationServiceTest {
 
         @Test
         fun `should update lastConfiguredAt but not firstConfiguredAt on subsequent config`() = runTest {
-            val now = java.time.Instant.now()
+            val now = java.time.Instant
+                .now()
+                .minusSeconds(1)
             val config = ConnectorConfiguration(
                 id = "github",
                 enabled = true,
@@ -305,6 +309,18 @@ class ConnectorConfigurationServiceTest {
             assertFailsWith<ConnectorNotFoundException> {
                 service.getSourcesOfConnector("unknown")
             }
+        }
+
+        @Test
+        fun `project scoped connector returns its global source view when project id is omitted`() {
+            val projectConnector = projectScopedConnector()
+            val scopedService = ConnectorConfigurationService(repository, listOf(projectConnector), sourceClient)
+            every { projectConnector.getSources() } returns emptyList()
+
+            val result = scopedService.getSourcesOfConnector("confluence")
+
+            assertThat(result.connectorId).isEqualTo("confluence")
+            assertThat(result.sources).isEmpty()
         }
     }
 
@@ -414,5 +430,79 @@ class ConnectorConfigurationServiceTest {
                 )
             }
         }
+
+        @Test
+        fun `project scoped connector requires project id`() = runTest {
+            val projectConnector = projectScopedConnector()
+            val scopedService = ConnectorConfigurationService(repository, listOf(projectConnector), sourceClient)
+
+            assertFailsWith<SourcePatchValidationException> {
+                scopedService.patchSourcesIfConnectorExists(
+                    "confluence",
+                    PatchSourcesRequest(listOf(PatchSourceRequest(UUID.randomUUID().toString(), true))),
+                )
+            }
+        }
+
+        @Test
+        fun `project scoped connector rejects duplicate source ids before patching`() = runTest {
+            val projectConnector = projectScopedConnector()
+            val patcher = projectConnector as IProjectScopedSourcePatcher
+            val scopedService = ConnectorConfigurationService(repository, listOf(projectConnector), sourceClient)
+            val sourceId = UUID.randomUUID().toString()
+
+            assertFailsWith<SourcePatchValidationException> {
+                scopedService.patchSourcesIfConnectorExists(
+                    "confluence",
+                    PatchSourcesRequest(
+                        listOf(
+                            PatchSourceRequest(sourceId, true),
+                            PatchSourceRequest(sourceId, false),
+                        ),
+                    ),
+                    UUID.randomUUID(),
+                )
+            }
+
+            verify(exactly = 0) { patcher.patchSources(any(), any()) }
+        }
+
+        @Test
+        fun `project scoped connector preserves request ordering and patches AI after validation`() = runTest {
+            val projectConnector = projectScopedConnector()
+            val patcher = projectConnector as IProjectScopedSourcePatcher
+            val scopedService = ConnectorConfigurationService(repository, listOf(projectConnector), sourceClient)
+            val projectId = UUID.randomUUID()
+            val firstId = UUID.randomUUID().toString()
+            val secondId = UUID.randomUUID().toString()
+            val requested = linkedMapOf(firstId to false, secondId to true)
+            every { patcher.patchSources(projectId, requested) } returns listOf(
+                ConnectorSource(firstId, "First", "https://tenant.invalid/first", false),
+                ConnectorSource(secondId, "Second", "https://tenant.invalid/second", true),
+            )
+            coEvery { sourceClient.patchSources("confluence", requested) } just runs
+
+            val result = scopedService.patchSourcesIfConnectorExists(
+                "confluence",
+                PatchSourcesRequest(
+                    listOf(
+                        PatchSourceRequest(firstId, false),
+                        PatchSourceRequest(secondId, true),
+                    ),
+                ),
+                projectId,
+            )
+
+            assertThat(result.sources.map { source -> source.id }).containsExactly(firstId, secondId)
+            verify(exactly = 1) { patcher.patchSources(projectId, requested) }
+            coVerify(exactly = 1) { sourceClient.patchSources("confluence", requested) }
+        }
+    }
+
+    private fun projectScopedConnector(): IConnector {
+        val connector = mockk<IConnector>(moreInterfaces = arrayOf(IProjectScopedSourcePatcher::class))
+        every { connector.id } returns "confluence"
+        every { connector.displayName } returns "Confluence Cloud Connector"
+        return connector
     }
 }
