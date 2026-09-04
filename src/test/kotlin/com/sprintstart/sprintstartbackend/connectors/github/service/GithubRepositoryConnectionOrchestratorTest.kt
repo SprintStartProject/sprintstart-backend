@@ -34,9 +34,9 @@ class GithubRepositoryConnectionOrchestratorTest {
         val transactionId1 = UUID.randomUUID()
         val transactionId2 = UUID.randomUUID()
 
-        coEvery { connectorService.connectRepositoryIfExists("auth-id", repo1) } returns
+        coEvery { connectorService.connectRepositoryIfNecessary("auth-id", repo1) } returns
             RepositoryConnectionOutcome(transactionId1, wasReused = false)
-        coEvery { connectorService.connectRepositoryIfExists("auth-id", repo2) } returns
+        coEvery { connectorService.connectRepositoryIfNecessary("auth-id", repo2) } returns
             RepositoryConnectionOutcome(transactionId2, wasReused = true)
 
         val result = orchestrator.connectRepositoriesIfExist("auth-id", request)
@@ -47,7 +47,7 @@ class GithubRepositoryConnectionOrchestratorTest {
         // Only the reused one is reported as such, so the caller knows which repositories
         // started no ingestion run and have no progress to poll.
         assertThat(result.reusedRepositoryIds).containsExactly("owner2/repo2")
-        coVerify { connectorService.connectRepositoryIfExists("auth-id", repo1) }
-        coVerify { connectorService.connectRepositoryIfExists("auth-id", repo2) }
+        coVerify { connectorService.connectRepositoryIfNecessary("auth-id", repo1) }
+        coVerify { connectorService.connectRepositoryIfNecessary("auth-id", repo2) }
     }
 }

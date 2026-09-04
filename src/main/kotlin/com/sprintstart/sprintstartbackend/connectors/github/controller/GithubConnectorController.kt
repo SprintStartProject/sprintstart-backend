@@ -234,7 +234,7 @@ internal class GithubConnectorController(
         @RequestBody
         request: ConnectRepositoryRequest,
     ): ResponseEntity<ConnectRepositoryResponse> {
-        val outcome = githubConnectorService.connectRepositoryIfExists(jwt.subject, request)
+        val outcome = githubConnectorService.connectRepositoryIfNecessary(jwt.subject, request)
         return ResponseEntity.accepted().body(
             ConnectRepositoryResponse(outcome.transactionId, outcome.wasReused),
         )

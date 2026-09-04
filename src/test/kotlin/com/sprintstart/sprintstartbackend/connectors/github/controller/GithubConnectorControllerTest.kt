@@ -99,7 +99,7 @@ class GithubConnectorControllerTest {
             val expectedTransactionId = UUID.randomUUID()
 
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(
+                githubConnectorService.connectRepositoryIfNecessary(
                     "mockId",
                     request,
                 )
@@ -131,7 +131,7 @@ class GithubConnectorControllerTest {
             val expectedTransactionId = UUID.randomUUID()
 
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(
+                githubConnectorService.connectRepositoryIfNecessary(
                     "adminId",
                     request,
                 )
@@ -175,7 +175,7 @@ class GithubConnectorControllerTest {
                 ),
             )
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(any(), any())
+                githubConnectorService.connectRepositoryIfNecessary(any(), any())
             } throws RepositoryNotFoundException(owner, name)
 
             val asyncResult = mockMvc

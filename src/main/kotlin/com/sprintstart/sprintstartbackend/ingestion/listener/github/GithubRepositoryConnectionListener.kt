@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -19,14 +20,27 @@ internal class GithubRepositoryConnectionListener(
     fun on(
         event: GithubRepositoryConnectionInitiatedEvent,
     ) {
-        ingestionRunLifeCycleService
-            .startOrUpdateRun(
-                transactionId = event.transactionId,
-                sourceSystem = SourceSystem.GITHUB,
-                status = IngestionRunStatus.CONNECTED,
-                sourceInstanceId = resolveRepositoryId(event.owner, event.name),
-                sourceInstanceRef = "${event.owner}/${event.name}",
-            )
+        ingestionRunLifeCycleService.startOrUpdateRun(
+            transactionId = event.transactionId,
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.CONNECTED,
+            sourceInstanceId = resolveRepositoryId(event.owner, event.name),
+            sourceInstanceRef = "${event.owner}/${event.name}",
+        )
+    }
+
+    @EventListener
+    fun on(
+        event: GithubRepositoryAlreadyConnectedEvent,
+    ) {
+        ingestionRunLifeCycleService.startOrUpdateRun(
+            transactionId = event.transactionId,
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.CONNECTED,
+            sourceInstanceId = resolveRepositoryId(event.owner, event.name),
+            sourceInstanceRef = "${event.owner}/${event.name}",
+        )
+        ingestionRunLifeCycleService.finishEmptyRun(event.transactionId)
     }
 
     @EventListener
