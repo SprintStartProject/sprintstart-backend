@@ -4,11 +4,13 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.KnowledgeReq
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.CanonicalAnswer
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.KnowledgeRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.CanonicalAnswerResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.EscalationHireResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.KnowledgeRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.CanonicalAnswerRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,6 +31,7 @@ class KnowledgeBaseService(
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val canonicalAnswerRepository: CanonicalAnswerRepository,
     private val userApi: UserApi,
+    private val onboardingPositionReader: OnboardingPositionReader,
 ) {
     /**
      * Records a hire's escalation of a question the buddy could not answer.
@@ -52,12 +55,58 @@ class KnowledgeBaseService(
         return saved.toResponse(answer = null)
     }
 
-    /** The PM inbox: the open queue for a project, longest-waiting first. */
+    /**
+     * The PM inbox: the open queue for a project, longest-waiting first, each question carrying who
+     * asked it and where they are.
+     *
+     * The identity was always stored and always serialised, but a UUID is not something a PM can act
+     * on: to answer well they need to know whether they are talking to somebody on their first day or
+     * somebody three weeks in. Resolved here rather than left to the client, which would turn one
+     * inbox into a request per row.
+     *
+     * The users and the positions are each fetched once for the *distinct* askers, so a queue of
+     * twenty questions from three people costs three people's worth of lookups rather than twenty.
+     * Walking each path's phases and steps is still lazy, as the team overview's own derivation
+     * is, so this grows with the number of distinct askers and their phases — which is why the
+     * sidebar badge counts through [countOpen] instead of reading this and taking its length.
+     */
     @Transactional(readOnly = true)
-    fun listOpen(projectId: UUID): List<KnowledgeRequestResponse> =
-        knowledgeRequestRepository
+    fun listOpen(projectId: UUID): List<KnowledgeRequestResponse> {
+        val requests = knowledgeRequestRepository
             .findAllByProjectIdAndStatusOrderByCreatedAtAsc(projectId, KnowledgeRequestStatus.OPEN)
-            .map { it.toResponse(answer = null) }
+        if (requests.isEmpty()) return emptyList()
+
+        val hireIds = requests.map { it.hireId }.distinct()
+        val usersById = userApi.getUsersByIds(hireIds).associateBy { it.id }
+        val positionsById = onboardingPositionReader.positionsFor(hireIds)
+
+        return requests.map { request ->
+            val user = usersById[request.hireId]
+            val hire = user?.let {
+                val position = positionsById[it.id]
+                EscalationHireResponse(
+                    userId = it.id,
+                    displayName = it.displayName(),
+                    profileIcon = it.profileIcon,
+                    currentPhase = position?.currentPhase,
+                    currentStep = position?.currentStep,
+                    progressPercentage = position?.progressPercentage ?: 0.0,
+                )
+            }
+            request.toResponse(answer = null, hire = hire)
+        }
+    }
+
+    /**
+     * How many questions on a project are still waiting on a person.
+     *
+     * Deliberately not `listOpen(projectId).size`. The sidebar badge asks this on every navigation,
+     * and [listOpen] resolves every asker's name and onboarding position — a page of work to
+     * produce one integer. Counted in the database instead.
+     */
+    @Transactional(readOnly = true)
+    fun countOpen(projectId: UUID): Long =
+        knowledgeRequestRepository.countByProjectIdAndStatus(projectId, KnowledgeRequestStatus.OPEN)
 
     /** A hire's own escalations, newest first, each carrying its answer once one exists. */
     @Transactional(readOnly = true)
@@ -175,18 +224,6 @@ class KnowledgeBaseService(
             .map { it.first }
     }
 
-    private fun tokenize(text: String): Set<String> =
-        text
-            .lowercase()
-            .split(Regex("[^a-z0-9]+"))
-            .filter { it.length >= MIN_TOKEN_LENGTH }
-            .toSet()
-
-    private fun score(answer: CanonicalAnswer, tokens: Set<String>): Int {
-        val haystack = "${answer.question} ${answer.answer}".lowercase()
-        return tokens.count { haystack.contains(it) }
-    }
-
     private fun resolveUserId(authId: String): UUID =
         userApi.getUserIdByAuthId(authId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId")
@@ -194,6 +231,31 @@ class KnowledgeBaseService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 3
-        const val MIN_TOKEN_LENGTH = 3
     }
 }
+
+/** Words short enough to match anything are noise in a term-overlap score. */
+private const val MIN_TOKEN_LENGTH = 3
+
+private fun tokenize(text: String): Set<String> =
+    text
+        .lowercase()
+        .split(Regex("[^a-z0-9]+"))
+        .filter { it.length >= MIN_TOKEN_LENGTH }
+        .toSet()
+
+private fun score(answer: CanonicalAnswer, tokens: Set<String>): Int {
+    val haystack = "${answer.question} ${answer.answer}".lowercase()
+    return tokens.count { haystack.contains(it) }
+}
+
+/**
+ * What to call somebody on screen.
+ *
+ * Falls back to the username rather than rendering an empty string: a blank name on a card reads as a
+ * bug in the card, and the username is at least something a PM can search for.
+ *
+ * A file-level helper rather than a method: it is a way of phrasing a [UserDto], not a thing the
+ * knowledge base does.
+ */
+private fun UserDto.displayName(): String = "$firstname $lastname".trim().ifEmpty { username }

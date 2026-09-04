@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.knowledge.Cre
 import com.sprintstart.sprintstartbackend.onboarding.model.request.knowledge.UpdateCanonicalAnswer
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.CanonicalAnswerResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.KnowledgeRequestResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.OpenEscalationCountResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.KnowledgeBaseService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -71,9 +72,27 @@ class KnowledgeRequestController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/knowledge-requests")
-    @PreAuthorize("hasAnyRole('PM', 'HR', 'ADMIN')")
+    // Project-scoped, not merely role-scoped. The role alone let any PM or HR user read any
+    // project's queue by passing its id, which mattered less while the payload was a question and a
+    // bare UUID -- it now carries the asker's name and how far through onboarding they are. Every
+    // other project-scoped read in the codebase pairs the role with this predicate.
+    @PreAuthorize(
+        "hasAnyRole('PM', 'HR', 'ADMIN') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
     fun listOpen(@RequestParam projectId: UUID): List<KnowledgeRequestResponse> =
         knowledgeBaseService.listOpen(projectId)
+
+    @Operation(
+        summary = "How many questions are waiting on a person",
+        description = "Just the number, for surfaces that show a badge rather than the queue.",
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/knowledge-requests/count")
+    @PreAuthorize(
+        "hasAnyRole('PM', 'HR', 'ADMIN') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
+    fun countOpen(@RequestParam projectId: UUID): OpenEscalationCountResponse =
+        OpenEscalationCountResponse(open = knowledgeBaseService.countOpen(projectId))
 
     @Operation(
         summary = "Answer an escalated question",
