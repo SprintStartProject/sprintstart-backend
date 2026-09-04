@@ -8,6 +8,7 @@ data class GetBlueprintCheckQuestionResponse(
     val id: UUID,
     val blueprintPhaseId: UUID,
     val revision: Long,
+    val title: String,
     val position: Int,
     val type: CheckQuestionType,
     val question: String,

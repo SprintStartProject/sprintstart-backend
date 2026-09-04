@@ -5,23 +5,14 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateGraphResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.AddBlueprintStepBlockerRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.DeleteBlueprintStepRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.RemoveBlueprintStepBlockerRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.RemoveBlueprintStepGraphPositionRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepGraphPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.AddBlueprintStepBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.RemoveBlueprintStepBlockerResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.RemoveBlueprintStepGraphPositionResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepGraphPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
@@ -93,34 +84,6 @@ class BlueprintStepService(
     }
 
     @Transactional
-    fun addBlueprintStepBlocker(
-        scope: BlueprintScope,
-        stepId: UUID,
-        blockerId: UUID,
-        request: AddBlueprintStepBlockerRequest,
-    ): AddBlueprintStepBlockerResponse {
-        val step = blueprintAccessService.getAuthorizedEditableStep(scope, stepId)
-        val blocker = blueprintAccessService.getAuthorizedEditableStep(scope, blockerId)
-        validateRevision(step, request.revision)
-
-        if (step.blockedBy.map { it.id }.contains(blockerId)) {
-            throw ResponseStatusException(HttpStatus.FORBIDDEN, "Cant be blocked by an existing blocker")
-        }
-
-        // Adding step -> blocker is valid only when blocker does not already depend on step.
-        dfs(blocker, step)
-
-        markStepModified(step)
-        step.blockedBy.add(blocker)
-        entityManager.flush()
-
-        return AddBlueprintStepBlockerResponse(
-            step.revision + 1,
-            step.blockedBy.map { it.id }.toSet(),
-        )
-    }
-
-    @Transactional
     fun updateBlueprintStepById(
         scope: BlueprintScope,
         stepId: UUID,
@@ -144,22 +107,6 @@ class BlueprintStepService(
     }
 
     @Transactional
-    fun updateBlueprintStepGraphPositionById(
-        scope: BlueprintScope,
-        stepId: UUID,
-        request: UpdateBlueprintStepGraphPositionRequest,
-    ): UpdateBlueprintStepGraphPositionResponse {
-        val step = blueprintAccessService.getAuthorizedEditableStep(scope, stepId)
-        validateRevision(step, request.revision)
-
-        step.graphX = request.graphX
-        step.graphY = request.graphY
-        entityManager.flush()
-
-        return step.toUpdateGraphResponse()
-    }
-
-    @Transactional
     fun updateBlueprintStepPositionById(
         scope: BlueprintScope,
         stepId: UUID,
@@ -175,47 +122,6 @@ class BlueprintStepService(
         blueprintStepRepository.saveAllAndFlush(shiftedSteps)
 
         return shiftedSteps.map { it.toUpdatePositionResponse() }
-    }
-
-    @Transactional
-    fun removeBlueprintStepBlocker(
-        scope: BlueprintScope,
-        step: UUID,
-        blockerId: UUID,
-        request: RemoveBlueprintStepBlockerRequest,
-    ): RemoveBlueprintStepBlockerResponse {
-        val step = blueprintAccessService.getAuthorizedEditableStep(scope, step)
-        val blocker = blueprintAccessService.getAuthorizedEditableStep(scope, blockerId)
-
-        validateRevision(step, request.revision)
-
-        markStepModified(step)
-        step.blockedBy.remove(blocker)
-        entityManager.flush()
-
-        return RemoveBlueprintStepBlockerResponse(
-            step.revision + 1,
-            step.blockedBy.map { it.id }.toSet(),
-        )
-    }
-
-    @Transactional
-    fun removeBlueprintStepGraphPositionById(
-        scope: BlueprintScope,
-        stepId: UUID,
-        request: RemoveBlueprintStepGraphPositionRequest,
-    ): RemoveBlueprintStepGraphPositionResponse {
-        val step = blueprintAccessService.getAuthorizedEditableStep(scope, stepId)
-        validateRevision(step, request.revision)
-
-        step.graphX = null
-        step.graphY = null
-        step.blockedBy.clear()
-        entityManager.flush()
-
-        return RemoveBlueprintStepGraphPositionResponse(
-            step.revision,
-        )
     }
 
     @Transactional
@@ -303,22 +209,5 @@ class BlueprintStepService(
         }
 
         return stepsToShift
-    }
-
-    private fun dfs(currentStep: BlueprintStep, targetStep: BlueprintStep) {
-        if (currentStep == targetStep) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Blocking cant be cyclic")
-        }
-
-        for (step in currentStep.blockedBy) {
-            dfs(step, targetStep)
-        }
-    }
-
-    private fun markStepModified(step: BlueprintStep) {
-        entityManager.lock(
-            step,
-            LockModeType.OPTIMISTIC_FORCE_INCREMENT,
-        )
     }
 }

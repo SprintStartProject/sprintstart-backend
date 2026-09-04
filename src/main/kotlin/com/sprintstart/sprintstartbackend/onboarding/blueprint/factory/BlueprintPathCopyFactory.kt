@@ -150,11 +150,14 @@ class BlueprintPathCopyFactory {
     ): BlueprintCheckQuestion {
         val newQuestion = BlueprintCheckQuestion(
             blueprintPhase = newPhase,
+            title = question.title,
             position = question.position,
             type = question.type,
             question = question.question,
             explanation = question.explanation,
             correctAnswer = question.correctAnswer,
+            graphX = question.graphX,
+            graphY = question.graphY,
         )
 
         question.blueprintCheckOptions

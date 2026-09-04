@@ -3,10 +3,12 @@ package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.path.CreateBlueprintPathRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.path.UpdateBlueprintPathRequest
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.graphNode.GetBlueprintGraphResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.CreateBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.GetBlueprintPathOverviewResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.GetBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.UpdateBlueprintPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintGraphNodeService
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintPathService
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
@@ -25,6 +27,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintPathAdminController(
     private val blueprintPathService: BlueprintPathService,
+    private val blueprintGraphNodeService: BlueprintGraphNodeService,
 ) {
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
@@ -40,6 +43,15 @@ class BlueprintPathAdminController(
         @PathVariable blueprintKey: UUID,
     ): List<GetBlueprintPathResponse> {
         return blueprintPathService.getBlueprintPathHistoryByBlueprintKey(BlueprintScope.Global, blueprintKey)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("paths/{pathId}/graph")
+    fun getBlueprintGraphByPathId(
+        @PathVariable pathId: UUID,
+    ): GetBlueprintGraphResponse {
+        return blueprintGraphNodeService.getGraph(BlueprintScope.Global, pathId)
     }
 
     @ResponseStatus(HttpStatus.OK)
@@ -126,6 +138,7 @@ class BlueprintPathAdminController(
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintPathController(
     private val blueprintPathService: BlueprintPathService,
+    private val blueprintGraphNodeService: BlueprintGraphNodeService,
 ) {
     // This should return based on the blueprintKey
     @ResponseStatus(HttpStatus.OK)
@@ -160,6 +173,16 @@ class BlueprintPathController(
         @PathVariable projectId: UUID,
     ): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathService.getBlueprintPathOverviewsForProjectId(projectId)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @GetMapping("paths/{pathId}/graph")
+    fun getBlueprintGraphByPathId(
+        @PathVariable projectId: UUID,
+        @PathVariable pathId: UUID,
+    ): GetBlueprintGraphResponse {
+        return blueprintGraphNodeService.getGraph(BlueprintScope.Project(projectId), pathId)
     }
 
     @ResponseStatus(HttpStatus.OK)

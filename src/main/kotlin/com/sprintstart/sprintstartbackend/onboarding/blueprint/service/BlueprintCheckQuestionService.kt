@@ -77,6 +77,7 @@ class BlueprintCheckQuestionService(
 
         val question = BlueprintCheckQuestion(
             blueprintPhase = phase,
+            title = request.title,
             position = request.position,
             type = request.type,
             question = request.question,
@@ -106,6 +107,7 @@ class BlueprintCheckQuestionService(
 
         shiftQuestionsBetween(question, request.position)
 
+        question.title = request.title
         question.position = request.position
         question.type = request.type
         question.question = request.question

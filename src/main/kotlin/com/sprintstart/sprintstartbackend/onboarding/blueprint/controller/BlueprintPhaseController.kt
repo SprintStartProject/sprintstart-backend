@@ -9,7 +9,9 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ph
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.GetBlueprintSubGraphResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintPhaseService
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintSubGraphNodeService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
@@ -28,6 +30,7 @@ import java.util.UUID
 @RequestMapping("/api/v1/onboarding/blueprints")
 class BlueprintPhaseAdminController(
     private val blueprintPhaseService: BlueprintPhaseService,
+    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService,
 ) {
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
@@ -36,6 +39,15 @@ class BlueprintPhaseAdminController(
         @PathVariable pathId: UUID,
     ): List<GetBlueprintPhaseResponse> {
         return blueprintPhaseService.getBlueprintPhasesForPath(BlueprintScope.Global, pathId)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/phase/{phaseId}/graph")
+    fun getBlueprintSubGraphForPhaseId(
+        @PathVariable phaseId: UUID,
+    ): GetBlueprintSubGraphResponse {
+        return blueprintSubGraphNodeService.getSubGraph(BlueprintScope.Global, phaseId)
     }
 
     @ResponseStatus(HttpStatus.OK)
@@ -92,6 +104,7 @@ class BlueprintPhaseAdminController(
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
 class BlueprintPhaseController(
     private val blueprintPhaseService: BlueprintPhaseService,
+    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService,
 ) {
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
@@ -103,16 +116,6 @@ class BlueprintPhaseController(
         return blueprintPhaseService.getBlueprintPhasesForPath(BlueprintScope.Project(projectId), pathId)
     }
 
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
-    @GetMapping("/phases/{phaseId}")
-    fun getBlueprintPhaseById(
-        @PathVariable projectId: UUID,
-        @PathVariable phaseId: UUID,
-    ): GetBlueprintPhaseResponse {
-        return blueprintPhaseService.getBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId)
-    }
-
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @PostMapping("/path/{pathId}/phases")
@@ -122,6 +125,26 @@ class BlueprintPhaseController(
         @Valid @RequestBody request: CreateBlueprintPhaseRequest,
     ): CreateBlueprintPhaseResponse {
         return blueprintPhaseService.createBlueprintPhaseForPath(BlueprintScope.Project(projectId), pathId, request)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @GetMapping("/phase/{phaseId}/graph")
+    fun getBlueprintSubGraphForPhaseId(
+        @PathVariable projectId: UUID,
+        @PathVariable phaseId: UUID,
+    ): GetBlueprintSubGraphResponse {
+        return blueprintSubGraphNodeService.getSubGraph(BlueprintScope.Project(projectId), phaseId)
+    }
+
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @GetMapping("/phases/{phaseId}")
+    fun getBlueprintPhaseById(
+        @PathVariable projectId: UUID,
+        @PathVariable phaseId: UUID,
+    ): GetBlueprintPhaseResponse {
+        return blueprintPhaseService.getBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId)
     }
 
     @ResponseStatus(HttpStatus.OK)

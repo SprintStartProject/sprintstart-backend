@@ -1,20 +1,12 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.BlueprintScope
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.AddBlueprintStepBlockerRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.DeleteBlueprintStepRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.RemoveBlueprintStepBlockerRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.RemoveBlueprintStepGraphPositionRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepGraphPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.AddBlueprintStepBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.RemoveBlueprintStepBlockerResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.RemoveBlueprintStepGraphPositionResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepGraphPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintStepService
@@ -67,22 +59,6 @@ class BlueprintStepAdminController(
 
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
-    @PostMapping("/steps/{stepId}/blockers/{blockerId}")
-    fun addBlueprintStepBlocker(
-        @PathVariable stepId: UUID,
-        @PathVariable blockerId: UUID,
-        @RequestBody request: AddBlueprintStepBlockerRequest,
-    ): AddBlueprintStepBlockerResponse {
-        return blueprintStepService.addBlueprintStepBlocker(
-            BlueprintScope.Global,
-            stepId,
-            blockerId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/steps/{stepId}")
     fun updateBlueprintStepById(
         @PathVariable stepId: UUID,
@@ -99,50 +75,6 @@ class BlueprintStepAdminController(
         @Valid @RequestBody request: UpdateBlueprintStepPositionRequest,
     ): List<UpdateBlueprintStepPositionResponse> {
         return blueprintStepService.updateBlueprintStepPositionById(BlueprintScope.Global, stepId, request)
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasRole('ADMIN')")
-    @PutMapping("/steps/{stepId}/graph-position")
-    fun updateBlueprintStepGraphPositionById(
-        @PathVariable stepId: UUID,
-        @RequestBody request: UpdateBlueprintStepGraphPositionRequest,
-    ): UpdateBlueprintStepGraphPositionResponse {
-        return blueprintStepService.updateBlueprintStepGraphPositionById(
-            BlueprintScope.Global,
-            stepId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasRole('ADMIN')")
-    @DeleteMapping("/steps/{stepId}/blocker/{blockerId}")
-    fun removeBlueprintStepBlocker(
-        @PathVariable stepId: UUID,
-        @PathVariable blockerId: UUID,
-        @RequestBody request: RemoveBlueprintStepBlockerRequest,
-    ): RemoveBlueprintStepBlockerResponse {
-        return blueprintStepService.removeBlueprintStepBlocker(
-            BlueprintScope.Global,
-            stepId,
-            blockerId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasRole('ADMIN')")
-    @DeleteMapping("/steps/{stepId}/graph-position")
-    fun removeBlueprintStepGraphPositionById(
-        @PathVariable stepId: UUID,
-        @RequestBody request: RemoveBlueprintStepGraphPositionRequest,
-    ): RemoveBlueprintStepGraphPositionResponse {
-        return blueprintStepService.removeBlueprintStepGraphPositionById(
-            BlueprintScope.Global,
-            stepId,
-            request,
-        )
     }
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -194,23 +126,6 @@ class BlueprintStepController(
 
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    @PostMapping("/steps/{stepId}/blockers/{blockerId}")
-    fun addBlueprintStepBlocker(
-        @PathVariable projectId: UUID,
-        @PathVariable stepId: UUID,
-        @PathVariable blockerId: UUID,
-        @RequestBody request: AddBlueprintStepBlockerRequest,
-    ): AddBlueprintStepBlockerResponse {
-        return blueprintStepService.addBlueprintStepBlocker(
-            BlueprintScope.Project(projectId),
-            stepId,
-            blockerId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @PutMapping("/steps/{stepId}")
     fun updateBlueprintStepById(
         @PathVariable projectId: UUID,
@@ -229,53 +144,6 @@ class BlueprintStepController(
         @Valid @RequestBody request: UpdateBlueprintStepPositionRequest,
     ): List<UpdateBlueprintStepPositionResponse> {
         return blueprintStepService.updateBlueprintStepPositionById(
-            BlueprintScope.Project(projectId),
-            stepId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    @PutMapping("/steps/{stepId}/graph-position")
-    fun updateBlueprintStepGraphPositionById(
-        @PathVariable projectId: UUID,
-        @PathVariable stepId: UUID,
-        @RequestBody request: UpdateBlueprintStepGraphPositionRequest,
-    ): UpdateBlueprintStepGraphPositionResponse {
-        return blueprintStepService.updateBlueprintStepGraphPositionById(
-            BlueprintScope.Project(projectId),
-            stepId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    @DeleteMapping("/steps/{stepId}/blocker/{blockerId}")
-    fun removeBlueprintStepBlocker(
-        @PathVariable projectId: UUID,
-        @PathVariable stepId: UUID,
-        @PathVariable blockerId: UUID,
-        @RequestBody request: RemoveBlueprintStepBlockerRequest,
-    ): RemoveBlueprintStepBlockerResponse {
-        return blueprintStepService.removeBlueprintStepBlocker(
-            BlueprintScope.Project(projectId),
-            stepId,
-            blockerId,
-            request,
-        )
-    }
-
-    @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    @DeleteMapping("/steps/{stepId}/graph-position")
-    fun removeBlueprintStepGraphPositionById(
-        @PathVariable projectId: UUID,
-        @PathVariable stepId: UUID,
-        @RequestBody request: RemoveBlueprintStepGraphPositionRequest,
-    ): RemoveBlueprintStepGraphPositionResponse {
-        return blueprintStepService.removeBlueprintStepGraphPositionById(
             BlueprintScope.Project(projectId),
             stepId,
             request,

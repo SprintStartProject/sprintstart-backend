@@ -9,6 +9,8 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
+import jakarta.persistence.JoinTable
+import jakarta.persistence.ManyToMany
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
@@ -58,4 +60,15 @@ class BlueprintPhase(
         orphanRemoval = true,
     )
     val requirements: MutableSet<BlueprintPhaseRequirement> = mutableSetOf(),
+    @Column(nullable = true)
+    var graphX: Double? = null,
+    @Column(nullable = true)
+    var graphY: Double? = null,
+    @ManyToMany
+    @JoinTable(
+        name = "blueprint_phase_blockers",
+        joinColumns = [JoinColumn(name = "blocked_phase_id")],
+        inverseJoinColumns = [JoinColumn(name = "blocker_phase_id")],
+    )
+    val blockedBy: MutableSet<BlueprintPhase> = mutableSetOf(),
 )

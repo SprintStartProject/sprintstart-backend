@@ -6,27 +6,17 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.FetchType
-import jakarta.persistence.Id
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
-import jakarta.persistence.Version
-import java.util.UUID
 
 @Entity
 @Table(name = "blueprint_check_questions")
 class BlueprintCheckQuestion(
-    @Id
-    val id: UUID = UUID.randomUUID(),
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "blueprint_phase_id", nullable = false)
-    val blueprintPhase: BlueprintPhase,
-    @Column(nullable = false)
-    @Version
-    var revision: Long = 0,
+    blueprintPhase: BlueprintPhase,
+    title: String,
+    graphX: Double? = null,
+    graphY: Double? = null,
     @Column(nullable = false)
     var position: Int,
     @Enumerated(EnumType.STRING)
@@ -46,4 +36,9 @@ class BlueprintCheckQuestion(
     )
     @OrderBy("position ASC")
     val blueprintCheckOptions: MutableList<BlueprintCheckOption> = mutableListOf(),
-)
+) : BlueprintSubGraphNode(
+        blueprintPhase = blueprintPhase,
+        title = title,
+        graphX = graphX,
+        graphY = graphY,
+    )

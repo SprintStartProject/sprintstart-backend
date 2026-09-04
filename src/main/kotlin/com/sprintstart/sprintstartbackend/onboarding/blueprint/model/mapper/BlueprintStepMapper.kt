@@ -1,14 +1,10 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.AddBlueprintStepBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepGraphPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
-import org.springframework.http.HttpStatus
-import org.springframework.web.server.ResponseStatusException
 
 fun BlueprintStep.toGetResponse(): GetBlueprintStepResponse {
     return GetBlueprintStepResponse(
@@ -47,14 +43,6 @@ fun BlueprintStep.toCreateResponse(): CreateBlueprintStepResponse {
         graphY = this.graphY,
         blueprintTasks = this.blueprintTasks.map { it.toGetResponse() },
         blueprintResources = this.blueprintResources.map { it.toGetResponse() },
-    )
-}
-
-fun BlueprintStep.toUpdateGraphResponse(): UpdateBlueprintStepGraphPositionResponse {
-    return UpdateBlueprintStepGraphPositionResponse(
-        revision = this.revision,
-        graphX = this.graphX ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR),
-        graphY = this.graphY ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR),
     )
 }
 

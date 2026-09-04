@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestio
 
 data class UpdateBlueprintCheckQuestionRequest(
     val revision: Long,
+    val title: String,
     val position: Int,
     val type: CheckQuestionType,
     val question: String,

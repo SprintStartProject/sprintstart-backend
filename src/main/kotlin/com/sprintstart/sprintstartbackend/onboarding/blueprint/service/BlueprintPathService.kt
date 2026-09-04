@@ -257,10 +257,13 @@ class BlueprintPathService(
 //      - [x] make project Id Optional
 //      - [] mostly ai prompt phases
 //      - [] Add Seeder
+//      - [] Think about a way to implement the Ai Phases into the Graph
 //  - [x] Add an option to make phases be blocked by a previous one or not
+//      - [] BlockedBy via Question
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
 //      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
+//      - [] maybe add some sort of auto allign to the graph
 //  - [x] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
 //  - [] Add Tests
