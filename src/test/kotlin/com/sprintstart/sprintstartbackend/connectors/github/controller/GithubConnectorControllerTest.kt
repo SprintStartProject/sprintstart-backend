@@ -121,6 +121,67 @@ class GithubConnectorControllerTest {
         }
 
         @Test
+        fun `should report a reused connection so the caller can say nothing is being fetched`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+            val expectedTransactionId = UUID.randomUUID()
+
+            coEvery {
+                githubConnectorService.connectRepositoryIfNecessary("mockId", request)
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = true)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+                // A bare flag, and nothing else: a PM must not be able to work out which other
+                // project the repository was already connected to (#257).
+                .andExpect(jsonPath("$.wasReused").value(true))
+                .andExpect(jsonPath("$.length()").value(2))
+        }
+
+        @Test
+        fun `should report a fresh connection as not reused`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+
+            coEvery {
+                githubConnectorService.connectRepositoryIfNecessary("mockId", request)
+            } returns RepositoryConnectionOutcome(UUID.randomUUID(), wasReused = false)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.wasReused").value(false))
+        }
+
+        @Test
         fun `should return 202 Accepted when authenticated as ADMIN`() {
             val request = ConnectRepositoryRequest(
                 owner = "spring-projects",
