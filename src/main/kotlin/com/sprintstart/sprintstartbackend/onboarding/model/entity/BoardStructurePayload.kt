@@ -60,6 +60,19 @@ data class BoardStructurePayload(
      * delimiter, they carry both.
      */
     val marks: Map<String, List<CardMarkPayload>> = emptyMap(),
+    /**
+     * What this hire calls each highlight colour.
+     *
+     * The colours mean nothing on their own — "colour is never the message" is a rule the client
+     * holds everywhere, and a sentence marked green does not mean it went well. A hire sorting a
+     * board does mean something by them, though, and after a week they have forgotten which. So the
+     * meaning is theirs to write down, which is the only arrangement that keeps both: nothing here
+     * assigns a meaning, and the board can still show one back.
+     *
+     * A legend that did not follow the hire to another machine would be a legend for somebody
+     * else's board, which is why it is part of the arrangement rather than a browser preference.
+     */
+    val markLabels: Map<HighlightColor, String> = emptyMap(),
 )
 
 /** What the hire has said about one card. Every field is optional: silence is the honest default. */
