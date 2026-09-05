@@ -15,6 +15,7 @@ class ConfluenceConnectionMigrationTest {
         val sourceIdentityMigration = loadMigration("V14__add_confluence_artifact_source_identity.sql")
         val schedulingMigration = loadMigration("V15__add_confluence_scheduling.sql")
         val spaceNameMigration = loadMigration("V16__add_confluence_space_name.sql")
+        val credentialReferenceMigration = loadMigration("V17__confluence_uses_atlassian_credentials.sql")
         val databaseName = "confluence-migration-${UUID.randomUUID()}"
         DriverManager.getConnection("jdbc:h2:mem:$databaseName;MODE=PostgreSQL").use { connection ->
             connection.createStatement().use { statement ->
@@ -81,6 +82,15 @@ class ConfluenceConnectionMigrationTest {
                     result.next()
                     assertThat(result.getLong(1)).isZero()
                 }
+                credentialReferenceMigration
+                    .split(';')
+                    .map { sql -> sql.trim() }
+                    .filter { sql -> sql.isNotEmpty() }
+                    .forEach { sql -> statement.execute(sql) }
+
+                assertThatThrownBy {
+                    statement.executeQuery("SELECT COUNT(*) FROM confluence_credentials")
+                }.isInstanceOf(SQLException::class.java)
             }
         }
 
@@ -103,6 +113,11 @@ class ConfluenceConnectionMigrationTest {
             "WHERE auto_update = TRUE AND source_enabled = TRUE",
         )
         assertThat(spaceNameMigration).contains("ADD COLUMN space_name VARCHAR(255)")
+        assertThat(credentialReferenceMigration).contains(
+            "ADD COLUMN credential_auth_id VARCHAR(255)",
+            "ADD COLUMN credential_name VARCHAR(255)",
+            "DROP TABLE confluence_credentials",
+        )
         assertThat(migration.lowercase()).doesNotContain("default '")
     }
 

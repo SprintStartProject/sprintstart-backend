@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -21,33 +20,18 @@ class ConfluenceConnectionPersistenceTest {
     private lateinit var connectionRepository: ConfluenceSpaceConnectionRepository
 
     @Autowired
-    private lateinit var credentialRepository: ConfluenceCredentialRepository
-
-    @Autowired
     private lateinit var entityManager: EntityManager
 
-    @Autowired
-    private lateinit var jdbcTemplate: JdbcTemplate
-
     @Test
-    fun `connection and encrypted credential round-trip with project ownership`() {
+    fun `connection round-trips its credential reference and project ownership`() {
         val projectId = UUID.randomUUID()
-        val plaintextToken = "database-secret-token"
         val connection = connection(projectId, "123", listOf("10", "20"), listOf("20"))
-        connection.configureCredential("fake-user@example.invalid", plaintextToken)
 
         val saved = connectionRepository.saveAndFlush(connection)
         entityManager.clear()
 
-        val rawToken = jdbcTemplate.queryForObject(
-            "SELECT api_token FROM confluence_credentials WHERE connection_id = ?",
-            String::class.java,
-            saved.id,
-        )
         val loaded = connectionRepository.findByIdAndProjectId(saved.id, projectId)
-        val loadedCredential = credentialRepository.findByConnectionIdAndConnectionProjectId(saved.id, projectId)
 
-        assertThat(rawToken).isNotBlank().isNotEqualTo(plaintextToken)
         assertThat(loaded).isNotNull
         assertThat(loaded!!.projectId).isEqualTo(projectId)
         assertThat(loaded.baseUrl).isEqualTo("https://tenant.atlassian.net")
@@ -55,7 +39,8 @@ class ConfluenceConnectionPersistenceTest {
         assertThat(loaded.spaceKey).isEqualTo("ENG")
         assertThat(loaded.pageAllowlist).containsExactly("10", "20")
         assertThat(loaded.pageDenylist).containsExactly("20")
-        assertThat(loadedCredential!!.apiToken).isEqualTo(plaintextToken)
+        assertThat(loaded.credentialAuthId).isEqualTo("auth-id")
+        assertThat(loaded.credentialName).isEqualTo("team-token")
     }
 
     @Test
@@ -73,27 +58,11 @@ class ConfluenceConnectionPersistenceTest {
     @Test
     fun `database rejects duplicate project tenant and space connections`() {
         val projectId = UUID.randomUUID()
-        connectionRepository.saveAndFlush(connection(projectId, "123").withCredential("first-token"))
+        connectionRepository.saveAndFlush(connection(projectId, "123"))
 
         assertThatThrownBy {
-            connectionRepository.saveAndFlush(connection(projectId, "123").withCredential("second-token"))
+            connectionRepository.saveAndFlush(connection(projectId, "123"))
         }.isInstanceOf(DataIntegrityViolationException::class.java)
-    }
-
-    @Test
-    fun `deleting a connection removes its owned credential`() {
-        val connection = connection(UUID.randomUUID(), "123").withCredential("delete-me-token")
-        val saved = connectionRepository.saveAndFlush(connection)
-
-        connectionRepository.delete(saved)
-        connectionRepository.flush()
-
-        val credentialCount = jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM confluence_credentials WHERE connection_id = ?",
-            Long::class.java,
-            saved.id,
-        )
-        assertThat(credentialCount).isZero()
     }
 
     private fun connection(
@@ -107,13 +76,10 @@ class ConfluenceConnectionPersistenceTest {
             baseUrl = "https://tenant.atlassian.net",
             spaceId = spaceId,
             spaceKey = "ENG",
+            credentialAuthId = "auth-id",
+            credentialName = "team-token",
             pageAllowlistInternal = allowlist.toMutableList(),
             pageDenylistInternal = denylist.toMutableList(),
         )
-    }
-
-    private fun ConfluenceSpaceConnection.withCredential(token: String): ConfluenceSpaceConnection {
-        configureCredential("fake-user@example.invalid", token)
-        return this
     }
 }

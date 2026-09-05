@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.model.entity
 
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpecJpaConverter
-import jakarta.persistence.CascadeType
 import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column
 import jakarta.persistence.Convert
@@ -12,7 +11,6 @@ import jakarta.persistence.FetchType
 import jakarta.persistence.Id
 import jakarta.persistence.Index
 import jakarta.persistence.JoinColumn
-import jakarta.persistence.OneToOne
 import jakarta.persistence.OrderColumn
 import jakarta.persistence.PrePersist
 import jakarta.persistence.PreUpdate
@@ -53,6 +51,10 @@ internal class ConfluenceSpaceConnection(
     var spaceKey: String,
     @Column(name = "space_name")
     var spaceName: String? = null,
+    @Column(name = "credential_auth_id", nullable = false)
+    var credentialAuthId: String,
+    @Column(name = "credential_name", nullable = false)
+    var credentialName: String,
     @Column(name = "source_enabled", nullable = false)
     var sourceEnabled: Boolean = true,
     @Column(name = "auto_update", nullable = false)
@@ -88,23 +90,11 @@ internal class ConfluenceSpaceConnection(
     @Column(nullable = false)
     var version: Long = 0,
 ) {
-    @OneToOne(mappedBy = "connection", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
-    lateinit var credential: ConfluenceCredential
-
     val pageAllowlist: List<String>
         get() = pageAllowlistInternal.toList()
 
     val pageDenylist: List<String>
         get() = pageDenylistInternal.toList()
-
-    fun configureCredential(email: String, apiToken: String) {
-        check(!this::credential.isInitialized) { "Confluence credentials are already configured" }
-        credential = ConfluenceCredential(
-            email = email,
-            apiToken = apiToken,
-            connection = this,
-        )
-    }
 
     /** Returns whether a stable page ID is eligible under the stored filters. */
     fun allowsPage(pageId: String): Boolean {

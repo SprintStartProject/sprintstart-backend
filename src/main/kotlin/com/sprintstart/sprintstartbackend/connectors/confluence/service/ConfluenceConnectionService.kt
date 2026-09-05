@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
@@ -15,9 +16,9 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.Con
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionAlreadyExistsException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.mapper.toResponse
-import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceCredentialRepository
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -33,7 +34,7 @@ import java.util.UUID
 internal class ConfluenceConnectionService(
     private val confluenceClient: ConfluenceClient,
     private val connectionRepository: ConfluenceSpaceConnectionRepository,
-    private val credentialRepository: ConfluenceCredentialRepository,
+    private val atlassianCredentialApi: AtlassianCredentialApi,
     private val userApi: UserApi,
     private val cronBuilder: CronBuilder,
     private val scheduleCalculator: ConfluenceScheduleCalculator,
@@ -55,9 +56,8 @@ internal class ConfluenceConnectionService(
         val requestedSpaceId = normalizeSpaceId(request.spaceId)
         val allowlist = normalizeConfluencePageIds(request.pageAllowlist, "page allowlist")
         val denylist = normalizeConfluencePageIds(request.pageDenylist, "page denylist")
-        val credentials = validatedCredentials(request.email, request.apiToken)
-
         rejectDuplicate(projectId, normalizedBaseUrl, requestedSpaceId)
+        val credentials = resolveCredentials(authId, request.credentialName)
         val space = retrieveSpace(normalizedBaseUrl, credentials, requestedSpaceId)
         val canonicalSpaceId = normalizeSpaceId(space.id)
         if (canonicalSpaceId != requestedSpaceId || space.key.isBlank()) {
@@ -73,10 +73,11 @@ internal class ConfluenceConnectionService(
             spaceId = canonicalSpaceId,
             spaceKey = space.key.trim(),
             spaceName = space.name.trim().ifBlank { null },
+            credentialAuthId = authId,
+            credentialName = request.credentialName,
             pageAllowlistInternal = allowlist.toMutableList(),
             pageDenylistInternal = denylist.toMutableList(),
         )
-        connection.configureCredential(credentials.email.trim(), credentials.apiToken.trim())
 
         val saved = try {
             connectionRepository.saveAndFlush(connection)
@@ -128,15 +129,6 @@ internal class ConfluenceConnectionService(
         return connection.toResponse()
     }
 
-    /** Returns decrypted credentials only for internal Confluence client construction. */
-    @Transactional(readOnly = true)
-    fun getClientCredentials(authId: String, projectId: UUID, connectionId: UUID): ConfluenceClientCredentials {
-        requireProjectAccess(authId, projectId)
-        val credential = credentialRepository.findByConnectionIdAndConnectionProjectId(connectionId, projectId)
-            ?: throw ConfluenceConnectionNotFoundException(connectionId, projectId)
-        return ConfluenceClientCredentials(credential.email, credential.apiToken)
-    }
-
     private fun requireProjectAccess(authId: String, projectId: UUID) {
         if (!userApi.userHasAccessToProject(authId, projectId)) {
             throw ConfluenceProjectAccessDeniedException(projectId)
@@ -154,16 +146,11 @@ internal class ConfluenceConnectionService(
             ?: throw ConfluenceConnectionNotFoundException(connectionId, projectId)
     }
 
-    private fun validatedCredentials(rawEmail: String, rawApiToken: String): ConfluenceClientCredentials {
-        val email = rawEmail.trim()
-        val apiToken = rawApiToken.trim()
-        if (email.isEmpty()) {
-            throw ConfluenceConnectionConfigurationException("Confluence credential email must not be blank")
-        }
-        if (apiToken.isEmpty()) {
-            throw ConfluenceConnectionConfigurationException("Confluence API token must not be blank")
-        }
-        return ConfluenceClientCredentials(email, apiToken)
+    /** Resolves the shared Atlassian credential a new connection should reference. */
+    private fun resolveCredentials(authId: String, credentialName: String): ConfluenceClientCredentials {
+        val secret = atlassianCredentialApi.findSecret(authId, credentialName)
+            ?: throw ConfluenceCredentialNotFoundException(credentialName)
+        return ConfluenceClientCredentials(secret.userEmail, secret.apiToken)
     }
 
     private suspend fun retrieveSpace(

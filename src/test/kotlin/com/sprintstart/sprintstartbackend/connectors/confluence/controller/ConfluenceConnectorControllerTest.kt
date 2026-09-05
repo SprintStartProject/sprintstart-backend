@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.reques
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionResult
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluenceConnectionService
@@ -149,8 +150,7 @@ internal class ConfluenceConnectorControllerTest {
             {
               "baseUrl": "",
               "spaceId": "not-numeric",
-              "email": "invalid-email",
-              "apiToken": "",
+              "credentialName": "",
               "pageAllowlist": [""],
               "pageDenylist": []
             }
@@ -168,9 +168,8 @@ internal class ConfluenceConnectorControllerTest {
     }
 
     @Test
-    fun `validation failure response does not expose supplied token`() {
-        val secret = "controller-secret-token"
-        val request = connectionRequest(apiToken = secret)
+    fun `credential validation failure response exposes no internal details`() {
+        val request = connectionRequest(credentialName = "rejected-token")
         coEvery { connectionService.createConnection("admin-id", projectId, any()) } throws
             ConfluenceConnectionConfigurationException("Confluence credentials were rejected", 401)
 
@@ -181,9 +180,21 @@ internal class ConfluenceConnectorControllerTest {
             .andExpect(status().isUnauthorized)
             .andExpect(jsonPath("$.message").value("Confluence credentials were rejected"))
             .andReturn()
-        assertThat(response.response.contentAsString)
-            .doesNotContain(secret)
-            .doesNotContain("Authorization")
+        assertThat(response.response.contentAsString).doesNotContain("Authorization", "Basic ")
+    }
+
+    @Test
+    fun `unknown credential name surfaces as not found`() {
+        val request = connectionRequest(credentialName = "missing-token")
+        coEvery { connectionService.createConnection("admin-id", projectId, any()) } throws
+            ConfluenceCredentialNotFoundException("missing-token")
+
+        val asyncResult = performConnect(request, adminJwt)
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.message").value("Atlassian credential 'missing-token' was not found"))
     }
 
     @Test
@@ -290,11 +301,10 @@ internal class ConfluenceConnectorControllerTest {
 
     private fun basePath(): String = "/api/v1/confluence/projects/$projectId/connections"
 
-    private fun connectionRequest(apiToken: String = "fake-controller-token") = CreateConfluenceConnectionRequest(
+    private fun connectionRequest(credentialName: String = "team-token") = CreateConfluenceConnectionRequest(
         baseUrl = "https://tenant.invalid",
         spaceId = "42",
-        email = "connector@example.invalid",
-        apiToken = apiToken,
+        credentialName = credentialName,
         pageAllowlist = listOf("100"),
         pageDenylist = listOf("200"),
     )
@@ -306,6 +316,7 @@ internal class ConfluenceConnectorControllerTest {
         spaceId = "42",
         spaceKey = "ENG",
         spaceName = "Engineering Handbook",
+        credentialName = "team-token",
         pageAllowlist = listOf("100"),
         pageDenylist = listOf("200"),
         credentialsConfigured = true,

@@ -41,6 +41,8 @@ class ConfluenceSpaceConnectionTest {
             baseUrl = "https://tenant.atlassian.net",
             spaceId = "123",
             spaceKey = "ENG",
+            credentialAuthId = "auth-id",
+            credentialName = "token",
             pageAllowlistInternal = allowlist,
             pageDenylistInternal = denylist,
         )

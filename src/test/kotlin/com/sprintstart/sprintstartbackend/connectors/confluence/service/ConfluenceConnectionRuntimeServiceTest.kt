@@ -1,7 +1,10 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -14,7 +17,8 @@ import java.util.UUID
 
 internal class ConfluenceConnectionRuntimeServiceTest {
     private val repository = mockk<ConfluenceSpaceConnectionRepository>()
-    private val service = ConfluenceConnectionRuntimeService(repository)
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
+    private val service = ConfluenceConnectionRuntimeService(repository, atlassianCredentialApi)
 
     @Test
     fun `module API returns safe project scoped source instances and connection ids`() {
@@ -73,6 +77,34 @@ internal class ConfluenceConnectionRuntimeServiceTest {
     }
 
     @Test
+    fun `getConnectionForIngestion resolves credentials through the Atlassian credential API`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every {
+            atlassianCredentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+        } returns AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = "fake-token")
+
+        val snapshot = service.getConnectionForIngestion(projectId, connection.id)
+
+        assertThat(snapshot.credentials.email).isEqualTo("fake-user@example.invalid")
+        assertThat(snapshot.credentials.apiToken).isEqualTo("fake-token")
+    }
+
+    @Test
+    fun `getConnectionForIngestion fails when the referenced credential no longer exists`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every {
+            atlassianCredentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+        } returns null
+
+        assertThatThrownBy { service.getConnectionForIngestion(projectId, connection.id) }
+            .isInstanceOf(ConfluenceCredentialNotFoundException::class.java)
+    }
+
+    @Test
     fun `updateSpaceMetadata refreshes cached name and key for an existing connection`() {
         val projectId = UUID.randomUUID()
         val connection = connection(projectId, "OLD")
@@ -117,6 +149,8 @@ internal class ConfluenceConnectionRuntimeServiceTest {
             baseUrl = "https://tenant.invalid",
             spaceId = spaceId,
             spaceKey = spaceKey,
+            credentialAuthId = "auth-id",
+            credentialName = "token",
         )
     }
 }

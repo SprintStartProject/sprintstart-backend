@@ -1,12 +1,14 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request
 
-import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.Email
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 
-/** Accepts the tenant, selected space, credentials, and optional stable page-ID filters. */
+/**
+ * Accepts the tenant, selected space, a reference to a shared Atlassian credential, and optional
+ * stable page-ID filters. Carries no secret material: [credentialName] is resolved against the
+ * caller's already-stored Atlassian credential.
+ */
 class CreateConfluenceConnectionRequest(
     @field:NotBlank
     @field:Size(max = 2048)
@@ -15,14 +17,8 @@ class CreateConfluenceConnectionRequest(
     @field:Pattern(regexp = "^[0-9]+$")
     val spaceId: String,
     @field:NotBlank
-    @field:Email
-    @field:Size(max = 320)
-    @field:Schema(accessMode = Schema.AccessMode.WRITE_ONLY)
-    val email: String,
-    @field:NotBlank
-    @field:Size(max = 4096)
-    @field:Schema(accessMode = Schema.AccessMode.WRITE_ONLY)
-    val apiToken: String,
+    @field:Size(max = 255)
+    val credentialName: String,
     @field:Size(max = 1000)
     val pageAllowlist: List<
         @NotBlank
@@ -38,7 +34,7 @@ class CreateConfluenceConnectionRequest(
 ) {
     override fun toString(): String {
         return "CreateConfluenceConnectionRequest(" +
-            "baseUrl=$baseUrl, spaceId=$spaceId, email=<redacted>, apiToken=<redacted>, " +
+            "baseUrl=$baseUrl, spaceId=$spaceId, credentialName=$credentialName, " +
             "pageAllowlist=$pageAllowlist, pageDenylist=$pageDenylist)"
     }
 }

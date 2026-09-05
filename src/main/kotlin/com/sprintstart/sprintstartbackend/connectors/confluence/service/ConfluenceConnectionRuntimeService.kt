@@ -1,10 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientCredentials
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -14,6 +16,7 @@ import java.util.UUID
 @Service
 internal class ConfluenceConnectionRuntimeService(
     private val connectionRepository: ConfluenceSpaceConnectionRepository,
+    private val atlassianCredentialApi: AtlassianCredentialApi,
 ) : ConfluenceConnectionApi {
     @Transactional(readOnly = true)
     override fun getConnectionIdsByProject(projectId: UUID): List<UUID> {
@@ -69,6 +72,8 @@ internal class ConfluenceConnectionRuntimeService(
     fun getConnectionForIngestion(projectId: UUID, connectionId: UUID): ConfluenceConnectionIngestionSnapshot {
         val connection = connectionRepository.findByIdAndProjectId(connectionId, projectId)
             ?: throw ConfluenceConnectionNotFoundException(connectionId, projectId)
+        val secret = atlassianCredentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+            ?: throw ConfluenceCredentialNotFoundException(connection.credentialName)
         return ConfluenceConnectionIngestionSnapshot(
             id = connection.id,
             projectId = connection.projectId,
@@ -79,7 +84,7 @@ internal class ConfluenceConnectionRuntimeService(
             sourceEnabled = connection.sourceEnabled,
             pageAllowlist = connection.pageAllowlist,
             pageDenylist = connection.pageDenylist,
-            credentials = ConfluenceClientCredentials(connection.credential.email, connection.credential.apiToken),
+            credentials = ConfluenceClientCredentials(secret.userEmail, secret.apiToken),
         )
     }
 

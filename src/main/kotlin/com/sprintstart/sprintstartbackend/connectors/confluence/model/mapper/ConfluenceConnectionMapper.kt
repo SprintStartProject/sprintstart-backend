@@ -11,6 +11,7 @@ internal fun ConfluenceSpaceConnection.toResponse(): ConfluenceConnectionRespons
         spaceId = spaceId,
         spaceKey = spaceKey,
         spaceName = spaceName,
+        credentialName = credentialName,
         pageAllowlist = pageAllowlist,
         pageDenylist = pageDenylist,
         credentialsConfigured = true,

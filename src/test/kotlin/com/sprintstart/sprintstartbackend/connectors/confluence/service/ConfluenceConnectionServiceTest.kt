@@ -1,18 +1,19 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.event.ConfluenceConnectionCreatedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
-import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceCredential
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionAlreadyExistsException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceProjectAccessDeniedException
-import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceCredentialRepository
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
@@ -35,7 +36,7 @@ import java.util.UUID
 class ConfluenceConnectionServiceTest {
     private val confluenceClient = mockk<ConfluenceClient>()
     private val connectionRepository = mockk<ConfluenceSpaceConnectionRepository>()
-    private val credentialRepository = mockk<ConfluenceCredentialRepository>()
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
     private val userApi = mockk<UserApi>()
     private val cronBuilder = mockk<CronBuilder>()
     private val scheduleCalculator = mockk<ConfluenceScheduleCalculator>()
@@ -43,7 +44,7 @@ class ConfluenceConnectionServiceTest {
     private val service = ConfluenceConnectionService(
         confluenceClient,
         connectionRepository,
-        credentialRepository,
+        atlassianCredentialApi,
         userApi,
         cronBuilder,
         scheduleCalculator,
@@ -68,6 +69,8 @@ class ConfluenceConnectionServiceTest {
                 "123",
             )
         } returns false
+        every { atlassianCredentialApi.findSecret(authId, "team-token") } returns
+            AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = plaintextToken)
         coEvery { confluenceClient.getSpace(any(), any(), "123") } returns
             confluenceSpace(id = "123", key = "CANONICAL")
         every { connectionRepository.saveAndFlush(capture(saved)) } answers { firstArg() }
@@ -79,11 +82,12 @@ class ConfluenceConnectionServiceTest {
         assertThat(response.spaceId).isEqualTo("123")
         assertThat(response.spaceKey).isEqualTo("CANONICAL")
         assertThat(response.spaceName).isEqualTo("Engineering")
+        assertThat(response.credentialName).isEqualTo("team-token")
         assertThat(response.pageAllowlist).containsExactly("10", "20")
         assertThat(response.pageDenylist).containsExactly("20")
         assertThat(response.credentialsConfigured).isTrue()
-        assertThat(saved.captured.credential.email).isEqualTo("fake-user@example.invalid")
-        assertThat(saved.captured.credential.apiToken).isEqualTo(plaintextToken)
+        assertThat(saved.captured.credentialAuthId).isEqualTo(authId)
+        assertThat(saved.captured.credentialName).isEqualTo("team-token")
         coVerify(exactly = 1) {
             confluenceClient.getSpace("https://tenant.atlassian.net", any(), "123")
         }
@@ -106,6 +110,8 @@ class ConfluenceConnectionServiceTest {
                 "123",
             )
         } returns false
+        every { atlassianCredentialApi.findSecret(authId, "team-token") } returns
+            AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = plaintextToken)
         coEvery { confluenceClient.getSpace(any(), any(), "123") } returns
             confluenceSpace(id = "123", key = "CANONICAL", name = "  ")
         every { connectionRepository.saveAndFlush(capture(saved)) } answers { firstArg() }
@@ -136,8 +142,23 @@ class ConfluenceConnectionServiceTest {
     }
 
     @Test
+    fun `unknown credential name is rejected before contacting Confluence`() = runTest {
+        every { connectionRepository.existsByProjectIdAndBaseUrlAndSpaceId(any(), any(), any()) } returns false
+        every { atlassianCredentialApi.findSecret(authId, "team-token") } returns null
+
+        val thrown = runCatching { service.createConnection(authId, projectId, request()) }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(ConfluenceCredentialNotFoundException::class.java)
+        coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
+        verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
+    }
+
+    @Test
     fun `remote validation failure persists neither connection nor credential and hides token`() = runTest {
         every { connectionRepository.existsByProjectIdAndBaseUrlAndSpaceId(any(), any(), any()) } returns false
+        every { atlassianCredentialApi.findSecret(authId, "team-token") } returns
+            AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = plaintextToken)
         coEvery { confluenceClient.getSpace(any(), any(), any()) } throws
             ConfluenceAuthenticationException("retrieving space 123")
 
@@ -148,7 +169,6 @@ class ConfluenceConnectionServiceTest {
             .hasMessage("Confluence credentials were rejected")
         assertThat(thrown.toString()).doesNotContain(plaintextToken, "Basic ", "fake-user@example.invalid")
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
-        verify(exactly = 0) { credentialRepository.save(any()) }
         verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
     }
 
@@ -172,26 +192,6 @@ class ConfluenceConnectionServiceTest {
             .isInstanceOf(ConfluenceProjectAccessDeniedException::class.java)
 
         verify(exactly = 0) { connectionRepository.findAllByProjectIdOrderByCreatedAtAsc(any()) }
-    }
-
-    @Test
-    fun `returns decrypted credential through project-scoped internal lookup`() {
-        val connectionId = UUID.randomUUID()
-        val connection = connection(projectId)
-        val credential = ConfluenceCredential(
-            email = "fake-user@example.invalid",
-            apiToken = plaintextToken,
-            connection = connection,
-        )
-        every {
-            credentialRepository.findByConnectionIdAndConnectionProjectId(connectionId, projectId)
-        } returns credential
-
-        val result = service.getClientCredentials(authId, projectId, connectionId)
-
-        assertThat(result.email).isEqualTo("fake-user@example.invalid")
-        assertThat(result.apiToken).isEqualTo(plaintextToken)
-        assertThat(result.toString()).doesNotContain(plaintextToken, result.email)
     }
 
     @Test
@@ -259,8 +259,7 @@ class ConfluenceConnectionServiceTest {
         CreateConfluenceConnectionRequest(
             baseUrl = " HTTPS://TENANT.ATLASSIAN.NET/wiki/ ",
             spaceId = " 123 ",
-            email = " fake-user@example.invalid ",
-            apiToken = " $plaintextToken ",
+            credentialName = "team-token",
             pageAllowlist = pageAllowlist,
             pageDenylist = listOf(" 20 ", "20"),
         )
@@ -280,5 +279,7 @@ class ConfluenceConnectionServiceTest {
         baseUrl = "https://tenant.atlassian.net",
         spaceId = "123",
         spaceKey = "ENG",
+        credentialAuthId = authId,
+        credentialName = "team-token",
     )
 }

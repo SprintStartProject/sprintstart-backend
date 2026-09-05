@@ -12,27 +12,24 @@ import java.time.LocalTime
 import java.util.UUID
 
 class ConfluenceConnectionSecurityTest {
-    private val plaintextToken = "phase-four-secret-token"
-
     @Test
-    fun `request and credential toString redact secrets`() {
+    fun `request and connection toString carry no secret material`() {
         val request = CreateConfluenceConnectionRequest(
             baseUrl = "https://tenant.atlassian.net",
             spaceId = "123",
-            email = "fake-user@example.invalid",
-            apiToken = plaintextToken,
+            credentialName = "team-token",
         )
         val connection = ConfluenceSpaceConnection(
             projectId = UUID.randomUUID(),
             baseUrl = request.baseUrl,
             spaceId = request.spaceId,
             spaceKey = "ENG",
+            credentialAuthId = "auth-id",
+            credentialName = request.credentialName,
         )
-        connection.configureCredential(request.email, request.apiToken)
 
-        assertThat(request.toString()).doesNotContain(plaintextToken, request.email)
-        assertThat(connection.credential.toString()).doesNotContain(plaintextToken, request.email)
-        assertThat(connection.toString()).doesNotContain(plaintextToken, request.email)
+        assertThat(request.toString()).doesNotContain("apiToken", "email", "Authorization", "Basic ")
+        assertThat(connection.toString()).doesNotContain("apiToken", "email", "Authorization", "Basic ")
     }
 
     @Test
@@ -44,6 +41,7 @@ class ConfluenceConnectionSecurityTest {
             spaceId = "123",
             spaceKey = "ENG",
             spaceName = "Engineering",
+            credentialName = "team-token",
             pageAllowlist = listOf("10"),
             pageDenylist = emptyList(),
             credentialsConfigured = true,
@@ -60,12 +58,10 @@ class ConfluenceConnectionSecurityTest {
         assertThat(json).doesNotContain(
             "apiToken",
             "api_token",
-            "token",
             "email",
             "Authorization",
             "Basic ",
-            plaintextToken,
         )
-        assertThat(json).contains("credentialsConfigured")
+        assertThat(json).contains("credentialsConfigured", "credentialName")
     }
 }

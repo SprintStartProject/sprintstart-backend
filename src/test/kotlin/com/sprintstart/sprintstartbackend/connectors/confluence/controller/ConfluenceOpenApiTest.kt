@@ -32,8 +32,11 @@ internal class ConfluenceOpenApiTest {
             ).andExpect(
                 jsonPath("$.components.schemas.ConfluenceConnectionResponse.properties.email").doesNotExist(),
             ).andExpect(
-                jsonPath("$.components.schemas.CreateConfluenceConnectionRequest.properties.apiToken.writeOnly")
-                    .value(true),
+                jsonPath("$.components.schemas.CreateConfluenceConnectionRequest.properties.apiToken").doesNotExist(),
+            ).andExpect(
+                jsonPath("$.components.schemas.CreateConfluenceConnectionRequest.properties.email").doesNotExist(),
+            ).andExpect(
+                jsonPath("$.components.schemas.CreateConfluenceConnectionRequest.properties.credentialName").exists(),
             )
     }
 }

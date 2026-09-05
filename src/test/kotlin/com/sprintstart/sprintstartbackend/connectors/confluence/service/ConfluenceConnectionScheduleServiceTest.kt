@@ -63,6 +63,8 @@ class ConfluenceConnectionScheduleServiceTest {
             baseUrl = "https://tenant.atlassian.net",
             spaceId = "42",
             spaceKey = "ENG",
+            credentialAuthId = "auth-id",
+            credentialName = "token",
         )
     }
 }

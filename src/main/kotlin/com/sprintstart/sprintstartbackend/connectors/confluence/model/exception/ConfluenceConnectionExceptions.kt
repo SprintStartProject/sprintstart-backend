@@ -34,3 +34,10 @@ internal class ConfluenceConnectionConfigurationException(
     message: String,
     httpStatus: Int = 400,
 ) : ConfluenceConnectionException(message, httpStatus)
+
+internal class ConfluenceCredentialNotFoundException(
+    credentialName: String,
+) : ConfluenceConnectionException(
+        message = "Atlassian credential '$credentialName' was not found",
+        httpStatus = 404,
+    )
