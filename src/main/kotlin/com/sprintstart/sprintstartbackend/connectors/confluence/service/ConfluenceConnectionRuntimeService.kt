@@ -40,6 +40,7 @@ internal class ConfluenceConnectionRuntimeService(
                 baseUrl = connection.baseUrl,
                 spaceId = connection.spaceId,
                 spaceKey = connection.spaceKey,
+                spaceName = connection.spaceName,
                 sourceEnabled = connection.sourceEnabled,
             )
         }
@@ -74,11 +75,23 @@ internal class ConfluenceConnectionRuntimeService(
             baseUrl = connection.baseUrl,
             spaceId = connection.spaceId,
             spaceKey = connection.spaceKey,
+            spaceName = connection.spaceName,
             sourceEnabled = connection.sourceEnabled,
             pageAllowlist = connection.pageAllowlist,
             pageDenylist = connection.pageDenylist,
             credentials = ConfluenceClientCredentials(connection.credential.email, connection.credential.apiToken),
         )
+    }
+
+    /** Refreshes the cached space name (and key, if Confluence renamed it) for one connection. */
+    @Transactional
+    fun updateSpaceMetadata(connectionId: UUID, name: String, key: String) {
+        val connection = connectionRepository.findById(connectionId).orElse(null) ?: return
+        connection.spaceName = name.trim().ifBlank { null }
+        val normalizedKey = key.trim()
+        if (normalizedKey.isNotEmpty()) {
+            connection.spaceKey = normalizedKey
+        }
     }
 
     private fun ConfluenceSpaceConnection.toSourceSnapshot(): ConfluenceConnectionSourceSnapshot {
@@ -87,6 +100,7 @@ internal class ConfluenceConnectionRuntimeService(
             baseUrl = baseUrl,
             spaceId = spaceId,
             spaceKey = spaceKey,
+            spaceName = spaceName,
             sourceEnabled = sourceEnabled,
         )
     }
@@ -97,6 +111,7 @@ internal class ConfluenceConnectionRuntimeService(
             sourceRef = "$baseUrl|$spaceId",
             spaceId = spaceId,
             spaceKey = spaceKey,
+            spaceName = spaceName,
             sourceUrl = safePageUrl(baseUrl, "/wiki/spaces/$spaceKey") ?: baseUrl,
             status = if (sourceEnabled) "CONNECTED" else "DISABLED",
             enabled = sourceEnabled,

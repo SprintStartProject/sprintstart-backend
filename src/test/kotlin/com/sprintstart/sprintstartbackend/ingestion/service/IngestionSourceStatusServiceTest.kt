@@ -209,6 +209,7 @@ class IngestionSourceStatusServiceTest {
             sourceRef = sourceRef,
             spaceId = "5505028",
             spaceKey = "ENG",
+            spaceName = "Engineering Handbook",
             sourceUrl = "https://tenant.atlassian.net/wiki/spaces/ENG",
             status = "CONNECTED",
             enabled = true,
@@ -237,7 +238,7 @@ class IngestionSourceStatusServiceTest {
 
         assertThat(response.sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
         assertThat(response.sourceId).isEqualTo(sourceRef)
-        assertThat(response.displayName).isEqualTo("ENG")
+        assertThat(response.displayName).isEqualTo("Engineering Handbook")
         assertThat(response.repositoryId).isNull()
         assertThat(response.sourceUrl).isEqualTo("https://tenant.atlassian.net/wiki/spaces/ENG")
         assertThat(response.connectionStatus).isEqualTo("CONNECTED")
@@ -246,6 +247,34 @@ class IngestionSourceStatusServiceTest {
         assertThat(response.ingestedCount).isEqualTo(7)
         assertThat(response.updatedCount).isEqualTo(1)
         assertThat(response.artifactCount).isEqualTo(7)
+    }
+
+    @Test
+    fun `falls back to space key when Confluence instance has no cached space name`() {
+        val projectId = UUID.randomUUID()
+        val connectionId = UUID.randomUUID()
+        val sourceRef = "https://tenant.atlassian.net|5505028"
+        val instance = ConfluenceSourceInstanceDto(
+            connectionId = connectionId,
+            sourceRef = sourceRef,
+            spaceId = "5505028",
+            spaceKey = "ENG",
+            spaceName = null,
+            sourceUrl = "https://tenant.atlassian.net/wiki/spaces/ENG",
+            status = "CONNECTED",
+            enabled = true,
+        )
+        every { githubRepositoryApi.getSourceInstances(projectId) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
+        every { confluenceConnectionApi.getSourceInstances(projectId) } returns listOf(instance)
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId) } returns null
+        every { artifactRepository.countConfluenceArtifactsByConnectionId(connectionId.toString()) } returns 0
+        every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 0
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId) } returns null
+
+        val response = service.getStatusPerSourceInstance(projectId).single()
+
+        assertThat(response.displayName).isEqualTo("ENG")
     }
 
     @Test

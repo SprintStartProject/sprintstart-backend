@@ -61,7 +61,7 @@ internal class ConfluenceConnector(
     private fun ConfluenceConnectionSourceSnapshot.toConnectorSource(): ConnectorSource {
         return ConnectorSource(
             id = id.toString(),
-            name = spaceKey,
+            name = spaceName ?: spaceKey,
             url = safePageUrl(baseUrl, "/wiki/spaces/$spaceKey") ?: baseUrl,
             enabled = sourceEnabled,
         )

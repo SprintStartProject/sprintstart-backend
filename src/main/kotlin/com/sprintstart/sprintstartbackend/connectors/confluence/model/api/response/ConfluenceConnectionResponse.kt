@@ -13,6 +13,7 @@ data class ConfluenceConnectionResponse(
     val baseUrl: String,
     val spaceId: String,
     val spaceKey: String,
+    val spaceName: String?,
     val pageAllowlist: List<String>,
     val pageDenylist: List<String>,
     @field:Schema(description = "Whether encrypted credentials are configured; no credential value is returned.")

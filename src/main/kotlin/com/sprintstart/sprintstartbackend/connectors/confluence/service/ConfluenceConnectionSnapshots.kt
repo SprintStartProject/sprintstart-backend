@@ -8,6 +8,7 @@ internal data class ConfluenceConnectionSourceSnapshot(
     val baseUrl: String,
     val spaceId: String,
     val spaceKey: String,
+    val spaceName: String?,
     val sourceEnabled: Boolean,
 )
 
@@ -17,6 +18,7 @@ internal class ConfluenceConnectionIngestionSnapshot(
     val baseUrl: String,
     val spaceId: String,
     val spaceKey: String,
+    val spaceName: String?,
     val sourceEnabled: Boolean,
     val pageAllowlist: List<String>,
     val pageDenylist: List<String>,

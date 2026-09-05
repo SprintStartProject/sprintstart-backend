@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageFetchStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageRestrictions
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageVersion
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceStorageBody
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
@@ -44,9 +45,43 @@ class ConfluencePageIngestionServiceTest {
     @BeforeEach
     fun setUp() {
         every { connectionService.getConnectionForIngestion(projectId, connection.id) } returns connection
+        coEvery { client.getSpace(any(), any(), any()) } returns confluenceSpace()
+        every { connectionService.updateSpaceMetadata(any(), any(), any()) } just Runs
         every { ingestionApi.startRun(any(), connection.id, any()) } just Runs
         every { ingestionApi.finishRun(any(), any()) } just Runs
         every { ingestionApi.failRun(any(), any()) } just Runs
+    }
+
+    @Test
+    fun `refresh persists a space name or key changed in Confluence`() = runTest {
+        coEvery { client.getSpace(connection.baseUrl, any(), connection.spaceId) } returns
+            confluenceSpace(name = "Renamed Handbook", key = "ENG2")
+        coEvery { client.getPages(any(), any(), any()) } returns
+            ConfluencePageBatchResult(successfulPages = emptyList(), failures = emptyList())
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns
+            ConfluenceArtifactBatchResult(0, 0, 0, 0)
+
+        service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id)
+
+        verify(exactly = 1) {
+            connectionService.updateSpaceMetadata(connection.id, "Renamed Handbook", "ENG2")
+        }
+    }
+
+    @Test
+    fun `failed space metadata refresh does not abort the ingestion run`() = runTest {
+        coEvery { client.getSpace(any(), any(), any()) } throws IllegalStateException("space lookup failed")
+        coEvery { client.getPages(any(), any(), any()) } returns
+            ConfluencePageBatchResult(successfulPages = emptyList(), failures = emptyList())
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns
+            ConfluenceArtifactBatchResult(0, 0, 0, 0)
+
+        val result = service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id)
+
+        assertThat(result.status).isEqualTo(ConfluenceIngestionStatus.COMPLETED)
+        verify(exactly = 0) { connectionService.updateSpaceMetadata(any(), any(), any()) }
+        verify(exactly = 0) { ingestionApi.failRun(any(), any()) }
+        verify(exactly = 1) { ingestionApi.finishRun(any(), 0) }
     }
 
     @Test
@@ -293,6 +328,7 @@ class ConfluencePageIngestionServiceTest {
         baseUrl = "https://tenant.atlassian.net",
         spaceId = "42",
         spaceKey = "ENG",
+        spaceName = "Engineering Handbook",
         sourceEnabled = true,
         pageAllowlist = emptyList(),
         pageDenylist = emptyList(),
@@ -308,10 +344,21 @@ class ConfluencePageIngestionServiceTest {
         baseUrl,
         spaceId,
         spaceKey,
+        spaceName,
         sourceEnabled,
         allowlist,
         denylist,
         credentials,
+    )
+
+    private fun confluenceSpace(name: String = "Engineering Handbook", key: String = "ENG") = ConfluenceSpace(
+        id = "42",
+        key = key,
+        name = name,
+        type = "global",
+        status = "current",
+        currentActiveAlias = null,
+        webUiPath = "/spaces/ENG",
     )
 
     private fun page(id: String, parentId: String?, storage: String) = ConfluencePage(

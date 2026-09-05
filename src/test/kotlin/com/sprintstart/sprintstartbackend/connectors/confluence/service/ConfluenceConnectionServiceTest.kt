@@ -78,6 +78,7 @@ class ConfluenceConnectionServiceTest {
         assertThat(response.baseUrl).isEqualTo("https://tenant.atlassian.net")
         assertThat(response.spaceId).isEqualTo("123")
         assertThat(response.spaceKey).isEqualTo("CANONICAL")
+        assertThat(response.spaceName).isEqualTo("Engineering")
         assertThat(response.pageAllowlist).containsExactly("10", "20")
         assertThat(response.pageDenylist).containsExactly("20")
         assertThat(response.credentialsConfigured).isTrue()
@@ -93,6 +94,26 @@ class ConfluenceConnectionServiceTest {
                 },
             )
         }
+    }
+
+    @Test
+    fun `blank remote space name is stored as null`() = runTest {
+        val saved = slot<ConfluenceSpaceConnection>()
+        every {
+            connectionRepository.existsByProjectIdAndBaseUrlAndSpaceId(
+                projectId,
+                "https://tenant.atlassian.net",
+                "123",
+            )
+        } returns false
+        coEvery { confluenceClient.getSpace(any(), any(), "123") } returns
+            confluenceSpace(id = "123", key = "CANONICAL", name = "  ")
+        every { connectionRepository.saveAndFlush(capture(saved)) } answers { firstArg() }
+
+        val response = service.createConnection(authId, projectId, request())
+
+        assertThat(response.spaceName).isNull()
+        assertThat(saved.captured.spaceName).isNull()
     }
 
     @Test
@@ -244,10 +265,10 @@ class ConfluenceConnectionServiceTest {
             pageDenylist = listOf(" 20 ", "20"),
         )
 
-    private fun confluenceSpace(id: String, key: String) = ConfluenceSpace(
+    private fun confluenceSpace(id: String, key: String, name: String = "Engineering") = ConfluenceSpace(
         id = id,
         key = key,
-        name = "Engineering",
+        name = name,
         type = "global",
         status = "current",
         currentActiveAlias = "eng",

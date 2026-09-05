@@ -145,7 +145,7 @@ class IngestionSourceStatusService(
         return SourceInstanceIngestionStatusResponse(
             sourceSystem = SourceSystem.CONFLUENCE,
             sourceId = sourceRef,
-            displayName = spaceKey,
+            displayName = spaceName ?: spaceKey,
             repositoryId = null,
             owner = null,
             name = null,

@@ -36,6 +36,7 @@ internal class ConfluencePageIngestionService(
     suspend fun ingest(projectId: UUID, connectionId: UUID): ConfluenceIngestionResult {
         val connection = connectionService.getConnectionForIngestion(projectId, connectionId)
         requireEnabled(connection)
+        refreshSpaceMetadata(connection)
         val runId = UUID.randomUUID()
         ingestionApi.startRun(runId, connection.id, "${connection.baseUrl}|${connection.spaceId}")
 
@@ -213,6 +214,18 @@ internal class ConfluencePageIngestionService(
     private fun requireEnabled(connection: ConfluenceConnectionIngestionSnapshot) {
         if (!connection.sourceEnabled) {
             throw ConfluenceIngestionException()
+        }
+    }
+
+    /** Keeps the cached space name (and key) in sync with Confluence; refresh failures never abort the run. */
+    private suspend fun refreshSpaceMetadata(connection: ConfluenceConnectionIngestionSnapshot) {
+        try {
+            val space = confluenceClient.getSpace(connection.baseUrl, connection.credentials, connection.spaceId)
+            connectionService.updateSpaceMetadata(connection.id, space.name, space.key)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (@Suppress("SwallowedException") exception: RuntimeException) {
+            logger.warn("Unable to refresh Confluence space metadata for connection {}", connection.id, exception)
         }
     }
 

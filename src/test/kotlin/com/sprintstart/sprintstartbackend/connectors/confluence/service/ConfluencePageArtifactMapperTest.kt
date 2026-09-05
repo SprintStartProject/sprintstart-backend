@@ -81,6 +81,7 @@ class ConfluencePageArtifactMapperTest {
         baseUrl = "https://tenant.atlassian.net",
         spaceId = "42",
         spaceKey = "ENG",
+        spaceName = "Engineering",
         sourceEnabled = true,
         pageAllowlist = emptyList(),
         pageDenylist = emptyList(),

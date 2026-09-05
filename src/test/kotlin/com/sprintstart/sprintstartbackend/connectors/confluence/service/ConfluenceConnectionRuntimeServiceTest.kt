@@ -21,6 +21,7 @@ internal class ConfluenceConnectionRuntimeServiceTest {
         val projectId = UUID.randomUUID()
         val connection = connection(projectId, "ENG").also { stored ->
             stored.createdAt = Instant.parse("2026-08-28T10:00:00Z")
+            stored.spaceName = "Engineering Handbook"
         }
         every { repository.findAllByProjectIdOrderByCreatedAtAsc(projectId) } returns listOf(connection)
 
@@ -31,6 +32,7 @@ internal class ConfluenceConnectionRuntimeServiceTest {
         assertThat(source.connectionId).isEqualTo(connection.id)
         assertThat(source.sourceRef).isEqualTo("https://tenant.invalid|${connection.spaceId}")
         assertThat(source.spaceKey).isEqualTo("ENG")
+        assertThat(source.spaceName).isEqualTo("Engineering Handbook")
         assertThat(source.sourceUrl).isEqualTo("https://tenant.invalid/wiki/spaces/ENG")
         assertThat(source.status).isEqualTo("CONNECTED")
         assertThat(source.enabled).isTrue()
@@ -68,6 +70,40 @@ internal class ConfluenceConnectionRuntimeServiceTest {
             .isInstanceOf(ConfluenceConnectionNotFoundException::class.java)
 
         assertThat(owned.sourceEnabled).isTrue()
+    }
+
+    @Test
+    fun `updateSpaceMetadata refreshes cached name and key for an existing connection`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "OLD")
+        every { repository.findById(connection.id) } returns java.util.Optional.of(connection)
+
+        service.updateSpaceMetadata(connection.id, "  Engineering Handbook  ", "NEW")
+
+        assertThat(connection.spaceName).isEqualTo("Engineering Handbook")
+        assertThat(connection.spaceKey).isEqualTo("NEW")
+    }
+
+    @Test
+    fun `updateSpaceMetadata stores blank name as null and ignores blank key`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findById(connection.id) } returns java.util.Optional.of(connection)
+
+        service.updateSpaceMetadata(connection.id, "   ", "  ")
+
+        assertThat(connection.spaceName).isNull()
+        assertThat(connection.spaceKey).isEqualTo("ENG")
+    }
+
+    @Test
+    fun `updateSpaceMetadata is a no-op when the connection no longer exists`() {
+        val missingId = UUID.randomUUID()
+        every { repository.findById(missingId) } returns java.util.Optional.empty()
+
+        service.updateSpaceMetadata(missingId, "Engineering Handbook", "ENG")
+
+        verify(exactly = 1) { repository.findById(missingId) }
     }
 
     private fun connection(projectId: UUID, spaceKey: String): ConfluenceSpaceConnection {

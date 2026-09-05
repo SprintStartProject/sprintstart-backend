@@ -51,6 +51,8 @@ internal class ConfluenceSpaceConnection(
     var spaceId: String,
     @Column(name = "space_key", nullable = false)
     var spaceKey: String,
+    @Column(name = "space_name")
+    var spaceName: String? = null,
     @Column(name = "source_enabled", nullable = false)
     var sourceEnabled: Boolean = true,
     @Column(name = "auto_update", nullable = false)

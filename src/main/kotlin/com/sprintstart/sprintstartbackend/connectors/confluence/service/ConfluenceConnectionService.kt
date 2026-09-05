@@ -72,6 +72,7 @@ internal class ConfluenceConnectionService(
             baseUrl = normalizedBaseUrl,
             spaceId = canonicalSpaceId,
             spaceKey = space.key.trim(),
+            spaceName = space.name.trim().ifBlank { null },
             pageAllowlistInternal = allowlist.toMutableList(),
             pageDenylistInternal = denylist.toMutableList(),
         )

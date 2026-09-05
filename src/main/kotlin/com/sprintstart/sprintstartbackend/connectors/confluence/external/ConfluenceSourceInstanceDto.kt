@@ -13,6 +13,7 @@ data class ConfluenceSourceInstanceDto(
     val sourceRef: String,
     val spaceId: String,
     val spaceKey: String,
+    val spaceName: String?,
     val sourceUrl: String,
     val status: String,
     val enabled: Boolean,

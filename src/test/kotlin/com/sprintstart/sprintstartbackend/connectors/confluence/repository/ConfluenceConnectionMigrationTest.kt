@@ -14,6 +14,7 @@ class ConfluenceConnectionMigrationTest {
         val sourceEnabledMigration = loadMigration("V13__add_confluence_source_enabled.sql")
         val sourceIdentityMigration = loadMigration("V14__add_confluence_artifact_source_identity.sql")
         val schedulingMigration = loadMigration("V15__add_confluence_scheduling.sql")
+        val spaceNameMigration = loadMigration("V16__add_confluence_space_name.sql")
         val databaseName = "confluence-migration-${UUID.randomUUID()}"
         DriverManager.getConnection("jdbc:h2:mem:$databaseName;MODE=PostgreSQL").use { connection ->
             connection.createStatement().use { statement ->
@@ -49,6 +50,18 @@ class ConfluenceConnectionMigrationTest {
                         assertThat(result.getString("schedule")).isEqualTo("0 0 2 * * *")
                         assertThat(result.getString("spec")).contains("\"type\":\"DAILY\"")
                         assertThat(result.getTimestamp("next_sync_at")).isNull()
+                    }
+                spaceNameMigration
+                    .split(';')
+                    .map { sql -> sql.trim() }
+                    .filter { sql -> sql.isNotEmpty() }
+                    .forEach { sql -> statement.execute(sql) }
+                statement
+                    .executeQuery(
+                        "SELECT space_name FROM confluence_space_connections WHERE id = '$connectionId'",
+                    ).use { result ->
+                        result.next()
+                        assertThat(result.getString("space_name")).isNull()
                     }
                 statement.executeUpdate(
                     "INSERT INTO confluence_credentials " +
@@ -89,6 +102,7 @@ class ConfluenceConnectionMigrationTest {
             "CREATE INDEX idx_confluence_connection_next_sync",
             "WHERE auto_update = TRUE AND source_enabled = TRUE",
         )
+        assertThat(spaceNameMigration).contains("ADD COLUMN space_name VARCHAR(255)")
         assertThat(migration.lowercase()).doesNotContain("default '")
     }
 

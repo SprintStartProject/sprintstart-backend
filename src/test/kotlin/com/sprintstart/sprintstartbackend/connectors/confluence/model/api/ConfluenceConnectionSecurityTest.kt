@@ -43,6 +43,7 @@ class ConfluenceConnectionSecurityTest {
             baseUrl = "https://tenant.atlassian.net",
             spaceId = "123",
             spaceKey = "ENG",
+            spaceName = "Engineering",
             pageAllowlist = listOf("10"),
             pageDenylist = emptyList(),
             credentialsConfigured = true,

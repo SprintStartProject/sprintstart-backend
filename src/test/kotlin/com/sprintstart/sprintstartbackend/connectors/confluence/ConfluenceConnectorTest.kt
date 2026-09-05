@@ -31,6 +31,7 @@ class ConfluenceConnectorTest {
             baseUrl = "https://tenant.atlassian.net",
             spaceId = "42",
             spaceKey = "ENG",
+            spaceName = "Engineering Handbook",
             sourceEnabled = true,
         )
         every { connectionService.getSourceConnections(projectId) } returns listOf(source)
@@ -42,11 +43,29 @@ class ConfluenceConnectorTest {
         assertThat(result.single()).isEqualTo(
             ConnectorSource(
                 id = source.id.toString(),
-                name = "ENG",
+                name = "Engineering Handbook",
                 url = "https://tenant.atlassian.net/wiki/spaces/ENG",
                 enabled = true,
             ),
         )
+    }
+
+    @Test
+    fun `falls back to space key when no name is cached`() {
+        val projectId = UUID.randomUUID()
+        val source = ConfluenceConnectionSourceSnapshot(
+            id = UUID.randomUUID(),
+            baseUrl = "https://tenant.atlassian.net",
+            spaceId = "42",
+            spaceKey = "ENG",
+            spaceName = null,
+            sourceEnabled = true,
+        )
+        every { connectionService.getSourceConnections(projectId) } returns listOf(source)
+
+        val result = connector.getSources(projectId)
+
+        assertThat(result.single().name).isEqualTo("ENG")
     }
 
     @Test
@@ -105,6 +124,7 @@ class ConfluenceConnectorTest {
         baseUrl = "https://tenant.atlassian.net",
         spaceId = "42",
         spaceKey = key,
+        spaceName = null,
         sourceEnabled = enabled,
     )
 }

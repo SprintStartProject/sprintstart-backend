@@ -305,6 +305,7 @@ internal class ConfluenceConnectorControllerTest {
         baseUrl = "https://tenant.invalid",
         spaceId = "42",
         spaceKey = "ENG",
+        spaceName = "Engineering Handbook",
         pageAllowlist = listOf("100"),
         pageDenylist = listOf("200"),
         credentialsConfigured = true,
