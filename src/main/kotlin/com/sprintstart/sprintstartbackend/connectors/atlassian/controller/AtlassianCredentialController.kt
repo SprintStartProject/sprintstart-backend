@@ -1,11 +1,11 @@
-package com.sprintstart.sprintstartbackend.connectors.jira.controller
+package com.sprintstart.sprintstartbackend.connectors.atlassian.controller
 
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.AddCredentialRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.ChangeJiraCredentialNameRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.ChangeJiraCredentialTokenRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.DeleteJiraCredentialRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.credentials.JiraCredentialsDto
-import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraCredentialsService
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.AddAtlassianCredentialRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.ChangeAtlassianCredentialNameRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.ChangeAtlassianCredentialTokenRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.DeleteAtlassianCredentialRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.response.AtlassianCredentialDto
+import com.sprintstart.sprintstartbackend.connectors.atlassian.service.AtlassianCredentialService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -26,19 +26,19 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/api/v1/jira/credentials")
-internal class JiraCredentialsController(
-    private val credentialsService: JiraCredentialsService,
+@RequestMapping("/api/v1/atlassian/credentials")
+internal class AtlassianCredentialController(
+    private val credentialsService: AtlassianCredentialService,
 ) {
     /**
-     * Adds a new Jira credential to the system.
+     * Adds a new Atlassian credential to the system.
      *
-     * @param request The request containing the details of the Jira credential to be added.
+     * @param request The request containing the details of the Atlassian credential to be added.
      * @return A ResponseEntity with no content if the credential is successfully added.
      */
     @Operation(
-        summary = "Adds a new Jira credential",
-        description = "Adds a new Jira credential to the system.",
+        summary = "Adds a new Atlassian credential",
+        description = "Adds a new Atlassian credential to the system.",
     )
     @ApiResponses(
         value = [
@@ -56,28 +56,27 @@ internal class JiraCredentialsController(
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun addCredentials(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-        @RequestBody @Valid request: AddCredentialRequest,
+        @RequestBody @Valid request: AddAtlassianCredentialRequest,
     ): ResponseEntity<Unit> {
         credentialsService.addCredentials(jwt.subject, request)
         return ResponseEntity.noContent().build()
     }
 
     /**
-     * Retrieves all Jira credentials associated with the specified user's email.
+     * Retrieves all Atlassian credentials associated with the specified user's email.
      *
-     * @param userEmail the email address of the user whose Jira credentials are to be retrieved
-     * @return a ResponseEntity containing a list of JiraCredentialsDto
+     * @return a ResponseEntity containing a list of AtlassianCredentialDto
      *         objects representing the user's credentials
      */
     @Operation(
-        summary = "Gets all Jira credentials of a user",
-        description = "Gets all Jira credentials of a user.",
+        summary = "Gets all Atlassian credentials of a user",
+        description = "Gets all Atlassian credentials of a user.",
     )
     @ApiResponses(
         value = [
             ApiResponse(
                 responseCode = "200",
-                description = "Retrieved all Jira credentials successfully.",
+                description = "Retrieved all Atlassian credentials successfully.",
             ),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
@@ -88,23 +87,23 @@ internal class JiraCredentialsController(
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun getCredentialsOfUser(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-    ): ResponseEntity<List<JiraCredentialsDto>> {
+    ): ResponseEntity<List<AtlassianCredentialDto>> {
         val response = credentialsService.getCredentialsOfUser(jwt.subject)
         return ResponseEntity.ok(response)
     }
 
     /**
-     * Removes a Jira credential from the system.
+     * Removes an Atlassian credential from the system.
      *
-     * This operation deletes the specified Jira credential based on the given request details.
+     * This operation deletes the specified Atlassian credential based on the given request details.
      *
-     * @param request The details of the Jira credential to be removed. This must contain valid and
+     * @param request The details of the Atlassian credential to be removed. This must contain valid and
      *                 complete information.
      * @return A ResponseEntity with no content indicating successful removal of the credential.
      */
     @Operation(
-        summary = "Removes a Jira credential",
-        description = "Removes a Jira credential from the system.",
+        summary = "Removes an Atlassian credential",
+        description = "Removes an Atlassian credential from the system.",
     )
     @ApiResponses(
         value = [
@@ -122,21 +121,21 @@ internal class JiraCredentialsController(
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun removeCredential(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-        @RequestBody @Valid request: DeleteJiraCredentialRequest,
+        @RequestBody @Valid request: DeleteAtlassianCredentialRequest,
     ): ResponseEntity<Unit> {
         credentialsService.removeCredential(jwt.subject, request)
         return ResponseEntity.noContent().build()
     }
 
     /**
-     * Updates the name of an existing Jira credential.
+     * Updates the name of an existing Atlassian credential.
      *
-     * @param request The request object containing the current Jira credential details and the new name.
-     * @return A ResponseEntity containing the updated Jira credential details.
+     * @param request The request object containing the current Atlassian credential details and the new name.
+     * @return A ResponseEntity containing the updated Atlassian credential details.
      */
     @Operation(
-        summary = "Changes the name of a Jira credential",
-        description = "Changes the name of a Jira credential.",
+        summary = "Changes the name of an Atlassian credential",
+        description = "Changes the name of an Atlassian credential.",
     )
     @ApiResponses(
         value = [
@@ -154,21 +153,21 @@ internal class JiraCredentialsController(
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun changeCredentialName(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-        @RequestBody @Valid request: ChangeJiraCredentialNameRequest,
-    ): ResponseEntity<JiraCredentialsDto> {
+        @RequestBody @Valid request: ChangeAtlassianCredentialNameRequest,
+    ): ResponseEntity<AtlassianCredentialDto> {
         val response = credentialsService.changeCredentialName(jwt.subject, request)
         return ResponseEntity.ok(response)
     }
 
     /**
-     * Changes the token of a Jira credential.
+     * Changes the token of an Atlassian credential.
      *
-     * @param request The request object containing the details for changing the token of a Jira credential.
-     * @return A ResponseEntity containing the updated Jira credential details.
+     * @param request The request object containing the details for changing the token of an Atlassian credential.
+     * @return A ResponseEntity containing the updated Atlassian credential details.
      */
     @Operation(
-        summary = "Changes the token of a Jira credential",
-        description = "Changes the token of a Jira credential.",
+        summary = "Changes the token of an Atlassian credential",
+        description = "Changes the token of an Atlassian credential.",
     )
     @ApiResponses(
         value = [
@@ -186,8 +185,8 @@ internal class JiraCredentialsController(
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun changeCredentialToken(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-        @RequestBody @Valid request: ChangeJiraCredentialTokenRequest,
-    ): ResponseEntity<JiraCredentialsDto> {
+        @RequestBody @Valid request: ChangeAtlassianCredentialTokenRequest,
+    ): ResponseEntity<AtlassianCredentialDto> {
         val response = credentialsService.changeCredentialToken(jwt.subject, request)
         return ResponseEntity.ok(response)
     }

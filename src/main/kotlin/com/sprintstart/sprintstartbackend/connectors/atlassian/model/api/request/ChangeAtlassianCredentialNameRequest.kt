@@ -1,13 +1,13 @@
-package com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials
+package com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 
-data class ChangeJiraCredentialTokenRequest(
+data class ChangeAtlassianCredentialNameRequest(
     @Pattern(regexp = "^[\\w\\-.]+@([\\w-]+\\.)+[\\w-]{2,}$")
     val userEmail: String,
     @NotBlank
-    val tokenName: String,
+    val oldName: String,
     @NotBlank
-    val newToken: String,
+    val newName: String,
 )

@@ -1,14 +1,14 @@
-package com.sprintstart.sprintstartbackend.connectors.jira.controller
+package com.sprintstart.sprintstartbackend.connectors.atlassian.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.AddCredentialRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.ChangeJiraCredentialNameRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.ChangeJiraCredentialTokenRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.credentials.DeleteJiraCredentialRequest
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.credentials.JiraCredentialsDto
-import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraCredentialsService
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.AddAtlassianCredentialRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.ChangeAtlassianCredentialNameRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.ChangeAtlassianCredentialTokenRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.request.DeleteAtlassianCredentialRequest
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.api.response.AtlassianCredentialDto
+import com.sprintstart.sprintstartbackend.connectors.atlassian.service.AtlassianCredentialService
 import io.mockk.every
 import io.mockk.junit5.MockKExtension
 import io.mockk.verify
@@ -31,17 +31,17 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 
-@WebMvcTest(controllers = [JiraCredentialsController::class])
+@WebMvcTest(controllers = [AtlassianCredentialController::class])
 @AutoConfigureMockMvc
-@Import(JiraExceptionHandler::class, SecurityConfig::class)
+@Import(AtlassianCredentialExceptionHandler::class, SecurityConfig::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @ExtendWith(MockKExtension::class)
-class JiraCredentialsControllerTest {
+class AtlassianCredentialControllerTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
     @MockkBean
-    private lateinit var service: JiraCredentialsService
+    private lateinit var service: AtlassianCredentialService
 
     private val objectMapper = jacksonObjectMapper()
 
@@ -53,12 +53,12 @@ class JiraCredentialsControllerTest {
     inner class AddCredentials {
         @Test
         fun `should return 204 when authenticated as ADMIN`() {
-            val request = AddCredentialRequest("user@example.com", "token", "secret")
+            val request = AddAtlassianCredentialRequest("user@example.com", "token", "secret")
             every { service.addCredentials("admin-id", request) } returns Unit
 
             mockMvc
                 .perform(
-                    post("/api/v1/jira/credentials")
+                    post("/api/v1/atlassian/credentials")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
                         .with(adminJwt),
@@ -80,7 +80,7 @@ class JiraCredentialsControllerTest {
 
             mockMvc
                 .perform(
-                    post("/api/v1/jira/credentials")
+                    post("/api/v1/atlassian/credentials")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(request)
                         .with(adminJwt),
@@ -93,7 +93,7 @@ class JiraCredentialsControllerTest {
         @Test
         fun `should return 200 with credentials`() {
             every { service.getCredentialsOfUser("admin-id") } returns listOf(
-                JiraCredentialsDto(
+                AtlassianCredentialDto(
                     "user@example.com",
                     "token",
                 ),
@@ -101,7 +101,7 @@ class JiraCredentialsControllerTest {
 
             mockMvc
                 .perform(
-                    get("/api/v1/jira/credentials").with(adminJwt),
+                    get("/api/v1/atlassian/credentials").with(adminJwt),
                 ).andExpect(status().isOk)
                 .andExpect(jsonPath("$[0].userEmail").value("user@example.com"))
         }
@@ -111,12 +111,12 @@ class JiraCredentialsControllerTest {
     inner class RemoveCredential {
         @Test
         fun `should return 204 when credential removed`() {
-            val request = DeleteJiraCredentialRequest("user@example.com", "token")
+            val request = DeleteAtlassianCredentialRequest("user@example.com", "token")
             every { service.removeCredential("admin-id", request) } returns Unit
 
             mockMvc
                 .perform(
-                    delete("/api/v1/jira/credentials")
+                    delete("/api/v1/atlassian/credentials")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
                         .with(adminJwt),
@@ -128,14 +128,14 @@ class JiraCredentialsControllerTest {
     inner class ChangeCredentialName {
         @Test
         fun `should return 200 with updated credential`() {
-            val request = ChangeJiraCredentialNameRequest("user@example.com", "token", "newToken")
+            val request = ChangeAtlassianCredentialNameRequest("user@example.com", "token", "newToken")
             every {
                 service.changeCredentialName("admin-id", request)
-            } returns JiraCredentialsDto("user@example.com", "newToken")
+            } returns AtlassianCredentialDto("user@example.com", "newToken")
 
             mockMvc
                 .perform(
-                    patch("/api/v1/jira/credentials/patch/name")
+                    patch("/api/v1/atlassian/credentials/patch/name")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
                         .with(adminJwt),
@@ -148,14 +148,14 @@ class JiraCredentialsControllerTest {
     inner class ChangeCredentialToken {
         @Test
         fun `should return 200 with updated credential`() {
-            val request = ChangeJiraCredentialTokenRequest("user@example.com", "token", "newSecret")
+            val request = ChangeAtlassianCredentialTokenRequest("user@example.com", "token", "newSecret")
             every {
                 service.changeCredentialToken("admin-id", request)
-            } returns JiraCredentialsDto("user@example.com", "token")
+            } returns AtlassianCredentialDto("user@example.com", "token")
 
             mockMvc
                 .perform(
-                    patch("/api/v1/jira/credentials/patch/token")
+                    patch("/api/v1/atlassian/credentials/patch/token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request))
                         .with(adminJwt),
