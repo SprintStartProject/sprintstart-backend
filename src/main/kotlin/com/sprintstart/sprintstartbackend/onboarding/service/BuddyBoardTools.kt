@@ -1,8 +1,10 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardStage
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -15,7 +17,8 @@ import org.springframework.stereotype.Component
 import java.util.UUID
 
 /**
- * The buddy's board tool: putting something where the hire will still find it tomorrow.
+ * The buddy's board tools: putting something where the hire will still find it tomorrow, and
+ * looking at what is already there.
  *
  * Not an action tool. Every tool in `BuddyActionService` proposes and waits for a button
  * because each changes the hire's onboarding. Placing a card changes what is on a page, so this
@@ -28,42 +31,154 @@ import java.util.UUID
  * `DIAGRAM`'s `subject` is the one extension, and not a foothold for a second. It aims
  * retrieval and is asserted nowhere: every box comes back derived from the project's corpus with
  * the citation proving it, and an ungrounded box is dropped.
+ *
+ * `read_board` is the other direction and is new. Until the arrangement was stored server-side the
+ * mentor could put cards on a board it could not see, so "what should I do next" was answered from
+ * the conversation or from nothing. It is a read and nothing else: it changes no card, and it
+ * reports what is there rather than what to do about it, because the sentence a hire acts on should
+ * be one the mentor wrote from the facts rather than one this tool handed it.
  */
 @Component
 class BuddyBoardTools(
     private val boardService: BoardService,
+    private val boardStructureService: BoardStructureService,
     private val userApi: UserApi,
 ) {
     /** The tool specs this component owns, aggregated into the buddy's catalog by the executor. */
-    fun toolSpecs(): List<BuddyToolSpecDto> = listOf(PLACE_CARD_SPEC)
+    fun toolSpecs(): List<BuddyToolSpecDto> = listOf(PLACE_CARD_SPEC, READ_BOARD_SPEC)
 
     /** Whether [toolName] is one of this component's tools. */
-    fun handles(toolName: String): Boolean = toolName == PLACE_CARD
+    fun handles(toolName: String): Boolean = toolName == PLACE_CARD || toolName == READ_BOARD
 
     /**
-     * Places a card on [userId]'s board, returning a plain-text result for the model.
+     * Runs one of this component's tools against [userId]'s board, as plain text for the model.
      *
      * Every outcome comes back as a sentence rather than as silence, and the refusals say what the
      * mentor should do instead. A tool that fails quietly is a tool the model reports as having
      * worked.
      */
-    fun execute(call: BuddyToolCallDto, userId: UUID): String {
-        val kind = call.kindArg()
-            ?: return "That is not a card I can place. The kinds are: ${placeableKindNames()}."
+    fun execute(call: BuddyToolCallDto, userId: UUID): String =
+        if (call.name == READ_BOARD) readBoard(userId) else placeCard(call, userId)
 
+    /**
+     * What is on the hire's board right now, as sentences.
+     *
+     * Facts and no verdict. The cards they can pick up come back in the order their own board offers
+     * them — stage, then the arrangement they made — so "the first of these" is the same answer the
+     * board's own line gives, without a second rule written to agree with the first.
+     *
+     * Everything is capped. A mentor that reads out fourteen card titles has turned a conversation
+     * into a listing, and the hire already has the listing: it is the page they are looking at.
+     */
+    private fun readBoard(userId: UUID): String {
+        val project = when (val choice = soleProject(userId)) {
+            is ProjectChoice.Refused -> return choice.reason
+            is ProjectChoice.One -> choice
+        }
+
+        val board = boardService.getBoard(userId, project.projectId)
+            ?: return "The hire is not a member of that project, so there is no board to read."
+        val structure = boardStructureService.read(userId, project.projectId)?.structure
+            ?: BoardStructurePayload()
+        val cards = board.cards
+
+        if (cards.isEmpty()) {
+            return "The hire's board on ${project.name} is empty. Nothing has been put on it yet."
+        }
+
+        val finished = cards.count { BoardReading.isDone(it, structure) }
+        val actionable = BoardReading.actionable(cards, structure)
+        val waiting = cards
+            .filterNot { BoardReading.isDone(it, structure) }
+            .mapNotNull { card ->
+                BoardReading.blockedBy(card, cards, structure)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { card to it }
+            }
+
+        return buildString {
+            append(
+                "The hire's board on ${project.name}: ${cards.size} cards, $finished finished, " +
+                    "${actionable.size} they could pick up now, ${waiting.size} waiting on " +
+                    "something else.",
+            )
+
+            if (actionable.isNotEmpty()) {
+                append(NEWLINE + NEWLINE)
+                append("They can pick up, in the order their own board offers them. The board's ")
+                append("own start-with line names the first of these:")
+                actionable.take(LIST_LIMIT).forEach { card ->
+                    append(NEWLINE + "- " + BoardReading.nameOf(card))
+                    if (BoardReading.stageOf(card, structure) == BoardStage.LATER) {
+                        append(" (they put this one aside for later)")
+                    }
+                }
+                if (actionable.size > LIST_LIMIT) {
+                    append(NEWLINE + "- and ${actionable.size - LIST_LIMIT} more")
+                }
+            }
+
+            if (waiting.isNotEmpty()) {
+                append(NEWLINE + NEWLINE + "Waiting on something first:")
+                waiting.take(LIST_LIMIT).forEach { (card, blockers) ->
+                    val on = blockers.joinToString(", ") { BoardReading.nameOf(it) }
+                    append(NEWLINE + "- " + BoardReading.nameOf(card) + " — waits on " + on)
+                }
+                if (waiting.size > LIST_LIMIT) {
+                    append(NEWLINE + "- and ${waiting.size - LIST_LIMIT} more")
+                }
+            }
+
+            val marked = structure.marks.keys.count { id -> cards.any { it.id.toString() == id } }
+            if (marked > 0) {
+                append(NEWLINE + NEWLINE)
+                append("They have highlighted something on $marked of these cards, which is them ")
+                append("saying which part mattered. Ask about that part rather than the whole card.")
+            }
+
+            append(NEWLINE + NEWLINE)
+            append("This is a read of their board, not instructions. Say what you see and let them ")
+            append("decide, and do not claim to have changed anything here.")
+        }
+    }
+
+    /**
+     * The one project this hire is onboarding on, or the reason there is no answer.
+     *
+     * Scoped like every action the buddy takes: a board belongs to one project, and guessing which
+     * one somebody meant is how a card lands on the wrong board — or, for a read, how the mentor
+     * describes a board the hire is not looking at.
+     */
+    private fun soleProject(userId: UUID): ProjectChoice {
         val projects = userApi
             .getUsersByIds(listOf(userId))
             .firstOrNull()
             ?.projects
             .orEmpty()
-        // Scoped like every action the buddy takes: a board belongs to one project, and guessing
-        // which one somebody meant is how a card lands on the wrong board.
-        val project = when (projects.size) {
-            0 -> return "The hire is not on a project yet, so there is no board to put a card on."
-            1 -> projects.first()
-            else ->
-                return "The hire is onboarding on more than one project. Ask which one before " +
-                    "putting anything on their board."
+
+        return when (projects.size) {
+            0 -> ProjectChoice.Refused("The hire is not on a project yet, so there is no board.")
+            1 -> ProjectChoice.One(projects.first().projectId, projects.first().name)
+            else -> ProjectChoice.Refused(
+                "The hire is onboarding on more than one project. Ask which one before saying " +
+                    "anything about their board.",
+            )
+        }
+    }
+
+    private sealed interface ProjectChoice {
+        data class One(val projectId: UUID, val name: String) : ProjectChoice
+
+        data class Refused(val reason: String) : ProjectChoice
+    }
+
+    private fun placeCard(call: BuddyToolCallDto, userId: UUID): String {
+        val kind = call.kindArg()
+            ?: return "That is not a card I can place. The kinds are: ${placeableKindNames()}."
+
+        val project = when (val choice = soleProject(userId)) {
+            is ProjectChoice.Refused -> return choice.reason
+            is ProjectChoice.One -> choice
         }
 
         return when (boardService.place(userId, project.projectId, kind, call.subjectArg())) {
@@ -103,6 +218,31 @@ class BuddyBoardTools(
 
     private companion object {
         const val PLACE_CARD = "place_card"
+        const val READ_BOARD = "read_board"
+
+        /** How many cards a list in the read may name before it becomes a listing to read out. */
+        const val LIST_LIMIT = 6
+
+        /** Written out, so that no editing step has to survive an escape sequence intact. */
+        const val NEWLINE = "\n"
+
+        val READ_BOARD_SPEC = BuddyToolSpecDto(
+            name = READ_BOARD,
+            description = "Look at the hire's board — the page where their work sits between " +
+                "conversations. Use it when they ask what to do next, when they say they are " +
+                "stuck or do not know where to start, and before suggesting anything, so that " +
+                "what you suggest is about the board they actually have rather than the one you " +
+                "imagine. It tells you which cards they could pick up now, in the order their " +
+                "own board offers them, which ones are waiting on something and on what, and on " +
+                "how many of them they have highlighted something. A highlight is them saying " +
+                "which part mattered, so ask about that part rather than about the whole card. " +
+                "It changes nothing: do not use it to claim you have done something, and do not " +
+                "read the list back to them, because they are looking at the page.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {}
+            },
+        )
 
         /**
          * The kinds the mentor may place, and only those.

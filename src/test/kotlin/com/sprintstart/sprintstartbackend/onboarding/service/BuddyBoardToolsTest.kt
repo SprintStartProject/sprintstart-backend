@@ -20,8 +20,9 @@ import java.util.UUID
 
 class BuddyBoardToolsTest {
     private val boardService: BoardService = mockk()
+    private val boardStructureService: BoardStructureService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val tools = BuddyBoardTools(boardService, userApi)
+    private val tools = BuddyBoardTools(boardService, boardStructureService, userApi)
 
     private val userId = UUID.randomUUID()
     private val projectId = UUID.randomUUID()
