@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -16,6 +17,7 @@ internal class ConfluenceConnectionScheduleService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Transactional
+    @Tracked("Retrieving all Confluence instances due for sync now")
     fun claimDueConnections(now: Instant): List<ConfluenceScheduledConnection> {
         return connectionRepository
             .findAllByAutoUpdateTrueAndSourceEnabledTrueAndNextSyncAtLessThanEqualOrderByNextSyncAtAsc(now)

@@ -41,3 +41,7 @@ internal class ConfluenceCredentialNotFoundException(
         message = "Atlassian credential '$credentialName' was not found",
         httpStatus = 404,
     )
+
+internal class ConfluenceConnectionNotEnabledException(
+    val name: String,
+) : RuntimeException("Specified Confluence connection '$name' is not enabled")

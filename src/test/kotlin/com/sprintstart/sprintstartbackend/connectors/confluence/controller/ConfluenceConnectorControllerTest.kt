@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.reques
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionResult
@@ -285,6 +286,24 @@ internal class ConfluenceConnectorControllerTest {
         }
 
         coVerify(exactly = ConfluenceIngestionStatus.entries.size) { connector.ingest(projectId, connectionId) }
+    }
+
+    @Test
+    fun `update on a disabled connection returns bad request with safe message`() {
+        coEvery { connector.ingest(projectId, connectionId) } throws
+            ConfluenceConnectionNotEnabledException("Engineering Handbook")
+
+        val asyncResult = mockMvc
+            .perform(post("${basePath()}/$connectionId/update").with(adminJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isBadRequest)
+            .andExpect(
+                jsonPath("$.message").value("Specified Confluence connection 'Engineering Handbook' is not enabled"),
+            )
     }
 
     private fun performConnect(

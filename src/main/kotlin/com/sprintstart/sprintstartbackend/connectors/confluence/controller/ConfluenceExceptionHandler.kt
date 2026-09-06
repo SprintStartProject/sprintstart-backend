@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.controller
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceIngestionException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -40,6 +41,15 @@ internal class ConfluenceExceptionHandler {
         return ResponseEntity
             .status(HttpStatus.INTERNAL_SERVER_ERROR)
             .body(ConfluenceErrorResponse(INGESTION_FAILURE_MESSAGE))
+    }
+
+    @ExceptionHandler(ConfluenceConnectionNotEnabledException::class)
+    fun handleConnectionNotEnabled(
+        e: ConfluenceConnectionNotEnabledException,
+    ): ResponseEntity<ConfluenceErrorResponse> {
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ConfluenceErrorResponse(e.message ?: "Required connection not enabled"))
     }
 
     private companion object {

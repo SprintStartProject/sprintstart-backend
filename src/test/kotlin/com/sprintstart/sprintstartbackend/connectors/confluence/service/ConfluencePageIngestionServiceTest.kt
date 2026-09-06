@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageVersion
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceStorageBody
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ConfluenceStorageFormatParser
@@ -21,6 +22,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArt
 import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipType
 import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -284,6 +286,26 @@ class ConfluencePageIngestionServiceTest {
     }
 
     @Test
+    fun `disabled connection rejects ingestion before any run or Confluence interaction`() = runTest {
+        every {
+            connectionService.getConnectionForIngestion(projectId, connection.id)
+        } returns connection.copyWithFilters(enabled = false)
+
+        val thrown = runCatching { service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id) }
+            .exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(ConfluenceConnectionNotEnabledException::class.java)
+        assertThat((thrown as ConfluenceConnectionNotEnabledException).name).isEqualTo("Engineering Handbook")
+        assertThat(thrown.message).isEqualTo("Specified Confluence connection 'Engineering Handbook' is not enabled")
+        coVerify(exactly = 0) { client.getSpace(any(), any(), any()) }
+        coVerify(exactly = 0) { client.getPages(any(), any(), any()) }
+        verify(exactly = 0) { ingestionApi.startRun(any(), any(), any()) }
+        verify(exactly = 0) { ingestionApi.persistBatch(any()) }
+        verify(exactly = 0) { ingestionApi.failRun(any(), any()) }
+        verify(exactly = 0) { ingestionApi.finishRun(any(), any()) }
+    }
+
+    @Test
     fun `terminal client failure marks run failed and performs no artifact persistence`() = runTest {
         val exception = ConfluenceAuthenticationException("retrieving pages for space 42")
         coEvery { client.getPages(any(), any(), any()) } throws exception
@@ -338,6 +360,7 @@ class ConfluencePageIngestionServiceTest {
     private fun ConfluenceConnectionIngestionSnapshot.copyWithFilters(
         allowlist: List<String> = pageAllowlist,
         denylist: List<String> = pageDenylist,
+        enabled: Boolean = sourceEnabled,
     ) = ConfluenceConnectionIngestionSnapshot(
         id,
         projectId,
@@ -345,7 +368,7 @@ class ConfluencePageIngestionServiceTest {
         spaceId,
         spaceKey,
         spaceName,
-        sourceEnabled,
+        enabled,
         allowlist,
         denylist,
         credentials,

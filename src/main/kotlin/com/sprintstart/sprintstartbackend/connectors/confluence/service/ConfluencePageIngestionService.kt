@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePage
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceIngestionException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailure
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
@@ -213,7 +214,7 @@ internal class ConfluencePageIngestionService(
 
     private fun requireEnabled(connection: ConfluenceConnectionIngestionSnapshot) {
         if (!connection.sourceEnabled) {
-            throw ConfluenceIngestionException()
+            throw ConfluenceConnectionNotEnabledException(connection.spaceName ?: "No name specified.")
         }
     }
 

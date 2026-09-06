@@ -153,6 +153,7 @@ internal class ConfluenceConnectorController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Synchronization finished"),
+            ApiResponse(responseCode = "400", description = "Connection is not enabled"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Project management permission required"),
             ApiResponse(responseCode = "404", description = "Connection not found in the project"),
