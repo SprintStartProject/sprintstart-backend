@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.connectors.atlassian.external.Atlassia
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
-import com.sprintstart.sprintstartbackend.connectors.confluence.event.ConfluenceConnectionCreatedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
@@ -17,6 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -24,15 +24,19 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.springframework.context.ApplicationEventPublisher
+import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ConfluenceConnectionServiceTest {
     private val confluenceClient = mockk<ConfluenceClient>()
     private val connectionRepository = mockk<ConfluenceSpaceConnectionRepository>()
@@ -40,7 +44,12 @@ class ConfluenceConnectionServiceTest {
     private val userApi = mockk<UserApi>()
     private val cronBuilder = mockk<CronBuilder>()
     private val scheduleCalculator = mockk<ConfluenceScheduleCalculator>()
-    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val ingestionService = mockk<ConfluencePageIngestionService>()
+    private val initialIngestionScope = TestScope()
+
+    // The real persistence collaborator: it owns the insert, so the create-connection expectations below stay
+    // meaningful instead of asserting against a mocked-away write.
+    private val connectionPersistenceService = ConfluenceConnectionPersistenceService(connectionRepository)
     private val service = ConfluenceConnectionService(
         confluenceClient,
         connectionRepository,
@@ -48,7 +57,9 @@ class ConfluenceConnectionServiceTest {
         userApi,
         cronBuilder,
         scheduleCalculator,
-        eventPublisher,
+        connectionPersistenceService,
+        ScheduledExecutor(initialIngestionScope),
+        ingestionService,
     )
     private val authId = "auth-subject"
     private val projectId = UUID.randomUUID()
@@ -74,8 +85,10 @@ class ConfluenceConnectionServiceTest {
         coEvery { confluenceClient.getSpace(any(), any(), "123") } returns
             confluenceSpace(id = "123", key = "CANONICAL")
         every { connectionRepository.saveAndFlush(capture(saved)) } answers { firstArg() }
+        coEvery { ingestionService.ingest(any(), any()) } returns mockk()
 
         val response = service.createConnection(authId, projectId, request())
+        initialIngestionScope.advanceUntilIdle()
 
         assertThat(response.projectId).isEqualTo(projectId)
         assertThat(response.baseUrl).isEqualTo("https://tenant.atlassian.net")
@@ -91,13 +104,7 @@ class ConfluenceConnectionServiceTest {
         coVerify(exactly = 1) {
             confluenceClient.getSpace("https://tenant.atlassian.net", any(), "123")
         }
-        verify(exactly = 1) {
-            eventPublisher.publishEvent(
-                match<ConfluenceConnectionCreatedEvent> { event ->
-                    event.projectId == projectId && event.connectionId == saved.captured.id
-                },
-            )
-        }
+        coVerify(exactly = 1) { ingestionService.ingest(projectId, saved.captured.id) }
     }
 
     @Test
@@ -138,7 +145,7 @@ class ConfluenceConnectionServiceTest {
 
         coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
-        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
+        coVerify(exactly = 0) { ingestionService.ingest(any(), any()) }
     }
 
     @Test
@@ -151,7 +158,7 @@ class ConfluenceConnectionServiceTest {
         assertThat(thrown).isInstanceOf(ConfluenceCredentialNotFoundException::class.java)
         coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
-        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
+        coVerify(exactly = 0) { ingestionService.ingest(any(), any()) }
     }
 
     @Test
@@ -169,7 +176,7 @@ class ConfluenceConnectionServiceTest {
             .hasMessage("Confluence credentials were rejected")
         assertThat(thrown.toString()).doesNotContain(plaintextToken, "Basic ", "fake-user@example.invalid")
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
-        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceConnectionCreatedEvent>()) }
+        coVerify(exactly = 0) { ingestionService.ingest(any(), any()) }
     }
 
     @Test
@@ -206,6 +213,19 @@ class ConfluenceConnectionServiceTest {
         assertThat(thrown.toString()).doesNotContain(plaintextToken)
         coVerify(exactly = 0) { confluenceClient.getSpace(any(), any(), any()) }
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
+    }
+
+    /**
+     * The space lookup suspends, so a transaction opened here would be committed on the calling thread long
+     * before anything is written and the creation event would end up outside any transaction.
+     */
+    @Test
+    fun `suspending connection creation does not own a transaction`() {
+        val createConnection = ConfluenceConnectionService::class.java.declaredMethods
+            .single { method -> method.name == "createConnection" }
+
+        assertThat(createConnection.getAnnotation(Transactional::class.java)).isNull()
+        assertThat(ConfluenceConnectionService::class.java.getAnnotation(Transactional::class.java)).isNull()
     }
 
     @Test

@@ -8,7 +8,6 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceExternalServiceException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceResourceNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.confluence.event.ConfluenceConnectionCreatedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
@@ -21,9 +20,8 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import org.springframework.context.ApplicationEventPublisher
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -38,14 +36,22 @@ internal class ConfluenceConnectionService(
     private val userApi: UserApi,
     private val cronBuilder: CronBuilder,
     private val scheduleCalculator: ConfluenceScheduleCalculator,
-    private val eventPublisher: ApplicationEventPublisher,
+    private val connectionPersistenceService: ConfluenceConnectionPersistenceService,
+    private val scheduledExecutor: ScheduledExecutor,
+    private val ingestionService: ConfluencePageIngestionService,
 ) {
     /**
      * Validates the selected remote space before atomically storing its connection and credential.
      *
-     * The canonical space ID and key come from Confluence. Nothing is persisted when validation fails.
+     * The canonical space ID and key come from Confluence. Nothing is persisted when validation fails. Once the
+     * connection is stored, its first ingestion is launched in the background just like the GitHub and Jira
+     * connectors do after a successful connect, so a new source starts filling up without a manual update.
+     *
+     * Deliberately not transactional: the space lookup suspends, so the coroutine resumes on another thread where
+     * Spring's thread-bound transaction synchronization no longer exists. The write happens in
+     * [ConfluenceConnectionPersistenceService.persist] instead, which owns the only transaction of this flow and
+     * has committed by the time the initial ingestion starts.
      */
-    @Transactional
     suspend fun createConnection(
         authId: String,
         projectId: UUID,
@@ -79,19 +85,11 @@ internal class ConfluenceConnectionService(
             pageDenylistInternal = denylist.toMutableList(),
         )
 
-        val saved = try {
-            connectionRepository.saveAndFlush(connection)
-        } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
-            throw ConfluenceConnectionAlreadyExistsException(projectId, canonicalSpaceId)
+        val saved = connectionPersistenceService.persist(connection)
+        scheduledExecutor.launch("Initial ingestion for Confluence connection '${saved.id}'") {
+            ingestionService.ingest(projectId, saved.id)
         }
-
-        eventPublisher.publishEvent(
-            ConfluenceConnectionCreatedEvent(
-                projectId = projectId,
-                connectionId = saved.id,
-            ),
-        )
-        return saved.toResponse()
+        return saved
     }
 
     @Transactional(readOnly = true)
