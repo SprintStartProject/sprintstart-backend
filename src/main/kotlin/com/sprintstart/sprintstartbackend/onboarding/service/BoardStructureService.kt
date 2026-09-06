@@ -73,7 +73,8 @@ class BoardStructureService(
             ?: boardRepository.save(Board(userId = userId, projectId = projectId))
 
         val encoded = json.encodeToString(BoardStructurePayload.serializer(), payload)
-        val stored = boardStructureRepository.findByBoardId(board.id)
+        val stored = boardStructureRepository
+            .findByBoardId(board.id)
             ?.also {
                 it.payload = encoded
                 it.updatedAt = Instant.now()

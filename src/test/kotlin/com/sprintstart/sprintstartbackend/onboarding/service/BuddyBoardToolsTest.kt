@@ -45,6 +45,14 @@ class BuddyBoardToolsTest {
         projectRoles = emptyList(),
     )
 
+    /**
+     * The place_card spec, by name.
+     *
+     * Named rather than taken as the only one: this component offers a second tool now, and a test
+     * that reached for "the spec" would have started asserting about whichever one came first.
+     */
+    private fun placeCardSpec() = tools.toolSpecs().first { it.name == "place_card" }
+
     private fun placeCall(kind: String, subject: String? = null) = BuddyToolCallDto(
         id = "c0",
         name = "place_card",
@@ -81,7 +89,7 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `the tool advertises subject as belonging to diagrams only`() {
-        val spec = tools.toolSpecs().single()
+        val spec = placeCardSpec()
 
         val subject = spec.parameters["properties"]!!.jsonObject["subject"]!!.jsonObject
         assertThat(subject["description"]!!.jsonPrimitive.content).contains("DIAGRAM only")
@@ -163,8 +171,19 @@ class BuddyBoardToolsTest {
     }
 
     @Test
+    fun `both tools are offered, and the read says it changes nothing`() {
+        val names = tools.toolSpecs().map { it.name }
+
+        assertThat(names).containsExactlyInAnyOrder("place_card", "read_board")
+        // The one thing the read's description has to get across: a mentor that thinks a read did
+        // something will tell the hire it did.
+        assertThat(tools.toolSpecs().first { it.name == "read_board" }.description)
+            .contains("It changes nothing")
+    }
+
+    @Test
     fun `the tool offers only the kinds the board does not keep by itself`() {
-        val spec = tools.toolSpecs().single()
+        val spec = placeCardSpec()
 
         assertThat(spec.name).isEqualTo("place_card")
         assertThat(spec.description).contains("CURRENT_TASK", "SUGGESTED_TASKS")

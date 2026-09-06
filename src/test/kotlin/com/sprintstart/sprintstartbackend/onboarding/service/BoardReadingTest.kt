@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Checkl
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistItemResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.LinkContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -33,13 +34,16 @@ class BoardReadingTest {
 
     @Test
     fun `a live card is named by what it is, in words rather than in an enum`() {
+        // Its real content, not a note wearing the kind: the name is read off the content, because
+        // that is the union the catalog closes over — the `kind` beside it is the same fact said
+        // twice, and a card whose two halves disagree is not a card the board can produce.
         val card = BoardCardResponse(
             id = one,
             kind = BoardCardKind.OPEN_PULL_REQUESTS,
             owner = BoardCardOwner.AI,
             position = 0,
             placedAt = null,
-            content = NoteContent(kind = BoardCardKind.NOTE, text = "unused"),
+            content = OpenPullRequestsContent(pullRequests = emptyList(), attributionMissing = false),
         )
 
         assertEquals("open pull requests", BoardReading.nameOf(card))

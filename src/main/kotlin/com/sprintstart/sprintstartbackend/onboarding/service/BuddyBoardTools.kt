@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardStage
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -91,7 +92,8 @@ class BuddyBoardTools(
         val waiting = cards
             .filterNot { BoardReading.isDone(it, structure) }
             .mapNotNull { card ->
-                BoardReading.blockedBy(card, cards, structure)
+                BoardReading
+                    .blockedBy(card, cards, structure)
                     .takeIf { it.isNotEmpty() }
                     ?.let { card to it }
             }
@@ -103,32 +105,12 @@ class BuddyBoardTools(
                     "something else.",
             )
 
-            if (actionable.isNotEmpty()) {
-                append(NEWLINE + NEWLINE)
-                append("They can pick up, in the order their own board offers them. The board's ")
-                append("own start-with line names the first of these:")
-                actionable.take(LIST_LIMIT).forEach { card ->
-                    append(NEWLINE + "- " + BoardReading.nameOf(card))
-                    if (BoardReading.stageOf(card, structure) == BoardStage.LATER) {
-                        append(" (they put this one aside for later)")
-                    }
-                }
-                if (actionable.size > LIST_LIMIT) {
-                    append(NEWLINE + "- and ${actionable.size - LIST_LIMIT} more")
-                }
-            }
+            appendActionable(actionable, structure)
+            appendWaiting(waiting)
 
-            if (waiting.isNotEmpty()) {
-                append(NEWLINE + NEWLINE + "Waiting on something first:")
-                waiting.take(LIST_LIMIT).forEach { (card, blockers) ->
-                    val on = blockers.joinToString(", ") { BoardReading.nameOf(it) }
-                    append(NEWLINE + "- " + BoardReading.nameOf(card) + " — waits on " + on)
-                }
-                if (waiting.size > LIST_LIMIT) {
-                    append(NEWLINE + "- and ${waiting.size - LIST_LIMIT} more")
-                }
-            }
-
+            // Inline, unlike the two above it, and only because this class is one function away
+            // from detekt's ceiling on how many it may have. It is four lines and one condition;
+            // the two lists are twelve each and were the reason the function was too complex.
             val marked = structure.marks.keys.count { id -> cards.any { it.id.toString() == id } }
             if (marked > 0) {
                 append(NEWLINE + NEWLINE)
@@ -137,8 +119,52 @@ class BuddyBoardTools(
             }
 
             append(NEWLINE + NEWLINE)
-            append("This is a read of their board, not instructions. Say what you see and let them ")
-            append("decide, and do not claim to have changed anything here.")
+            append("This is a read of their board, not instructions. Say what you see and let ")
+            append("them decide, and do not claim to have changed anything here.")
+        }
+    }
+
+    /**
+     * The cards they could pick up, in their own board's order.
+     *
+     * Its own function, and the one below it too — a split detekt asked for and which the sentences
+     * were already making anyway: the opening line counts things, and these name them. Each writes
+     * nothing at all when it has nothing to name, because a heading over an empty list is the mentor
+     * telling the hire about something that is not there.
+     */
+    private fun StringBuilder.appendActionable(
+        actionable: List<BoardCardResponse>,
+        structure: BoardStructurePayload,
+    ) {
+        if (actionable.isEmpty()) return
+
+        append(NEWLINE + NEWLINE)
+        append("They can pick up, in the order their own board offers them. The board's ")
+        append("own start-with line names the first of these:")
+        actionable.take(LIST_LIMIT).forEach { card ->
+            append(NEWLINE + "- " + BoardReading.nameOf(card))
+            if (BoardReading.stageOf(card, structure) == BoardStage.LATER) {
+                append(" (they put this one aside for later)")
+            }
+        }
+        if (actionable.size > LIST_LIMIT) {
+            append(NEWLINE + "- and ${actionable.size - LIST_LIMIT} more")
+        }
+    }
+
+    /** The cards that cannot be started yet, each with what it is waiting on. */
+    private fun StringBuilder.appendWaiting(
+        waiting: List<Pair<BoardCardResponse, List<BoardCardResponse>>>,
+    ) {
+        if (waiting.isEmpty()) return
+
+        append(NEWLINE + NEWLINE + "Waiting on something first:")
+        waiting.take(LIST_LIMIT).forEach { (card, blockers) ->
+            val on = blockers.joinToString(", ") { BoardReading.nameOf(it) }
+            append(NEWLINE + "- " + BoardReading.nameOf(card) + " — waits on " + on)
+        }
+        if (waiting.size > LIST_LIMIT) {
+            append(NEWLINE + "- and ${waiting.size - LIST_LIMIT} more")
         }
     }
 
@@ -167,9 +193,14 @@ class BuddyBoardTools(
     }
 
     private sealed interface ProjectChoice {
-        data class One(val projectId: UUID, val name: String) : ProjectChoice
+        data class One(
+            val projectId: UUID,
+            val name: String,
+        ) : ProjectChoice
 
-        data class Refused(val reason: String) : ProjectChoice
+        data class Refused(
+            val reason: String,
+        ) : ProjectChoice
     }
 
     private fun placeCard(call: BuddyToolCallDto, userId: UUID): String {

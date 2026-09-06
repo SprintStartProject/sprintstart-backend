@@ -32,7 +32,10 @@ object BoardReading {
             // The live kinds have no title of their own: their name is what they are. The enum's
             // own word is turned into a phrase rather than shown as `OPEN_PULL_REQUESTS`, which is
             // a thing to decode rather than to read.
-            else -> card.kind.name.lowercase().replace('_', ' ')
+            else -> {
+                val word = card.kind.name
+                word.lowercase().replace('_', ' ')
+            }
         }
 
     /**
@@ -91,6 +94,9 @@ object BoardReading {
     fun stageOf(card: BoardCardResponse, structure: BoardStructurePayload): BoardStage =
         structure.cards[card.id.toString()]?.stage ?: BoardStage.NOW
 
-    private fun firstLine(text: String): String =
-        text.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.take(80) ?: "a note"
+    private fun firstLine(text: String): String {
+        val first = text.lineSequence().firstOrNull { it.isNotBlank() }
+
+        return first?.trim()?.take(80) ?: "a note"
+    }
 }
