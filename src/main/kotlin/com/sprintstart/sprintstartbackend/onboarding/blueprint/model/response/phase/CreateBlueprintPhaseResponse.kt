@@ -17,4 +17,6 @@ data class CreateBlueprintPhaseResponse(
     val blueprintSteps: List<GetBlueprintStepResponse>,
     val blueprintCheckQuestions: List<GetBlueprintCheckQuestionResponse>,
     val blueprintPhaseRequirements: Set<GetBlueprintPhaseRequirementResponse>,
+    val graphX: Double?,
+    val graphY: Double?,
 )

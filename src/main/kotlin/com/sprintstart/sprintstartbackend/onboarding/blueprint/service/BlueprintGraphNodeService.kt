@@ -5,7 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toAddBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toRemoveBlockerResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toRemoveGraphPositionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateGraphPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.graphNode.AddBlueprintGraphNodeBlockerRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.graphNode.RemoveBlueprintGraphNodeBlockerRequest
@@ -120,10 +120,13 @@ class BlueprintGraphNodeService(
 
         phase.graphX = null
         phase.graphY = null
-        phase.blockedBy.clear()
+        markPhaseModified(phase)
+        val changedNodes = removeAllConnections(phase)
         entityManager.flush()
 
-        return phase.toRemoveGraphPositionResponse()
+        return RemoveBlueprintGraphNodePositionResponse(
+            changedNodes.map { it.toUpdateGraphNodeResponse() },
+        )
     }
 
 //  ================ Helper methods ==================
@@ -136,6 +139,20 @@ class BlueprintGraphNodeService(
         for (node in currentNode.blockedBy) {
             dfs(node, targetNode)
         }
+    }
+
+    fun removeAllConnections(phase: BlueprintPhase): List<BlueprintPhase> {
+        val dependants = blueprintPhaseRepository.findAllBlockedById(phase.id)
+        val changedNodes = listOf(phase) + dependants
+
+        dependants.forEach {
+            markPhaseModified(it)
+            it.blockedBy.remove(phase)
+        }
+
+        phase.blockedBy.clear()
+
+        return changedNodes
     }
 
     private fun markPhaseModified(phase: BlueprintPhase) {

@@ -9,4 +9,6 @@ data class CreateBlueprintStepRequest(
     val type: StepType,
     val estimatedMinutes: Int,
     val expectedOutcome: String,
+    val graphX: Double?,
+    val graphY: Double?,
 )

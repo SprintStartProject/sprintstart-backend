@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.che
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.CreateBlueprintCheckQuestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.DeleteBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.GetBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionResponse
@@ -88,14 +89,14 @@ class BlueprintCheckQuestionAdminController(
         )
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/checks/question/{questionId}")
     fun deleteBlueprintCheckQuestionById(
         @PathVariable questionId: UUID,
         @RequestBody request: DeleteBlueprintCheckQuestionRequest,
-    ) {
-        blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(
+    ): DeleteBlueprintCheckQuestionResponse {
+        return blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(
             BlueprintScope.Global,
             questionId,
             request,
@@ -179,15 +180,15 @@ class BlueprintCheckQuestionController(
         )
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @DeleteMapping("/checks/question/{questionId}")
     fun deleteBlueprintCheckQuestionById(
         @PathVariable projectId: UUID,
         @PathVariable questionId: UUID,
         @RequestBody request: DeleteBlueprintCheckQuestionRequest,
-    ) {
-        blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(
+    ): DeleteBlueprintCheckQuestionResponse {
+        return blueprintCheckQuestionService.deleteBlueprintCheckQuestionById(
             BlueprintScope.Project(projectId),
             questionId,
             request,

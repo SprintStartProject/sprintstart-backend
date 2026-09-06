@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.CreateBlueprintPhaseRequest
@@ -12,10 +13,12 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.pha
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.DeleteBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
+import jakarta.persistence.EntityManager
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -27,6 +30,8 @@ import kotlin.ranges.contains
 class BlueprintPhaseService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
+    private val blueprintGraphNodeService: BlueprintGraphNodeService,
+    private val entityManager: EntityManager,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintPhasesForPath(
@@ -73,6 +78,8 @@ class BlueprintPhaseService(
             description = request.description,
             aiPrompt = request.aiPrompt,
             type = request.type,
+            graphX = request.graphX,
+            graphY = request.graphY,
         )
 
         return blueprintPhaseRepository.save(phase).toCreateResponse()
@@ -122,12 +129,15 @@ class BlueprintPhaseService(
         scope: BlueprintScope,
         phaseId: UUID,
         request: DeleteBlueprintPhaseRequest,
-    ) {
+    ): DeleteBlueprintPhaseResponse {
         val phase = blueprintAccessService.getAuthorizedEditablePhase(scope, phaseId)
 
         validateRevision(phase, request.revision)
 
+        val updatedPhases = blueprintGraphNodeService.removeAllConnections(phase)
         blueprintPhaseRepository.delete(phase)
+        entityManager.flush()
+        return DeleteBlueprintPhaseResponse(updatedPhases.map { it.toUpdateGraphNodeResponse() })
     }
 
 //  ========================== Helper Methods ==========================

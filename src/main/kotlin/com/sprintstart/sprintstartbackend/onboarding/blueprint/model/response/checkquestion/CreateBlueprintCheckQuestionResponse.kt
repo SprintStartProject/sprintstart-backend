@@ -15,4 +15,6 @@ data class CreateBlueprintCheckQuestionResponse(
     val explanation: String?,
     val correctAnswer: String?,
     val blueprintCheckOptions: List<GetBlueprintCheckOptionResponse>,
+    val graphX: Double?,
+    val graphY: Double?,
 )

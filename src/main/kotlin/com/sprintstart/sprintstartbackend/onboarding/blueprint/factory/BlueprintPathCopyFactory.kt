@@ -30,10 +30,20 @@ class BlueprintPathCopyFactory {
             status = status,
         )
         val newStepsByOldId = mutableMapOf<UUID, BlueprintStep>()
+        val newPhasesByOldId = mutableMapOf<UUID, BlueprintPhase>()
 
         path.blueprintPhases
-            .map { copyPhase(it, copy, newStepsByOldId) }
+            .map { copyPhase(it, copy, newPhasesByOldId, newStepsByOldId) }
             .forEach(copy.blueprintPhases::add)
+
+        path.blueprintPhases
+            .forEach { oldPhase ->
+                val newPhase = newPhasesByOldId.getValue(oldPhase.id)
+
+                oldPhase.blockedBy.forEach { oldBlocker ->
+                    newPhase.blockedBy.add(newPhasesByOldId.getValue(oldBlocker.id))
+                }
+            }
 
         path.blueprintPhases
             .flatMap { it.blueprintSteps }
@@ -51,6 +61,7 @@ class BlueprintPathCopyFactory {
     private fun copyPhase(
         phase: BlueprintPhase,
         newPath: BlueprintPath,
+        newPhasesByOldId: MutableMap<UUID, BlueprintPhase>,
         newStepsByOldId: MutableMap<UUID, BlueprintStep>,
     ): BlueprintPhase {
         val newPhase = BlueprintPhase(
@@ -61,6 +72,8 @@ class BlueprintPathCopyFactory {
             aiPrompt = phase.aiPrompt,
             type = phase.type,
         )
+
+        newPhasesByOldId[phase.id] = newPhase
 
         phase.requirements
             .map { copyRequirement(it, newPhase) }

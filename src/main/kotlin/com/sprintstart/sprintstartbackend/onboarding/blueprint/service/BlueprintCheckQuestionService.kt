@@ -7,16 +7,19 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCr
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateSubGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.CreateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.DeleteBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.checkquestion.UpdateBlueprintCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.CreateBlueprintCheckQuestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.DeleteBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.GetBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import jakarta.persistence.EntityManager
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -29,6 +32,8 @@ import kotlin.ranges.contains
 class BlueprintCheckQuestionService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
+    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService,
+    private val entityManager: EntityManager,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintCheckQuestionsForPhase(
@@ -83,6 +88,8 @@ class BlueprintCheckQuestionService(
             question = request.question,
             explanation = request.explanation,
             correctAnswer = request.correctAnswer,
+            graphX = request.graphX,
+            graphY = request.graphY,
         )
 
         return blueprintCheckQuestionRepository.save(question).toCreateResponse()
@@ -140,12 +147,16 @@ class BlueprintCheckQuestionService(
         scope: BlueprintScope,
         questionId: UUID,
         request: DeleteBlueprintCheckQuestionRequest,
-    ) {
+    ): DeleteBlueprintCheckQuestionResponse {
         val question = blueprintAccessService.getAuthorizedEditableCheckQuestion(scope, questionId)
 
         validateRevision(question, request.revision)
-
+        val changedQuestions = blueprintSubGraphNodeService.removeAllConnections(question)
         blueprintCheckQuestionRepository.delete(question)
+        entityManager.flush()
+        return DeleteBlueprintCheckQuestionResponse(
+            changedQuestions.map { it.toUpdateSubGraphNodeResponse() },
+        )
     }
 
     // Helper Methods

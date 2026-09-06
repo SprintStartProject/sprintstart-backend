@@ -30,7 +30,7 @@ fun BlueprintStep.toCreateResponse(): CreateBlueprintStepResponse {
     return CreateBlueprintStepResponse(
         id = this.id,
         blueprintPhaseId = this.blueprintPhase.id,
-        revision = this.revision,
+        revision = this.revision + 1,
         position = this.position,
         title = this.title,
         description = this.description,

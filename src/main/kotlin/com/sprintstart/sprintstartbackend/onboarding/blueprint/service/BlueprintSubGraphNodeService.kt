@@ -5,8 +5,8 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toAddBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetSubGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toRemoveBlockerResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toRemovePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateSubGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.subGraphNode.AddBlueprintSubGraphNodeBlockerRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.subGraphNode.RemoveBlueprintSubGraphNodeBlockerRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.subGraphNode.RemoveBlueprintSubGraphNodePositionRequest
@@ -16,7 +16,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.su
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.RemoveBlueprintSubGraphNodeBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.RemoveBlueprintSubGraphNodePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.UpdateBlueprintSubGraphNodePositionResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintGraphNodeRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintSubGraphNodeRepository
 import jakarta.persistence.EntityManager
 import jakarta.persistence.LockModeType
 import org.springframework.http.HttpStatus
@@ -29,20 +29,20 @@ import java.util.UUID
 class BlueprintSubGraphNodeService(
     private val blueprintAccessService: BlueprintAccessService,
     private val entityManager: EntityManager,
-    private val blueprintGraphNodeRepository: BlueprintGraphNodeRepository,
+    private val blueprintSubGraphNodeRepository: BlueprintSubGraphNodeRepository,
 ) {
     @Transactional
     fun getSubGraph(scope: BlueprintScope, phaseId: UUID): GetBlueprintSubGraphResponse {
         return GetBlueprintSubGraphResponse(
             when (scope) {
                 is BlueprintScope.Global -> {
-                    blueprintGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintPhaseId(
+                    blueprintSubGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdIsNullAndBlueprintPhaseId(
                         phaseId,
                     )
                 }
 
                 is BlueprintScope.Project -> {
-                    blueprintGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(
+                    blueprintSubGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdAndBlueprintPhaseId(
                         scope.projectId,
                         phaseId,
                     )
@@ -120,10 +120,13 @@ class BlueprintSubGraphNodeService(
 
         node.graphX = null
         node.graphY = null
-        node.blockedBy.clear()
+        markNodeModified(node)
+        val changedNodes = removeAllConnections(node)
         entityManager.flush()
 
-        return node.toRemovePositionResponse()
+        return RemoveBlueprintSubGraphNodePositionResponse(
+            changedNodes.map { it.toUpdateSubGraphNodeResponse() },
+        )
     }
 
 // ========== Helper methods ===========
@@ -136,6 +139,20 @@ class BlueprintSubGraphNodeService(
         for (node in currentNode.blockedBy) {
             dfs(node, targetNode)
         }
+    }
+
+    fun removeAllConnections(node: BlueprintSubGraphNode): List<BlueprintSubGraphNode> {
+        val dependants = blueprintSubGraphNodeRepository.findAllByBlockedBy(node.id)
+        val changedNodes = listOf(node) + dependants
+
+        dependants.forEach {
+            markNodeModified(it)
+            it.blockedBy.remove(node)
+        }
+
+        node.blockedBy.clear()
+
+        return changedNodes
     }
 
     private fun markNodeModified(node: BlueprintSubGraphNode) {

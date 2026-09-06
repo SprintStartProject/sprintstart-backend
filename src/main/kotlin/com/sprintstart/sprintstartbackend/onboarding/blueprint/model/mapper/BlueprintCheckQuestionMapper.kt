@@ -25,7 +25,7 @@ fun BlueprintCheckQuestion.toCreateResponse(): CreateBlueprintCheckQuestionRespo
     return CreateBlueprintCheckQuestionResponse(
         id = this.id,
         blueprintPhaseId = blueprintPhase.id,
-        revision = this.revision,
+        revision = this.revision + 1,
         title = this.title,
         position = this.position,
         type = this.type,
@@ -33,6 +33,8 @@ fun BlueprintCheckQuestion.toCreateResponse(): CreateBlueprintCheckQuestionRespo
         explanation = this.explanation,
         correctAnswer = this.correctAnswer,
         blueprintCheckOptions = this.blueprintCheckOptions.map { it.toGetResponse() },
+        graphX = this.graphX,
+        graphY = this.graphY,
     )
 }
 

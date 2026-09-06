@@ -8,4 +8,6 @@ data class CreateBlueprintPhaseRequest(
     val description: String?,
     val aiPrompt: String?,
     val type: BlueprintPhaseType,
+    val graphX: Double?,
+    val graphY: Double?,
 )

@@ -12,11 +12,11 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckOptionRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintCheckQuestionRepository
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintGraphNodeRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintResourceRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintSubGraphNodeRepository
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintTaskRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -34,7 +34,7 @@ class BlueprintAccessService(
     private val blueprintTaskRepository: BlueprintTaskRepository,
     private val blueprintCheckQuestionRepository: BlueprintCheckQuestionRepository,
     private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
-    private val blueprintGraphNodeRepository: BlueprintGraphNodeRepository,
+    private val blueprintSubGraphNodeRepository: BlueprintSubGraphNodeRepository,
 ) {
     @Transactional(readOnly = true)
     fun getAuthorizedPath(scope: BlueprintScope, pathId: UUID): BlueprintPath {
@@ -342,11 +342,11 @@ class BlueprintAccessService(
     fun getAuthorizedEditableSubGraphNode(scope: BlueprintScope, nodeId: UUID): BlueprintSubGraphNode {
         val node = when (scope) {
             is BlueprintScope.Global -> {
-                blueprintGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdIsNullAndId(nodeId)
+                blueprintSubGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdIsNullAndId(nodeId)
             }
 
             is BlueprintScope.Project -> {
-                blueprintGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, nodeId)
+                blueprintSubGraphNodeRepository.findByBlueprintPhaseBlueprintPathProjectIdAndId(scope.projectId, nodeId)
             }
         } ?: throw ResponseStatusException(
             HttpStatus.NOT_FOUND,

@@ -26,7 +26,7 @@ fun BlueprintPhase.toCreateResponse(): CreateBlueprintPhaseResponse {
     return CreateBlueprintPhaseResponse(
         id = this.id,
         blueprintPathId = this.blueprintPath.id,
-        revision = this.revision,
+        revision = this.revision + 1,
         position = this.position,
         title = this.title,
         description = this.description,
@@ -35,6 +35,8 @@ fun BlueprintPhase.toCreateResponse(): CreateBlueprintPhaseResponse {
         blueprintSteps = this.blueprintSteps.map { it.toGetResponse() },
         blueprintCheckQuestions = this.blueprintCheckQuestions.map { it.toGetResponse() },
         blueprintPhaseRequirements = this.requirements.map { it.toGetResponse() }.toSet(),
+        graphX = this.graphX,
+        graphY = this.graphY,
     )
 }
 

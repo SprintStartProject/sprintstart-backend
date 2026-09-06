@@ -7,17 +7,18 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toCr
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdatePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper.toUpdateSubGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.CreateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.DeleteBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.DeleteBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintStepRepository
 import jakarta.persistence.EntityManager
-import jakarta.persistence.LockModeType
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -30,6 +31,7 @@ class BlueprintStepService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintStepRepository: BlueprintStepRepository,
     private val entityManager: EntityManager,
+    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintStepForPhase(
@@ -78,6 +80,8 @@ class BlueprintStepService(
             aiAssisted = false,
             estimatedMinutes = request.estimatedMinutes,
             expectedOutcome = request.expectedOutcome,
+            graphX = request.graphX,
+            graphY = request.graphY,
         )
 
         return blueprintStepRepository.save(blueprintStep).toCreateResponse()
@@ -129,12 +133,14 @@ class BlueprintStepService(
         scope: BlueprintScope,
         stepId: UUID,
         request: DeleteBlueprintStepRequest,
-    ) {
+    ): DeleteBlueprintStepResponse {
         val blueprintStep = blueprintAccessService.getAuthorizedEditableStep(scope, stepId)
 
         validateRevision(blueprintStep, request.revision)
-
+        val updatedSteps = blueprintSubGraphNodeService.removeAllConnections(blueprintStep)
         blueprintStepRepository.delete(blueprintStep)
+        entityManager.flush()
+        return DeleteBlueprintStepResponse(updatedSteps.map { it.toUpdateSubGraphNodeResponse() })
     }
 
     // Helper Methods

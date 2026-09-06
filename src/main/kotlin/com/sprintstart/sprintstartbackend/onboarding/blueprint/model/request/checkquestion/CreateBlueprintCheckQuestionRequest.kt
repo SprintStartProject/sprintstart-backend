@@ -9,4 +9,6 @@ data class CreateBlueprintCheckQuestionRequest(
     val question: String,
     val explanation: String?,
     val correctAnswer: String?,
+    val graphX: Double?,
+    val graphY: Double?,
 )

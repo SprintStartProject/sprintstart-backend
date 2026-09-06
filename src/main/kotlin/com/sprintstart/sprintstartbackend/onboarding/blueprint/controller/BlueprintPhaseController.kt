@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.pha
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhasePositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase.UpdateBlueprintPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.CreateBlueprintPhaseResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.DeleteBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.GetBlueprintPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhasePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.phase.UpdateBlueprintPhaseResponse
@@ -89,14 +90,14 @@ class BlueprintPhaseAdminController(
         return blueprintPhaseService.updateBlueprintPhasePositionById(BlueprintScope.Global, phaseId, request)
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/phases/{phaseId}")
     fun deleteBlueprintPhaseById(
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequest,
-    ) {
-        blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Global, phaseId, request)
+    ): DeleteBlueprintPhaseResponse {
+        return blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Global, phaseId, request)
     }
 }
 
@@ -173,14 +174,14 @@ class BlueprintPhaseController(
         )
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @DeleteMapping("/phases/{phaseId}")
     fun deleteBlueprintPhaseById(
         @PathVariable projectId: UUID,
         @PathVariable phaseId: UUID,
         @RequestBody request: DeleteBlueprintPhaseRequest,
-    ) {
-        blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId, request)
+    ): DeleteBlueprintPhaseResponse {
+        return blueprintPhaseService.deleteBlueprintPhaseById(BlueprintScope.Project(projectId), phaseId, request)
     }
 }

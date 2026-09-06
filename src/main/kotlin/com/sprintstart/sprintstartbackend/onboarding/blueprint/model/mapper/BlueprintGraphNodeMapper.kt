@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.gr
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.graphNode.RemoveBlueprintGraphNodeBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.graphNode.RemoveBlueprintGraphNodePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.graphNode.UpdateBlueprintGraphNodePositionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.graphNode.UpdateBlueprintGraphNodeResponse
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 
@@ -43,8 +44,9 @@ fun BlueprintPhase.toRemoveBlockerResponse(): RemoveBlueprintGraphNodeBlockerRes
     )
 }
 
-fun BlueprintPhase.toRemoveGraphPositionResponse(): RemoveBlueprintGraphNodePositionResponse {
-    return RemoveBlueprintGraphNodePositionResponse(
-        revision = this.revision,
+fun BlueprintPhase.toUpdateGraphNodeResponse(): UpdateBlueprintGraphNodeResponse {
+    return UpdateBlueprintGraphNodeResponse(
+        id = this.id,
+        revision = this.revision + 1,
     )
 }

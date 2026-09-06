@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.ste
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepPositionRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.step.UpdateBlueprintStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.DeleteBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
@@ -77,14 +78,14 @@ class BlueprintStepAdminController(
         return blueprintStepService.updateBlueprintStepPositionById(BlueprintScope.Global, stepId, request)
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/steps/{stepId}")
     fun deleteBlueprintStepById(
         @PathVariable stepId: UUID,
         @RequestBody request: DeleteBlueprintStepRequest,
-    ) {
-        blueprintStepService.deleteBlueprintStepById(BlueprintScope.Global, stepId, request)
+    ): DeleteBlueprintStepResponse {
+        return blueprintStepService.deleteBlueprintStepById(BlueprintScope.Global, stepId, request)
     }
 }
 
@@ -150,14 +151,14 @@ class BlueprintStepController(
         )
     }
 
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     @DeleteMapping("/steps/{stepId}")
     fun deleteBlueprintStepById(
         @PathVariable projectId: UUID,
         @PathVariable stepId: UUID,
         @RequestBody request: DeleteBlueprintStepRequest,
-    ) {
-        blueprintStepService.deleteBlueprintStepById(BlueprintScope.Project(projectId), stepId, request)
+    ): DeleteBlueprintStepResponse {
+        return blueprintStepService.deleteBlueprintStepById(BlueprintScope.Project(projectId), stepId, request)
     }
 }

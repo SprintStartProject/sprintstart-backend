@@ -7,8 +7,8 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.AddBlueprintSubGraphNodeBlockerResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.GetBlueprintSubGraphNodeResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.RemoveBlueprintSubGraphNodeBlockerResponse
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.RemoveBlueprintSubGraphNodePositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.UpdateBlueprintSubGraphNodePositionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.subGraphNode.UpdateBlueprintSubGraphNodeResponse
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 
@@ -34,9 +34,10 @@ fun BlueprintSubGraphNode.toRemoveBlockerResponse(): RemoveBlueprintSubGraphNode
     )
 }
 
-fun BlueprintSubGraphNode.toRemovePositionResponse(): RemoveBlueprintSubGraphNodePositionResponse {
-    return RemoveBlueprintSubGraphNodePositionResponse(
-        revision = this.revision,
+fun BlueprintSubGraphNode.toUpdateSubGraphNodeResponse(): UpdateBlueprintSubGraphNodeResponse {
+    return UpdateBlueprintSubGraphNodeResponse(
+        id = this.id,
+        revision = this.revision + 1,
     )
 }
 
