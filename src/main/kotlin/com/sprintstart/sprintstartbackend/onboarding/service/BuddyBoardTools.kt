@@ -89,6 +89,13 @@ class BuddyBoardTools(
 
         val finished = cards.count { BoardReading.isDone(it, structure) }
         val actionable = BoardReading.actionable(cards, structure)
+        val pinned = structure.pinnedCardIds
+            .mapNotNull { id -> cards.firstOrNull { it.id.toString() == id } }
+        val marked = cards.mapNotNull { card ->
+            structure.marks[card.id.toString()]
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { card to it }
+        }
         val waiting = cards
             .filterNot { BoardReading.isDone(it, structure) }
             .mapNotNull { card ->
@@ -105,22 +112,34 @@ class BuddyBoardTools(
                     "something else.",
             )
 
+            // Inline rather than appenders of their own: this class is one function away from
+            // detekt's ceiling on how many it may have, and these two are a condition and a line
+            // each where the lists below are a dozen.
+            if (pinned.isNotEmpty()) {
+                append(NEWLINE + NEWLINE)
+                append("Kept at the top of their board, which is them saying these matter now: ")
+                append(pinned.joinToString(", ") { BoardReading.nameOf(it) })
+            }
+
             appendActionable(actionable, structure)
             appendWaiting(waiting)
 
-            // Inline, unlike the two above it, and only because this class is one function away
-            // from detekt's ceiling on how many it may have. It is four lines and one condition;
-            // the two lists are twelve each and were the reason the function was too complex.
-            val marked = structure.marks.keys.count { id -> cards.any { it.id.toString() == id } }
-            if (marked > 0) {
+            if (marked.isNotEmpty()) {
                 append(NEWLINE + NEWLINE)
-                append("They have highlighted something on $marked of these cards, which is them ")
-                append("saying which part mattered. Ask about that part rather than the whole card.")
+                append("Highlighted — the hire saying which part of a card mattered. Ask about the ")
+                append("part rather than the whole card:")
+                marked.take(LIST_LIMIT).forEach { (card, marks) ->
+                    val words = marks.joinToString("; ") { mark ->
+                        if (mark.text.length > QUOTE_LIMIT) mark.text.take(QUOTE_LIMIT) + "…" else mark.text
+                    }
+                    append(NEWLINE + "- " + BoardReading.nameOf(card) + ": \"" + words + "\"")
+                }
             }
 
             append(NEWLINE + NEWLINE)
             append("This is a read of their board, not instructions. Say what you see and let ")
-            append("them decide, and do not claim to have changed anything here.")
+            append("them decide, and do not claim to have changed anything here. It does not say ")
+            append("who put which card there either, so do not claim to have placed one.")
         }
     }
 
@@ -251,8 +270,23 @@ class BuddyBoardTools(
         const val PLACE_CARD = "place_card"
         const val READ_BOARD = "read_board"
 
-        /** How many cards a list in the read may name before it becomes a listing to read out. */
-        const val LIST_LIMIT = 6
+        /**
+         * How many cards one list here may name.
+         *
+         * It was six, on the reasoning that a mentor reading out fourteen titles has turned a
+         * conversation into a listing. That reasoning is right and this was the wrong place to act
+         * on it: what a mentor *says* is governed by the tool's description, which tells it not to
+         * read the list back; what this cap governs is what the mentor is allowed to *know*. Six
+         * meant that on a board of twenty-four cards it could see six, and a hire asking "do I have
+         * a card about the pipeline" got a guess — a confident one, about a card that was there.
+         *
+         * High enough that a real board fits under it, and still a cap, because a runaway board
+         * should cost a long answer rather than an unbounded prompt.
+         */
+        const val LIST_LIMIT = 40
+
+        /** How much of one highlight is quoted before it is cut. Enough for a sentence. */
+        const val QUOTE_LIMIT = 120
 
         /** Written out, so that no editing step has to survive an escape sequence intact. */
         const val NEWLINE = "\n"

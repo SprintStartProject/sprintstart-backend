@@ -1,7 +1,15 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.HighlightColor
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.CardMarkPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -169,6 +177,56 @@ class BuddyBoardToolsTest {
         assertThat(tools.execute(placeCall("CURRENT_TASK"), userId)).contains("not on a project")
         verify(exactly = 0) { boardService.place(any(), any(), any()) }
     }
+
+    /**
+     * The two questions a hire actually asked this tool, and could not get an answer to.
+     *
+     * "What have I pinned" came back as a general description of the board, because the read never
+     * mentioned the pins. "Which cards did I highlight something on" came back as an apology, with
+     * the mentor saying the board does not tell it — because it reported a count and no names.
+     * Both facts were in the stored arrangement the whole time.
+     */
+    @Test
+    fun `the read names what is pinned and what carries a highlight`() {
+        val kept = UUID.randomUUID()
+        val marked = UUID.randomUUID()
+        every { boardService.getBoard(userId, projectId) } returns
+            BoardResponse(
+                boardId = UUID.randomUUID(),
+                projectId = projectId,
+                cards = listOf(note(kept, "Set up the VPN"), note(marked, "Deploys are on Thursdays")),
+            )
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    pinnedCardIds = listOf(kept.toString()),
+                    marks = mapOf(
+                        marked.toString() to
+                            listOf(CardMarkPayload("on Thursdays", HighlightColor.GREEN)),
+                    ),
+                ),
+                null,
+            )
+
+        val call = BuddyToolCallDto(id = "c1", name = "read_board", arguments = buildJsonObject {})
+        val result = tools.execute(call, userId)
+
+        assertThat(result).contains("Kept at the top of their board")
+        assertThat(result).contains("Set up the VPN")
+        // The words themselves, not "on 1 of these cards": the point of mentioning a highlight is
+        // that the mentor can ask about that part instead of the whole card.
+        assertThat(result).contains("Deploys are on Thursdays")
+        assertThat(result).contains("on Thursdays")
+    }
+
+    private fun note(id: UUID, text: String) = BoardCardResponse(
+        id = id,
+        kind = BoardCardKind.NOTE,
+        owner = BoardCardOwner.HIRE,
+        position = 0,
+        placedAt = null,
+        content = NoteContent(text = text),
+    )
 
     @Test
     fun `both tools are offered, and the read says it changes nothing`() {
