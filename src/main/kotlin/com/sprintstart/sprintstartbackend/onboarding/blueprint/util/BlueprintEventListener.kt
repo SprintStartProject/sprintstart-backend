@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.Bl
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.BlueprintPathCopyFactory
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
+import jakarta.persistence.EntityManager
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
@@ -13,6 +14,7 @@ import java.util.UUID
 class BlueprintEventListener(
     private val blueprintPathRepository: BlueprintPathRepository,
     private val blueprintPathCopyFactory: BlueprintPathCopyFactory,
+    private val entityManager: EntityManager,
 ) {
     @Transactional
     @EventListener
@@ -30,6 +32,6 @@ class BlueprintEventListener(
                 )
             }
 
-        blueprintPathRepository.saveAll(projectPaths)
+        projectPaths.forEach(entityManager::persist)
     }
 }

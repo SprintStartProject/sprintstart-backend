@@ -33,9 +33,9 @@ class BlueprintPhase(
     var position: Int,
     @Column(nullable = false)
     var title: String,
-    @Column(nullable = true)
+    @Column(nullable = true, columnDefinition = "TEXT")
     var description: String?,
-    @Column(nullable = true)
+    @Column(nullable = true, columnDefinition = "TEXT")
     var aiPrompt: String?,
     @Column(nullable = false)
     @Enumerated(EnumType.STRING)

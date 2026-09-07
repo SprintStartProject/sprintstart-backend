@@ -15,7 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.pa
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.GetBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.path.UpdateBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
-import org.slf4j.LoggerFactory
+import jakarta.persistence.EntityManager
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -27,6 +27,7 @@ class BlueprintPathService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintPathRepository: BlueprintPathRepository,
     private val blueprintPathCopyFactory: BlueprintPathCopyFactory,
+    private val entityManager: EntityManager,
 ) {
     @Transactional(readOnly = true)
     fun getBlueprintPathOverviewsGroupedByBlueprintKey(
@@ -111,17 +112,21 @@ class BlueprintPathService(
         val draft = blueprintAccessService
             .findDraftForAuthorizedBlueprintKey(scope, blueprintKey)
 
-        return draft?.toGetResponse()
-            ?: blueprintPathRepository
-                .save(
-                    blueprintPathCopyFactory.createCopyFrom(
-                        path = activePath,
-                        blueprintKey = blueprintKey,
-                        projectId = activePath.projectId,
-                        status = BlueprintStatus.DRAFT,
-                        version = activePath.version + 1,
-                    ),
-                ).toGetResponse()
+        if (draft != null) {
+            return draft.toGetResponse()
+        }
+
+        val copy = blueprintPathCopyFactory.createCopyFrom(
+            path = activePath,
+            blueprintKey = blueprintKey,
+            projectId = activePath.projectId,
+            status = BlueprintStatus.DRAFT,
+            version = activePath.version + 1,
+        )
+
+        entityManager.persist(copy)
+        entityManager.flush()
+        return copy.toGetResponse()
     }
 
     @Transactional
@@ -253,17 +258,17 @@ class BlueprintPathService(
 //  - [x] Add role and skill "requirements" to phases
 //  - [x] Add an option to just specify a prompt as the phase
 //  - [x] Make everything tied to a project id
-//  - [] Add a general blueprint path that is seeded on first bootup of SprintStart
+//  - [x] Add a general blueprint path that is seeded on first bootup of SprintStart
 //      - [x] make project Id Optional
-//      - [] mostly ai prompt phases
-//      - [] Add Seeder
-//      - [] Think about a way to implement the Ai Phases into the Graph
+//      - [x] mostly ai prompt phases
+//      - [x] Add Seeder
 //  - [x] Add an option to make phases be blocked by a previous one or not
-//      - [] BlockedBy via Question
+//      - [x] BlockedBy via Question
 //  - [] Add the Blueprint -> AI Conversion service and controller
 //      - [] Add prompt -> phase service
 //      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
 //      - [] maybe add some sort of auto allign to the graph
+//              (Add from 0,0 down right end then offset by middle of width and height/2)
 //  - [x] Add @PreAutherize and @ResponseStatus to every controller function
 //  - [] Add Documentation
 //  - [] Add Tests
