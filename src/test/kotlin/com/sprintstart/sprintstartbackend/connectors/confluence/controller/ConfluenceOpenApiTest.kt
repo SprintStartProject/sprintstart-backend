@@ -28,6 +28,9 @@ internal class ConfluenceOpenApiTest {
                 jsonPath("$.paths['/api/v1/confluence/projects/{projectId}/connections/{connectionId}/update'].post")
                     .exists(),
             ).andExpect(
+                jsonPath("$.paths['/api/v1/confluence/projects/{projectId}/connections/{connectionId}'].delete")
+                    .exists(),
+            ).andExpect(
                 jsonPath("$.components.schemas.ConfluenceConnectionResponse.properties.apiToken").doesNotExist(),
             ).andExpect(
                 jsonPath("$.components.schemas.ConfluenceConnectionResponse.properties.email").doesNotExist(),

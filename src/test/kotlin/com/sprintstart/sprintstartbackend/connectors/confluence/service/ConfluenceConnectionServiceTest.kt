@@ -275,6 +275,39 @@ class ConfluenceConnectionServiceTest {
         assertThat(connection.nextSyncAt).isNull()
     }
 
+    @Test
+    fun `deletes a project-owned connection`() {
+        val connection = connection(projectId)
+        every { connectionRepository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every { connectionRepository.delete(connection) } returns Unit
+
+        service.deleteConnection(authId, projectId, connection.id)
+
+        verify(exactly = 1) { connectionRepository.delete(connection) }
+    }
+
+    @Test
+    fun `deleting another project connection is rejected as not found`() {
+        val connectionId = UUID.randomUUID()
+        every { connectionRepository.findByIdAndProjectId(connectionId, projectId) } returns null
+
+        assertThatThrownBy { service.deleteConnection(authId, projectId, connectionId) }
+            .isInstanceOf(ConfluenceConnectionNotFoundException::class.java)
+
+        verify(exactly = 0) { connectionRepository.delete(any()) }
+    }
+
+    @Test
+    fun `rejects project access before deleting a connection`() {
+        every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+        assertThatThrownBy { service.deleteConnection(authId, projectId, UUID.randomUUID()) }
+            .isInstanceOf(ConfluenceProjectAccessDeniedException::class.java)
+
+        verify(exactly = 0) { connectionRepository.findByIdAndProjectId(any(), any()) }
+        verify(exactly = 0) { connectionRepository.delete(any()) }
+    }
+
     private fun request(pageAllowlist: List<String> = listOf(" 10 ", "20", "10")) =
         CreateConfluenceConnectionRequest(
             baseUrl = " HTTPS://TENANT.ATLASSIAN.NET/wiki/ ",

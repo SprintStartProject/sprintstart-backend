@@ -127,6 +127,23 @@ internal class ConfluenceConnectionService(
         return connection.toResponse()
     }
 
+    /**
+     * Removes one project-owned connection, the counterpart to connecting a space.
+     *
+     * Mirrors the Jira connector's "remove from project" with one structural difference: a Jira
+     * instance is shared between projects and only loses the association, while a Confluence
+     * connection belongs to exactly one project, so unlinking it is deleting it. The pages it
+     * already ingested are kept, as with the Jira and GitHub connectors; only the page filters
+     * stored alongside the connection go with it (via their cascade).
+     *
+     * @throws ConfluenceConnectionNotFoundException when the connection does not belong to the project.
+     */
+    @Transactional
+    fun deleteConnection(authId: String, projectId: UUID, connectionId: UUID) {
+        requireProjectAccess(authId, projectId)
+        connectionRepository.delete(findConnection(projectId, connectionId))
+    }
+
     private fun requireProjectAccess(authId: String, projectId: UUID) {
         if (!userApi.userHasAccessToProject(authId, projectId)) {
             throw ConfluenceProjectAccessDeniedException(projectId)

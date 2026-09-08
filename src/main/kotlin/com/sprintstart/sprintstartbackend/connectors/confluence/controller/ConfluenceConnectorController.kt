@@ -20,6 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -111,6 +112,33 @@ internal class ConfluenceConnectorController(
         @PathVariable connectionId: UUID,
     ): ResponseEntity<ConfluenceConnectionResponse> {
         return ResponseEntity.ok(connectionService.getConnection(jwt.subject, projectId, connectionId))
+    }
+
+    /**
+     * Removes a project's connection to a Confluence space. The pages already ingested are kept,
+     * matching the Jira and GitHub connectors' "remove from project".
+     */
+    @Operation(
+        summary = "Remove a Confluence space from a project",
+        description = "Deletes the project's connection to the space. The pages already ingested are kept.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Connection removed"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Project management permission required"),
+            ApiResponse(responseCode = "404", description = "Connection not found in the project"),
+        ],
+    )
+    @DeleteMapping("/{connectionId}")
+    @PreAuthorize(MANAGE_PROJECT)
+    fun deleteConnection(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable projectId: UUID,
+        @PathVariable connectionId: UUID,
+    ): ResponseEntity<Unit> {
+        connectionService.deleteConnection(jwt.subject, projectId, connectionId)
+        return ResponseEntity.noContent().build()
     }
 
     /** Configures automatic synchronization for one project-owned Confluence connection. */

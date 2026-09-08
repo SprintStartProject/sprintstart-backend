@@ -32,6 +32,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
@@ -219,6 +220,46 @@ internal class ConfluenceConnectorControllerTest {
         mockMvc
             .perform(get("${basePath()}/$connectionId").with(pmJwt))
             .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `PM can remove a connection from a project they manage`() {
+        every { connectionService.deleteConnection("pm-id", projectId, connectionId) } returns Unit
+
+        mockMvc
+            .perform(delete("${basePath()}/$connectionId").with(pmJwt))
+            .andExpect(status().isNoContent)
+
+        verify { connectionService.deleteConnection("pm-id", projectId, connectionId) }
+    }
+
+    @Test
+    fun `removing a foreign-project connection returns not found`() {
+        every {
+            connectionService.deleteConnection("pm-id", projectId, connectionId)
+        } throws ConfluenceConnectionNotFoundException(connectionId, projectId)
+
+        mockMvc
+            .perform(delete("${basePath()}/$connectionId").with(pmJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `USER cannot remove a connection`() {
+        mockMvc
+            .perform(delete("${basePath()}/$connectionId").with(userJwt))
+            .andExpect(status().isForbidden)
+
+        verify(exactly = 0) { connectionService.deleteConnection(any(), any(), any()) }
+    }
+
+    @Test
+    fun `unauthenticated removal receives unauthorized`() {
+        mockMvc
+            .perform(delete("${basePath()}/$connectionId"))
+            .andExpect(status().isUnauthorized)
+
+        verify(exactly = 0) { connectionService.deleteConnection(any(), any(), any()) }
     }
 
     @Test
