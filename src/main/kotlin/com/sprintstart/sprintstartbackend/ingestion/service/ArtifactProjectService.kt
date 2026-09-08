@@ -106,6 +106,9 @@ class ArtifactProjectService(
 
         is ArtifactSourceRef.JiraInstance ->
             artifactProjectRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
+
+        is ArtifactSourceRef.ConfluenceConnection ->
+            artifactProjectRepository.findAllConfluencePagesByConnectionId(source.connectionId)
     }
 
     /**

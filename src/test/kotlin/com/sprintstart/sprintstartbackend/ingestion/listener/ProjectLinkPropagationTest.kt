@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
@@ -108,6 +109,26 @@ class ProjectLinkPropagationTest {
                 ArtifactSourceRef.JiraInstance("https://acme.atlassian.net"),
                 projectId,
                 true,
+            )
+        }
+    }
+
+    @Test
+    fun `a deleted Confluence connection announced outside a transaction still reaches its pages`() {
+        val connectionId = UUID.randomUUID()
+
+        eventPublisher.publishEvent(
+            ConfluenceSpaceConnectionDeletedEvent(
+                connectionId = connectionId,
+                projectId = projectId,
+            ),
+        )
+
+        coVerify(timeout = LISTENER_TIMEOUT_MS) {
+            artifactProjectService.applyProjectLink(
+                ArtifactSourceRef.ConfluenceConnection(connectionId),
+                projectId,
+                false,
             )
         }
     }

@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto
 
+import java.util.UUID
+
 /**
  * Identifies the connected source a stored artifact came from.
  *
@@ -25,5 +27,16 @@ sealed interface ArtifactSourceRef {
      */
     data class JiraInstance(
         val instanceUrl: String,
+    ) : ArtifactSourceRef
+
+    /**
+     * A connected Confluence space, whose page artifacts carry source ids of the form
+     * `confluence:{connectionId}:page:{pageId}`.
+     *
+     * Identified by the connection rather than by the space, because that is what the source id
+     * holds: the same space connected twice is two connections and two sets of artifacts.
+     */
+    data class ConfluenceConnection(
+        val connectionId: UUID,
     ) : ArtifactSourceRef
 }

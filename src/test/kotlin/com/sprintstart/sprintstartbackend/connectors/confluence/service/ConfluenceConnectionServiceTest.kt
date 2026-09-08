@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionAlreadyExistsException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionConfigurationException
@@ -32,6 +33,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
@@ -45,6 +47,7 @@ class ConfluenceConnectionServiceTest {
     private val cronBuilder = mockk<CronBuilder>()
     private val scheduleCalculator = mockk<ConfluenceScheduleCalculator>()
     private val ingestionService = mockk<ConfluencePageIngestionService>()
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val initialIngestionScope = TestScope()
 
     // The real persistence collaborator: it owns the insert, so the create-connection expectations below stay
@@ -60,6 +63,7 @@ class ConfluenceConnectionServiceTest {
         connectionPersistenceService,
         ScheduledExecutor(initialIngestionScope),
         ingestionService,
+        eventPublisher,
     )
     private val authId = "auth-subject"
     private val projectId = UUID.randomUUID()
@@ -284,6 +288,14 @@ class ConfluenceConnectionServiceTest {
         service.deleteConnection(authId, projectId, connection.id)
 
         verify(exactly = 1) { connectionRepository.delete(connection) }
+        // The pages this connection ingested carry the project on their artifacts and on every
+        // indexed chunk, and retrieval is fail-closed on the latter. Dropping the row alone would
+        // leave the space answerable in a project that no longer has it as a source.
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                ConfluenceSpaceConnectionDeletedEvent(connection.id, projectId),
+            )
+        }
     }
 
     @Test
@@ -295,6 +307,8 @@ class ConfluenceConnectionServiceTest {
             .isInstanceOf(ConfluenceConnectionNotFoundException::class.java)
 
         verify(exactly = 0) { connectionRepository.delete(any()) }
+        // Nothing was deleted, so nothing may be unlinked either.
+        verify(exactly = 0) { eventPublisher.publishEvent(any<ConfluenceSpaceConnectionDeletedEvent>()) }
     }
 
     @Test

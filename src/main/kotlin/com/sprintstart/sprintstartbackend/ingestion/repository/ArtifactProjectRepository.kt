@@ -38,6 +38,17 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
         findAllJiraArtifactsBySourceUrlStartingWith(escapeLikeLiteral("$instanceUrl/browse/"))
 
     /**
+     * Returns every stored page of a Confluence space connection.
+     *
+     * Page artifacts carry source ids of the form `confluence:{connectionId}:page:{pageId}`, so
+     * they are matched by prefix -- the Confluence counterpart to [findAllByComponent].
+     *
+     * @param connectionId The connection whose pages should be returned.
+     */
+    fun findAllConfluencePagesByConnectionId(connectionId: UUID): List<Artifact> =
+        findAllBySourceIdStartingWith(escapeLikeLiteral("confluence:$connectionId:"))
+
+    /**
      * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
      */
     @Query(

@@ -94,6 +94,29 @@ class ArtifactProjectRepositoryTest {
     }
 
     @Test
+    fun `a Confluence connection matches its own pages only`() {
+        val wanted = UUID.randomUUID()
+        val other = UUID.randomUUID()
+        val page = storeConfluencePage(wanted, "1")
+        val secondPage = storeConfluencePage(wanted, "2")
+        val elsewhere = storeConfluencePage(other, "1")
+        entityManager.flush()
+
+        val found = repository.findAllConfluencePagesByConnectionId(wanted).map { it.id }
+
+        assertThat(found).containsExactlyInAnyOrder(page.id, secondPage.id)
+        assertThat(found).doesNotContain(elsewhere.id)
+    }
+
+    @Test
+    fun `an unknown Confluence connection matches nothing`() {
+        storeConfluencePage(UUID.randomUUID(), "1")
+        entityManager.flush()
+
+        assertThat(repository.findAllConfluencePagesByConnectionId(UUID.randomUUID())).isEmpty()
+    }
+
+    @Test
     fun `deleting a project drops its links and leaves the others alone`() {
         val deleted = UUID.randomUUID()
         val kept = UUID.randomUUID()
@@ -120,6 +143,13 @@ class ArtifactProjectRepositoryTest {
         sourceId = "github:$component:$type:$unique",
         sourceUrl = "https://github.com/$component",
         type = type,
+    )
+
+    private fun storeConfluencePage(connectionId: UUID, pageId: String): Artifact = store(
+        sourceSystem = SourceSystem.CONFLUENCE,
+        sourceId = "confluence:$connectionId:page:$pageId",
+        sourceUrl = "https://acme.atlassian.net/wiki/spaces/ENG/pages/$pageId",
+        type = ArtifactType.PAGE,
     )
 
     private fun storeJiraArtifact(instanceUrl: String, key: String): Artifact = store(
