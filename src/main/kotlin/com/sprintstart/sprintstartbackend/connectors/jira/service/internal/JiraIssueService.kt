@@ -1,17 +1,16 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingCompleteEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredential
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraIssue
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraIssueRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -28,7 +27,7 @@ import java.util.UUID
 internal class JiraIssueService(
     private val jiraClient: JiraClient,
     private val instanceRepository: JiraInstanceRepository,
-    private val credentialsRepository: JiraCredentialsRepository,
+    private val atlassianCredentialApi: AtlassianCredentialApi,
     private val issueRepository: JiraIssueRepository,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
@@ -38,17 +37,19 @@ internal class JiraIssueService(
      * Fetches and ingests all issues of multiple Jira projects for a specific Jira instance.
      *
      * @param instance The Jira instance containing the details of the projects whose issues need to be fetched.
-     * @param credentialsId The credentials identifier used to authenticate with the Jira instance.
+     * @param credentialAuthId The auth subject that owns the Atlassian credential to authenticate with.
+     * @param credentialName The name of the Atlassian credential to authenticate with.
      * @param transactionId The unique transaction identifier associated with this operation.
      */
     @Tracked("Fetching & ingesting all jira instance's issues of a list of projects")
     suspend fun searchAndIngestAllIssuesOfProjects(
         instance: JiraInstance,
-        credentialsId: JiraCredentialsId,
+        credentialAuthId: String,
+        credentialName: String,
         transactionId: UUID,
     ) {
         instance.jiraProjectKeys.forEach {
-            searchAndIngestAllIssuesOfProject(instance, credentialsId, it, transactionId)
+            searchAndIngestAllIssuesOfProject(instance, credentialAuthId, credentialName, it, transactionId)
         }
 
         eventPublisher.publishEvent(JiraResourceFetchingCompleteEvent(transactionId))
@@ -58,18 +59,20 @@ internal class JiraIssueService(
      * Fetches all issues of a specified project from a given Jira instance and ingests them into the system.
      *
      * @param instance The Jira instance containing the details of the project whose issues need to be fetched.
-     * @param credentialsId The identifier for the Jira credentials to use for authentication.
+     * @param credentialAuthId The auth subject that owns the Atlassian credential to authenticate with.
+     * @param credentialName The name of the Atlassian credential to authenticate with.
      * @param projectKey The unique key of the Jira project whose issues are to be fetched.
      * @param transactionId The unique identifier for the transaction context in which this operation is performed.
      */
     @Tracked("Fetching & ingesting all jira instance's issues of a single project")
     suspend fun searchAndIngestAllIssuesOfProject(
         instance: JiraInstance,
-        credentialsId: JiraCredentialsId,
+        credentialAuthId: String,
+        credentialName: String,
         projectKey: String,
         transactionId: UUID,
     ) {
-        val credentials = fetchCredentials(credentialsId, transactionId, instance.instanceUrl)
+        val credentials = fetchCredentials(credentialAuthId, credentialName, transactionId, instance.instanceUrl)
         val issues = fetchIssues(instance.instanceUrl, credentials, "project=\"$projectKey\"", transactionId) ?: return
 
         if (issues.isEmpty()) {
@@ -146,8 +149,12 @@ internal class JiraIssueService(
         // Hibernate session, so reading jiraProjectKeys below on a detached instance would throw
         // LazyInitializationException.
         val instance = instanceRepository.findByInstanceUrlWithCollections(instanceUrl) ?: return emptyList()
-        val credentialsId = JiraCredentialsId(instance.updateCredentialAuthId, instance.updateCredentialName)
-        val credentials = fetchCredentials(credentialsId, transactionId, instanceUrl)
+        val credentials = fetchCredentials(
+            instance.updateCredentialAuthId,
+            instance.updateCredentialName,
+            transactionId,
+            instanceUrl,
+        )
 
         val jql = buildString {
             append("project in (${instance.jiraProjectKeys.joinToString(", ") { "\"$it\"" }}) ")
@@ -170,7 +177,7 @@ internal class JiraIssueService(
      */
     private suspend fun fetchIssues(
         instanceUrl: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
         jql: String,
         transactionId: UUID,
     ): List<JiraIssueResponse>? = try {
@@ -183,22 +190,24 @@ internal class JiraIssueService(
     }
 
     /**
-     * Retrieves the Jira credentials associated with the given credentials ID. If the credentials
-     * are not found, a `JiraResourceFetchingFailedEvent` is published and a `JiraCredentialNotFoundException`
-     * is thrown.
+     * Retrieves the Atlassian credential secret for the given auth id and credential name. If the
+     * credentials are not found, a `JiraResourceFetchingFailedEvent` is published and an
+     * `AtlassianCredentialNotFoundException` is thrown.
      *
-     * @param credentialsId The ID of the credentials to fetch.
+     * @param credentialAuthId The auth subject that owns the Atlassian credential.
+     * @param credentialName The name of the Atlassian credential to fetch.
      * @param transactionId The unique transaction identifier associated with the operation.
-     * @return The JiraCredential object associated with the provided credentials ID.
-     * @throws JiraCredentialNotFoundException If the credentials are invalid or not found.
+     * @return The decrypted [AtlassianCredentialSecret] for the given credential.
+     * @throws AtlassianCredentialNotFoundException If the credentials are invalid or not found.
      */
     private fun fetchCredentials(
-        credentialsId: JiraCredentialsId,
+        credentialAuthId: String,
+        credentialName: String,
         transactionId: UUID,
         instanceUrl: String,
-    ): JiraCredential = credentialsRepository.findById(credentialsId).orElse(null) ?: run {
+    ): AtlassianCredentialSecret = atlassianCredentialApi.findSecret(credentialAuthId, credentialName) ?: run {
         eventPublisher.publishEvent(JiraResourceFetchingFailedEvent(transactionId, "Invalid credentials", instanceUrl))
-        throw JiraCredentialNotFoundException(credentialsId.authId, credentialsId.name)
+        throw AtlassianCredentialNotFoundException(credentialAuthId, credentialName)
     }
 
     /**

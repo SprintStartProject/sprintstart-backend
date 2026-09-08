@@ -1,13 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
-import com.sprintstart.sprintstartbackend.connectors.jira.jiraCredential
+import com.sprintstart.sprintstartbackend.connectors.jira.atlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraIssueRepository
 import io.mockk.coEvery
@@ -21,7 +20,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith
 
@@ -29,7 +27,7 @@ import kotlin.test.assertFailsWith
 class JiraIssueServiceTest {
     private val jiraClient = mockk<JiraClient>()
     private val instanceRepository = mockk<JiraInstanceRepository>()
-    private val credentialsRepository = mockk<JiraCredentialsRepository>()
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
     private val issueRepository = mockk<JiraIssueRepository>(relaxUnitFun = true)
     private val eventPublisher = mockk<org.springframework.context.ApplicationEventPublisher>(relaxUnitFun = true)
 
@@ -37,8 +35,13 @@ class JiraIssueServiceTest {
 
     @BeforeEach
     fun setUp() {
-        service =
-            JiraIssueService(jiraClient, instanceRepository, credentialsRepository, issueRepository, eventPublisher)
+        service = JiraIssueService(
+            jiraClient,
+            instanceRepository,
+            atlassianCredentialApi,
+            issueRepository,
+            eventPublisher,
+        )
     }
 
     @Nested
@@ -46,14 +49,15 @@ class JiraIssueServiceTest {
         @Test
         fun `should fetch issues for each project key`() = runTest {
             val instance = jiraInstance(jiraProjectKeys = mutableSetOf("TEST", "DEV"))
-            val credential = jiraCredential()
-            every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+            val credential = atlassianCredentialSecret()
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns emptyList()
             every { instanceRepository.save(any()) } answers { firstArg() }
 
             service.searchAndIngestAllIssuesOfProjects(
                 instance,
-                JiraCredentialsId("user@example.com", "token"),
+                "user@example.com",
+                "token",
                 UUID.randomUUID(),
             )
 
@@ -66,9 +70,9 @@ class JiraIssueServiceTest {
         @Test
         fun `should set status to UP_TO_DATE when no new issues`() = runTest {
             val instance = jiraInstance()
-            val credential = jiraCredential()
+            val credential = atlassianCredentialSecret()
             every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
-            every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns emptyList()
             every { instanceRepository.save(any()) } answers { firstArg() }
 
@@ -81,10 +85,10 @@ class JiraIssueServiceTest {
         @Test
         fun `should set status to OUT_OF_DATE when new issues exist`() = runTest {
             val instance = jiraInstance()
-            val credential = jiraCredential()
+            val credential = atlassianCredentialSecret()
             val issue = mockk<JiraIssueResponse>()
             every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
-            every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns listOf(issue)
             every { instanceRepository.save(any()) } answers { firstArg() }
 
@@ -99,9 +103,9 @@ class JiraIssueServiceTest {
         @Test
         fun `should set status to UP_TO_DATE after processing empty updates`() = runTest {
             val instance = jiraInstance()
-            val credential = jiraCredential()
+            val credential = atlassianCredentialSecret()
             every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
-            every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
             coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns emptyList()
             every { instanceRepository.save(any()) } answers { firstArg() }
 
@@ -116,12 +120,13 @@ class JiraIssueServiceTest {
         @Test
         fun `should throw when credentials not found`() = runTest {
             val instance = jiraInstance()
-            every { credentialsRepository.findById(any()) } returns Optional.empty()
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns null
 
-            assertFailsWith<JiraCredentialNotFoundException> {
+            assertFailsWith<AtlassianCredentialNotFoundException> {
                 service.searchAndIngestAllIssuesOfProject(
                     instance,
-                    JiraCredentialsId("missing@example.com", "token"),
+                    "missing@example.com",
+                    "token",
                     "TEST",
                     UUID.randomUUID(),
                 )
