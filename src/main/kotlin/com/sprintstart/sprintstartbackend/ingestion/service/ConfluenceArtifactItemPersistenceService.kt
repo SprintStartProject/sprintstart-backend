@@ -22,6 +22,9 @@ import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
+/** Confluence page bodies are stored as Markdown, see `ConfluenceStorageFormatParser`. */
+private const val CONFLUENCE_ARTIFACT_MIME = "text/markdown"
+
 internal enum class ConfluenceArtifactItemPersistenceResult {
     CREATED,
     UPDATED,
@@ -75,6 +78,7 @@ internal class ConfluenceArtifactItemPersistenceService(
         existing.sourceVersion = command.sourceVersion
         existing.title = command.title
         existing.content = command.bodyText
+        existing.mime = CONFLUENCE_ARTIFACT_MIME
         existing.metadata = metadataJson
         existing.updatedAtSource = command.versionCreatedAt
         existing.ingestionRun = run
@@ -158,7 +162,7 @@ internal class ConfluenceArtifactItemPersistenceService(
             artifactType = ArtifactType.PAGE,
             title = title,
             content = bodyText,
-            mime = "text/plain",
+            mime = CONFLUENCE_ARTIFACT_MIME,
             language = null,
             metadata = metadataJson,
             projectIdsInternal = mutableSetOf(projectId),

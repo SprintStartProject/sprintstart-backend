@@ -34,7 +34,8 @@ class Artifact(
     var title: String?,
     @Column(columnDefinition = "TEXT")
     var content: String?,
-    val mime: String?,
+    // Mutable because a connector can change how it represents a source
+    var mime: String?,
     val language: String?,
     // Whether an issue is still open at its source: `"OPEN"` / `"CLOSED"`, null for anything that is not an issue.
     var state: String? = null,

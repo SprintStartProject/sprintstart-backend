@@ -17,7 +17,7 @@ class ConfluenceStorageFormatParserTest {
     }
 
     @Test
-    fun `extracts clean body text and headings`() {
+    fun `renders headings, paragraphs and lists as markdown`() {
         val result = parser.parse(
             """
             <h2>Deployment</h2>
@@ -31,10 +31,12 @@ class ConfluenceStorageFormatParserTest {
 
         assertThat(result.bodyText).isEqualTo(
             """
-            Deployment
-            Deploy the service to Kubernetes.
-            Build image
-            Apply manifest
+            ## Deployment
+
+            Deploy the **service** to Kubernetes.
+
+            - Build image
+            - Apply manifest
             """.trimIndent(),
         )
         assertThat(result.sections).containsExactly(
@@ -45,7 +47,29 @@ class ConfluenceStorageFormatParserTest {
     }
 
     @Test
-    fun `extracts code macro and excludes it from body text`() {
+    fun `renders nested and ordered lists with indentation`() {
+        val result = parser.parse(
+            """
+            <ol>
+              <li>First
+                <ul><li>Nested</li></ul>
+              </li>
+              <li>Second</li>
+            </ol>
+            """.trimIndent(),
+        )
+
+        assertThat(result.bodyText).isEqualTo(
+            """
+            1. First
+              - Nested
+            2. Second
+            """.trimIndent(),
+        )
+    }
+
+    @Test
+    fun `renders code macro as fenced block and keeps it in the code block list`() {
         val result = parser.parse(
             """
             <p local-id="4a8bfc667ef7">Here is the provided Java class:</p>
@@ -63,23 +87,26 @@ class ConfluenceStorageFormatParserTest {
             """.trimIndent(),
         )
 
-        assertThat(result.bodyText).isEqualTo("Here is the provided Java class:")
+        val code = listOf(
+            "public class CodeBlockTest42 {",
+            "public static void main(String[] args) {",
+            "System.out.println(\"CODE_BLOCK_TEST_42\");",
+            "}",
+            "}",
+        ).joinToString("\n")
+        assertThat(result.bodyText).isEqualTo(
+            "Here is the provided Java class:\n\n```java\n$code\n```",
+        )
         assertThat(result.codeBlocks).containsExactly(
             ParsedConfluenceCodeBlock(
                 language = "java",
-                code = listOf(
-                    "public class CodeBlockTest42 {",
-                    "public static void main(String[] args) {",
-                    "System.out.println(\"CODE_BLOCK_TEST_42\");",
-                    "}",
-                    "}",
-                ).joinToString("\n"),
+                code = code,
             ),
         )
     }
 
     @Test
-    fun `converts tables to markdown and removes them from body text`() {
+    fun `renders tables in place and keeps them in the table list`() {
         val result = parser.parse(
             """
             <p>Deployment targets:</p>
@@ -90,10 +117,9 @@ class ConfluenceStorageFormatParserTest {
             """.trimIndent(),
         )
 
-        assertThat(result.bodyText).isEqualTo("Deployment targets:")
-        assertThat(result.tables).containsExactly(
-            "| Environment | Namespace |\n| --- | --- |\n| Production | prod |",
-        )
+        val table = "| Environment | Namespace |\n| --- | --- |\n| Production | prod |"
+        assertThat(result.bodyText).isEqualTo("Deployment targets:\n\n$table")
+        assertThat(result.tables).containsExactly(table)
     }
 
     @Test
@@ -111,9 +137,47 @@ class ConfluenceStorageFormatParserTest {
         assertThat(result.bodyText).isEqualTo(
             """
             Visible before macro.
+
             Visible after macro.
             """.trimIndent(),
         )
         assertThat(result.codeBlocks).isEmpty()
+    }
+
+    @Test
+    fun `renders external links and keeps confluence page links as plain labels`() {
+        val result = parser.parse(
+            """
+            <p>See <a href="https://example.com/docs">the docs</a> and
+            <ac:link><ri:page ri:content-title="Runbook" /><ac:plain-text-link-body><![CDATA[Runbook]]></ac:plain-text-link-body></ac:link>.</p>
+            """.trimIndent(),
+        )
+
+        assertThat(result.bodyText).isEqualTo("See [the docs](https://example.com/docs) and Runbook.")
+    }
+
+    @Test
+    fun `escapes markdown syntax that comes from page text`() {
+        val result = parser.parse("<p>Use the flag --dry_run in the #ops channel.</p>")
+
+        assertThat(result.bodyText).isEqualTo("""Use the flag --dry\_run in the \#ops channel.""")
+    }
+
+    @Test
+    fun `keeps a paragraph that starts with a dash from becoming a list`() {
+        val result = parser.parse("<p>- not a list</p>")
+
+        assertThat(result.bodyText).isEqualTo("""\- not a list""")
+    }
+
+    @Test
+    fun `reads content that sits inside layout containers`() {
+        val result = parser.parse(
+            "<ac:layout><ac:layout-section><ac:layout-cell>" +
+                "<p>Inside layout</p>" +
+                "</ac:layout-cell></ac:layout-section></ac:layout>",
+        )
+
+        assertThat(result.bodyText).isEqualTo("Inside layout")
     }
 }

@@ -139,7 +139,7 @@ class ConfluencePageIngestionServiceTest {
             .single()
             .code
         assertThat(commands).containsOnlyKeys("100", "200")
-        assertThat(rootCommand.bodyText).isEqualTo("Deploy\nUse Kubernetes.")
+        assertThat(rootCommand.bodyText).isEqualTo("## Deploy\n\nUse Kubernetes.")
         assertThat(rootHeading).isEqualTo("Deploy")
         assertThat(rootCommand.metadata.relationships.map { it.targetSourceArtifactId })
             .containsExactly("200", "300")
