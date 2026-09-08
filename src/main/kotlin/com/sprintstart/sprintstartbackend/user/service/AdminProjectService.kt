@@ -105,6 +105,8 @@ class AdminProjectService(
             Project(
                 name = name,
                 description = request.description,
+                industry = request.industry,
+                industryConfidence = request.industryConfidence,
             ),
         )
 
@@ -135,6 +137,8 @@ class AdminProjectService(
             project.name = name
         }
         request.description?.let { project.description = it }
+        request.industry?.let { project.industry = it }
+        request.industryConfidence?.let { project.industryConfidence = it }
 
         return project.toAdminDetailResponse(
             sources = projectSourceApi.findSourcesByProjectId(project.id),

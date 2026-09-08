@@ -1,18 +1,18 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
-import com.sprintstart.sprintstartbackend.connectors.jira.jiraCredential
+import com.sprintstart.sprintstartbackend.connectors.jira.atlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
@@ -45,7 +45,7 @@ private suspend inline fun <reified T : Throwable> assertThrowsSuspend(block: su
 }
 
 class JiraServiceTest {
-    private val credentialsRepository = mockk<JiraCredentialsRepository>()
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
     private val instanceRepository = mockk<JiraInstanceRepository>()
     private val configRepository = mockk<JiraInstanceConfigRepository>()
     private val jiraClient = mockk<JiraClient>()
@@ -67,7 +67,7 @@ class JiraServiceTest {
         every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns java.time.Instant.now()
         every { userApi.userHasAccessToProject(any(), any()) } returns true
         service = JiraService(
-            credentialsRepository,
+            atlassianCredentialApi,
             instanceRepository,
             configRepository,
             jiraClient,
@@ -215,13 +215,9 @@ class JiraServiceTest {
         fun `should connect new instance when not already connected`() {
             runTest {
                 val expectedNextSyncAt = java.time.Instant.now()
-                val credential = jiraCredential(
-                    authId = "auth-id",
-                    userEmail = request.userEmail,
-                    name = request.tokenName,
-                )
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
                 coEvery { jiraClient.searchProjects(request.url, credential) } returns
                     listOf(JiraProjectResponse("TEST"))
@@ -246,13 +242,9 @@ class JiraServiceTest {
         fun `should connect new instance with default as source enabled`() {
             runTest {
                 val expectedNextSyncAt = java.time.Instant.now()
-                val credential = jiraCredential(
-                    authId = "auth-id",
-                    userEmail = request.userEmail,
-                    name = request.tokenName,
-                )
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
                 coEvery { jiraClient.searchProjects(request.url, credential) } returns
                     listOf(JiraProjectResponse("TEST"))
@@ -271,9 +263,9 @@ class JiraServiceTest {
         fun `should throw when credentials not found`() {
             runTest {
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.empty()
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns null
 
-                assertThrowsSuspend<JiraCredentialNotFoundException> {
+                assertThrowsSuspend<AtlassianCredentialNotFoundException> {
                     service.connectInstanceIfNeeded("auth-id", request)
                 }
             }
@@ -282,13 +274,9 @@ class JiraServiceTest {
         @Test
         fun `should throw when instance is unavailable`() {
             runTest {
-                val credential = jiraCredential(
-                    authId = "auth-id",
-                    userEmail = request.userEmail,
-                    name = request.tokenName,
-                )
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns false
 
                 assertThrowsSuspend<JiraInstanceUnavailableException> {
@@ -300,13 +288,9 @@ class JiraServiceTest {
         @Test
         fun `should throw when no projects are accessible`() {
             runTest {
-                val credential = jiraCredential(
-                    authId = "auth-id",
-                    userEmail = request.userEmail,
-                    name = request.tokenName,
-                )
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
                 coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
 
@@ -322,13 +306,9 @@ class JiraServiceTest {
         @Test
         fun `should set instance status to UP_TO_DATE after connecting`() {
             runTest {
-                val credential = jiraCredential(
-                    authId = "auth-id",
-                    userEmail = request.userEmail,
-                    name = request.tokenName,
-                )
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
                 coEvery { jiraClient.searchProjects(request.url, credential) } returns
                     listOf(JiraProjectResponse("TEST"))

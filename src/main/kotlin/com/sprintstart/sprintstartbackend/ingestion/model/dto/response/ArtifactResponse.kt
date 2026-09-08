@@ -19,4 +19,5 @@ data class ArtifactResponse(
      */
     val lastChangedAt: Instant?,
     val metadata: String,
+    val sourceVersion: String? = null,
 )

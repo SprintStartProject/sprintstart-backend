@@ -121,6 +121,9 @@ class GithubArtifactProviderService(
             ArtifactType.ORG_METADATA,
             -> ArtifactChange.NOTHING
 
+            // Confluence pages never reach this provider; they have one of their own.
+            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+
             ArtifactType.FILE -> {
                 if (artifact.hash == command.hash) {
                     ArtifactChange.NOTHING

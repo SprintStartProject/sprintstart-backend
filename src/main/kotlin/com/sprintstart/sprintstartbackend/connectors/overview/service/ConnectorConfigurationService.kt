@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.external.api.Conne
 import com.sprintstart.sprintstartbackend.connectors.overview.external.models.ConnectorDto
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorConfiguration
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
+import com.sprintstart.sprintstartbackend.connectors.overview.models.IProjectScopedSourcePatcher
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.ConfigureConnectorRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.PatchSourcesRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.response.ConfigureConnectorResponse
@@ -13,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.api.respons
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.response.PatchedSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.response.toConfigureConnectorResponse
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.connectors.overview.repository.ConnectorConfigurationRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import jakarta.annotation.PostConstruct
@@ -125,6 +127,7 @@ class ConnectorConfigurationService(
      * Retrieves all sources of a given connector.
      *
      * @param connectorId The id of the connector to retrieve all sources of.
+     * @param projectId Optional project scope. Connectors may return an empty global source list when omitted.
      * @return [GetSourcesOfConnectorResponse] all sources of the given connector.
      * @throws ConnectorNotFoundException if no connector with the given id could be found.
      */
@@ -134,7 +137,6 @@ class ConnectorConfigurationService(
         val connector = connectors.stream().filter { it.id == connectorId }.findFirst().orElseThrow {
             ConnectorNotFoundException("Unable to load up connector with id $connectorId")
         }
-
         return GetSourcesOfConnectorResponse(
             connectorId = connectorId,
             sources = projectId?.let { connector.getSources(it) } ?: connector.getSources(),
@@ -156,12 +158,41 @@ class ConnectorConfigurationService(
     suspend fun patchSourcesIfConnectorExists(
         connectorId: String,
         request: PatchSourcesRequest,
+        projectId: UUID? = null,
     ): PatchSourcesOfConnectorResponse {
         val connector = connectors.find { it.id == connectorId }
             ?: throw ConnectorNotFoundException("Unable to find connector with id $connectorId")
+        val sourceIds = request.sources.map { source -> source.sourceId }
+        if (connector is IProjectScopedSourcePatcher) {
+            validateProjectScopedPatch(sourceIds, projectId)
+            val requestedSources = request.sources.associateTo(linkedMapOf()) { source ->
+                source.sourceId to source.enabled
+            }
+            val patchedSources = connector.patchSources(requireNotNull(projectId), requestedSources)
+            sourceClient.patchSources(connector.id, requestedSources)
+            return PatchSourcesOfConnectorResponse(
+                connectorId = connector.id,
+                sources = patchedSources.map { source ->
+                    PatchedSource(source.id, source.name, source.url, source.enabled)
+                },
+            )
+        }
         val idStatusesMap = request.sources.associateBy({ it.sourceId }, { it.enabled })
 
         return patchSources(connector, idStatusesMap)
+    }
+
+    private fun validateProjectScopedPatch(sourceIds: List<String>, projectId: UUID?) {
+        val validationMessage = when {
+            projectId == null -> "projectId is required for this connector"
+            sourceIds.size > MAX_PROJECT_SCOPED_PATCH_SIZE ->
+                "At most $MAX_PROJECT_SCOPED_PATCH_SIZE connector sources may be patched at once"
+            sourceIds.distinct().size != sourceIds.size -> "Connector source IDs must be unique"
+            else -> null
+        }
+        if (validationMessage != null) {
+            throw SourcePatchValidationException(validationMessage)
+        }
     }
 
     /**
@@ -193,5 +224,9 @@ class ConnectorConfigurationService(
             connectorId = connector.id,
             sources = result,
         )
+    }
+
+    private companion object {
+        const val MAX_PROJECT_SCOPED_PATCH_SIZE = 100
     }
 }

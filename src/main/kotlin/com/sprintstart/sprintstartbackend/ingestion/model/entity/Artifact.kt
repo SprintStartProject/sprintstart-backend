@@ -24,7 +24,9 @@ class Artifact(
     @Column(name = "source_id", nullable = false)
     val sourceId: String,
     @Column(name = "source_url", length = 2048)
-    val sourceUrl: String?,
+    var sourceUrl: String?,
+    @Column(name = "source_version")
+    var sourceVersion: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(name = "artifact_type", nullable = false)
     val artifactType: ArtifactType,
@@ -32,7 +34,8 @@ class Artifact(
     var title: String?,
     @Column(columnDefinition = "TEXT")
     var content: String?,
-    val mime: String?,
+    // Mutable because a connector can change how it represents a source
+    var mime: String?,
     val language: String?,
     // Whether an issue is still open at its source: `"OPEN"` / `"CLOSED"`, null for anything that is not an issue.
     var state: String? = null,
@@ -72,7 +75,7 @@ class Artifact(
     var lastChangedAt: Instant? = null,
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
-    val ingestionRun: IngestionRun,
+    var ingestionRun: IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
     /**

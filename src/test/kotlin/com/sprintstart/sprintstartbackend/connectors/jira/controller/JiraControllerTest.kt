@@ -3,13 +3,14 @@ package com.sprintstart.sprintstartbackend.connectors.jira.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.atlassian.controller.AtlassianCredentialExceptionHandler
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialAlreadyExistsException
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.UpdateJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.UpdateJiraInstanceResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraAuthException
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialAlreadyExistsException
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
@@ -45,7 +46,7 @@ import java.util.UUID
 
 @WebMvcTest(controllers = [JiraController::class])
 @AutoConfigureMockMvc
-@Import(JiraExceptionHandler::class, SecurityConfig::class)
+@Import(JiraExceptionHandler::class, AtlassianCredentialExceptionHandler::class, SecurityConfig::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @ExtendWith(MockKExtension::class)
 class JiraControllerTest {
@@ -245,7 +246,9 @@ class JiraControllerTest {
 
         @Test
         fun `should return 404 when credentials not found`() {
-            coEvery { service.connectInstanceIfNeeded("admin-id", request) } throws JiraCredentialNotFoundException(
+            coEvery {
+                service.connectInstanceIfNeeded("admin-id", request)
+            } throws AtlassianCredentialNotFoundException(
                 request.userEmail,
                 request.tokenName,
             )
@@ -348,7 +351,7 @@ class JiraControllerTest {
         fun `should return 400 when credential already exists`() {
             coEvery {
                 service.connectInstanceIfNeeded("admin-id", request)
-            } throws JiraCredentialAlreadyExistsException(
+            } throws AtlassianCredentialAlreadyExistsException(
                 request.userEmail,
                 request.tokenName,
             )
