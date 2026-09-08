@@ -24,7 +24,14 @@ import kotlin.test.assertTrue
 class OnboardingPathServiceTest {
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
     private val userApi: UserApi = mockk()
-    private val service = OnboardingPathService(onboardingPathRepository, userApi)
+
+    // The real reader: it now owns the active-step and progress rules this service's team
+    // overview reports, so stubbing it would hollow out exactly what these tests assert.
+    private val service = OnboardingPathService(
+        onboardingPathRepository,
+        userApi,
+        OnboardingPositionReader(onboardingPathRepository),
+    )
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()
