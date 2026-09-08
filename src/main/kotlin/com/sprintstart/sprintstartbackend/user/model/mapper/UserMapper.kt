@@ -15,11 +15,16 @@ fun User.toGetResponse(): GetUserResponse =
         lastName = this.lastname,
         projectIds = this.projects.map { it.id }.toSet(),
         roles = this.roles.toSet(),
-        projectRoles = this.projectRoles.map { ProjectRoleSummary(id = it.id, name = it.name) },
+        projectRoles = this.allProjectRoles().map { ProjectRoleSummary(id = it.id, name = it.name) },
         permissionGroup = this.effectivePermissionGroup(),
         enabled = this.enabled,
-        profileIcon = this.profileIcon,
         hasCompletedOnboarding = this.hasCompletedOnboarding,
+        profileIcon = this.profileIcon,
+        githubLogin = this.githubLogin,
+        githubLoginSource = this.githubLoginSource,
+        githubLoginVerification = this.githubLoginVerification,
+        githubLoginVerifiedAt = this.githubLoginVerifiedAt,
+        jiraDisplayName = this.jiraDisplayName,
     )
 
 fun User.effectivePermissionGroup(): Role {

@@ -148,6 +148,7 @@ class GithubPullRequestsService(
                     it.body,
                     it.state,
                     it.author?.login,
+                    it.submittedAt,
                 )
             },
             comments = this.comments?.nodes?.map {

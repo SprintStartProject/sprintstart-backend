@@ -50,6 +50,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.COMMITS,
                 FinishedTypes.FILES,
                 FinishedTypes.ISSUES,
+                FinishedTypes.ORG_METADATA,
             ),
         )
         every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
@@ -72,6 +73,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.COMMITS,
                 FinishedTypes.FILES,
                 FinishedTypes.ISSUES,
+                FinishedTypes.ORG_METADATA,
             ),
         )
         every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)
@@ -91,6 +93,7 @@ class IngestionStatusServiceCompletionTest {
                 FinishedTypes.COMMITS,
                 FinishedTypes.FILES,
                 FinishedTypes.ISSUES,
+                FinishedTypes.ORG_METADATA,
             ),
         )
         every { ingestionRunRepository.findByIdForUpdate(run.id) } returns Optional.of(run)

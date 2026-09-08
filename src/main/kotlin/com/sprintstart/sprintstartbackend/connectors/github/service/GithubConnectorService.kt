@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.connectors.github.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
@@ -23,6 +24,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
+import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -68,7 +70,7 @@ class GithubRepositoryConnectionOrchestrator(
     ): ConnectRepositoriesResponse {
         val transactionIdsByRepoIds = mutableMapOf<String, UUID>() // "owner/name" -> transactionId
         request.repositories.forEach {
-            val transactionId = connectorService.connectRepositoryIfExists(authId, it)
+            val transactionId = connectorService.connectRepositoryIfNecessary(authId, it)
             transactionIdsByRepoIds["${it.owner}/${it.name}"] = transactionId
         }
         return ConnectRepositoriesResponse(transactionIdsByRepoIds)
@@ -91,6 +93,7 @@ class GithubConnectorService(
     private val commitsService: GithubCommitsService,
     private val issuesService: GithubIssuesService,
     private val pullRequestsService: GithubPullRequestsService,
+    private val orgService: GithubOrgService,
     private val githubClient: GithubClient,
     private val eventPublisher: ApplicationEventPublisher,
     private val userApi: UserApi,
@@ -178,6 +181,10 @@ class GithubConnectorService(
     /**
      * Connect a new repository.
      *
+     * If the repository to connect already exists, the project association is updated without fetching
+     * or re-ingesting any repository resources. A completed no-op ingestion run is still created so
+     * the connect request remains visible in ingestion history.
+     *
      * Given an authenticated user and a repository request, this validates project access,
      * verifies that the named PAT exists for that user, persists the connection, and starts
      * the initial background ingestion jobs if the repository exists.
@@ -200,12 +207,63 @@ class GithubConnectorService(
      */
     @Tracked("Connecting GitHub repository")
     @Transactional
-    suspend fun connectRepositoryIfExists(authId: String, request: ConnectRepositoryRequest): UUID {
+    suspend fun connectRepositoryIfNecessary(authId: String, request: ConnectRepositoryRequest): UUID {
+        val transactionId = UUID.randomUUID()
         if (!userApi.userHasAccessToProject(authId, request.projectId)) {
             throw ResponseStatusException(HttpStatus.FORBIDDEN, "No access to project")
         }
 
-        val transactionId = UUID.randomUUID()
+        val repository = withContext(Dispatchers.IO) {
+            repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
+        }
+
+        if (repository != null) {
+            repository.projectIdsInternal.add(request.projectId)
+            withContext(Dispatchers.IO) {
+                repoConnectionRepository.save(repository)
+            }
+            eventPublisher.publishEvent(
+                GithubRepositoryAlreadyConnectedEvent(
+                    transactionId = transactionId,
+                    owner = request.owner,
+                    name = request.name,
+                ),
+            )
+
+            return transactionId
+        }
+
+        return connectRepositoryIfExists(authId, request, transactionId)
+    }
+
+    /**
+     * Connect a new repository.
+     *
+     * Given an authenticated user and a repository request, this validates project access,
+     * verifies that the named PAT exists for that user, persists the connection, and starts
+     * the initial background ingestion jobs if the repository exists.
+     *
+     * Tasks started for background execution include:
+     *
+     * - Fetching the repository code
+     * - Fetching the repository commits
+     * - Fetching the repository issues
+     * - Fetching the repository pull requests
+     * - Starting a CRON job that checks for updates every night.
+     *
+     * _**Schema:** `https://github.com/{owner}/{name}`_
+     *
+     * @param authId The authenticated user subject used to resolve PAT ownership and project access.
+     * @param request The request containing repository owner/name, PAT alias, and target project.
+     * @return A UUID representing the transaction ID assigned to this connection operation.
+     * @throws IllegalStateException If on one of the processed file resources, the GitHub api
+     * returns malformed responses.
+     */
+    private suspend fun connectRepositoryIfExists(
+        authId: String,
+        request: ConnectRepositoryRequest,
+        transactionId: UUID,
+    ): UUID {
         val userId = userApi.getUserIdByAuthId(authId).orElseThrow { UserWithAuthIdNotFoundException(authId) }
 
         eventPublisher.publishEvent(
@@ -304,6 +362,9 @@ class GithubConnectorService(
                 repository.name,
                 transactionId,
             )
+        }
+        applicationScope.launch {
+            orgService.connectGithubOrgIfNecessary(repository.owner, repository.user.token, transactionId)
         }
 
         return transactionId

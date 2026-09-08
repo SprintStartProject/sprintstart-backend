@@ -10,7 +10,7 @@ import java.util.UUID
 
 @Entity
 @Table(name = "blueprint_steps_old")
-class BlueprintStepOld(
+class BlueprintStep(
     @Id
     val id: UUID = UUID.randomUUID(),
     @ManyToOne

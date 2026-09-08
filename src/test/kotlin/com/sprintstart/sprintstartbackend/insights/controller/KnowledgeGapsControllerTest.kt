@@ -9,10 +9,12 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeGapsOverviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.service.KnowledgeGapsService
+import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.verify
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -44,9 +46,23 @@ class KnowledgeGapsControllerTest(
 ) {
     @MockkBean
     private lateinit var knowledgeGapsService: KnowledgeGapsService
+    private val projectId: UUID = UUID.randomUUID()
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
+
+    /**
+     * Referenced by name from the @PreAuthorize expressions on every endpoint; the web slice does
+     * not load it on its own. Access to the fixture project is granted by default so the role
+     * checks remain what the role tests exercise.
+     */
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
+
+    @BeforeEach
+    fun grantProjectAccess() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns true
+    }
 
     private val gapId = UUID.randomUUID()
     private val objectMapper = jacksonObjectMapper()
@@ -62,6 +78,7 @@ class KnowledgeGapsControllerTest(
     private val pmJwt = jwtWithRoles("PM")
     private val adminJwt = jwtWithRoles("ADMIN")
     private val userJwt = jwtWithRoles("USER")
+    private val hrJwt = jwtWithRoles("HR")
 
     private fun buildGap() = KnowledgeGapResponse(
         id = gapId,
@@ -79,74 +96,139 @@ class KnowledgeGapsControllerTest(
 
     @Test
     fun `getKnowledgeGaps should return 200 and gaps for a PM`() {
-        every { knowledgeGapsService.getKnowledgeGaps() } returns KnowledgeGapsOverviewResponse(listOf(buildGap()))
+        every { knowledgeGapsService.getKnowledgeGaps(projectId) } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
 
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps").with(pmJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps?projectId=$projectId").with(pmJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { knowledgeGapsService.getKnowledgeGaps() }
+        verify(exactly = 1) { knowledgeGapsService.getKnowledgeGaps(projectId) }
     }
 
     @Test
     fun `getKnowledgeGaps should return 200 for an admin`() {
-        every { knowledgeGapsService.getKnowledgeGaps() } returns KnowledgeGapsOverviewResponse(listOf(buildGap()))
+        every { knowledgeGapsService.getKnowledgeGaps(projectId) } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
 
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps").with(adminJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps?projectId=$projectId").with(adminJwt))
             .andExpect(status().isOk)
     }
 
     @Test
     fun `getKnowledgeGaps should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps"))
+            .perform(get("/api/v1/insights/knowledge-gaps?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `getKnowledgeGaps should return 403 for a non-PM role`() {
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps").with(userJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps?projectId=$projectId").with(userJwt))
             .andExpect(status().isForbidden)
+    }
+
+    // ========================== Assigned to me ==========================
+
+    @Test
+    fun `getMyKnowledgeGaps should return 200 and the gaps for a plain user`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") }
+    }
+
+    /**
+     * The endpoint is open to every permission group deliberately — ownership decides what comes
+     * back, and a manager owns components too. Pinned here so that narrowing the guard to a single
+     * role later fails a test instead of quietly hiding a manager's own gaps from them.
+     */
+    @Test
+    fun `getMyKnowledgeGaps should be reachable by every permission group`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(listOf(buildGap()))
+
+        for (jwt in listOf(userJwt, pmJwt, hrJwt, adminJwt)) {
+            mockMvc
+                .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(jwt))
+                .andExpect(status().isOk)
+        }
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps should return 401 when not authenticated`() {
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getMyKnowledgeGaps should return 403 without access to the project`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    /**
+     * `mine` must not be swallowed by the `/{gapId}` route, which would fail to bind it as a UUID.
+     */
+    @Test
+    fun `getMyKnowledgeGaps should win over the gap detail route`() {
+        every { knowledgeGapsService.getMyKnowledgeGaps(projectId, "test-auth-id") } returns
+            KnowledgeGapsOverviewResponse(emptyList())
+
+        mockMvc
+            .perform(get("/api/v1/insights/knowledge-gaps/mine?projectId=$projectId").with(userJwt))
+            .andExpect(status().isOk)
+
+        verify(exactly = 0) { knowledgeGapsService.getKnowledgeGap(any(), any()) }
     }
 
     // ========================== Detail ==========================
 
     @Test
     fun `getKnowledgeGap should return 200 and detail for a PM`() {
-        every { knowledgeGapsService.getKnowledgeGap(gapId) } returns buildGap()
+        every { knowledgeGapsService.getKnowledgeGap(projectId, gapId) } returns buildGap()
 
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps/$gapId").with(pmJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps/$gapId?projectId=$projectId").with(pmJwt))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        verify(exactly = 1) { knowledgeGapsService.getKnowledgeGap(gapId) }
+        verify(exactly = 1) { knowledgeGapsService.getKnowledgeGap(projectId, gapId) }
     }
 
     @Test
     fun `getKnowledgeGap should return 404 when the gap does not exist`() {
-        every { knowledgeGapsService.getKnowledgeGap(gapId) } throws
+        every { knowledgeGapsService.getKnowledgeGap(projectId, gapId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "Knowledge gap with id $gapId not found")
 
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps/$gapId").with(pmJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps/$gapId?projectId=$projectId").with(pmJwt))
             .andExpect(status().isNotFound)
     }
 
     @Test
     fun `getKnowledgeGap should return 401 when not authenticated`() {
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps/$gapId"))
+            .perform(get("/api/v1/insights/knowledge-gaps/$gapId?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `getKnowledgeGap should return 403 for a non-PM role`() {
         mockMvc
-            .perform(get("/api/v1/insights/knowledge-gaps/$gapId").with(userJwt))
+            .perform(get("/api/v1/insights/knowledge-gaps/$gapId?projectId=$projectId").with(userJwt))
             .andExpect(status().isForbidden)
     }
 
@@ -154,10 +236,11 @@ class KnowledgeGapsControllerTest(
 
     @Test
     fun `refreshKnowledgeGaps should return 200 and the gap count for a PM`() {
-        coEvery { knowledgeGapsService.refreshKnowledgeGaps() } returns RefreshKnowledgeGapsResponse(gapCount = 5)
+        coEvery { knowledgeGapsService.refreshKnowledgeGaps(projectId) } returns
+            RefreshKnowledgeGapsResponse(gapCount = 5)
 
         val asyncResult = mockMvc
-            .perform(post("/api/v1/insights/knowledge-gaps/refresh").with(pmJwt))
+            .perform(post("/api/v1/insights/knowledge-gaps/refresh?projectId=$projectId").with(pmJwt))
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -166,13 +249,13 @@ class KnowledgeGapsControllerTest(
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { knowledgeGapsService.refreshKnowledgeGaps() }
+        coVerify(exactly = 1) { knowledgeGapsService.refreshKnowledgeGaps(projectId) }
     }
 
     @Test
     fun `refreshKnowledgeGaps should return 401 when not authenticated`() {
         mockMvc
-            .perform(post("/api/v1/insights/knowledge-gaps/refresh"))
+            .perform(post("/api/v1/insights/knowledge-gaps/refresh?projectId=$projectId"))
             .andExpect(status().isUnauthorized)
     }
 
@@ -181,7 +264,7 @@ class KnowledgeGapsControllerTest(
         // The endpoint is a coroutine handler, so the security denial surfaces through the async
         // dispatch rather than on the initial response.
         val asyncResult = mockMvc
-            .perform(post("/api/v1/insights/knowledge-gaps/refresh").with(userJwt))
+            .perform(post("/api/v1/insights/knowledge-gaps/refresh?projectId=$projectId").with(userJwt))
             .andExpect(request().asyncStarted())
             .andReturn()
 
@@ -189,7 +272,7 @@ class KnowledgeGapsControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
 
-        coVerify(exactly = 0) { knowledgeGapsService.refreshKnowledgeGaps() }
+        coVerify(exactly = 0) { knowledgeGapsService.refreshKnowledgeGaps(projectId) }
     }
 
     // ========================== Component owners ==========================
@@ -208,7 +291,7 @@ class KnowledgeGapsControllerTest(
 
         mockMvc
             .perform(
-                get("/api/v1/insights/knowledge-gaps/component-owners")
+                get("/api/v1/insights/knowledge-gaps/component-owners?projectId=$projectId")
                     .param("component", "owner/repo")
                     .with(pmJwt),
             ).andExpect(status().isOk)
@@ -221,7 +304,7 @@ class KnowledgeGapsControllerTest(
     fun `getComponentOwners should return 403 for a non-PM role`() {
         mockMvc
             .perform(
-                get("/api/v1/insights/knowledge-gaps/component-owners")
+                get("/api/v1/insights/knowledge-gaps/component-owners?projectId=$projectId")
                     .param("component", "owner/repo")
                     .with(userJwt),
             ).andExpect(status().isForbidden)
@@ -234,7 +317,7 @@ class KnowledgeGapsControllerTest(
 
         mockMvc
             .perform(
-                put("/api/v1/insights/knowledge-gaps/component-owners")
+                put("/api/v1/insights/knowledge-gaps/component-owners?projectId=$projectId")
                     .with(pmJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)),
@@ -248,7 +331,7 @@ class KnowledgeGapsControllerTest(
     fun `setComponentOwners should return 400 when the component is blank`() {
         mockMvc
             .perform(
-                put("/api/v1/insights/knowledge-gaps/component-owners")
+                put("/api/v1/insights/knowledge-gaps/component-owners?projectId=$projectId")
                     .with(pmJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""{"component": "", "userIds": []}"""),
@@ -259,7 +342,7 @@ class KnowledgeGapsControllerTest(
     fun `setComponentOwners should return 403 for a non-PM role`() {
         mockMvc
             .perform(
-                put("/api/v1/insights/knowledge-gaps/component-owners")
+                put("/api/v1/insights/knowledge-gaps/component-owners?projectId=$projectId")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""{"component": "owner/repo", "userIds": []}"""),

@@ -14,10 +14,11 @@ import java.util.UUID
 
 class ChatQuestionApiServiceTest {
     private val messageRepository = mockk<ChatMessageRepository>()
+    private val projectId: UUID = UUID.randomUUID()
     private val service = ChatQuestionApiService(messageRepository)
 
     @Test
-    fun `getAllUserQuestions maps user messages to questions`() {
+    fun `getUserQuestionsForProject maps the project's user messages to questions`() {
         val chat = Chat(userId = UUID.randomUUID(), createdAt = OffsetDateTime.now())
         val message = ChatMessage(
             role = ChatRole.USER,
@@ -25,13 +26,13 @@ class ChatQuestionApiServiceTest {
             content = "How do I get VPN access?",
             createdAt = OffsetDateTime.now(),
         )
-        every { messageRepository.findAllByRole(ChatRole.USER) } returns listOf(message)
+        every { messageRepository.findAllByRoleAndChatProjectId(ChatRole.USER, projectId) } returns listOf(message)
 
-        val result = service.getAllUserQuestions()
+        val result = service.getUserQuestionsForProject(projectId)
 
         assertEquals(1, result.size)
         assertEquals(message.id, result.first().id)
         assertEquals("How do I get VPN access?", result.first().text)
-        verify(exactly = 1) { messageRepository.findAllByRole(ChatRole.USER) }
+        verify(exactly = 1) { messageRepository.findAllByRoleAndChatProjectId(ChatRole.USER, projectId) }
     }
 }

@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintProvenanceSchema
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintSchema
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintStepSchema
+import com.sprintstart.sprintstartbackend.onboarding.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Blueprint
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.blueprint.BlueprintStepResponse
@@ -33,7 +34,10 @@ fun Blueprint.toResponse(): BlueprintResponse =
  */
 fun Blueprint.toSchema(): BlueprintSchema =
     BlueprintSchema(
-        scope = scope,
+        // Sent project-qualified: the AI service ignores any blueprint whose scope does not carry
+        // the requesting project. A blueprint from before project separation has no project, keeps
+        // its bare scope, and is therefore correctly ignored rather than leaked into a path.
+        scope = projectId?.let { BlueprintScope.qualify(it, scope) } ?: scope,
         version = version,
         source = "generated",
         steps = steps.map { step ->

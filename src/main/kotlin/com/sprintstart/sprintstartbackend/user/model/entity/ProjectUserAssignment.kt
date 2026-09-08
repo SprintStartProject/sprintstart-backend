@@ -13,6 +13,7 @@ import jakarta.persistence.ManyToOne
 import jakarta.persistence.MapsId
 import jakarta.persistence.Table
 import java.io.Serializable
+import java.time.Instant
 import java.util.UUID
 
 @Entity
@@ -28,6 +29,23 @@ class ProjectUserAssignment(
     @MapsId("projectId")
     @JoinColumn(name = "project_id", nullable = false)
     val project: Project,
+    /**
+     * When this person joined this project — the moment onboarding's clock starts.
+     *
+     * Nullable because assignments made before this column existed have no honest value to
+     * backfill: guessing one would put a fabricated number underneath the metric the whole
+     * initiative is judged on. A hire with no `assignedAt` is reported as "clock unknown" rather
+     * than as instantaneous.
+     */
+    @Column(name = "assigned_at")
+    val assignedAt: Instant? = Instant.now(),
+    /**
+     * The roles this person holds on this project.
+     *
+     * Roles are scoped to the membership, not the person: a hire can be a backend developer on one
+     * project and a reviewer on another, and only this relation can say which. The same person on
+     * a different project is a different assignment with its own roles.
+     */
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "user_project_assignment_roles",

@@ -131,33 +131,35 @@ class ProjectRoleControllerTest(
     @Test
     fun `assignRoleToUser should return 200`() {
         val userId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
         val request = AssignProjectRoleRequest(UUID.randomUUID())
-        every { projectRoleService.assignRoleToUser(userId, request.roleId) } just Runs
+        every { projectRoleService.assignRoleToUser(userId, projectId, request.roleId) } just Runs
 
         mockMvc
             .perform(
-                post("/api/v1/users/$userId/project-roles")
+                post("/api/v1/projects/$projectId/users/$userId/project-roles")
                     .with(adminJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)),
             ).andExpect(status().isOk)
 
-        verify(exactly = 1) { projectRoleService.assignRoleToUser(userId, request.roleId) }
+        verify(exactly = 1) { projectRoleService.assignRoleToUser(userId, projectId, request.roleId) }
     }
 
     @Test
     fun `unassignRoleFromUser should return 204`() {
         val userId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
         val roleId = UUID.randomUUID()
-        every { projectRoleService.unassignRoleFromUser(userId, roleId) } just Runs
+        every { projectRoleService.unassignRoleFromUser(userId, projectId, roleId) } just Runs
 
         mockMvc
             .perform(
-                delete("/api/v1/users/$userId/project-roles/$roleId")
+                delete("/api/v1/projects/$projectId/users/$userId/project-roles/$roleId")
                     .with(adminJwt),
             ).andExpect(status().isNoContent)
 
-        verify(exactly = 1) { projectRoleService.unassignRoleFromUser(userId, roleId) }
+        verify(exactly = 1) { projectRoleService.unassignRoleFromUser(userId, projectId, roleId) }
     }
 
     @Test

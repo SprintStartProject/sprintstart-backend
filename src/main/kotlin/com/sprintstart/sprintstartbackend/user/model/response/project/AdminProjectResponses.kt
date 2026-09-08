@@ -1,12 +1,15 @@
 package com.sprintstart.sprintstartbackend.user.model.response.project
 
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import java.util.UUID
 
 data class AdminProjectListResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserSummaryResponse>,
@@ -16,6 +19,8 @@ data class AdminProjectDetailResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserResponse>,
@@ -39,6 +44,8 @@ data class ManagedProjectResponse(
     val id: UUID,
     val name: String,
     val description: String?,
+    val industry: String? = null,
+    val industryConfidence: String? = null,
     val memberCount: Int,
 )
 
@@ -62,7 +69,16 @@ data class ProjectUserResponse(
     val firstName: String,
     val lastName: String,
     val roles: Set<Role>,
+    /** The names of the roles this person holds. Unchanged wire shape; clients may keep reading it. */
     val projectRoles: List<String>,
+    /**
+     * The same roles, carrying ids.
+     *
+     * Added alongside [projectRoles] rather than replacing it: the list is editable from the project
+     * surface, and removing a role by name would take the wrong one off whenever two roles share a
+     * name. Serving both means neither client has to ship in lockstep with this change.
+     */
+    val projectRoleRefs: List<ProjectRoleSummary> = emptyList(),
     val enabled: Boolean,
 )
 

@@ -43,7 +43,7 @@ class JiraClientTest {
     @Test
     fun `searchIssues sends Basic auth header`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("user@example.com", "token"), "secret")
+        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -65,7 +65,7 @@ class JiraClientTest {
     @Test
     fun `searchIssues uses nextPageToken for pagination`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("user@example.com", "token"), "secret")
+        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -111,7 +111,7 @@ class JiraClientTest {
     @Test
     fun `searchProjects does not follow redirects to avoid dropping Authorization header`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("user@example.com", "token"), "secret")
+        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -129,7 +129,7 @@ class JiraClientTest {
     @Test
     fun `searchProjects sends Basic auth and paginates`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("user@example.com", "token"), "secret")
+        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
 
         mockWebServer.enqueue(
             MockResponse()

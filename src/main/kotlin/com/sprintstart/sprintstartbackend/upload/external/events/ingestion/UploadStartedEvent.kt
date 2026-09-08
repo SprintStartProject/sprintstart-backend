@@ -7,4 +7,5 @@ import java.util.UUID
  */
 data class UploadStartedEvent(
     val transactionId: UUID,
+    val projectId: UUID,
 )

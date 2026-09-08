@@ -14,6 +14,7 @@ import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.util.Base64
 import java.util.UUID
 
 /**
@@ -32,9 +33,9 @@ class ArtifactService(
      * Loads one artifact open target when the authenticated user has access to the requested project.
      *
      * The method first verifies project access through the user module, then ensures the artifact
-     * exists and is linked to the same project. Stored text content is returned directly for any
-     * source, upload artifacts can return original stored bytes, and remote artifacts without local
-     * bytes redirect to their source URL when available.
+     * exists and is linked to the same project. Stored image and PDF content is decoded from Base64,
+     * stored text content is returned directly, upload artifacts can return original stored bytes,
+     * and remote artifacts without local bytes redirect to their source URL when available.
      *
      * @param projectId The project that scopes access to the artifact.
      * @param artifactId The identifier of the artifact to retrieve.
@@ -57,8 +58,13 @@ class ArtifactService(
             )
         }
         artifact.content?.let {
+            val bytes = if (artifact.mime?.startsWith("image/") == true || artifact.mime == "application/pdf") {
+                Base64.getDecoder().decode(it)
+            } else {
+                it.toByteArray(Charsets.UTF_8)
+            }
             return ArtifactContentResponse(
-                content = it.toByteArray(Charsets.UTF_8),
+                content = bytes,
                 mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
             )
         }

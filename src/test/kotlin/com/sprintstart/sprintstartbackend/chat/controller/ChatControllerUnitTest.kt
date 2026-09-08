@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.chat.models.responses.ChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.CreateChatResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatMessagesResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.GetChatsResponse
+import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
@@ -41,11 +42,14 @@ import kotlin.test.assertEquals
  */
 class ChatControllerUnitTest {
     private val chatService: ChatService = mockk()
-    private val controller = ChatController(chatService)
+    private val chatPromptService: ChatPromptService = mockk()
+    private val controller = ChatController(chatService, chatPromptService)
 
     private val chatId = UUID.randomUUID()
+    private val messageId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
     private val authId = "auth-user"
+    private val projectId: UUID = UUID.randomUUID()
     private val jwt = Jwt
         .withTokenValue("token")
         .header("alg", "none")
@@ -56,6 +60,7 @@ class ChatControllerUnitTest {
         id = chatId,
         title = "Sprint planning",
         userId = userId,
+        projectId = projectId,
         createdAt = OffsetDateTime.now(),
     )
 
@@ -92,7 +97,7 @@ class ChatControllerUnitTest {
         fun `delegates to service with correct id and request, returns response unchanged`() {
             val request = GetChatMessagesRequest(limit = 5)
             val expected = GetChatMessagesResponse(
-                messages = listOf(ChatMessageResponse(role = ChatRole.USER, content = "Hello")),
+                messages = listOf(ChatMessageResponse(id = messageId, role = ChatRole.USER, content = "Hello")),
             )
             every { chatService.getChat(chatId, request) } returns expected
 
@@ -119,7 +124,7 @@ class ChatControllerUnitTest {
     inner class CreateChat {
         @Test
         fun `delegates to service and returns new chat id unchanged`() {
-            val request = CreateChatRequest(userId = userId)
+            val request = CreateChatRequest(userId = userId, projectId = projectId)
             val expected = CreateChatResponse(id = chatId)
             every { chatService.createChat(request) } returns expected
 
@@ -127,6 +132,65 @@ class ChatControllerUnitTest {
 
             assertEquals(expected, result)
             verify(exactly = 1) { chatService.createChat(request) }
+        }
+    }
+
+    @Nested
+    inner class DeleteChat {
+        @Test
+        fun `delegates to service with correct chat id`() {
+            every { chatService.deleteChat(chatId) } returns Unit
+            controller.deleteChat(chatId)
+
+            verify(exactly = 1) {
+                chatService.deleteChat(chatId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMyChat {
+        @Test
+        fun `delegates to service with correct auth id and chat id`() {
+            val jwt = mockk<Jwt>()
+            every { jwt.subject } returns authId
+            every { chatService.deleteChatForCurrentUser(authId, chatId) } returns Unit
+
+            controller.deleteMyChat(chatId, jwt)
+
+            verify(exactly = 1) {
+                chatService.deleteChatForCurrentUser(authId, chatId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMessage {
+        @Test
+        fun `delegates to service with correct message id`() {
+            every { chatService.deleteMessage(messageId) } returns Unit
+
+            controller.deleteMessage(messageId)
+
+            verify(exactly = 1) {
+                chatService.deleteMessage(messageId)
+            }
+        }
+    }
+
+    @Nested
+    inner class DeleteMyMessage {
+        @Test
+        fun `delegates to service with correct auth id and message id`() {
+            val jwt = mockk<Jwt>()
+            every { jwt.subject } returns authId
+            every { chatService.deleteMessageForCurrentUser(authId, messageId) } returns Unit
+
+            controller.deleteMyMessage(messageId, jwt)
+
+            verify(exactly = 1) {
+                chatService.deleteMessageForCurrentUser(authId, messageId)
+            }
         }
     }
 
@@ -140,12 +204,14 @@ class ChatControllerUnitTest {
                 AiStreamMessage("token", " goal"),
                 AiStreamMessage("done"),
             )
-            coEvery { chatService.promptForCurrentUser(authId, request) } returns flowOf(*tokens.toTypedArray())
+            coEvery {
+                chatPromptService.promptForCurrentUser(authId, request)
+            } returns flowOf(*tokens.toTypedArray())
 
             val result = controller.promptMyChat(request, jwt).toList()
 
             assertEquals(tokens, result)
-            coVerify(exactly = 1) { chatService.promptForCurrentUser(authId, request) }
+            coVerify(exactly = 1) { chatPromptService.promptForCurrentUser(authId, request) }
         }
     }
 
@@ -167,14 +233,14 @@ class ChatControllerUnitTest {
         )
 
         coEvery {
-            chatService.promptForCurrentUser(authId, request)
+            chatPromptService.promptForCurrentUser(authId, request)
         } returns flowOf(*tokens.toTypedArray())
 
         val result = controller.promptMyChat(request, jwt).toList()
 
         assertEquals(tokens, result)
         coVerify(exactly = 1) {
-            chatService.promptForCurrentUser(authId, request)
+            chatPromptService.promptForCurrentUser(authId, request)
         }
     }
 }

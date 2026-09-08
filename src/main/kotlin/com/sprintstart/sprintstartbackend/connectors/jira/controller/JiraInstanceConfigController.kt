@@ -12,10 +12,10 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 
@@ -117,15 +117,19 @@ internal class JiraInstanceConfigController(
     }
 
     /**
-     * Retrieves the configuration of a specific Jira instance based on its ID.
+     * Retrieves the configuration of a specific Jira instance by its URL.
      *
-     * @param instanceId The unique identifier of the Jira instance whose configuration is to be retrieved.
+     * The instance URL is taken as a query parameter rather than a path variable on purpose: a Jira
+     * instance is identified by its full URL (e.g. `https://x.atlassian.net/`), whose encoded slashes
+     * (`%2F`) Tomcat rejects with a 400 when they appear in a path segment.
+     *
+     * @param instanceUrl The URL of the Jira instance whose configuration is to be retrieved.
      * @return A [ResponseEntity] containing a [GetJiraInstanceConfigResponse] with the configuration of the
      *         specified Jira instance.
      */
     @Operation(
         summary = "Retrieves the configuration of a specific Jira instance",
-        description = "Retrieves the configuration of a specific Jira instance by its ID.",
+        description = "Retrieves the configuration of a specific Jira instance by its URL.",
     )
     @ApiResponses(
         value = [
@@ -139,12 +143,12 @@ internal class JiraInstanceConfigController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @GetMapping("/{instanceId}")
+    @GetMapping("/instance")
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun getConfigOfInstance(
-        @PathVariable instanceId: String,
+        @RequestParam instanceUrl: String,
     ): ResponseEntity<GetJiraInstanceConfigResponse> {
-        val result = configService.getConfigOfInstance(instanceId)
+        val result = configService.getConfigOfInstance(instanceUrl)
         return ResponseEntity.ok(result)
     }
 }

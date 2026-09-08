@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/onboarding/blueprints")
@@ -43,11 +45,14 @@ class BlueprintController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/generate")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM', 'HR') and " +
+            "@projectAuth.canAccessProject(authentication, #request.projectId)",
+    )
     suspend fun generateBlueprints(
-        @RequestBody request: GenerateBlueprintsRequest,
+        @Valid @RequestBody request: GenerateBlueprintsRequest,
     ): GenerateBlueprintsResponse {
-        return blueprintService.generateBlueprints(request.scopes)
+        return blueprintService.generateBlueprints(request.projectId, request.scopes)
     }
 
     /**
@@ -63,12 +68,15 @@ class BlueprintController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @GetMapping("/{scope}/versions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @GetMapping("/{projectId}/{scope}/versions")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM', 'HR') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
     suspend fun listVersions(
+        @PathVariable projectId: UUID,
         @PathVariable scope: String,
     ): VersionListResponse {
-        return blueprintService.listVersions(scope)
+        return blueprintService.listVersions(projectId, scope)
     }
 
     /**
@@ -84,12 +92,15 @@ class BlueprintController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PostMapping("/{scope}/rollback")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PostMapping("/{projectId}/{scope}/rollback")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM', 'HR') and @projectAuth.canAccessProject(authentication, #projectId)",
+    )
     suspend fun rollback(
+        @PathVariable projectId: UUID,
         @PathVariable scope: String,
         @RequestBody request: RollbackBlueprintRequest,
     ): BlueprintResponse {
-        return blueprintService.rollback(scope, request.version)
+        return blueprintService.rollback(projectId, scope, request.version)
     }
 }

@@ -68,7 +68,7 @@ class UploadService(
 
         val transactionId = UUID.randomUUID()
 
-        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId))
+        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId, projectId = projectId))
 
         val uploadedArtifacts = mutableSetOf<UploadedArtifact>()
 
@@ -193,7 +193,7 @@ class UploadService(
         val deleteArtifactOutcomes = mutableSetOf<UploadArtifactOperationOutcome>()
         val transactionId = UUID.randomUUID()
 
-        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId))
+        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId, projectId = projectId))
 
         artifactIds.forEach { artifactId ->
             val artifact = uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId)

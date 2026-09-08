@@ -15,6 +15,7 @@ fun OnboardingPhase.toGetAllResponse(): GetOnboardingPhasesResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        checkSummary = toCheckSummaryResponse(),
     )
 }
 

@@ -8,6 +8,6 @@ internal data class JiraCredentialsDto(
 )
 
 internal fun JiraCredential.toDto() = JiraCredentialsDto(
-    userEmail = this.id.userEmail,
+    userEmail = this.userEmail,
     displayName = this.id.name,
 )

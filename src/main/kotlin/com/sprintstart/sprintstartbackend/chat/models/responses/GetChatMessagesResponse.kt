@@ -15,6 +15,7 @@ internal data class GetChatMessagesResponse(
 )
 
 internal data class ChatMessageResponse(
+    val id: UUID,
     val role: ChatRole,
     val content: String,
     val citations: List<CitationResponse> = emptyList(),
@@ -31,6 +32,7 @@ internal data class CitationResponse(
 
 internal fun ChatMessage.toChatMessageResponse(): ChatMessageResponse {
     return ChatMessageResponse(
+        id = this.id,
         role = this.role,
         content = this.content,
         citations = citations.map { it.toResponse() },

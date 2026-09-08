@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
@@ -34,12 +35,14 @@ class AdminProjectServiceTest {
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
+    private val jiraInstanceApi: JiraInstanceApi = mockk()
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
         assignmentRepository = assignmentRepository,
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
+        jiraInstanceApi = jiraInstanceApi,
     )
 
     @Test
@@ -85,7 +88,11 @@ class AdminProjectServiceTest {
     @Test
     fun `getProjectById returns sources and project-specific users`() {
         val project = project()
-        val user = user().apply { roles.add(Role.USER) }
+        // Roles are scoped to the membership, so the role goes on the assignment — the same place
+        // `ProjectRoleService.assignRoleToUser` writes it and `toProjectUserResponse` reads it.
+        val user = user().apply {
+            roles.add(Role.USER)
+        }
         val assignment = ProjectUserAssignment(user = user, project = project)
         assignment.projectRoles.add(ProjectRole(name = "MANAGER", description = "Manages the project"))
         val source = ProjectSourceDto(
@@ -105,7 +112,38 @@ class AdminProjectServiceTest {
         assertThat(result.sources.map { it.type }).containsExactly("GITHUB")
         assertThat(result.users).hasSize(1)
         assertThat(result.users.single().roles).containsExactly(Role.USER)
-        assertThat(result.users.single().projectRoles).containsExactly("MANAGER")
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("MANAGER")
+    }
+
+    /**
+     * Roles are read from the assignment, which is now the only place they live.
+     *
+     * Before per-project roles this list was empty for everybody: it read the assignment's set while
+     * every writer wrote a flat user-level one, so `GET /admin/projects/{id}/users` silently reported
+     * every member of every project as holding no role.
+     */
+    @Test
+    fun `project roles come from the assignment`() {
+        val project = project()
+        val user = user().apply { roles.add(Role.USER) }
+        val assignment = ProjectUserAssignment(user = user, project = project)
+        assignment.projectRoles.add(ProjectRole(name = "DEVELOPER", description = "Ships code"))
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
+
+        val result = service.getProjectById(project.id)
+
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("DEVELOPER")
     }
 
     @Test
@@ -427,6 +465,7 @@ class AdminProjectServiceTest {
         every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
         every { assignmentRepository.deleteAll(capture(deletedAssignments)) } just runs
         every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
 
         val result = service.deleteProject(project.id)
@@ -434,6 +473,7 @@ class AdminProjectServiceTest {
         assertThat(result.deleted).isTrue()
         assertThat(deletedAssignments.captured.toList()).containsExactly(assignment)
         verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
+        verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
     }
 

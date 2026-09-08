@@ -221,7 +221,7 @@ class UserControllerTest(
         projectRoles = projectRoles,
         permissionGroup = permissionGroup,
         enabled = enabled,
-        profileIcon = "icon-star",
         hasCompletedOnboarding = true,
+        profileIcon = "icon-star",
     )
 }

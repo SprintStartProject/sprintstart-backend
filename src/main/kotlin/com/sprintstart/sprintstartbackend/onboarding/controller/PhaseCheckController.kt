@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckAttemptsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitPhaseCheckAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.PhaseCheckService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -124,6 +127,76 @@ class PhaseCheckController(
         return phaseCheckService.submitPhaseCheckAttemptForMe(jwt.subject, phaseId, request)
     }
 
+    /**
+     * Returns the authenticated user's open review pool.
+     *
+     * The pool holds questions from earlier phases the user answered incorrectly. They are
+     * asked here instead of inside a later phase's check, where they would be off-topic.
+     * Correct answers are never exposed; those are only included in submit results.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @return The open review questions without correct answers.
+     */
+    @Operation(
+        summary = "Get current user's review check",
+        description = "Returns the questions the authenticated user answered incorrectly in earlier " +
+            "phases and still has to answer correctly once. Correct answers are not exposed; " +
+            "they are only revealed in the submit result.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Review check returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this review check"),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/review-check")
+    @PreAuthorize("hasRole('USER')")
+    fun getReviewCheckForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): GetReviewCheckResponse {
+        return phaseCheckService.getReviewCheckForMe(jwt.subject)
+    }
+
+    /**
+     * Submits answers for the authenticated user's review pool.
+     *
+     * Every correctly answered question leaves the pool permanently; a wrong answer keeps it
+     * open for another try. Answering only part of the pool is allowed. Emptying the pool
+     * after the final phase check was passed completes the onboarding journey.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param request The user's answers.
+     * @return The graded answers including how many questions remain.
+     */
+    @Operation(
+        summary = "Submit current user's review check answers",
+        description = "Grades answers for the review pool. Correctly answered questions are removed " +
+            "from the pool, wrong ones stay open. There is no pass threshold, and answering only " +
+            "some of the open questions is allowed.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "201", description = "Answers graded successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to submit this review check"),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/me/review-check/attempts")
+    @PreAuthorize("hasRole('USER')")
+    fun submitReviewCheckForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Valid @RequestBody request: SubmitReviewCheckRequest,
+    ): SubmitReviewCheckResponse {
+        return phaseCheckService.submitReviewCheckForMe(jwt.subject, request)
+    }
+
 //  ========================== Endpoints for admins ==========================
 
     /**
@@ -161,8 +234,13 @@ class PhaseCheckController(
     /**
      * Replaces the knowledge check questions of a phase.
      *
-     * All existing questions are replaced by the submitted ones. Stored attempts
-     * remain untouched as history.
+     * The submitted questions become the new check: questions sent with the ID of an existing
+     * one are updated in place and keep that ID, questions without a known ID are created, and
+     * questions the request omits are deleted along with any review pool entries referencing
+     * them. Options are matched by ID the same way. Sending existing IDs back matters — a
+     * recreated question loses the review pool entries and attempt answers pointing at it.
+     *
+     * Stored attempts remain untouched as history.
      *
      * @param phaseId Identifier of the phase whose check should be replaced.
      * @param request The new check questions.
@@ -170,8 +248,11 @@ class PhaseCheckController(
      */
     @Operation(
         summary = "Replace phase knowledge check",
-        description = "Replaces all knowledge check questions of the phase. Multiple choice questions need " +
-            "at least 2 options and 1 correct option; short text questions need a correctAnswer.",
+        description = "Replaces the knowledge check questions of the phase. Questions and options sent " +
+            "with the ID of an existing entry are updated in place and keep that ID; entries without a " +
+            "known ID are created, and entries the request omits are deleted together with any review " +
+            "pool items referencing them. Multiple choice questions need at least 2 options and 1 " +
+            "correct option; short text questions need a correctAnswer.",
     )
     @ApiResponses(
         value = [
@@ -191,6 +272,40 @@ class PhaseCheckController(
         @Valid @RequestBody request: UpdatePhaseCheckRequest,
     ): GetPhaseCheckResponse {
         return phaseCheckService.replacePhaseCheck(phaseId, request)
+    }
+
+    /**
+     * Returns a user's open review pool.
+     *
+     * Lets admins, PMs, and HR see which earlier questions a user still has to answer
+     * correctly — the second condition, next to passing the final phase check, for
+     * counting as onboarded.
+     *
+     * @param userId Identifier of the user whose review pool should be returned.
+     * @return The user's open review questions, without correct answers.
+     */
+    @Operation(
+        summary = "Get a user's review check",
+        description = "Returns the questions the user answered incorrectly in earlier phases and still " +
+            "has to answer correctly, so admins, PMs, or HR can see what is left before the user " +
+            "counts as onboarded.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Review check returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this review check"),
+            ApiResponse(responseCode = "404", description = "No user found with the given ID"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/users/{userId}/review-check")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    fun getReviewCheckForUser(
+        @Parameter(description = "UUID of the user whose review pool should be returned")
+        @PathVariable userId: UUID,
+    ): GetReviewCheckResponse {
+        return phaseCheckService.getReviewCheckForUser(userId)
     }
 
     /**

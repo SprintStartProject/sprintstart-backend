@@ -48,4 +48,25 @@ interface ProjectUserAssignmentRepository : JpaRepository<ProjectUserAssignment,
         @Param("projectId") projectId: UUID,
         @Param("userId") userId: UUID,
     ): ProjectUserAssignment?
+
+    /**
+     * Every assignment currently holding a role, so deleting the role can let go of it first.
+     *
+     * `V4` does declare `ON DELETE CASCADE` on this table's role FK, so a real Postgres schema would
+     * clean up on its own. Two reasons not to lean on that: the entity mapping declares no
+     * cascade, so schema-built-from-entities contexts (the whole test suite) would hit a
+     * constraint violation instead; and a cascade fires behind Hibernate's back, leaving already
+     * loaded assignments holding a role the database has dropped. Clearing it explicitly makes the
+     * behaviour identical everywhere and visible in code.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a
+            FROM ProjectUserAssignment a
+            JOIN FETCH a.user u
+            LEFT JOIN FETCH a.projectRoles r
+            WHERE :roleId IN (SELECT r2.id FROM a.projectRoles r2)
+        """,
+    )
+    fun findAllHoldingRole(@Param("roleId") roleId: UUID): List<ProjectUserAssignment>
 }

@@ -26,6 +26,23 @@ interface UserRepository :
 
     fun existsByAuthId(authId: String): Boolean
 
+    /**
+     * Whether a *different* user already claims this GitHub login.
+     *
+     * Two users claiming the same account would make pull-request attribution ambiguous during
+     * artifact verification, so the login is unique.
+     */
+    fun existsByGithubLoginAndIdNot(githubLogin: String, id: UUID): Boolean
+
+    /**
+     * Whether a *different* user already claims this Jira display name.
+     *
+     * The same rule as [existsByGithubLoginAndIdNot], and it matters more: a display name is the
+     * only identity ingested Jira data carries, so two users claiming one would not merely make
+     * attribution ambiguous — it would credit one person's issues to the other.
+     */
+    fun existsByJiraDisplayNameAndIdNot(jiraDisplayName: String, id: UUID): Boolean
+
     @Query(
         "select distinct u from User u join u.roles r where r in :roles order by u.username",
     )

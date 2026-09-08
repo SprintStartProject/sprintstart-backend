@@ -131,6 +131,7 @@ class ArtifactControllerTest(
                 id = UUID.fromString("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
                 title = "README.md",
                 sourceSystem = SourceSystem.GITHUB,
+                sourceId = "12345",
                 sourceUrl = "https://github.com/owner/repo/blob/main/README.md",
                 artifactType = ArtifactType.FILE,
                 ingestedAt = Instant.parse("2026-01-02T03:04:05Z"),

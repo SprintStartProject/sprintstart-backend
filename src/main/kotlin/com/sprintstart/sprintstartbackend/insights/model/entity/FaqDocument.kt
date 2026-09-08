@@ -26,5 +26,5 @@ class FaqDocument(
     val source: String?,
     @ManyToOne(optional = false)
     @JoinColumn(name = "group_id", nullable = false)
-    val group: FaqGroup,
+    var group: FaqGroup,
 )

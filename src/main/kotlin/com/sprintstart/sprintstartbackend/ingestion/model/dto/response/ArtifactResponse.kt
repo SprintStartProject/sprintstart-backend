@@ -9,6 +9,7 @@ data class ArtifactResponse(
     val id: UUID = UUID.randomUUID(),
     var title: String?,
     val sourceSystem: SourceSystem,
+    val sourceId: String,
     val sourceUrl: String?,
     val artifactType: ArtifactType,
     val ingestedAt: Instant,

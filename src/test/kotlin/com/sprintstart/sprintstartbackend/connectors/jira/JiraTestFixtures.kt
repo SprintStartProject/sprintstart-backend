@@ -20,6 +20,7 @@ internal fun jiraInstance(
     status: ConnectionState = ConnectionState.UP_TO_DATE,
     updateCredentialName: String = "token",
     updateCredentialUserEmail: String = "user@example.com",
+    updateCredentialAuthId: String = "auth-id",
 ): JiraInstance = JiraInstance(
     instanceUrl = instanceUrl,
     displayName = displayName,
@@ -30,6 +31,7 @@ internal fun jiraInstance(
     status = status,
     updateCredentialName = updateCredentialName,
     updateCredentialUserEmail = updateCredentialUserEmail,
+    updateCredentialAuthId = updateCredentialAuthId,
 )
 
 internal fun jiraInstanceConfig(
@@ -51,10 +53,12 @@ internal fun jiraInstanceConfig(
 }
 
 internal fun jiraCredential(
+    authId: String = "auth-id",
     userEmail: String = "user@example.com",
     name: String = "token",
     authToken: String = "secret",
 ): JiraCredential = JiraCredential(
-    id = JiraCredentialsId(userEmail, name),
+    id = JiraCredentialsId(authId, name),
     authToken = authToken,
+    userEmail = userEmail,
 )

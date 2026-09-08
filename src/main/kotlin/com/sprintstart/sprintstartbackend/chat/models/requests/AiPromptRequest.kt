@@ -12,6 +12,9 @@ import kotlinx.serialization.Serializable
  *
  * @property prompt The new prompt the AI should answer
  * @property context All relevant chat context, e.g. previous messages in this chat
+ * @property projectId The project the owning chat is scoped to. Required by the AI service:
+ * retrieval is fail-closed on it, so an unscoped request would find nothing at all rather than
+ * search everything.
  */
 @Serializable
 data class AiPromptRequest(
@@ -20,6 +23,8 @@ data class AiPromptRequest(
     val prompt: String,
     @SerialName("history")
     val context: List<ContextEntry>,
+    @SerialName("projectId")
+    val projectId: String,
     val filters: AiChatFilters? = null,
 )
 

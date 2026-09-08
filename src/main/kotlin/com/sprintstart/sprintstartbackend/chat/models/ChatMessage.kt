@@ -34,4 +34,6 @@ internal data class ChatMessage(
     var content: String,
     @Column("created_at")
     var createdAt: OffsetDateTime,
+    @Column(nullable = false)
+    var isIncomplete: Boolean = false,
 )

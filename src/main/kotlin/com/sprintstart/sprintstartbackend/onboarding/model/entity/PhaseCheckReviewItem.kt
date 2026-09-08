@@ -8,18 +8,21 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * A knowledge-check question a user must re-answer in a later phase.
+ * A knowledge-check question a user still has to prove they understood.
  *
  * When a user passes a phase but got questions wrong (in any attempt), those
- * questions are carried over so they are re-tested at the end of the next phase's
- * check — verifying the content was actually understood, not just eventually
- * guessed. The references are stored as plain UUIDs (not JPA associations) so a
- * carried question survives edits to the original check and stays decoupled from
- * the source phase.
+ * questions are collected here so they can be re-tested later — verifying the
+ * content was actually understood, not just eventually guessed. The references are
+ * stored as plain UUIDs (not JPA associations) so a collected question survives
+ * edits to the original check and stays decoupled from the source phase.
  *
- * [targetPhaseId] is the phase the question is currently re-asked in; it advances
- * to the following phase each time the question is answered incorrectly. [resolved]
- * becomes true once the question is finally answered correctly (terminal).
+ * Open items form a single, phase-independent review pool per user: they are
+ * answered in the standalone review check rather than being appended to the next
+ * phase's check, because a question from an earlier phase is thematically out of
+ * place there. The pool also gates onboarding completion — a user counts as
+ * onboarded only once the final phase check passed *and* no open items remain.
+ *
+ * [resolved] becomes true once the question is finally answered correctly (terminal).
  */
 @Entity
 @Table(name = "phase_check_review_items")
@@ -32,6 +35,16 @@ class PhaseCheckReviewItem(
     val questionId: UUID,
     @Column(nullable = false)
     val sourcePhaseId: UUID,
+    /**
+     * Retained only for schema compatibility; carries no meaning since the review pool
+     * became phase-independent.
+     *
+     * The column is `NOT NULL` in existing databases and the schema is maintained by
+     * Hibernate's `ddl-auto: update`, which neither drops columns nor relaxes nullability.
+     * Dropping the field would therefore keep working on a freshly created schema while
+     * breaking inserts against every existing one, so it stays and is written as a copy of
+     * [sourcePhaseId]. Remove it together with an explicit schema migration.
+     */
     @Column(nullable = false)
     var targetPhaseId: UUID,
     @Column(nullable = false)

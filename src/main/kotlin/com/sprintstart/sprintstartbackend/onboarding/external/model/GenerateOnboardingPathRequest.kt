@@ -49,8 +49,13 @@ data class SkillAssessmentSchema(
     val level: String = "beginner",
 )
 
+/**
+ * @property projectId The project the path is generated for. Blueprints whose scope does not carry
+ * this project are ignored by the AI service, so [blueprints] must be sent project-qualified.
+ */
 @Serializable
 data class GenerateOnboardingPathRequest(
+    val projectId: String,
     @SerialName("working_area")
     val workingArea: String,
     val skills: List<SkillAssessmentSchema> = emptyList(),

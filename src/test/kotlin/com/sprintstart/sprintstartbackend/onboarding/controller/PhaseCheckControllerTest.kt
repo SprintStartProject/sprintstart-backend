@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitCheckAnswerRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckOptionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.CheckAnswerResultResponse
@@ -13,8 +15,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.check.CheckQ
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckAttemptsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.PhaseCheckSummaryResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitPhaseCheckAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.PhaseCheckService
 import io.mockk.every
 import io.mockk.verify
@@ -177,6 +181,88 @@ class PhaseCheckControllerTest(
             ).andExpect(status().isForbidden)
     }
 
+    @Test
+    fun `getReviewCheckForMe should return 200 and the open pool`() {
+        val response = GetReviewCheckResponse(
+            openCount = 1,
+            questions = listOf(
+                CheckQuestionForUserResponse(
+                    id = questionId,
+                    position = 0,
+                    type = CheckQuestionType.SHORT_TEXT,
+                    question = "cmd?",
+                    review = true,
+                    reviewSourcePhaseTitle = "Setup",
+                ),
+            ),
+        )
+        every { phaseCheckService.getReviewCheckForMe(authId) } returns response
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/review-check").with(userJwt))
+            .andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.openCount").value(1))
+            .andExpect(jsonPath("$.questions[0].review").value(true))
+            .andExpect(jsonPath("$.questions[0].reviewSourcePhaseTitle").value("Setup"))
+
+        verify(exactly = 1) { phaseCheckService.getReviewCheckForMe(authId) }
+    }
+
+    @Test
+    fun `getReviewCheckForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/review-check").with(noUserRoleJwt))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `submitReviewCheckForMe should return 201 and grading result`() {
+        val request = SubmitReviewCheckRequest(
+            answers = listOf(SubmitCheckAnswerRequest(questionId = questionId, textAnswer = "run")),
+        )
+        val response = SubmitReviewCheckResponse(
+            answeredCount = 1,
+            correctCount = 1,
+            remainingCount = 0,
+            onboardingCompleted = true,
+            results = listOf(
+                CheckAnswerResultResponse(
+                    questionId = questionId,
+                    correct = true,
+                    correctAnswer = "run",
+                    review = true,
+                ),
+            ),
+        )
+        every { phaseCheckService.submitReviewCheckForMe(authId, request) } returns response
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/review-check/attempts")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isCreated)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.remainingCount").value(0))
+            .andExpect(jsonPath("$.onboardingCompleted").value(true))
+            .andExpect(jsonPath("$.results[0].review").value(true))
+
+        verify(exactly = 1) { phaseCheckService.submitReviewCheckForMe(authId, request) }
+    }
+
+    @Test
+    fun `submitReviewCheckForMe should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/review-check/attempts")
+                    .with(noUserRoleJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(SubmitReviewCheckRequest())),
+            ).andExpect(status().isForbidden)
+    }
+
     // ========================== admin endpoints ==========================
 
     @Test
@@ -225,6 +311,40 @@ class PhaseCheckControllerTest(
     }
 
     @Test
+    fun `replacePhaseCheck should pass existing question and option ids through to the service`() {
+        val questionId = UUID.randomUUID()
+        val optionId = UUID.randomUUID()
+        val request = UpdatePhaseCheckRequest(
+            questions = listOf(
+                UpdateCheckQuestionRequest(
+                    id = questionId,
+                    position = 0,
+                    type = CheckQuestionType.MULTIPLE_CHOICE,
+                    question = "kept?",
+                    options = listOf(
+                        UpdateCheckOptionRequest(id = optionId, position = 0, label = "yes", correct = true),
+                        UpdateCheckOptionRequest(position = 1, label = "no", correct = false),
+                    ),
+                ),
+            ),
+        )
+        every { phaseCheckService.replacePhaseCheck(phaseId, request) } returns
+            GetPhaseCheckResponse(phaseId, emptyList())
+
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/phases/$phaseId/checks")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+
+        // The IDs have to survive deserialization: without them the service recreates every
+        // question, which orphans the members' review pool entries.
+        verify(exactly = 1) { phaseCheckService.replacePhaseCheck(phaseId, request) }
+    }
+
+    @Test
     fun `replacePhaseCheck should propagate 400 from the service`() {
         val request = UpdatePhaseCheckRequest(
             questions = listOf(
@@ -254,6 +374,26 @@ class PhaseCheckControllerTest(
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
         verify(exactly = 1) { phaseCheckService.getPhaseCheckAttemptsForUser(userId, phaseId) }
+    }
+
+    @Test
+    fun `getReviewCheckForUser should return 200 for admins`() {
+        every { phaseCheckService.getReviewCheckForUser(userId) } returns
+            GetReviewCheckResponse(openCount = 0, questions = emptyList())
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/users/$userId/review-check").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.openCount").value(0))
+
+        verify(exactly = 1) { phaseCheckService.getReviewCheckForUser(userId) }
+    }
+
+    @Test
+    fun `getReviewCheckForUser should return 403 for a plain user`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/users/$userId/review-check").with(userJwt))
+            .andExpect(status().isForbidden)
     }
 
     @Test

@@ -1,5 +1,6 @@
-package com.sprintstart.sprintstartbackend.ingestion.external.model
+package com.sprintstart.sprintstartbackend.ingestion.external.model.dto
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import java.time.Instant
 import java.util.UUID

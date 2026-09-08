@@ -18,12 +18,16 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toForUserRespo
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitCheckAnswerRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitPhaseCheckAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.SubmitReviewCheckRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdateCheckQuestionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.check.UpdatePhaseCheckRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.CheckAnswerResultResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckAttemptsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetPhaseCheckResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.GetReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitPhaseCheckAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.check.SubmitReviewCheckResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.PhaseCheckAttemptRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.PhaseCheckQuestionRepository
@@ -85,22 +89,19 @@ class PhaseCheckService(
     @Tracked("Retrieving onboarding phase check")
     fun getPhaseCheckForMe(authId: String, phaseId: UUID): GetPhaseCheckForUserResponse {
         val userId = resolveUserId(authId)
-        val phase = findPhaseForUser(phaseId, userId)
 
-        val base = phase.toCheckForUserResponse()
-        val reviewQuestions = loadOpenReviewQuestions(userId, phaseId).map { (_, question) ->
-            question.toForUserResponse().copy(review = true, reviewSourcePhaseTitle = question.phase.title)
-        }
-
-        return base.copy(questions = base.questions + reviewQuestions)
+        // Only the phase's own questions: questions carried over from earlier phases are
+        // thematically out of place here and live in the standalone review check instead.
+        return findPhaseForUser(phaseId, userId).toCheckForUserResponse()
     }
 
     /**
      * Grades and stores a knowledge check attempt for a phase in the authenticated
      * user's path.
      *
-     * The attempt passes when every question is answered correctly. The response
-     * reveals the correct answers per question so the frontend can show the result.
+     * The attempt passes at [PASS_PERCENT] percent correct answers. The response reveals
+     * the correct answers per question so the frontend can show the result. Passing also
+     * moves every question the user ever missed in this phase into their review pool.
      *
      * @param authId External authentication identifier.
      * @param phaseId Identifier of the phase whose check is being taken.
@@ -124,29 +125,20 @@ class PhaseCheckService(
         }
 
         val answersByQuestionId = request.answers.associateBy { it.questionId }
-        val ownQuestions = phase.checkQuestions.sortedBy { it.position }
-        // Carried-over repeat questions from earlier phases the user must also answer here.
-        val reviewPairs = loadOpenReviewQuestions(userId, phaseId)
-        val graded = gradeQuestions(ownQuestions + reviewPairs.map { it.second }, answersByQuestionId)
+        val questions = phase.checkQuestions.sortedBy { it.position }
+        val graded = gradeQuestions(questions, answersByQuestionId)
 
-        val ownResults = ownQuestions.map { question ->
+        val results = questions.map { question ->
             val outcome = graded.getValue(question.id)
             question.toResultResponse(correct = outcome.correct, feedback = outcome.feedback)
         }
-        val reviewResults = reviewPairs.map { (_, question) ->
-            val outcome = graded.getValue(question.id)
-            question
-                .toResultResponse(correct = outcome.correct, feedback = outcome.feedback)
-                .copy(review = true, reviewSourcePhaseTitle = question.phase.title)
-        }
 
-        // Only the phase's own questions count toward the pass threshold; repeats are
-        // an extra verification and never block passing (integer math avoids float surprises).
-        val correctCount = ownResults.count { it.correct }
-        val passed = correctCount * PERCENT >= ownQuestions.size * PASS_PERCENT
+        // Integer math avoids float surprises around the threshold.
+        val correctCount = results.count { it.correct }
+        val passed = correctCount * PERCENT >= questions.size * PASS_PERCENT
 
         val attempt = PhaseCheckAttempt(phase = phase, userId = userId, passed = passed)
-        (ownQuestions + reviewPairs.map { it.second }).forEach { question ->
+        questions.forEach { question ->
             val submitted = answersByQuestionId[question.id]
             attempt.answers += PhaseCheckAnswer(
                 attempt = attempt,
@@ -162,13 +154,12 @@ class PhaseCheckService(
         // toCheckSummaryResponse() below lazily reloads the collection, which includes this attempt.
         val savedAttempt = phaseCheckAttemptRepository.save(attempt)
 
+        var onboardingCompleted = false
         if (passed) {
-            applyCarryOver(phase, userId, ownQuestions, reviewPairs, graded)
-            // Passing the path's final knowledge check completes the whole onboarding
-            // journey: promote the user so the onboarding UI is hidden for them.
-            if (phase.isLastCheckPhase()) {
-                userApi.markOnboardingCompleted(userId)
-            }
+            collectWrongQuestions(phase, userId, questions)
+            // Collecting first matters: a question missed in this attempt lands in the pool and
+            // must keep onboarding open, even when this was the path's final check.
+            onboardingCompleted = completeOnboardingIfFinished(userId)
         }
 
         return SubmitPhaseCheckAttemptResponse(
@@ -177,11 +168,72 @@ class PhaseCheckService(
             passed = passed,
             createdAt = savedAttempt.createdAt,
             correctCount = correctCount,
-            questionCount = ownQuestions.size,
+            questionCount = questions.size,
             requiredPercent = PASS_PERCENT,
             phaseCheckSummary = phase.toCheckSummaryResponse(),
             nextPhaseUnlocked = passed && phase.stepsCompleted() && phase.hasNextPhase(),
-            results = ownResults + reviewResults,
+            openReviewCount = phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId).toInt(),
+            onboardingCompleted = onboardingCompleted,
+            results = results,
+        )
+    }
+
+    /**
+     * Returns the user's open review pool: questions from earlier phases that still have to
+     * be answered correctly once.
+     *
+     * @param authId External authentication identifier.
+     * @return The open questions to render, without correct answers.
+     * @throws ResponseStatusException When the user does not exist.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding review check")
+    fun getReviewCheckForMe(authId: String): GetReviewCheckResponse {
+        return buildReviewCheckResponse(resolveUserId(authId))
+    }
+
+    /**
+     * Grades answers for the review pool and removes every correctly answered question from it.
+     *
+     * There is no pass threshold: a correct answer resolves its question for good, a wrong one
+     * leaves it open for another try. Questions the request does not answer stay untouched, so
+     * users can work through the pool in several sittings. Clearing the last open question after
+     * the final phase check was passed completes the onboarding journey.
+     *
+     * @param authId External authentication identifier.
+     * @param request The user's answers; unknown or already resolved questions are ignored.
+     * @return The graded answers including the remaining pool size.
+     * @throws ResponseStatusException When the user does not exist.
+     */
+    @Transactional
+    @Tracked("Submitting onboarding review check")
+    fun submitReviewCheckForMe(authId: String, request: SubmitReviewCheckRequest): SubmitReviewCheckResponse {
+        val userId = resolveUserId(authId)
+
+        val answersByQuestionId = request.answers.associateBy { it.questionId }
+        val answered = loadOpenReviewQuestions(userId).filter { (_, question) -> question.id in answersByQuestionId }
+        val graded = gradeQuestions(answered.map { it.second }, answersByQuestionId)
+
+        answered.forEach { (item, question) ->
+            if (graded.getValue(question.id).correct) {
+                item.resolved = true
+            }
+        }
+        phaseCheckReviewItemRepository.saveAll(answered.map { it.first })
+
+        val results = answered.map { (_, question) ->
+            val outcome = graded.getValue(question.id)
+            question
+                .toResultResponse(correct = outcome.correct, feedback = outcome.feedback)
+                .copy(review = true, reviewSourcePhaseTitle = question.phase.title)
+        }
+
+        return SubmitReviewCheckResponse(
+            answeredCount = results.size,
+            correctCount = results.count { it.correct },
+            remainingCount = phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId).toInt(),
+            onboardingCompleted = completeOnboardingIfFinished(userId),
+            results = results,
         )
     }
 
@@ -202,11 +254,18 @@ class PhaseCheckService(
     }
 
     /**
-     * Replaces all knowledge check questions of a phase.
+     * Replaces the knowledge check questions of a phase, keeping the identity of the
+     * questions that survive the edit.
      *
-     * Existing questions are removed and the submitted questions become the new
-     * check. Submitted attempts are kept as history; their answers reference the
-     * old question IDs.
+     * Questions carrying a known [UpdateCheckQuestionRequest.id] are updated in place;
+     * everything else in the request is created, and questions the request no longer
+     * mentions are deleted. Identity is preserved rather than recreating the whole check,
+     * because review pool items and stored attempt answers reference questions by plain
+     * UUID: recreating a question the editor never touched would orphan its history and
+     * silently drop it from every user's review pool.
+     *
+     * An unknown ID is treated as a new question, so an editor working from a stale copy
+     * of a check someone else already changed still saves instead of failing.
      *
      * @param phaseId Identifier of the phase whose check should be replaced.
      * @param request The new check questions.
@@ -221,31 +280,29 @@ class PhaseCheckService(
 
         validateQuestions(request)
 
-        phase.checkQuestions.clear()
-        request.questions.sortedBy { it.position }.forEach { questionRequest ->
-            val question = PhaseCheckQuestion(
-                phase = phase,
-                position = questionRequest.position,
-                type = questionRequest.type,
-                question = questionRequest.question,
-                explanation = questionRequest.explanation,
-                correctAnswer = questionRequest.correctAnswer
-                    .takeIf { questionRequest.type == CheckQuestionType.SHORT_TEXT },
-            )
-            if (questionRequest.type == CheckQuestionType.MULTIPLE_CHOICE) {
-                questionRequest.options.sortedBy { it.position }.forEach { optionRequest ->
-                    question.options += PhaseCheckOption(
-                        question = question,
-                        position = optionRequest.position,
-                        label = optionRequest.label,
-                        correct = optionRequest.correct,
-                    )
-                }
+        val existingById = phase.checkQuestions.associateBy { it.id }
+        val keptIds = request.questions
+            .mapNotNull { it.id }
+            .filter { it in existingById }
+            .toSet()
+        val removedIds = existingById.keys - keptIds
+
+        phase.checkQuestions.removeIf { it.id in removedIds }
+        request.questions.forEach { questionRequest ->
+            val existing = questionRequest.id?.let { existingById[it] }
+            if (existing == null) {
+                phase.checkQuestions += questionRequest.toNewQuestion(phase)
+            } else {
+                existing.applyFrom(questionRequest)
             }
-            phase.checkQuestions += question
         }
 
-        return onboardingPhaseRepository.save(phase).toCheckResponse()
+        val response = onboardingPhaseRepository.save(phase).toCheckResponse()
+
+        // After the questions are persisted, so the cleanup below sees the deletions.
+        discardReviewItemsFor(removedIds)
+
+        return response
     }
 
     /**
@@ -274,7 +331,118 @@ class PhaseCheckService(
         )
     }
 
+    /**
+     * Returns a user's open review pool so admins, PMs, or HR can see which questions
+     * still block that user from finishing onboarding.
+     *
+     * Correct answers stay hidden here, exactly as for the user themselves; reviewers who
+     * need them can load the phase check for editing.
+     *
+     * @param userId Identifier of the user whose review pool should be loaded.
+     * @return The user's open review questions.
+     * @throws ResponseStatusException When the user does not exist.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding review check")
+    fun getReviewCheckForUser(userId: UUID): GetReviewCheckResponse {
+        if (!userApi.exists(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
+
+        return buildReviewCheckResponse(userId)
+    }
+
 //  ========================== Helper Methods ==========================
+
+    /** Builds a brand new check question, including its options for multiple choice. */
+    private fun UpdateCheckQuestionRequest.toNewQuestion(phase: OnboardingPhase): PhaseCheckQuestion {
+        val created = PhaseCheckQuestion(
+            phase = phase,
+            position = position,
+            type = type,
+            question = question,
+            explanation = explanation,
+            correctAnswer = correctAnswer.takeIf { type == CheckQuestionType.SHORT_TEXT },
+        )
+        created.applyOptionsFrom(this)
+        return created
+    }
+
+    /** Updates an existing question in place, so its ID — and with it its history — survives. */
+    private fun PhaseCheckQuestion.applyFrom(request: UpdateCheckQuestionRequest) {
+        position = request.position
+        type = request.type
+        question = request.question
+        explanation = request.explanation
+        correctAnswer = request.correctAnswer.takeIf { request.type == CheckQuestionType.SHORT_TEXT }
+        applyOptionsFrom(request)
+    }
+
+    /**
+     * Merges a question's options the same way questions themselves are merged: known IDs are
+     * updated, unknown ones created, and options the request dropped are deleted. Stored attempt
+     * answers reference the selected options by UUID, so an untouched option must keep its ID.
+     *
+     * A question that is no longer multiple choice loses all of its options.
+     */
+    private fun PhaseCheckQuestion.applyOptionsFrom(request: UpdateCheckQuestionRequest) {
+        if (request.type != CheckQuestionType.MULTIPLE_CHOICE) {
+            options.clear()
+            return
+        }
+
+        val existingById = options.associateBy { it.id }
+        val keptIds = request.options
+            .mapNotNull { it.id }
+            .filter { it in existingById }
+            .toSet()
+
+        options.removeIf { it.id !in keptIds }
+        request.options.forEach { optionRequest ->
+            val existing = optionRequest.id?.let { existingById[it] }
+            if (existing == null) {
+                options += PhaseCheckOption(
+                    question = this,
+                    position = optionRequest.position,
+                    label = optionRequest.label,
+                    correct = optionRequest.correct,
+                )
+            } else {
+                existing.position = optionRequest.position
+                existing.label = optionRequest.label
+                existing.correct = optionRequest.correct
+            }
+        }
+    }
+
+    /**
+     * Drops every review item pointing at a deleted question and re-checks the onboarding of
+     * the users who owned them.
+     *
+     * Without the cleanup the items would linger unanswerable: nothing can resolve a question
+     * that no longer exists, and the pool listing hides them, so the user would be blocked by
+     * something neither they nor a reviewer can see. Completion has to be re-evaluated right
+     * here for the same reason — a user whose last open item this removes has nothing left to
+     * submit that would ever trigger the check again.
+     */
+    private fun discardReviewItemsFor(questionIds: Set<UUID>) {
+        if (questionIds.isEmpty()) return
+
+        val items = phaseCheckReviewItemRepository.findAllByQuestionIdIn(questionIds)
+        if (items.isEmpty()) return
+
+        phaseCheckReviewItemRepository.deleteAll(items)
+        items.map { it.userId }.distinct().forEach { completeOnboardingIfFinished(it) }
+    }
+
+    /** Renders a user's open review pool, tagging each question with the phase it came from. */
+    private fun buildReviewCheckResponse(userId: UUID): GetReviewCheckResponse {
+        val questions = loadOpenReviewQuestions(userId).map { (_, question) ->
+            question.toForUserResponse().copy(review = true, reviewSourcePhaseTitle = question.phase.title)
+        }
+
+        return GetReviewCheckResponse(openCount = questions.size, questions = questions)
+    }
 
     /**
      * Resolves the user ID corresponding to the provided authentication ID.
@@ -444,38 +612,11 @@ class PhaseCheckService(
     }
 
     /**
-     * Whether this phase carries the path's final knowledge check, i.e. no later phase
-     * (higher position) has its own check. Passing this phase's check therefore
-     * completes the entire onboarding journey.
-     *
-     * @return true if no subsequent phase has a knowledge check, false otherwise.
+     * Loads the user's open (unresolved) review pool, pairing each item with its original
+     * [PhaseCheckQuestion]. Items whose question no longer exists are skipped.
      */
-    private fun OnboardingPhase.isLastCheckPhase(): Boolean {
-        return path.phases.none { it.position > this.position && it.checkQuestions.isNotEmpty() }
-    }
-
-    /**
-     * Determines the next phase in the onboarding process based on the current phase's position.
-     *
-     * It searches through the phases with a position greater than the current phase's position
-     * and selects the one with the smallest position (i.e., the closest subsequent phase).
-     *
-     * @return The next OnboardingPhase in the sequence, or null if no subsequent phase exists.
-     */
-    private fun OnboardingPhase.nextPhase(): OnboardingPhase? =
-        path.phases.filter { it.position > this.position }.minByOrNull { it.position }
-
-    /**
-     * Loads the open (unresolved) carried-over questions the user must re-answer in the
-     * given phase, paired with their original [PhaseCheckQuestion]. Items whose question
-     * no longer exists are skipped.
-     */
-    private fun loadOpenReviewQuestions(
-        userId: UUID,
-        phaseId: UUID,
-    ): List<Pair<PhaseCheckReviewItem, PhaseCheckQuestion>> {
-        val items = phaseCheckReviewItemRepository
-            .findAllByUserIdAndTargetPhaseIdAndResolvedFalseOrderByCreatedAtAsc(userId, phaseId)
+    private fun loadOpenReviewQuestions(userId: UUID): List<Pair<PhaseCheckReviewItem, PhaseCheckQuestion>> {
+        val items = phaseCheckReviewItemRepository.findAllByUserIdAndResolvedFalseOrderByCreatedAtAsc(userId)
         if (items.isEmpty()) return emptyList()
 
         val questionsById = phaseCheckQuestionRepository
@@ -486,69 +627,76 @@ class PhaseCheckService(
     }
 
     /**
-     * Updates carry-over state after a phase was passed.
+     * Moves every question the user ever answered incorrectly in this phase into their
+     * review pool, so understanding is verified even after a lucky retry.
      *
-     * Repeat questions shown in this attempt are resolved when answered correctly and
-     * advanced to the next phase when answered incorrectly. The phase's own questions
-     * answered incorrectly in any attempt (so understanding is verified even after a
-     * lucky retry) are carried over to the next phase. When there is no next phase,
-     * nothing new is carried and any remaining repeats are dropped.
+     * A question is collected at most once ever: the attempt history keeps counting it as
+     * once-wrong, so re-checking only open items would resurrect a question the user already
+     * cleared and leave onboarding permanently blocked.
      */
-    private fun applyCarryOver(
-        phase: OnboardingPhase,
-        userId: UUID,
-        ownQuestions: List<PhaseCheckQuestion>,
-        reviewPairs: List<Pair<PhaseCheckReviewItem, PhaseCheckQuestion>>,
-        graded: Map<UUID, Graded>,
-    ) {
-        val nextPhase = phase.nextPhase()
-
-        reviewPairs.forEach { (item, question) ->
-            when {
-                graded[question.id]?.correct == true -> item.resolved = true
-                nextPhase != null -> item.targetPhaseId = nextPhase.id
-                else -> item.resolved = true
-            }
-        }
-        phaseCheckReviewItemRepository.saveAll(reviewPairs.map { it.first })
-
-        if (nextPhase == null) return
-        everWrongOwnQuestionIds(phase.id, userId, ownQuestions).forEach { questionId ->
-            val alreadyOpen = phaseCheckReviewItemRepository
-                .findAllByUserIdAndQuestionIdAndResolvedFalse(userId, questionId)
-                .isNotEmpty()
-            if (!alreadyOpen) {
+    private fun collectWrongQuestions(phase: OnboardingPhase, userId: UUID, questions: List<PhaseCheckQuestion>) {
+        everWrongOwnQuestionIds(phase.id, userId, questions)
+            .filterNot { phaseCheckReviewItemRepository.existsByUserIdAndQuestionId(userId, it) }
+            .forEach { questionId ->
                 phaseCheckReviewItemRepository.save(
                     PhaseCheckReviewItem(
                         userId = userId,
                         questionId = questionId,
                         sourcePhaseId = phase.id,
-                        targetPhaseId = nextPhase.id,
+                        targetPhaseId = phase.id,
                     ),
                 )
             }
-        }
     }
 
     /**
-     * Returns IDs of the user's own questions that were answered incorrectly
-     * in a specific phase.
+     * Promotes the user to "onboarded" once the whole journey is done, and reports whether
+     * that happened in this call.
+     *
+     * Completion requires both halves: the path's final knowledge check must have been passed
+     * and the review pool must be empty. Checking the pool first keeps a user who still owes
+     * answers in onboarding even after passing the last phase. Callers must persist any newly
+     * collected or resolved items beforehand, since both conditions are read from the database.
+     *
+     * @param userId Identifier of the user to evaluate.
+     * @return true when the user counts as onboarded, false while anything is still open.
+     */
+    private fun completeOnboardingIfFinished(userId: UUID): Boolean {
+        if (phaseCheckReviewItemRepository.countOpenAnswerableByUserId(userId) > 0) return false
+
+        val lastCheckPhase = onboardingPhaseRepository
+            .findAllByPathUserId(userId)
+            .filter { it.checkQuestions.isNotEmpty() }
+            .maxByOrNull { it.position }
+            ?: return false
+
+        if (!phaseCheckAttemptRepository.existsByPhaseIdAndUserIdAndPassedTrue(lastCheckPhase.id, userId)) {
+            return false
+        }
+
+        userApi.markOnboardingCompleted(userId)
+        return true
+    }
+
+    /**
+     * Returns IDs of the given questions that were answered incorrectly in any of the
+     * user's attempts for a specific phase.
      *
      * @param phaseId the unique identifier of the phase.
      * @param userId the unique identifier of the user.
-     * @param ownQuestions the list of questions that are considered the user's own.
-     * @return a set of unique question IDs that were answered incorrectly among the user's own questions.
+     * @param questions the phase's current check questions.
+     * @return a set of unique question IDs that were answered incorrectly at least once.
      */
     private fun everWrongOwnQuestionIds(
         phaseId: UUID,
         userId: UUID,
-        ownQuestions: List<PhaseCheckQuestion>,
+        questions: List<PhaseCheckQuestion>,
     ): Set<UUID> {
-        val ownIds = ownQuestions.map { it.id }.toSet()
+        val questionIds = questions.map { it.id }.toSet()
         return phaseCheckAttemptRepository
             .findAllByPhaseIdAndUserIdOrderByCreatedAtDesc(phaseId, userId)
             .flatMap { it.answers }
-            .filter { !it.correct && it.questionId in ownIds }
+            .filter { !it.correct && it.questionId in questionIds }
             .map { it.questionId }
             .toSet()
     }

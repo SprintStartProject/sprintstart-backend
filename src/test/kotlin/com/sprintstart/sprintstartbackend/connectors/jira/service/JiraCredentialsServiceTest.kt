@@ -36,9 +36,18 @@ class JiraCredentialsServiceTest {
             every { credentialsRepository.existsById(any()) } returns false
             every { credentialsRepository.save(any()) } answers { firstArg() }
 
-            service.addCredentials(request)
+            service.addCredentials("auth-id", request)
 
-            verify { credentialsRepository.save(any()) }
+            verify {
+                credentialsRepository.save(
+                    match {
+                        it.id.authId == "auth-id" &&
+                            it.id.name == "token" &&
+                            it.userEmail == "user@example.com" &&
+                            it.authToken == "secret"
+                    },
+                )
+            }
         }
 
         @Test
@@ -46,7 +55,7 @@ class JiraCredentialsServiceTest {
             val request = AddCredentialRequest("user@example.com", "token", "secret")
             every { credentialsRepository.existsById(any()) } returns true
 
-            assertFailsWith<JiraCredentialAlreadyExistsException> { service.addCredentials(request) }
+            assertFailsWith<JiraCredentialAlreadyExistsException> { service.addCredentials("auth-id", request) }
         }
     }
 
@@ -55,9 +64,9 @@ class JiraCredentialsServiceTest {
         @Test
         fun `should return credentials of user`() {
             val credential = jiraCredential()
-            every { credentialsRepository.findAllByUserEmail("user@example.com") } returns listOf(credential)
+            every { credentialsRepository.findAllByAuthId("auth-id") } returns listOf(credential)
 
-            val result = service.getCredentialsOfUser("user@example.com")
+            val result = service.getCredentialsOfUser("auth-id")
 
             assertThat(result).hasSize(1)
             assertThat(result[0].userEmail).isEqualTo("user@example.com")
@@ -72,7 +81,7 @@ class JiraCredentialsServiceTest {
             every { credentialsRepository.existsById(any()) } returns true
             every { credentialsRepository.deleteById(any()) } returns Unit
 
-            service.removeCredential(request)
+            service.removeCredential("auth-id", request)
 
             verify { credentialsRepository.deleteById(any()) }
         }
@@ -82,7 +91,7 @@ class JiraCredentialsServiceTest {
             val request = DeleteJiraCredentialRequest("user@example.com", "token")
             every { credentialsRepository.existsById(any()) } returns false
 
-            assertFailsWith<JiraCredentialNotFoundException> { service.removeCredential(request) }
+            assertFailsWith<JiraCredentialNotFoundException> { service.removeCredential("auth-id", request) }
         }
     }
 
@@ -95,7 +104,7 @@ class JiraCredentialsServiceTest {
             every { credentialsRepository.findById(any()) } returns Optional.of(credential)
             every { credentialsRepository.save(credential) } answers { firstArg() }
 
-            val result = service.changeCredentialName(request)
+            val result = service.changeCredentialName("auth-id", request)
 
             assertThat(result.displayName).isEqualTo("newToken")
             assertThat(credential.id.name).isEqualTo("newToken")
@@ -106,7 +115,7 @@ class JiraCredentialsServiceTest {
             val request = ChangeJiraCredentialNameRequest("user@example.com", "token", "newToken")
             every { credentialsRepository.findById(any()) } returns Optional.empty()
 
-            assertFailsWith<JiraCredentialNotFoundException> { service.changeCredentialName(request) }
+            assertFailsWith<JiraCredentialNotFoundException> { service.changeCredentialName("auth-id", request) }
         }
     }
 
@@ -119,7 +128,7 @@ class JiraCredentialsServiceTest {
             every { credentialsRepository.findById(any()) } returns Optional.of(credential)
             every { credentialsRepository.save(credential) } answers { firstArg() }
 
-            val result = service.changeCredentialToken(request)
+            val result = service.changeCredentialToken("auth-id", request)
 
             assertThat(credential.authToken).isEqualTo("newSecret")
             assertThat(result.userEmail).isEqualTo("user@example.com")
@@ -130,7 +139,7 @@ class JiraCredentialsServiceTest {
             val request = ChangeJiraCredentialTokenRequest("user@example.com", "token", "newSecret")
             every { credentialsRepository.findById(any()) } returns Optional.empty()
 
-            assertFailsWith<JiraCredentialNotFoundException> { service.changeCredentialToken(request) }
+            assertFailsWith<JiraCredentialNotFoundException> { service.changeCredentialToken("auth-id", request) }
         }
     }
 }

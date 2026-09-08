@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGap
 import com.sprintstart.sprintstartbackend.insights.model.entity.KnowledgeGapSeverity
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Builds persistable [KnowledgeGap] entities from AI classification results.
@@ -14,8 +15,9 @@ import java.time.Instant
  */
 @Component
 class AiKnowledgeGapMapper {
-    fun toEntity(aiGap: AiKnowledgeGap): KnowledgeGap {
+    fun toEntity(aiGap: AiKnowledgeGap, projectId: UUID): KnowledgeGap {
         val gap = KnowledgeGap(
+            projectId = projectId,
             component = aiGap.component,
             lastUpdated = Instant.parse(aiGap.lastUpdated),
             severity = KnowledgeGapSeverity.fromApiValue(aiGap.severity),

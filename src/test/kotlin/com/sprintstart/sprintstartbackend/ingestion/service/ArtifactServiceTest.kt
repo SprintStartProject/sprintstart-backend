@@ -17,6 +17,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.web.server.ResponseStatusException
+import java.util.Base64
 import java.util.Optional
 import java.util.UUID
 
@@ -34,6 +35,59 @@ class ArtifactServiceTest {
     private val projectId = UUID.randomUUID()
     private val artifactId = UUID.randomUUID()
     private val uploadArtifactId = UUID.randomUUID()
+
+    @Test
+    fun `getArtifactContent decodes stored Base64 image content`() {
+        val imageBytes = "fake-png-bytes".toByteArray()
+        val encodedContent = Base64.getEncoder().encodeToString(imageBytes)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { artifactRepository.findById(artifactId) } returns Optional.of(
+            artifact(
+                sourceSystem = SourceSystem.UPLOAD,
+                sourceId = uploadArtifactId.toString(),
+                content = encodedContent,
+                mime = "image/png",
+            ),
+        )
+
+        val result = service.getArtifactContent(
+            projectId = projectId,
+            artifactId = artifactId,
+            authId = authId,
+        ) as ArtifactContentResponse
+
+        assertThat(result.content).containsExactly(*imageBytes)
+        assertThat(result.mime).isEqualTo("image/png")
+        verify(exactly = 0) {
+            uploadedArtifactReader.readBytes(any())
+        }
+    }
+
+    @Test
+    fun `getArtifactContent returns stored text content unchanged`() {
+        val textContent = "hello"
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { artifactRepository.findById(artifactId) } returns Optional.of(
+            artifact(
+                sourceSystem = SourceSystem.UPLOAD,
+                sourceId = uploadArtifactId.toString(),
+                content = textContent,
+                mime = "text/plain",
+            ),
+        )
+
+        val result = service.getArtifactContent(
+            projectId = projectId,
+            artifactId = artifactId,
+            authId = authId,
+        ) as ArtifactContentResponse
+
+        assertThat(result.content).containsExactly(*textContent.toByteArray())
+        assertThat(result.mime).isEqualTo("text/plain")
+        verify(exactly = 0) {
+            uploadedArtifactReader.readBytes(any())
+        }
+    }
 
     @Test
     fun `getArtifactContent returns stored upload bytes for image artifacts`() {

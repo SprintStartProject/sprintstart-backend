@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectMan
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserSummaryResponse
+import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 
 fun Project.toAdminListResponse(
     sources: List<ProjectSourceDto>,
@@ -20,6 +21,8 @@ fun Project.toAdminListResponse(
         id = id,
         name = name,
         description = description,
+        industry = industry,
+        industryConfidence = industryConfidence,
         manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.user.toSummaryResponse() },
@@ -36,6 +39,8 @@ fun Project.toManagedResponse(memberCount: Int): ManagedProjectResponse {
         id = id,
         name = name,
         description = description,
+        industry = industry,
+        industryConfidence = industryConfidence,
         memberCount = memberCount,
     )
 }
@@ -58,6 +63,8 @@ fun Project.toAdminDetailResponse(
         id = id,
         name = name,
         description = description,
+        industry = industry,
+        industryConfidence = industryConfidence,
         manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.toProjectUserResponse() },
@@ -82,6 +89,9 @@ fun ProjectUserAssignment.toProjectUserResponse(): ProjectUserResponse {
         lastName = user.lastname,
         roles = user.roles.toSet(),
         projectRoles = projectRoles.map { it.name }.sorted(),
+        projectRoleRefs = projectRoles
+            .map { ProjectRoleSummary(id = it.id, name = it.name) }
+            .sortedBy { it.name },
         enabled = user.enabled,
     )
 }

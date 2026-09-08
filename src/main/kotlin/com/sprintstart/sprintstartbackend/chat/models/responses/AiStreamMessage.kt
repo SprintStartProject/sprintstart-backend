@@ -19,6 +19,7 @@ import kotlinx.serialization.Serializable
  *
  * Event shapes:
  * - `tool_use`: [name] + [kind] — an agent/tool the orchestrator invoked.
+ * - `reasoning`: [reasoning] — the AI's thought process when generating the response.
  * - `token`: [content] — a fragment of the generated answer.
  * - `citation`: [artifactId] + [startLine] + [startPage] (from the AI service) enriched
  *   with [filename] + [sourceUrl] (resolved by the backend) — a source used in the answer.
@@ -34,6 +35,7 @@ import kotlinx.serialization.Serializable
  * @property sourceUrl For `citation` events: where the artifact came from, if known (backend-enriched).
  * @property startLine For `citation` events: 1-based source line the chunk starts on, or null.
  * @property startPage For `citation` events: 1-based PDF page the chunk was extracted from, or null.
+ * @property reasoning For `reasoning` events: The content
  * @property message For `error` events: the error description.
  */
 @Serializable
@@ -47,5 +49,6 @@ data class AiStreamMessage(
     @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("start_line") val startLine: Int? = null,
     @SerialName("start_page") val startPage: Int? = null,
+    val reasoning: String? = null,
     val message: String? = null,
 )

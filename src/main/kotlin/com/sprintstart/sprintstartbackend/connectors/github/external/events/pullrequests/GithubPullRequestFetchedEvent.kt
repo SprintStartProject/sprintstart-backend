@@ -50,6 +50,8 @@ data class GithubPullRequestReview(
     val body: String?,
     val state: String,
     val author: String?,
+    /** ISO-8601 submission time, when GitHub reported one. */
+    val submittedAt: String? = null,
 )
 
 data class GithubPullRequestComment(

@@ -7,16 +7,18 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.cred
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.credentials.JiraCredentialsDto
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraCredentialsService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
-import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -52,8 +54,11 @@ internal class JiraCredentialsController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PostMapping
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
-    fun addCredentials(@RequestBody @Valid request: AddCredentialRequest): ResponseEntity<Unit> {
-        credentialsService.addCredentials(request)
+    fun addCredentials(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @RequestBody @Valid request: AddCredentialRequest,
+    ): ResponseEntity<Unit> {
+        credentialsService.addCredentials(jwt.subject, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -79,10 +84,12 @@ internal class JiraCredentialsController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @GetMapping("/{userEmail}")
+    @GetMapping
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
-    fun getCredentialsOfUser(@PathVariable userEmail: String): ResponseEntity<List<JiraCredentialsDto>> {
-        val response = credentialsService.getCredentialsOfUser(userEmail)
+    fun getCredentialsOfUser(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<List<JiraCredentialsDto>> {
+        val response = credentialsService.getCredentialsOfUser(jwt.subject)
         return ResponseEntity.ok(response)
     }
 
@@ -113,8 +120,11 @@ internal class JiraCredentialsController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
-    fun removeCredential(@RequestBody @Valid request: DeleteJiraCredentialRequest): ResponseEntity<Unit> {
-        credentialsService.removeCredential(request)
+    fun removeCredential(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @RequestBody @Valid request: DeleteJiraCredentialRequest,
+    ): ResponseEntity<Unit> {
+        credentialsService.removeCredential(jwt.subject, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -143,9 +153,10 @@ internal class JiraCredentialsController(
     @PatchMapping("/patch/name")
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun changeCredentialName(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @RequestBody @Valid request: ChangeJiraCredentialNameRequest,
     ): ResponseEntity<JiraCredentialsDto> {
-        val response = credentialsService.changeCredentialName(request)
+        val response = credentialsService.changeCredentialName(jwt.subject, request)
         return ResponseEntity.ok(response)
     }
 
@@ -174,9 +185,10 @@ internal class JiraCredentialsController(
     @PatchMapping("/patch/token")
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun changeCredentialToken(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @RequestBody @Valid request: ChangeJiraCredentialTokenRequest,
     ): ResponseEntity<JiraCredentialsDto> {
-        val response = credentialsService.changeCredentialToken(request)
+        val response = credentialsService.changeCredentialToken(jwt.subject, request)
         return ResponseEntity.ok(response)
     }
 }

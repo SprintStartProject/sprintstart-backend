@@ -121,7 +121,7 @@ class OnboardingFeedbackAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/feedback")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getAllFeedback(): List<GetAdminOnboardingFeedbackResponse> {
         return onboardingFeedbackService.getAllFeedback()
     }
@@ -143,7 +143,7 @@ class OnboardingFeedbackAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/users/{userId}/feedback")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getAllFeedbackByUserId(
         @PathVariable userId: UUID,
     ): List<GetAdminOnboardingFeedbackResponse> {
@@ -167,7 +167,7 @@ class OnboardingFeedbackAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/steps/{stepId}/feedback")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun getAllFeedbackByStepId(
         @PathVariable stepId: UUID,
     ): List<GetAdminOnboardingFeedbackResponse> {
@@ -188,7 +188,7 @@ class OnboardingFeedbackAdminController(
     )
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/feedback/{feedbackId}/read")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun markFeedbackAsRead(
         @PathVariable feedbackId: UUID,
     ): ReadOnboardingFeedbackResponse {

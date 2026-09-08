@@ -99,4 +99,29 @@ class AiStreamMessageTest {
 
         assertEquals("""{"type":"token","content":"The main"}""", json.encodeToString(message))
     }
+
+    @Test
+    fun `deserializes a reasoning event`() {
+        val raw = """{"type": "reasoning", "reasoning": "I am checking the sources..."}"""
+
+        val message = json.decodeFromString<AiStreamMessage>(raw)
+
+        assertEquals("reasoning", message.type)
+        assertEquals("I am checking the sources...", message.reasoning)
+        assertNull(message.content)
+    }
+
+    @Test
+    fun `serializes a reasoning event with reasoning field`() {
+        val message =
+            AiStreamMessage(
+                type = "reasoning",
+                reasoning = "I am checking the sources...",
+            )
+
+        assertEquals(
+            """{"type":"reasoning","reasoning":"I am checking the sources..."}""",
+            json.encodeToString(message),
+        )
+    }
 }

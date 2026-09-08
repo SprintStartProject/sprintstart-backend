@@ -1,0 +1,35 @@
+query OrganizationTeams($org: String!, $cursor: String) {
+    organization(login: $org) {
+        login
+        name
+
+        teams(first: 100, after: $cursor) {
+            nodes {
+                name
+                slug
+
+                organization {
+                    login
+                    name
+                }
+
+                members(first: 100) {
+                    nodes {
+                        login
+                        name
+                    }
+
+                    pageInfo {
+                        hasNextPage
+                        endCursor
+                    }
+                }
+            }
+
+            pageInfo {
+                hasNextPage
+                endCursor
+            }
+        }
+    }
+}

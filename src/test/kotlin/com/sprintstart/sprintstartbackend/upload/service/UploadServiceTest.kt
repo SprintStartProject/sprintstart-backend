@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
 import com.sprintstart.sprintstartbackend.upload.repository.LinkedImageRepository
 import com.sprintstart.sprintstartbackend.upload.repository.UploadedArtifactRepository
@@ -69,6 +70,7 @@ class UploadServiceTest {
         assertEquals(userId, savedArtifact.captured.uploaderId)
         assertEquals(projectId, savedArtifact.captured.projectId)
         verify(exactly = 1) { uploadedArtifactRepository.findByHashAndProjectId(any(), projectId) }
+        verify(exactly = 1) { publisher.publishEvent(match<UploadStartedEvent> { it.projectId == projectId }) }
     }
 
     @Test

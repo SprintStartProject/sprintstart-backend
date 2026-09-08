@@ -6,7 +6,7 @@ bin/
 .env
 *.env
 *.local.env
-.notes
+.notes/
 
 uploads/
 

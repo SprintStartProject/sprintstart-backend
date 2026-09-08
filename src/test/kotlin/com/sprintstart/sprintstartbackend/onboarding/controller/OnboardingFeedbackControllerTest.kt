@@ -47,6 +47,7 @@ class OnboardingFeedbackControllerTest(
 
     private val authId = "test-auth-id"
     private val adminAuthId = "test-admin-auth-id"
+    private val pmAuthId = "test-pm-auth-id"
 
     private fun jwtWithSubject(
         subject: String,
@@ -66,6 +67,7 @@ class OnboardingFeedbackControllerTest(
 
     private val userJwt = jwtWithSubject(authId, "USER")
     private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
+    private val pmJwt = jwtWithSubject(pmAuthId, "USER", "PM")
     private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
 
     private fun buildGetFeedbackResponse() = GetOnboardingFeedbackResponse(
@@ -232,6 +234,16 @@ class OnboardingFeedbackControllerTest(
     }
 
     @Test
+    fun `getAllFeedbackByUserId should return 200 for PM role`() {
+        every { onboardingFeedbackService.getAllFeedbackByUserId(userId) } returns
+            listOf(buildGetAdminFeedbackResponse())
+
+        mockMvc
+            .perform(get("/api/v1/admin/onboarding/users/$userId/feedback").with(pmJwt))
+            .andExpect(status().isOk)
+    }
+
+    @Test
     fun `getAllFeedbackByUserId should return 401 when not authenticated`() {
         mockMvc
             .perform(get("/api/v1/admin/onboarding/users/$userId/feedback"))
@@ -282,6 +294,15 @@ class OnboardingFeedbackControllerTest(
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
         io.mockk.verify(exactly = 1) { onboardingFeedbackService.markFeedbackAsRead(feedbackId) }
+    }
+
+    @Test
+    fun `markFeedbackAsRead should return 200 for PM role`() {
+        every { onboardingFeedbackService.markFeedbackAsRead(feedbackId) } returns buildReadFeedbackResponse()
+
+        mockMvc
+            .perform(post("/api/v1/admin/onboarding/feedback/$feedbackId/read").with(pmJwt))
+            .andExpect(status().isOk)
     }
 
     @Test

@@ -119,11 +119,16 @@ class JiraInstanceConfigControllerTest {
                 schedule = "0 0 2 * * *",
                 nextSyncAt = null,
             )
-            every { service.getConfigOfInstance("jira-1") } returns response
+            every {
+                service.getConfigOfInstance("https://jira.example.com/")
+            } returns response
 
             mockMvc
-                .perform(get("/api/v1/jira/config/{instanceId}", "jira-1").with(adminJwt))
-                .andExpect(status().isOk)
+                .perform(
+                    get("/api/v1/jira/config/instance")
+                        .param("instanceUrl", "https://jira.example.com/")
+                        .with(adminJwt),
+                ).andExpect(status().isOk)
                 .andExpect(jsonPath("$.instanceUrl").value("https://jira.example.com"))
         }
     }

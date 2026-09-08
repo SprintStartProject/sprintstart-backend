@@ -88,6 +88,7 @@ class IngestionRunController(
         @RequestParam(defaultValue = DEFAULT_PAGE_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) size: Int,
         @RequestParam(required = false) sourceSystem: SourceSystem?,
         @RequestParam(required = false) repositoryId: UUID?,
+        @RequestParam(required = false) sourceRef: String?,
         @RequestParam(required = false) projectId: UUID?,
         @RequestParam(required = false) status: IngestionRunStatus?,
         @RequestParam(required = false)
@@ -95,7 +96,7 @@ class IngestionRunController(
         since: Instant?,
     ): ResponseEntity<IngestionRunPageResponse> =
         ResponseEntity.ok(
-            ingestionRunService.getRuns(page, size, sourceSystem, repositoryId, projectId, status, since),
+            ingestionRunService.getRuns(page, size, sourceSystem, repositoryId, sourceRef, projectId, status, since),
         )
 
     @GetMapping("/{runId}")

@@ -28,6 +28,13 @@ interface IngestionRunRepository :
     fun findFirstBySourceInstanceIdOrderByStartedAtDesc(sourceInstanceId: UUID): IngestionRun?
 
     /**
+     * Latest run for a source instance addressed by its connector-neutral reference (for Jira the
+     * instance URL), used where the instance has no UUID id, unlike
+     * [findFirstBySourceInstanceIdOrderByStartedAtDesc].
+     */
+    fun findFirstBySourceInstanceRefOrderByStartedAtDesc(sourceInstanceRef: String): IngestionRun?
+
+    /**
      * Loads a run with a database write lock for lifecycle paths that mutate counters or
      * collection-valued fields from independently delivered events.
      */
@@ -42,4 +49,11 @@ interface IngestionRunRepository :
     fun findWithArtifactIdsToDeindexById(
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
+
+    /**
+     * Returns all ingestion runs with the
+     * [com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus.RUNNING].
+     */
+    @Query("SELECT r FROM IngestionRun r WHERE r.status = IngestionRunStatus.RUNNING")
+    fun findAllRunning(): List<IngestionRun>
 }

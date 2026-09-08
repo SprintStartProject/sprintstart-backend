@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -121,6 +122,90 @@ class GithubArtifactProviderServiceTest {
     }
 
     @Test
+    fun `persistArtifact saves new issue with state and labels`() {
+        val run = ingestionRun()
+        val savedArtifact = slot<Artifact>()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.findBySourceId("github:owner/repo:ISSUE:42") } returns null
+        every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = "github:owner/repo:ISSUE:42",
+                artifactType = ArtifactType.ISSUE,
+                state = "OPEN",
+                labels = listOf("good first issue"),
+            ),
+        )
+
+        assertThat(savedArtifact.captured.state).isEqualTo("OPEN")
+        assertThat(savedArtifact.captured.labels).containsExactly("good first issue")
+    }
+
+    @Test
+    fun `persistArtifact refreshes issue state and labels even when content is unchanged`() {
+        val existing = artifact(artifactType = ArtifactType.ISSUE, hash = "same-hash").apply {
+            state = "OPEN"
+            labels.add("bug")
+        }
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.ISSUE,
+                hash = "same-hash",
+                state = "CLOSED",
+                labels = listOf("bug", "good first issue"),
+            ),
+        )
+
+        // Content itself is untouched (hash matched), but state/labels still refresh.
+        assertThat(existing.content).isEqualTo("old content")
+        assertThat(existing.state).isEqualTo("CLOSED")
+        assertThat(existing.labels).containsExactly("bug", "good first issue")
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact stores the author login of a new issue`() {
+        val run = ingestionRun()
+        val savedArtifact = slot<Artifact>()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.findBySourceId("github:owner/repo:ISSUE:42") } returns null
+        every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = "github:owner/repo:ISSUE:42",
+                artifactType = ArtifactType.ISSUE,
+                authorLogin = "octocat",
+            ),
+        )
+
+        assertThat(savedArtifact.captured.authorLogin).isEqualTo("octocat")
+    }
+
+    @Test
+    fun `persistArtifact backfills a missing author login`() {
+        val existing = artifact(artifactType = ArtifactType.ISSUE, hash = "same-hash")
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(
+            artifactCommand(
+                sourceId = existing.sourceId,
+                artifactType = ArtifactType.ISSUE,
+                hash = "same-hash",
+                authorLogin = "octocat",
+            ),
+        )
+
+        // A row stored without an author picks one up on the next crawl, without the content
+        // hash having to change.
+        assertThat(existing.authorLogin).isEqualTo("octocat")
+    }
+
+    @Test
     fun `deleteFileArtifact deletes existing artifact and records deindex id`() {
         val run = ingestionRun()
         val existing = artifact(hash = "hash")
@@ -158,11 +243,70 @@ class GithubArtifactProviderServiceTest {
             .hasMessageContaining(runId.toString())
     }
 
+    @Test
+    fun `persistArtifact saves new org metadata artifact without project ids`() {
+        val run = ingestionRun()
+        val savedArtifact = slot<Artifact>()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.findBySourceId("octocat") } returns null
+        every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+
+        service.persistArtifact(orgMetadataCommand())
+
+        assertThat(savedArtifact.captured.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(savedArtifact.captured.sourceId).isEqualTo("octocat")
+        assertThat(savedArtifact.captured.projectIds).isEmpty()
+        assertThat(run.ingestedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `persistArtifact ignores duplicate org metadata source id`() {
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null)
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+
+        service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
+
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    private fun orgMetadataCommand(
+        sourceId: String = "octocat",
+    ) = GithubArtifactCommand(
+        ingestionRunId = runId,
+        sourceSystem = SourceSystem.GITHUB,
+        sourceId = sourceId,
+        sourceUrl = "https://github.com/octocat",
+        artifactType = ArtifactType.ORG_METADATA,
+        title = "The Octocats",
+        bodyText = null,
+        mime = null,
+        language = null,
+        createdAtSource = null,
+        updatedAtSource = null,
+        hash = null,
+        metadata = GithubOrgMetadataArtifactMetadata(
+            login = "octocat",
+            name = "The Octocats",
+            description = null,
+            company = null,
+            blog = null,
+            location = null,
+            email = null,
+            publicRepos = null,
+            privateRepos = null,
+            teams = null,
+            members = emptyList(),
+        ),
+    )
+
     private fun artifactCommand(
         sourceId: String = "github:owner/repo:FILE:src/main/App.kt",
         artifactType: ArtifactType = ArtifactType.FILE,
         bodyText: String = "content",
         hash: String? = "hash-1",
+        state: String? = null,
+        labels: List<String> = emptyList(),
+        authorLogin: String? = null,
     ) = GithubArtifactCommand(
         ingestionRunId = runId,
         sourceSystem = SourceSystem.GITHUB,
@@ -180,6 +324,9 @@ class GithubArtifactProviderServiceTest {
             repositoryId = repositoryId,
             repositoryFullName = "owner/repo",
         ),
+        state = state,
+        labels = labels,
+        authorLogin = authorLogin,
     )
 
     private fun ingestionRun() = IngestionRun(

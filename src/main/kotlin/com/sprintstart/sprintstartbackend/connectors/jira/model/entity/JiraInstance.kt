@@ -47,4 +47,6 @@ internal class JiraInstance(
     var updateCredentialName: String,
     @Column(name = "update_credential_user_email", nullable = false)
     var updateCredentialUserEmail: String,
+    @Column(name = "update_credential_auth_id", nullable = false)
+    var updateCredentialAuthId: String,
 )

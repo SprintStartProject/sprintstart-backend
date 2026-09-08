@@ -38,6 +38,7 @@ class UploadArtifactProviderService(
      */
     @Transactional
     fun persistArtifact(command: UploadArtifactCommand) {
+        val runId = command.ingestionRunId
         val projectId = command.projectId
 
         var artifact = artifactRepository.findBySourceId(command.sourceId)
@@ -56,7 +57,13 @@ class UploadArtifactProviderService(
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
             IngestionRunNotFoundException(command.ingestionRunId)
         }
+        val targetId = try {
+            UUID.fromString(command.sourceId)
+        } catch (_: IllegalArgumentException) {
+            UUID.randomUUID()
+        }
         artifact = Artifact(
+            id = targetId,
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = null,

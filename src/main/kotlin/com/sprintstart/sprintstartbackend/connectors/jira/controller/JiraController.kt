@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.Upd
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraService
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraUpdateService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -14,7 +15,10 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -102,8 +106,11 @@ internal class JiraController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PostMapping("/connect")
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
-    suspend fun connectInstance(@RequestBody @Valid request: ConnectJiraInstanceRequest): ResponseEntity<Unit> {
-        service.connectInstanceIfNeeded(request)
+    suspend fun connectInstance(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @RequestBody @Valid request: ConnectJiraInstanceRequest,
+    ): ResponseEntity<Unit> {
+        service.connectInstanceIfNeeded(jwt.subject, request)
         return ResponseEntity.accepted().build()
     }
 
@@ -174,5 +181,39 @@ internal class JiraController(
     suspend fun updateAllInstances(): ResponseEntity<List<UpdateJiraInstanceResponse>> {
         val response = updateService.updateAllJiraInstances()
         return ResponseEntity.accepted().body(response)
+    }
+
+    /**
+     * Removes a project's link to a connected Jira instance. The instance and its ingested artifacts
+     * are kept and can be re-linked later; only the project association is dropped.
+     *
+     * Both identifiers travel as query parameters, not path segments: the instance URL's encoded
+     * slashes (`%2F`) are rejected by Tomcat with a 400 when they appear in a path.
+     *
+     * @param instanceUrl The URL of the Jira instance to unlink.
+     * @param projectId The project whose association should be removed.
+     * @return a [ResponseEntity] with an empty body and HTTP status 204 (No Content).
+     */
+    @Operation(
+        summary = "Removes a project's link to a Jira instance",
+        description = "Unlinks a Jira instance from a project. The instance and its artifacts are kept.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Project association removed."),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
+            ApiResponse(responseCode = "404", description = "Requested Jira instance does not exist"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/instances/project")
+    @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
+    fun removeInstanceFromProject(
+        @RequestParam instanceUrl: String,
+        @RequestParam projectId: UUID,
+    ): ResponseEntity<Unit> {
+        service.removeInstanceFromProject(instanceUrl, projectId)
+        return ResponseEntity.noContent().build()
     }
 }

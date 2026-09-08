@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraC
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraService
 import com.sprintstart.sprintstartbackend.connectors.jira.service.JiraUpdateService
@@ -19,6 +20,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.junit5.MockKExtension
+import io.mockk.verify
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -32,6 +34,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -127,7 +130,7 @@ class JiraControllerTest {
                 tokenName = "token",
                 projectId = UUID.randomUUID(),
             )
-            coEvery { service.connectInstanceIfNeeded(request) } returns UUID.randomUUID()
+            coEvery { service.connectInstanceIfNeeded("admin-id", request) } returns UUID.randomUUID()
 
             val asyncResult = mockMvc
                 .perform(
@@ -142,7 +145,7 @@ class JiraControllerTest {
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
 
-            coVerify { service.connectInstanceIfNeeded(request) }
+            coVerify { service.connectInstanceIfNeeded("admin-id", request) }
         }
 
         @Test
@@ -222,7 +225,9 @@ class JiraControllerTest {
 
         @Test
         fun `should return 404 when instance not connected`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraInstanceNotConnectedException(request.url)
+            coEvery {
+                service.connectInstanceIfNeeded("admin-id", request)
+            } throws JiraInstanceNotConnectedException(request.url)
 
             val asyncResult = mockMvc
                 .perform(
@@ -240,7 +245,7 @@ class JiraControllerTest {
 
         @Test
         fun `should return 404 when credentials not found`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraCredentialNotFoundException(
+            coEvery { service.connectInstanceIfNeeded("admin-id", request) } throws JiraCredentialNotFoundException(
                 request.userEmail,
                 request.tokenName,
             )
@@ -261,7 +266,7 @@ class JiraControllerTest {
 
         @Test
         fun `should return 401 when jira auth fails`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraAuthException(
+            coEvery { service.connectInstanceIfNeeded("admin-id", request) } throws JiraAuthException(
                 org.springframework.http.HttpStatus.UNAUTHORIZED,
                 "Unauthorized",
             )
@@ -282,7 +287,9 @@ class JiraControllerTest {
 
         @Test
         fun `should return 502 when instance unavailable`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraInstanceUnavailableException(request.url)
+            coEvery {
+                service.connectInstanceIfNeeded("admin-id", request)
+            } throws JiraInstanceUnavailableException(request.url)
 
             val asyncResult = mockMvc
                 .perform(
@@ -299,8 +306,29 @@ class JiraControllerTest {
         }
 
         @Test
+        fun `should return 422 when no accessible projects`() {
+            coEvery { service.connectInstanceIfNeeded("admin-id", request) } throws
+                JiraNoAccessibleProjectsException(request.url)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/jira/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(adminJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isUnprocessableContent)
+        }
+
+        @Test
         fun `should return 404 when resource not found`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraResourceNotFoundException("Issue not found")
+            coEvery {
+                service.connectInstanceIfNeeded("admin-id", request)
+            } throws JiraResourceNotFoundException("Issue not found")
 
             val asyncResult = mockMvc
                 .perform(
@@ -318,7 +346,9 @@ class JiraControllerTest {
 
         @Test
         fun `should return 400 when credential already exists`() {
-            coEvery { service.connectInstanceIfNeeded(request) } throws JiraCredentialAlreadyExistsException(
+            coEvery {
+                service.connectInstanceIfNeeded("admin-id", request)
+            } throws JiraCredentialAlreadyExistsException(
                 request.userEmail,
                 request.tokenName,
             )
@@ -354,6 +384,39 @@ class JiraControllerTest {
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
                 .andExpect(jsonPath("$[0].transactionId").value(response.transactionId.toString()))
+        }
+    }
+
+    @Nested
+    inner class RemoveInstanceFromProject {
+        @Test
+        fun `should return 204 and unlink the instance from the project`() {
+            val projectId = UUID.randomUUID()
+            every {
+                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+            } returns Unit
+
+            mockMvc
+                .perform(
+                    delete("/api/v1/jira/instances/project")
+                        .param("instanceUrl", "https://jira.example.com/")
+                        .param("projectId", projectId.toString())
+                        .with(adminJwt),
+                ).andExpect(status().isNoContent)
+
+            verify {
+                service.removeInstanceFromProject("https://jira.example.com/", projectId)
+            }
+        }
+
+        @Test
+        fun `should return 401 when not authenticated`() {
+            mockMvc
+                .perform(
+                    delete("/api/v1/jira/instances/project")
+                        .param("instanceUrl", "https://jira.example.com/")
+                        .param("projectId", UUID.randomUUID().toString()),
+                ).andExpect(status().isUnauthorized)
         }
     }
 }

@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.upload.external.api.UploadedArtifactReader
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.ArtifactUploadedEvent
 import org.springframework.stereotype.Component
+import java.util.Base64
 
 /**
  * Translates upload-domain events into canonical artifact commands.
@@ -30,10 +31,12 @@ class UploadArtifactMapper(
             else -> event.filename.substringAfterLast(".", "").lowercase()
         }
         val language = FileMetaDataResolver.languageFor(extension)
-        val bodyText = if (language != null) {
-            uploadedArtifactReader.readText(event.artifactId)
-        } else {
-            null
+        val content = when {
+            isSupportedBinaryMime(event.mime) -> Base64.getEncoder().encodeToString(
+                uploadedArtifactReader.readBytes(event.artifactId),
+            )
+            language != null -> uploadedArtifactReader.readText(event.artifactId)
+            else -> null
         }
         return UploadArtifactCommand(
             ingestionRunId = event.transactionId,
@@ -42,7 +45,7 @@ class UploadArtifactMapper(
             sourceId = event.artifactId.toString(),
             artifactType = ArtifactType.FILE,
             title = event.filename,
-            content = bodyText,
+            content = content,
             mime = event.mime,
             language = language,
             createdAtSource = event.uploadedAt,
@@ -53,5 +56,9 @@ class UploadArtifactMapper(
                 actorId = event.uploaderId,
             ),
         )
+    }
+
+    private fun isSupportedBinaryMime(mime: String): Boolean {
+        return mime.startsWith("image/") || mime == "application/pdf"
     }
 }
