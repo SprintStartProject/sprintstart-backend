@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.request.board
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
+import jakarta.validation.Valid
 
 /**
  * The whole arrangement, replacing whatever was stored.
@@ -10,5 +11,5 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructure
  * that area was renamed" would be more machinery than the thing it describes.
  */
 data class SaveBoardStructureRequest(
-    val structure: BoardStructurePayload,
+    @field:Valid val structure: BoardStructurePayload,
 )

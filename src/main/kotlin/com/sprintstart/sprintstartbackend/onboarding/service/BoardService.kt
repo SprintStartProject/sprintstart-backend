@@ -80,6 +80,23 @@ class BoardService(
     private val arrivalStepService: ArrivalStepService,
 ) {
     /**
+     * Whether this hire has a board on this project at all.
+     *
+     * For the callers that must not bring one into existence by asking about it. [getBoard] creates
+     * the board and seeds it, which is what a hire opening the page should get and not what
+     * something merely looking at the board should cause — a board is a thing the hire has, and it
+     * should start existing because they went to it.
+     *
+     * @param userId The hire.
+     * @param projectId The project the board would belong to.
+     * @return Whether a board row exists. Says nothing about membership, and nothing about whether
+     * there is anything on it.
+     */
+    @Transactional(readOnly = true)
+    fun hasBoard(userId: UUID, projectId: UUID): Boolean =
+        boardRepository.existsByUserIdAndProjectId(userId, projectId)
+
+    /**
      * This hire's board on this project, cards hydrated.
      *
      * @param userId The hire.

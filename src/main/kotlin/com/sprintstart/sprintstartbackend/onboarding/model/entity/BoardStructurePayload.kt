@@ -4,7 +4,60 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardStage
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CardDependencySource
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CardWidth
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.HighlightColor
+import jakarta.validation.Valid
+import jakarta.validation.constraints.Size
 import kotlinx.serialization.Serializable
+
+/**
+ * How much of an arrangement the server will take.
+ *
+ * The arrangement is the one document a client hands over whole, and until these existed nothing
+ * bounded it: a board could be PUT with a hundred thousand pinned ids, stored as unbounded `TEXT`,
+ * and then read back into every prompt the buddy builds for that board. The numbers are not a
+ * judgement about how anybody works — they are far above a board a person could make by hand, and
+ * low enough that one client cannot decide how large the next model call is.
+ *
+ * Enforced at the controller with [Valid], which is the cheap place: bounding the document once on
+ * the way in is worth more than capping each place it is later read out.
+ */
+object BoardStructureLimits {
+    /** Cards a hire may have said something about. A real board is tens of cards. */
+    const val CARDS = 2_000
+
+    /** Named areas, and the stages they sit in. */
+    const val GROUPS = 500
+
+    /** Ids in one list — pinned, folded, or the members of one area. */
+    const val IDS = 2_000
+
+    /**
+     * Cards carrying at least one highlight.
+     *
+     * How many marks one card carries is bounded by [DOCUMENT_CHARS] rather than by a count of its
+     * own: a per-element constraint inside a map of lists buys a second kind of limit to keep in
+     * step, and the number that actually protects the stored row and the prompt is the one on the
+     * whole document.
+     */
+    const val MARKED_CARDS = 2_000
+
+    /** "Comes after" entries on one card. */
+    const val DEPENDENCIES = 500
+
+    /** A card id or the name of an area: short strings the client made up. */
+    const val SHORT_TEXT = 500
+
+    /** Highlighted words, and the path back to where a card came from. */
+    const val LONG_TEXT = 4_000
+
+    /**
+     * The whole encoded document, in characters.
+     *
+     * The backstop the field limits cannot give on their own: the caps above multiply, and a
+     * document that satisfies every one of them can still be enormous. Checked once, on the encoded
+     * form, because that is the thing that actually gets stored.
+     */
+    const val DOCUMENT_CHARS = 512_000
+}
 
 /**
  * Everything the hire has said *about* their board, as opposed to what is on it.
@@ -32,8 +85,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class BoardStructurePayload(
     /** What the hire has said about individual cards, by card id. */
+    @field:Size(max = BoardStructureLimits.CARDS)
+    @field:Valid
     val cards: Map<String, CardStructurePayload> = emptyMap(),
     /** Named parts of the board, in the order they are shown. */
+    @field:Size(max = BoardStructureLimits.GROUPS)
+    @field:Valid
     val groups: List<BoardGroupPayload> = emptyList(),
     /**
      * The stage a whole area sits in, by group id.
@@ -42,14 +99,20 @@ data class BoardStructurePayload(
      * card's own stage does and the two are read together — an area sequenced in one gesture and a
      * card sequenced on its own have to end up in the same band.
      */
+    @field:Size(max = BoardStructureLimits.GROUPS)
     val groupStages: Map<String, BoardStage> = emptyMap(),
     /** Cards folded down to their header. */
+    @field:Size(max = BoardStructureLimits.IDS)
     val collapsedCardIds: List<String> = emptyList(),
     /** Cards held at the top of the board. */
+    @field:Size(max = BoardStructureLimits.IDS)
     val pinnedCardIds: List<String> = emptyList(),
     /** Widths the hire pulled cards to. A card at the default width is absent, not stored as one. */
+    @field:Size(max = BoardStructureLimits.CARDS)
     val sizes: Map<String, CardSizePayload> = emptyMap(),
     /** Where a card was found, for the ones that were found somewhere. */
+    @field:Size(max = BoardStructureLimits.CARDS)
+    @field:Valid
     val origins: Map<String, CardOriginPayload> = emptyMap(),
     /**
      * Highlights, by card id.
@@ -59,6 +122,7 @@ data class BoardStructurePayload(
      * this record. On every other kind, whose text is read from the server and has nowhere to put a
      * delimiter, they carry both.
      */
+    @field:Size(max = BoardStructureLimits.MARKED_CARDS)
     val marks: Map<String, List<CardMarkPayload>> = emptyMap(),
     /**
      * What this hire calls each highlight colour.
@@ -72,6 +136,7 @@ data class BoardStructurePayload(
      * A legend that did not follow the hire to another machine would be a legend for somebody
      * else's board, which is why it is part of the arrangement rather than a browser preference.
      */
+    @field:Size(max = BoardStructureLimits.GROUPS)
     val markLabels: Map<HighlightColor, String> = emptyMap(),
 )
 
@@ -80,6 +145,8 @@ data class BoardStructurePayload(
 data class CardStructurePayload(
     val stage: BoardStage? = null,
     /** The cards this one comes after, each with who said so. */
+    @field:Size(max = BoardStructureLimits.DEPENDENCIES)
+    @field:Valid
     val dependsOn: List<CardDependencyPayload> = emptyList(),
     /**
      * Ticked off by hand, for the kinds whose completion nothing can observe.
@@ -93,6 +160,7 @@ data class CardStructurePayload(
 /** One "comes after", and who claimed it. See [CardDependencySource]. */
 @Serializable
 data class CardDependencyPayload(
+    @field:Size(max = BoardStructureLimits.SHORT_TEXT)
     val id: String,
     val source: CardDependencySource = CardDependencySource.HIRE,
 )
@@ -107,8 +175,11 @@ data class CardDependencyPayload(
  */
 @Serializable
 data class BoardGroupPayload(
+    @field:Size(max = BoardStructureLimits.SHORT_TEXT)
     val id: String,
+    @field:Size(max = BoardStructureLimits.SHORT_TEXT)
     val name: String,
+    @field:Size(max = BoardStructureLimits.IDS)
     val cardIds: List<String> = emptyList(),
     val collapsed: Boolean = false,
 )
@@ -127,7 +198,9 @@ data class CardSizePayload(
  */
 @Serializable
 data class CardOriginPayload(
+    @field:Size(max = BoardStructureLimits.LONG_TEXT)
     val url: String,
+    @field:Size(max = BoardStructureLimits.SHORT_TEXT)
     val label: String,
 )
 
@@ -138,9 +211,16 @@ data class CardOriginPayload(
  * moment the card is edited, and the generated cards are re-read from the server on every visit —
  * an offset would leave a highlight over the middle of an unrelated word. A string either still
  * appears in the card or it does not, and when it does not, nothing lights up.
+ *
+ * [text] defaults to empty because a mark on a `NOTE` carries colour only — the words are written
+ * into the note's own text as `==like this==`, and there is nothing to repeat here. Making it
+ * required would have left a client two ways to say the same thing: fail the whole arrangement over
+ * one note-mark, or send `""` and have the buddy quote the empty string back as highlighted words.
+ * Nothing reads a blank one: `BuddyBoardTools` leaves it out.
  */
 @Serializable
 data class CardMarkPayload(
-    val text: String,
+    @field:Size(max = BoardStructureLimits.LONG_TEXT)
+    val text: String = "",
     val color: HighlightColor = HighlightColor.YELLOW,
 )

@@ -2,14 +2,19 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructure
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructureLimits
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.UUID
 
@@ -31,6 +36,8 @@ class BoardStructureService(
     private val boardStructureRepository: BoardStructureRepository,
     private val projectMembershipApi: ProjectMembershipApi,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * A board's arrangement, or the empty one.
      *
@@ -50,7 +57,12 @@ class BoardStructureService(
         val stored = boardStructureRepository.findByBoardId(board.id)
             ?: return BoardStructureResponse(BoardStructurePayload(), null)
 
-        return BoardStructureResponse(decode(stored.payload), stored.updatedAt)
+        // A row this version cannot read answers exactly as an unarranged board does, `updatedAt`
+        // included. Reporting "nothing is stored" alongside the moment it was last stored is two
+        // answers to one question, and the client acts on the first of them.
+        val decoded = decode(stored) ?: return BoardStructureResponse(BoardStructurePayload(), null)
+
+        return BoardStructureResponse(decoded, stored.updatedAt)
     }
 
     /**
@@ -69,34 +81,60 @@ class BoardStructureService(
     fun write(userId: UUID, projectId: UUID, payload: BoardStructurePayload): BoardStructureResponse? {
         if (!isMember(userId, projectId)) return null
 
+        val encoded = json.encodeToString(BoardStructurePayload.serializer(), payload)
+        // Checked before anything is created, and on the encoded form, because that is the thing
+        // that gets stored. The field limits the controller enforces multiply; this is the one
+        // number that does not.
+        if (encoded.length > BoardStructureLimits.DOCUMENT_CHARS) {
+            throw ResponseStatusException(
+                HttpStatus.PAYLOAD_TOO_LARGE,
+                "That is a larger arrangement than a board can hold.",
+            )
+        }
+
         val board = boardRepository.findByUserIdAndProjectId(userId, projectId)
             ?: boardRepository.save(Board(userId = userId, projectId = projectId))
 
-        val encoded = json.encodeToString(BoardStructurePayload.serializer(), payload)
-        val stored = boardStructureRepository
-            .findByBoardId(board.id)
-            ?.also {
-                it.payload = encoded
-                it.updatedAt = Instant.now()
-            }
-            ?: BoardStructure(boardId = board.id, payload = encoded)
+        // One statement, so that two tabs arranging the same board for the first time cannot both
+        // insert. See [BoardStructureRepository.upsert]; `now` is what the row will carry, which is
+        // why it is read here rather than taken from an entity this no longer loads.
+        val now = Instant.now()
+        boardStructureRepository.upsert(
+            id = UUID.randomUUID(),
+            boardId = board.id,
+            payload = encoded,
+            now = now,
+        )
 
-        val saved = boardStructureRepository.save(stored)
-
-        return BoardStructureResponse(payload, saved.updatedAt)
+        return BoardStructureResponse(payload, now)
     }
 
     /**
-     * A stored arrangement, or the empty one when it cannot be read.
+     * A stored arrangement, or null when it cannot be read.
      *
      * Written by a client and stored as text, so a row from an older shape is a real possibility.
      * `ignoreUnknownKeys` handles a field that has since gone; a payload that cannot be parsed at
      * all answers as unarranged rather than failing the board read, because an arrangement is the
      * least important thing on the page and the worst thing it can do is take the page down with it.
+     *
+     * Logged, and only for the exception that means "this text is not that document". Answering as
+     * unarranged is quiet by design and the next whole-document PUT overwrites the row, so without
+     * a line naming the board there would be nothing left to find afterwards. Anything else thrown
+     * here is a bug rather than an old row, and is left to propagate where it can still be seen.
      */
-    private fun decode(payload: String): BoardStructurePayload =
-        runCatching { json.decodeFromString(BoardStructurePayload.serializer(), payload) }
-            .getOrElse { BoardStructurePayload() }
+    private fun decode(stored: BoardStructure): BoardStructurePayload? =
+        try {
+            json.decodeFromString(BoardStructurePayload.serializer(), stored.payload)
+        } catch (e: SerializationException) {
+            logger.warn(
+                "Board structure {} of board {} could not be read and was answered as unarranged; " +
+                    "the next write replaces it",
+                stored.id,
+                stored.boardId,
+                e,
+            )
+            null
+        }
 
     private fun isMember(userId: UUID, projectId: UUID): Boolean =
         projectMembershipApi.getProjectMembers(projectId).any { it.userId == userId }

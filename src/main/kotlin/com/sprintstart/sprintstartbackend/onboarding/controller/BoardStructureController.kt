@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -34,6 +35,11 @@ import java.util.UUID
  * *on* a board — which cards exist, what they say, what order they are in — and every one of its
  * endpoints can create or remove a card. Nothing here can. Keeping the one endpoint that accepts a
  * whole client-supplied document away from the ones that mutate cards is worth a file.
+ *
+ * That document is bounded here rather than where it is later read. It is stored as unbounded
+ * `TEXT` and read back into everything that talks about the board — the buddy's prompt among them —
+ * so a client deciding how big it is is a client deciding how big those are. `BoardStructureLimits`
+ * holds the numbers and the reasoning behind them.
  */
 @RestController
 @RequestMapping("/api/v1/onboarding")
@@ -80,13 +86,17 @@ class BoardStructureController(
             "half of another's is an arrangement nobody made.\n\n" +
             "Card ids are taken as given and not checked against the cards that exist — an entry " +
             "for a card dismissed on another device is ordinary, and refusing the write over one " +
-            "stale id would lose the other forty entries. The client drops what it cannot resolve.",
+            "stale id would lose the other forty entries. The client drops what it cannot resolve." +
+            "\n\nBounded: an arrangement far larger than one board's is refused whole rather than " +
+            "stored, because it is read back into everything that describes the board.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Arrangement stored"),
+            ApiResponse(responseCode = "400", description = "Part of the arrangement is larger than a board's"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "404", description = "You are not a member of that project"),
+            ApiResponse(responseCode = "413", description = "The whole arrangement is larger than a board's"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -96,7 +106,7 @@ class BoardStructureController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @RequestParam projectId: UUID,
-        @RequestBody request: SaveBoardStructureRequest,
+        @RequestBody @Valid request: SaveBoardStructureRequest,
     ): BoardStructureResponse =
         boardStructureService.write(resolveUserId(jwt), projectId, request.structure)
             ?: throw ResponseStatusException(

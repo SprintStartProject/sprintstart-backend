@@ -35,9 +35,15 @@ import java.util.UUID
  *
  * `read_board` is the other direction and is new. Until the arrangement was stored server-side the
  * mentor could put cards on a board it could not see, so "what should I do next" was answered from
- * the conversation or from nothing. It is a read and nothing else: it changes no card, and it
- * reports what is there rather than what to do about it, because the sentence a hire acts on should
- * be one the mentor wrote from the facts rather than one this tool handed it.
+ * the conversation or from nothing. It places no card and removes none, and it reports what is
+ * there rather than what to do about it, because the sentence a hire acts on should be one the
+ * mentor wrote from the facts rather than one this tool handed it.
+ *
+ * It does not say it "changes nothing", because reading a board is not free of consequence: the
+ * read goes through [BoardService.getBoard], which is also what brings a board's baseline cards up
+ * to date. A board that does not exist yet is left alone entirely — see [readBoard] — so the one
+ * effect a mentor could cause on its own, a board existing because somebody asked a question about
+ * it, cannot happen.
  */
 @Component
 class BuddyBoardTools(
@@ -77,6 +83,14 @@ class BuddyBoardTools(
             is ProjectChoice.One -> choice
         }
 
+        // Asked first, because reading a board that does not exist is what creates it. A hire who
+        // has never opened the page should not end up with a board because they asked the mentor a
+        // question about one.
+        if (!boardService.hasBoard(userId, project.projectId)) {
+            return "The hire has not opened their board yet, so there is nothing on it to read. " +
+                "Talk about the work itself rather than about their board."
+        }
+
         val board = boardService.getBoard(userId, project.projectId)
             ?: return "The hire is not a member of that project, so there is no board to read."
         val structure = boardStructureService.read(userId, project.projectId)?.structure
@@ -87,12 +101,28 @@ class BuddyBoardTools(
             return "The hire's board on ${project.name} is empty. Nothing has been put on it yet."
         }
 
+        val byId = cards.associateBy { it.id.toString() }
         val finished = cards.count { BoardReading.isDone(it, structure) }
         val actionable = BoardReading.actionable(cards, structure)
+        // Capped where the list is built rather than where it is written out, and by lookup rather
+        // than by scanning the board once per id: everything in the arrangement came from a client,
+        // and how much work this does with it is not a client's to decide either.
         val pinned = structure.pinnedCardIds
-            .mapNotNull { id -> cards.firstOrNull { it.id.toString() == id } }
+            .asSequence()
+            .distinct()
+            .mapNotNull { byId[it] }
+            .take(LIST_LIMIT + 1)
+            .toList()
+        // The words, already trimmed to the ones there are. A mark on a NOTE carries colour only —
+        // the note's own text holds the `==marked==` words — and quoting its empty string back
+        // would have the mentor telling the hire they highlighted nothing at all.
         val marked = cards.mapNotNull { card ->
             structure.marks[card.id.toString()]
+                ?.asSequence()
+                ?.map { it.text.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.take(MARKS_PER_CARD)
+                ?.toList()
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { card to it }
         }
@@ -118,7 +148,10 @@ class BuddyBoardTools(
             if (pinned.isNotEmpty()) {
                 append(NEWLINE + NEWLINE)
                 append("Kept at the top of their board, which is them saying these matter now: ")
-                append(pinned.joinToString(", ") { BoardReading.nameOf(it) })
+                append(pinned.take(LIST_LIMIT).joinToString(", ") { BoardReading.nameOf(it) })
+                if (pinned.size > LIST_LIMIT) {
+                    append(", and more")
+                }
             }
 
             appendActionable(actionable, structure)
@@ -130,7 +163,7 @@ class BuddyBoardTools(
                 append("part rather than the whole card:")
                 marked.take(LIST_LIMIT).forEach { (card, marks) ->
                     val words = marks.joinToString("; ") { mark ->
-                        if (mark.text.length > QUOTE_LIMIT) mark.text.take(QUOTE_LIMIT) + "…" else mark.text
+                        if (mark.length > QUOTE_LIMIT) mark.take(QUOTE_LIMIT) + "…" else mark
                     }
                     append(NEWLINE + "- " + BoardReading.nameOf(card) + ": \"" + words + "\"")
                 }
@@ -288,6 +321,15 @@ class BuddyBoardTools(
         /** How much of one highlight is quoted before it is cut. Enough for a sentence. */
         const val QUOTE_LIMIT = 120
 
+        /**
+         * How many highlights on one card are quoted.
+         *
+         * [LIST_LIMIT] caps how many cards are named, which left one card free to carry as many
+         * marks as a client cared to store and put every one of them in the prompt. Six is what a
+         * mentor can say something about; the rest are on the page in front of the hire.
+         */
+        const val MARKS_PER_CARD = 6
+
         /** Written out, so that no editing step has to survive an escape sequence intact. */
         const val NEWLINE = "\n"
 
@@ -301,8 +343,9 @@ class BuddyBoardTools(
                 "own board offers them, which ones are waiting on something and on what, and on " +
                 "how many of them they have highlighted something. A highlight is them saying " +
                 "which part mattered, so ask about that part rather than about the whole card. " +
-                "It changes nothing: do not use it to claim you have done something, and do not " +
-                "read the list back to them, because they are looking at the page.",
+                "It only looks: it puts no card on their board and takes none off, so do not use " +
+                "it to claim you have done something, and do not read the list back to them, " +
+                "because they are looking at the page.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {}
