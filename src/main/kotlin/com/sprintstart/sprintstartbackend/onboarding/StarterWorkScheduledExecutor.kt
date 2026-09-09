@@ -1,7 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding
 
-import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkPoolReconciler
-import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
@@ -12,8 +10,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class StarterWorkScheduledExecutor(
-    private val scheduledExecutor: ScheduledExecutor,
-    private val starterWorkPoolReconciler: StarterWorkPoolReconciler,
+    private val starterWorkReconciliationTrigger: StarterWorkReconciliationTrigger,
 ) {
     /**
      * Reconciles the starter-work pool against the ingested corpus.
@@ -27,13 +24,13 @@ class StarterWorkScheduledExecutor(
      * Hourly is therefore about right — often enough that a gap closes on its own within a working
      * session, rare enough to be nearly free, given a pass reads only already-ingested rows.
      *
-     * The first run is delayed so it does not compete with startup.
+     * The first run is delayed so it does not compete with startup. It goes through
+     * [StarterWorkReconciliationTrigger] like every other request, so the clock cannot start a
+     * second pass on top of one an ingestion run is already driving.
      */
     @Scheduled(initialDelay = STARTUP_DELAY_MS, fixedRate = RECONCILE_INTERVAL_MS)
     fun reconcileStarterWorkPool() {
-        scheduledExecutor.launch("Reconciling the starter-work pool against its sources") {
-            starterWorkPoolReconciler.reconcile()
-        }
+        starterWorkReconciliationTrigger.request("the hourly safety net")
     }
 
     private companion object {
