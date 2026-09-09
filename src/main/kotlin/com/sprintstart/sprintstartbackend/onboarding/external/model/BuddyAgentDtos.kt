@@ -64,6 +64,15 @@ data class BuddyAgentRequest(
      * way, so nothing ingested before projects were carried disappears.
      */
     @SerialName("project_ids") val projectIds: List<String> = emptyList(),
+    /**
+     * Whether the mentor may act this turn, or is only answering from the corpus.
+     *
+     * Sent as well as expressed through an empty [backendTools], because the two say different
+     * things. An empty tool list is a fact the model has to infer a reason for; this is the reason,
+     * and without it the persona offers to do things it currently cannot and the refusal reads as
+     * a bug rather than as a mode the hire chose.
+     */
+    @SerialName("capabilities_enabled") val capabilitiesEnabled: Boolean = true,
 )
 
 /**
