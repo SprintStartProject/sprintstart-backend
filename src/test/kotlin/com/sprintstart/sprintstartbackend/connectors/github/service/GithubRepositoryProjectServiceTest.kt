@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
@@ -12,13 +13,19 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.springframework.context.ApplicationEventPublisher
 import java.util.Optional
 import java.util.UUID
 
 class GithubRepositoryProjectServiceTest {
     private val githubRepositoryConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val userApi = mockk<UserApi>()
-    private val service = GithubRepositoryProjectService(githubRepositoryConnectionRepository, userApi)
+    private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
+    private val service = GithubRepositoryProjectService(
+        githubRepositoryConnectionRepository,
+        userApi,
+        eventPublisher,
+    )
 
     private val authId = "auth-subject"
 
@@ -138,5 +145,56 @@ class GithubRepositoryProjectServiceTest {
             every { projectIdsInternal } returns projectIds
             // Mirror the entity's computed getter so it reflects mutations made during the test.
             every { this@mockk.projectIds } answers { projectIds.toSet() }
+            // Named on the link event, so the ingestion module can find the repository's artifacts.
+            every { owner } returns "acme"
+            every { name } returns "repo"
         }
+
+    @Test
+    fun `announces a link so the artifacts and the index can follow`() {
+        val repositoryId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        val connection = connection(mutableSetOf())
+        val event = slot<GithubRepositoryProjectLinkChangedEvent>()
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
+        every { githubRepositoryConnectionRepository.save(connection) } answers { firstArg() }
+        every { eventPublisher.publishEvent(capture(event)) } returns Unit
+
+        service.addProjectToRepository(authId, repositoryId, projectId)
+
+        assertThat(event.captured.linked).isTrue()
+        assertThat(event.captured.projectId).isEqualTo(projectId)
+        assertThat(event.captured.owner).isEqualTo(connection.owner)
+        assertThat(event.captured.name).isEqualTo(connection.name)
+    }
+
+    @Test
+    fun `announces an unlink so the index stops answering from the source`() {
+        val repositoryId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        val connection = connection(mutableSetOf(projectId))
+        val event = slot<GithubRepositoryProjectLinkChangedEvent>()
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { githubRepositoryConnectionRepository.findById(repositoryId) } returns Optional.of(connection)
+        every { githubRepositoryConnectionRepository.save(connection) } answers { firstArg() }
+        every { eventPublisher.publishEvent(capture(event)) } returns Unit
+
+        service.removeProjectFromRepository(authId, repositoryId, projectId)
+
+        assertThat(event.captured.linked).isFalse()
+        assertThat(event.captured.projectId).isEqualTo(projectId)
+    }
+
+    @Test
+    fun `announces nothing when the caller may not touch the project`() {
+        val repositoryId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+        assertThatThrownBy { service.addProjectToRepository(authId, repositoryId, projectId) }
+            .isInstanceOf(ProjectAccessDeniedException::class.java)
+
+        verify(exactly = 0) { eventPublisher.publishEvent(any<GithubRepositoryProjectLinkChangedEvent>()) }
+    }
 }

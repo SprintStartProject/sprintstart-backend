@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.JiraArtifa
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
@@ -16,6 +17,7 @@ import com.sprintstart.sprintstartbackend.ingestion.service.provider.JiraArtifac
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.ObjectMapper
@@ -40,6 +42,7 @@ class JiraArtifactProviderServiceTest {
 
     private val runId = UUID.randomUUID()
     private val issueId = "10042"
+    private val projectId = UUID.randomUUID()
     private val now: Instant = Instant.parse("2026-08-06T09:00:00Z")
 
     private fun author() = JiraAuthor(displayName = "Grace Hopper", active = true, createdAt = now, updatedAt = now)
@@ -70,10 +73,17 @@ class JiraArtifactProviderServiceTest {
         statusName = statusName,
         statusDescription = "",
         statusCategory = statusCategory,
-        projectIds = setOf(UUID.randomUUID()),
+        projectIds = setOf(projectId),
     )
 
     private fun run() = mockk<IngestionRun>(relaxed = true)
+
+    /** A real run, for the tests that read what was recorded on it rather than only stubbing it. */
+    private fun realRun() = IngestionRun(
+        id = runId,
+        sourceSystem = SourceSystem.JIRA,
+        status = IngestionRunStatus.RUNNING,
+    )
 
     private fun newIssue(
         statusCategory: String,
@@ -148,13 +158,15 @@ class JiraArtifactProviderServiceTest {
             mime = null,
             language = null,
             state = "OPEN",
+            projectIdsInternal = mutableSetOf(projectId),
             createdAtSource = now,
             updatedAtSource = now,
             ingestionRun = run(),
             hash = null,
         )
+        val run = realRun()
         every { artifactRepository.findBySourceId(issueId) } returns existing
-        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run())
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
 
         service.persistArtifact(command("Done", assignee = author()))
 
@@ -162,5 +174,38 @@ class JiraArtifactProviderServiceTest {
         // Same reason, same unconditional refresh: work somebody has since picked up must stop
         // being offered, and being picked up moves no text either.
         assertThat(existing.hasAssignee).isTrue()
+        // Refreshing them in the database is only half of it. Both travel in the AI payload, and
+        // the AI service is what offers starter work, so the artifact has to be re-indexed -- the
+        // run it was first stored by is not this one, so nothing else would pick it up.
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        // Still no new text, so this is not an update of the run.
+        assertThat(run.updatedCount).isZero()
+        assertThat(existing.lastChangedAt).isNull()
+    }
+
+    @Test
+    fun `a re-fetched issue nothing changed on is left alone`() {
+        val existing = Artifact(
+            sourceSystem = SourceSystem.JIRA,
+            sourceId = issueId,
+            sourceUrl = null,
+            artifactType = ArtifactType.ISSUE,
+            title = "Run the sprint retro",
+            content = "Facilitate it and write the notes up.",
+            mime = null,
+            language = null,
+            state = "OPEN",
+            hasAssignee = false,
+            projectIdsInternal = mutableSetOf(projectId),
+            createdAtSource = now,
+            updatedAtSource = now,
+            ingestionRun = run(),
+            hash = null,
+        )
+        every { artifactRepository.findBySourceId(issueId) } returns existing
+
+        service.persistArtifact(command("In Progress"))
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
     }
 }

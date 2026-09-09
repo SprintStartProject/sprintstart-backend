@@ -20,3 +20,6 @@ docs/
 # Agent instructions
 GEMINI.md
 CLAUDE.md
+# Tooling residue: Python helper scripts used while editing this repo.
+__pycache__/
+*.pyc

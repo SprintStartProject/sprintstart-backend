@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraA
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -30,6 +31,19 @@ internal class JiraExceptionHandler {
     fun handleJiraAuthFailed(ex: JiraAuthException): ResponseEntity<ErrorResponse> =
         ResponseEntity
             .status(ex.code)
+            .body(ErrorResponse(ex.message))
+
+    /**
+     * Handles exceptions of type `JiraProjectAccessDeniedException` by returning a response with
+     * HTTP status `403 Forbidden`.
+     *
+     * @param ex The `JiraProjectAccessDeniedException` naming the project the caller may not touch.
+     * @return A `ResponseEntity` with status `403 Forbidden` and an `ErrorResponse` body.
+     */
+    @ExceptionHandler(JiraProjectAccessDeniedException::class)
+    fun handleProjectAccessDenied(ex: JiraProjectAccessDeniedException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
             .body(ErrorResponse(ex.message))
 
     /**

@@ -2,8 +2,11 @@ package com.sprintstart.sprintstartbackend.ingestion
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.AiArtifactSummaryRequest
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AiArtifactSummaryStreamMessage
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ProjectMembershipsDeletedAiResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.RunArtifactsIngestResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.ArtifactSummaryAiException
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
@@ -53,6 +56,52 @@ class ArtifactIngestionClient(
                 .perform<RunArtifactsIngestResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             throw IngestionResponseException("Failed to ingest artifact (HTTP ${e.statusCode}): ${e.body}")
+        }
+
+    /**
+     * Rewrites the project membership of already-indexed artifacts.
+     *
+     * Used when a source is linked to or unlinked from a project: no content is re-sent and nothing
+     * is re-embedded, only the membership the AI service filters retrieval on.
+     *
+     * @param body The resulting membership of every artifact of the affected source.
+     * @return The AI service's per-artifact result.
+     * @throws IngestionResponseException when the AI service returns a non-successful HTTP response.
+     */
+    suspend fun syncProjectMemberships(
+        body: ArtifactProjectsAiSyncRequest,
+    ): ArtifactProjectsAiSyncResponse =
+        try {
+            webClient
+                .post()
+                .uri(uri("/api/v1/artifacts/projects/sync"))
+                .body(body)
+                .sync()
+                .perform<ArtifactProjectsAiSyncResponse>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw IngestionResponseException(
+                "Failed to sync project memberships (HTTP ${e.statusCode}): ${e.body}",
+            )
+        }
+
+    /**
+     * Drops a deleted project from every indexed chunk that carries it.
+     *
+     * @param projectId The project that was deleted.
+     * @return How much of the index was rewritten.
+     * @throws IngestionResponseException when the AI service returns a non-successful HTTP response.
+     */
+    suspend fun deleteProjectMemberships(projectId: UUID): ProjectMembershipsDeletedAiResponse =
+        try {
+            webClient
+                .delete()
+                .uri(uri("/api/v1/projects/$projectId/memberships"))
+                .sync()
+                .perform<ProjectMembershipsDeletedAiResponse>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw IngestionResponseException(
+                "Failed to purge project memberships (HTTP ${e.statusCode}): ${e.body}",
+            )
         }
 
     /**

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceA
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
@@ -24,6 +25,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
@@ -36,6 +38,7 @@ class AdminProjectServiceTest {
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
     private val jiraInstanceApi: JiraInstanceApi = mockk()
+    private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
@@ -43,6 +46,7 @@ class AdminProjectServiceTest {
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
         jiraInstanceApi = jiraInstanceApi,
+        eventPublisher = eventPublisher,
     )
 
     @Test
@@ -475,6 +479,26 @@ class AdminProjectServiceTest {
         verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
         verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
+    }
+
+    @Test
+    fun `deleteProject announces the deletion so the artifact store can drop the project`() {
+        val project = project()
+        val event = slot<ProjectDeletedEvent>()
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) } just runs
+        every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
+        every { projectRepository.delete(project) } just runs
+        every { eventPublisher.publishEvent(capture(event)) } just runs
+
+        service.deleteProject(project.id)
+
+        // Without this the deleted project's id stays on artifact_projects and on every indexed
+        // chunk, where nothing would ever clear it again.
+        assertThat(event.captured.projectId).isEqualTo(project.id)
     }
 
     @Test

@@ -11,6 +11,7 @@ query RepoIssuesSince($owner: String!, $name: String!, $cursor: String, $since: 
                 body
                 state
                 createdAt
+                updatedAt
                 closedAt
                 url
                 author {

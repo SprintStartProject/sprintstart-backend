@@ -1,8 +1,10 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
@@ -66,6 +68,9 @@ class GithubConnectorServiceTest {
     @BeforeEach
     fun setUp() {
         every { userApi.userHasAccessToProject(any(), any()) } returns true
+        // Default: not connected anywhere yet, so the full connect flow runs. Tests covering the
+        // reuse path override this.
+        every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null
 
         service = GithubConnectorService(
             applicationScope = testScope,
@@ -86,7 +91,7 @@ class GithubConnectorServiceTest {
     @Nested
     inner class ConnectRepositoryIfNecessary {
         @Test
-        fun `connectRepositoryIfExists throws ResponseStatusException when user has no project access`() =
+        fun `connectRepositoryIfNecessary throws ResponseStatusException when user has no project access`() =
             runTest {
                 every { userApi.userHasAccessToProject("mock-id", testProjectId) } returns false
 
@@ -96,7 +101,7 @@ class GithubConnectorServiceTest {
             }
 
         @Test
-        fun `connectRepositoryIfExists throws GithubUserPatNotFoundException when PAT not found`() =
+        fun `connectRepositoryIfNecessary throws GithubUserPatNotFoundException when PAT not found`() =
             runTest {
                 every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null
                 every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
@@ -108,7 +113,7 @@ class GithubConnectorServiceTest {
             }
 
         @Test
-        fun `connectRepositoryIfExists throws RepositoryNotFoundException when repo does not exist on GitHub`() =
+        fun `connectRepositoryIfNecessary throws RepositoryNotFoundException when repo does not exist on GitHub`() =
             runTest {
                 every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null
                 every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
@@ -125,17 +130,164 @@ class GithubConnectorServiceTest {
             }
 
         @Test
-        fun `connectRepositoryIfExists returns a transactionId when repo exists`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary returns a transactionId when repo exists`() = testScope.runTest {
             stubSuccessfulConnect()
 
-            val transactionId = service.connectRepositoryIfNecessary("auth-id", connectRequest())
+            val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
 
-            assertThat(transactionId).isNotNull()
-            assertThat(transactionId).isInstanceOf(UUID::class.java)
+            assertThat(outcome.transactionId).isNotNull()
+            assertThat(outcome.wasReused).isFalse()
         }
 
         @Test
-        fun `connectRepositoryIfExists saves repository connection`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary links an already-connected repository instead of fetching it again`() =
+            testScope.runTest {
+                val existing = GithubRepositoryConnection(
+                    owner = "owner",
+                    name = "repo",
+                    user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                    projectIdsInternal = mutableSetOf(UUID.randomUUID()),
+                )
+                every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+                every { repoConnectionRepository.save(any()) } answers { firstArg() }
+                stubCallerCanSeeRepository()
+
+                val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
+
+                assertThat(outcome.wasReused).isTrue()
+                assertThat(existing.projectIds).contains(testProjectId)
+                // No second connection row, no second snapshot, no second config, and above all no
+                // re-fetch of everything already stored.
+                verify(exactly = 0) { repoConfigRepository.save(any()) }
+                coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
+                // GitHub *is* consulted now, but only to prove the caller can see the repository --
+                // never to fetch it again.
+                coVerify(exactly = 1) { githubClient.repositoryExists(any()) }
+            }
+
+        @Test
+        fun `reusing a connection announces the link so the artifacts follow`() = testScope.runTest {
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(),
+            )
+            val event = slot<GithubRepositoryProjectLinkChangedEvent>()
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            every { repoConnectionRepository.save(any()) } answers { firstArg() }
+            stubCallerCanSeeRepository()
+            every { eventPublisher.publishEvent(capture(event)) } returns Unit
+
+            service.connectRepositoryIfNecessary("auth-id", connectRequest())
+
+            assertThat(event.captured.linked).isTrue()
+            assertThat(event.captured.projectId).isEqualTo(testProjectId)
+        }
+
+        @Test
+        fun `reuse reports its transaction under an ingestion run of its own`() = testScope.runTest {
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(),
+            )
+            val events = mutableListOf<Any>()
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            every { repoConnectionRepository.save(any()) } answers { firstArg() }
+            stubCallerCanSeeRepository()
+            every { eventPublisher.publishEvent(capture(events)) } returns Unit
+
+            val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
+
+            // The caller is handed a transaction id, so something has to resolve it. Without this
+            // event nothing records the connect and the id points at no run at all.
+            val announced = events.filterIsInstance<GithubRepositoryAlreadyConnectedEvent>().single()
+            assertThat(announced.transactionId).isEqualTo(outcome.transactionId)
+            assertThat(announced.owner).isEqualTo("owner")
+            assertThat(announced.name).isEqualTo("repo")
+        }
+
+        @Test
+        fun `reuse refuses a caller whose PAT cannot see the repository`() = testScope.runTest {
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(UUID.randomUUID()),
+            )
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            stubCallerCanSeeRepository()
+            coEvery { githubClient.repositoryExists(any()) } returns false
+
+            // Access to the target project is the caller's own business; reaching into a private
+            // repository somebody else connected is not. Without this, any PM who knows an
+            // owner/name could pull another team's code into their project on that team's PAT --
+            // and the propagation would make all of it answerable in their chat.
+            assertFailsWith<RepositoryNotFoundException> {
+                service.connectRepositoryIfNecessary("auth-id", connectRequest())
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.save(any()) }
+            assertThat(existing.projectIds).doesNotContain(testProjectId)
+        }
+
+        @Test
+        fun `reuse refuses a caller with no PAT of their own`() = testScope.runTest {
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(UUID.randomUUID()),
+            )
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
+            every { githubUserRepository.findById(any()) } returns Optional.empty()
+
+            assertFailsWith<GithubUserPatNotFoundException> {
+                service.connectRepositoryIfNecessary("auth-id", connectRequest())
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        }
+
+        @Test
+        fun `reuse still works across PMs when the caller can see the repository`() = testScope.runTest {
+            // #257's point: the connection keeps the first PM's PAT, and a second PM may link it to
+            // their own project without learning anything about the first one. The visibility check
+            // must not take that away -- it only asks that the caller can reach the repository too.
+            val existing = GithubRepositoryConnection(
+                owner = "owner",
+                name = "repo",
+                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
+                projectIdsInternal = mutableSetOf(UUID.randomUUID()),
+            )
+            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
+            every { repoConnectionRepository.save(any()) } answers { firstArg() }
+            stubCallerCanSeeRepository()
+
+            val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
+
+            assertThat(outcome.wasReused).isTrue()
+            assertThat(existing.projectIds).contains(testProjectId)
+            // Still nobody else's PAT resolved on the caller's behalf, and still no re-fetch.
+            assertThat(existing.user.id.authId).isEqualTo("other-pm")
+        }
+
+        @Test
+        fun `reuse still refuses a project the caller does not manage`() = testScope.runTest {
+            every { userApi.userHasAccessToProject("auth-id", testProjectId) } returns false
+
+            assertFailsWith<ResponseStatusException> {
+                service.connectRepositoryIfNecessary("auth-id", connectRequest())
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.findByOwnerAndName(any(), any()) }
+        }
+
+        @Test
+        fun `connectRepositoryIfNecessary saves repository connection`() = testScope.runTest {
             stubSuccessfulConnect()
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -144,7 +296,7 @@ class GithubConnectorServiceTest {
         }
 
         @Test
-        fun `connectRepositoryIfExists saves config with nextSyncAt set`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary saves config with nextSyncAt set`() = testScope.runTest {
             stubSuccessfulConnect()
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -155,7 +307,7 @@ class GithubConnectorServiceTest {
         }
 
         @Test
-        fun `connectRepositoryIfExists saves config with default as source enabled`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary saves config with default as source enabled`() = testScope.runTest {
             stubSuccessfulConnect()
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -166,7 +318,7 @@ class GithubConnectorServiceTest {
         }
 
         @Test
-        fun `connectRepositoryIfExists launches all background ingestion jobs`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary launches all background ingestion jobs`() = testScope.runTest {
             stubSuccessfulConnect()
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -180,7 +332,7 @@ class GithubConnectorServiceTest {
         }
 
         @Test
-        fun `connectRepositoryIfExists passes same transactionId to all background jobs`() = testScope.runTest {
+        fun `connectRepositoryIfNecessary passes same transactionId to all background jobs`() = testScope.runTest {
             stubSuccessfulConnect()
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -205,12 +357,14 @@ class GithubConnectorServiceTest {
             )
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repository
             every { repoConnectionRepository.save(repository) } returns repository
+            stubCallerCanSeeRepository()
 
             val transactionId = service.connectRepositoryIfNecessary("auth-id", connectRequest())
 
             assertThat(transactionId).isNotNull()
             assertThat(repository.projectIds).contains(testProjectId)
-            coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
+            // Consulted once for the visibility check, and for nothing else.
+            coVerify(exactly = 1) { githubClient.repositoryExists(any()) }
             coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
             coVerify(exactly = 0) { commitsService.fetchAndIngestAllCommits(any(), any()) }
             coVerify(exactly = 0) { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
@@ -455,6 +609,18 @@ class GithubConnectorServiceTest {
         name = name,
         user = user,
     )
+
+    /**
+     * The caller owns the named PAT and that PAT can see the repository -- what the reuse path now
+     * demands before it will link somebody else's connection into the caller's project.
+     */
+    private fun stubCallerCanSeeRepository() {
+        every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
+        every { githubUserRepository.findById(any()) } returns Optional.of(
+            GithubUser(GithubUserPat("auth-id", "test-pat"), token = "their-token"),
+        )
+        coEvery { githubClient.repositoryExists(any()) } returns true
+    }
 
     private fun stubSuccessfulConnect() {
         every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null

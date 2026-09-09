@@ -37,9 +37,10 @@ internal class GithubIssueListener(
     fun on(
         event: GithubIssuesFetchFailedEvent,
     ) {
-        githubIngestionRunService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFailed(
             event.transactionId,
             finishedType = FinishedTypes.ISSUES,
+            reason = event.reason,
         )
     }
 }

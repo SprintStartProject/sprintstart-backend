@@ -147,6 +147,63 @@ class IngestionRunLifeCycleServiceTest {
     }
 
     @Test
+    fun `finishRun still syncs a failed-phase run whose only work was re-scoped artifacts`() {
+        val reingested = UUID.randomUUID()
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.RUNNING,
+            failedCount = 1,
+            artifactIdsToReingest = mutableSetOf(reingested),
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id, successfulItemCount = 0)
+
+        // A nightly run where the commits phase failed and the only other work was three issues
+        // being closed moves no counter at all -- that is deliberate, nothing was fetched. Judging
+        // it by the counters alone made it `FAILED` with the sync skipped, so the closed issues
+        // never reached the index and starter work kept offering them.
+        assertThat(run.status).isEqualTo(IngestionRunStatus.PARTIAL)
+        assertThat(run.aiSyncStatus).isNotEqualTo(AiSyncStatus.NOT_APPLICABLE)
+        verify(exactly = 1) { publisher.publishEvent(RunFinishedEvent(run.id)) }
+    }
+
+    @Test
+    fun `finishRun still syncs a failed-phase run whose only work was a deindex`() {
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.RUNNING,
+            failedCount = 1,
+            artifactIdsToDeindex = mutableListOf(UUID.randomUUID().toString()),
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id, successfulItemCount = 0)
+
+        assertThat(run.status).isEqualTo(IngestionRunStatus.PARTIAL)
+        verify(exactly = 1) { publisher.publishEvent(RunFinishedEvent(run.id)) }
+    }
+
+    @Test
+    fun `finishRun still fails a run that truly did nothing`() {
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.RUNNING,
+            failedCount = 1,
+        )
+        every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)
+
+        service.finishRun(run.id, successfulItemCount = 0)
+
+        assertThat(run.status).isEqualTo(IngestionRunStatus.FAILED)
+        assertThat(run.aiSyncStatus).isEqualTo(AiSyncStatus.NOT_APPLICABLE)
+        verify(exactly = 0) { publisher.publishEvent(any()) }
+    }
+
+    @Test
     fun `markAiSyncFailed records the failure reason on the matching run`() {
         val run = run()
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)

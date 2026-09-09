@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceExternalServiceException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceResourceNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.CreateConfluenceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.response.ConfluenceConnectionResponse
@@ -22,6 +23,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.repository.Confl
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -39,6 +41,7 @@ internal class ConfluenceConnectionService(
     private val connectionPersistenceService: ConfluenceConnectionPersistenceService,
     private val scheduledExecutor: ScheduledExecutor,
     private val ingestionService: ConfluencePageIngestionService,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Validates the selected remote space before atomically storing its connection and credential.
@@ -136,12 +139,18 @@ internal class ConfluenceConnectionService(
      * already ingested are kept, as with the Jira and GitHub connectors; only the page filters
      * stored alongside the connection go with it (via their cascade).
      *
+     * Keeping the pages is not the same as leaving them readable. Their project membership also
+     * lives on the artifacts and on every indexed chunk, and retrieval is fail-closed on the
+     * latter, so a deletion that stopped at this row would leave the space answerable in a project
+     * that no longer has it as a source. The announced event is what takes it out.
+     *
      * @throws ConfluenceConnectionNotFoundException when the connection does not belong to the project.
      */
     @Transactional
     fun deleteConnection(authId: String, projectId: UUID, connectionId: UUID) {
         requireProjectAccess(authId, projectId)
         connectionRepository.delete(findConnection(projectId, connectionId))
+        eventPublisher.publishEvent(ConfluenceSpaceConnectionDeletedEvent(connectionId, projectId))
     }
 
     private fun requireProjectAccess(authId: String, projectId: UUID) {

@@ -13,6 +13,11 @@ data class ArtifactResponse(
     val sourceUrl: String?,
     val artifactType: ArtifactType,
     val ingestedAt: Instant,
+    /**
+     * When ingestion last saw the artifact's content change, or null while it still matches what
+     * was first imported. Distinct from [ingestedAt], which stays at the first import.
+     */
+    val lastChangedAt: Instant?,
     val metadata: String,
     val sourceVersion: String? = null,
 )
