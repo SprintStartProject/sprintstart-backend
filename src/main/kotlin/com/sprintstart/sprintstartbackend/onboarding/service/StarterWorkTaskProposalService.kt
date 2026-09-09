@@ -74,11 +74,12 @@ class StarterWorkTaskProposalService(
      * to the stateless AI service so it can dedupe and ground competency tags. The AI call runs
      * outside any transaction.
      */
-    suspend fun generate(): GenerateStarterWorkResponse {
+    suspend fun generate(projectId: UUID): GenerateStarterWorkResponse {
         val (activeSourceIds, activeCompetencyKeys) = withContext(Dispatchers.IO) {
             readTxTemplate.execute { loadActiveState() }!!
         }
         val outcome = onboardingAiClient.proposeStarterWork(
+            projectIds = listOf(projectId),
             activeSourceIds = activeSourceIds,
             activeCompetencyKeys = activeCompetencyKeys,
         )
@@ -100,11 +101,12 @@ class StarterWorkTaskProposalService(
      * task the backend re-gates away on persist (already pooled) is announced as a `warning` before
      * the `done`, never silently dropped. A stream failure becomes a synthesised terminal `error`.
      */
-    suspend fun streamGenerate(): Flow<AiProgressEvent> {
+    suspend fun streamGenerate(projectId: UUID): Flow<AiProgressEvent> {
         val active = withContext(Dispatchers.IO) { readTxTemplate.execute { loadActiveState() }!! }
         return flow {
             onboardingAiClient
                 .streamStarterWork(
+                    projectIds = listOf(projectId),
                     activeSourceIds = active.sourceIds,
                     activeCompetencyKeys = active.competencyKeys,
                 ).collect { event ->

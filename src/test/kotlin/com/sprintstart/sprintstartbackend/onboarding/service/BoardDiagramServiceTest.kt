@@ -47,6 +47,7 @@ class BoardDiagramServiceTest {
     private val hireId: UUID = UUID.randomUUID()
     private val cardId: UUID = UUID.randomUUID()
     private val boardId: UUID = UUID.randomUUID()
+    private val projectId: UUID = UUID.randomUUID()
     private val subject = "how a request reaches the database"
 
     private val service = BoardDiagramService(
@@ -61,7 +62,7 @@ class BoardDiagramServiceTest {
     fun setUp() {
         every { boardCardRepository.findById(cardId) } returns Optional.of(diagramCard())
         every { boardRepository.findById(boardId) } returns
-            Optional.of(Board(id = boardId, userId = hireId, projectId = UUID.randomUUID()))
+            Optional.of(Board(id = boardId, userId = hireId, projectId = projectId))
         every { boardDiagramRepository.findById(cardId) } returns Optional.empty()
         every { boardDiagramRepository.save(any()) } answers { firstArg() }
     }
@@ -107,7 +108,7 @@ class BoardDiagramServiceTest {
 
     @Test
     fun `draws the picture and keeps it with the corpus it was drawn from`() = runTest {
-        coEvery { onboardingAiClient.assembleDiagram(subject, null) } returns assembled()
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled()
 
         val content = service.refresh(hireId, cardId)
 
@@ -125,7 +126,7 @@ class BoardDiagramServiceTest {
 
     @Test
     fun `every box carries the source that proves it`() = runTest {
-        coEvery { onboardingAiClient.assembleDiagram(subject, null) } returns assembled()
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled()
 
         val content = service.refresh(hireId, cardId)
 
@@ -142,7 +143,7 @@ class BoardDiagramServiceTest {
     @Test
     fun `an unchanged corpus serves the kept picture and nothing is redrawn`() = runTest {
         every { boardDiagramRepository.findById(cardId) } returns Optional.of(cached())
-        coEvery { onboardingAiClient.assembleDiagram(subject, "corpus-1") } returns
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } returns
             DiagramOutcome(status = "unchanged")
 
         val content = service.refresh(hireId, cardId)
@@ -155,7 +156,7 @@ class BoardDiagramServiceTest {
     @Test
     fun `skipped deletes the kept picture because it describes a corpus that is gone`() = runTest {
         every { boardDiagramRepository.findById(cardId) } returns Optional.of(cached())
-        coEvery { onboardingAiClient.assembleDiagram(subject, "corpus-1") } returns
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } returns
             DiagramOutcome(status = "skipped", notes = listOf("no grounding evidence retrieved"))
 
         val content = service.refresh(hireId, cardId)
@@ -168,7 +169,7 @@ class BoardDiagramServiceTest {
     @Test
     fun `an unreachable ai service serves the kept picture rather than losing it`() = runTest {
         every { boardDiagramRepository.findById(cardId) } returns Optional.of(cached())
-        coEvery { onboardingAiClient.assembleDiagram(subject, "corpus-1") } throws
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } throws
             OnboardingAiException(503, "", "down")
 
         val content = service.refresh(hireId, cardId)
@@ -181,7 +182,7 @@ class BoardDiagramServiceTest {
 
     @Test
     fun `an outage with nothing kept says so instead of pretending`() = runTest {
-        coEvery { onboardingAiClient.assembleDiagram(subject, null) } throws
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } throws
             OnboardingAiException(503, "", "down")
 
         val content = service.refresh(hireId, cardId)
@@ -196,7 +197,7 @@ class BoardDiagramServiceTest {
         // hire's own work, and this is a copy of something derivable.
         every { boardDiagramRepository.findById(cardId) } returns
             Optional.of(cached(payload = "{ this is not json"))
-        coEvery { onboardingAiClient.assembleDiagram(subject, null) } returns assembled("corpus-2")
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled("corpus-2")
 
         val content = service.refresh(hireId, cardId)
 
@@ -207,13 +208,13 @@ class BoardDiagramServiceTest {
     fun `an undecodable picture is revalidated as if there were none`() = runTest {
         every { boardDiagramRepository.findById(cardId) } returns
             Optional.of(cached(payload = "{ this is not json"))
-        coEvery { onboardingAiClient.assembleDiagram(subject, null) } returns assembled("corpus-2")
+        coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled("corpus-2")
 
         service.refresh(hireId, cardId)
 
         // Sending the fingerprint of a picture nobody can read would answer `unchanged` and leave
         // the card empty for as long as the corpus stands still.
-        coVerify { onboardingAiClient.assembleDiagram(subject, null) }
+        coVerify { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) }
     }
 
     @Test
