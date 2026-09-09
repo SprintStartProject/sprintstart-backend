@@ -76,6 +76,18 @@ class StarterWorkTaskProposal(
     var taskZeroEligible: Boolean = false,
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
+    /**
+     * When a person last decided something about this row — *not* when it was rejected.
+     *
+     * Written by every path where somebody's judgement lands on the task: marking it reviewed,
+     * authoring one by hand, promoting an issue nobody mined, reviving a stale row on promotion,
+     * and rejecting it. Rejection is only the one of those that also sets [rejectionReason], which
+     * is what actually distinguishes a refusal.
+     *
+     * Recorded rather than read: nothing in the backend's responses or the frontend reads it
+     * today. It is kept because "when did a human last touch this" is the question a stale-looking
+     * pool gets asked first, and it cannot be reconstructed after the fact.
+     */
     @Column(name = "decided_at", nullable = true)
     var decidedAt: Instant? = null,
     @Column(name = "rejection_reason", nullable = true, columnDefinition = "TEXT")
