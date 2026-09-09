@@ -16,6 +16,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
  * does not come from the literature but from R1: an unblocked task owned by people who never
  * answer is not an unblocked task. Responsiveness therefore *demotes*, never hides — a stale
  * repository is a finding for a PM, not a reason to bury real work from a hire.
+ *
+ * Whether somebody already has the task demotes on the same terms and for the same reason: the
+ * pool records that an issue is assigned, not to whom, so filtering on it could hide a hire's own
+ * work from them.
  */
 object StarterWorkMatcher {
     /** Competency overlap: the strongest single signal, but not the only one. */
@@ -50,6 +54,20 @@ object StarterWorkMatcher {
 
     /** Repositories that answer slowly lose up to this much. Capped so it can demote, never bury. */
     private const val RESPONSIVENESS_MAX_PENALTY = 15.0
+
+    /**
+     * A task somebody already has loses this much.
+     *
+     * Placed between [UNREVIEWED_PENALTY] and [RESPONSIVENESS_MAX_PENALTY] on purpose. "Somebody is
+     * on this" is a stronger reason to look elsewhere than "nobody has vouched for this yet", and a
+     * weaker one than a repository that never answers at all — there, the hire's work would go
+     * nowhere; here, it merely duplicates.
+     *
+     * It stays a demotion for the same reason responsiveness does. The corpus records *that* an
+     * issue is assigned, never *to whom*, so a hire assigned the issue at its source would hide
+     * their own task if this filtered. Being wrong costs a few rank positions instead.
+     */
+    private const val ASSIGNED_PENALTY = 12.0
 
     /** Beyond this, waiting longer is not meaningfully worse — it is already too long. */
     private const val SLOW_RESPONSE_HOURS = 72.0
@@ -88,6 +106,13 @@ object StarterWorkMatcher {
         val repositoryFullName: String?,
         /** Whether a person has looked at this task. Unreviewed is claimable, just ranked lower. */
         val reviewed: Boolean = true,
+        /**
+         * Whether somebody had the issue assigned when reconciliation last looked.
+         *
+         * Only a definite yes demotes: unknown is not "free", and defaulting to false keeps a pool
+         * nobody has reconciled yet ranking exactly as it does today.
+         */
+        val assigned: Boolean = false,
     )
 
     /** A repository's answering behaviour, mirroring the ingestion module's `RepositoryResponsiveness`. */
@@ -151,11 +176,17 @@ object StarterWorkMatcher {
             "note: nobody has reviewed this task yet"
         }
 
-        val total = reasons.sumOf { it.first } - penalty.first - if (task.reviewed) 0.0 else UNREVIEWED_PENALTY
+        val assigned = if (task.assigned) "note: somebody is already assigned to this one" else null
+
+        val total = reasons.sumOf { it.first } -
+            penalty.first -
+            (if (task.reviewed) 0.0 else UNREVIEWED_PENALTY) -
+            (if (task.assigned) ASSIGNED_PENALTY else 0.0)
 
         val ordered = reasons.sortedByDescending { it.first }.map { it.second }.toMutableList()
         penalty.second?.let { ordered += it }
         unreviewed?.let { ordered += it }
+        assigned?.let { ordered += it }
 
         return Score(score = total, matchedCompetencyKeys = matched, reasons = ordered)
     }

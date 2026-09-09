@@ -107,7 +107,28 @@ class JiraArtifactProviderServiceTest {
      */
     @Test
     fun `a done column called something else is still closed`() {
-        assertThat(newIssue(statusCategory = "Done", statusName = "Akzeptiert").state).isEqualTo("CLOSED")
+        assertThat(newIssue(statusCategory = "done", statusName = "Akzeptiert").state).isEqualTo("CLOSED")
+    }
+
+    /**
+     * The category is read as its key, because Jira localizes the category's *name* as well as the
+     * status'. Matching the English "Done" meant a German instance reported "Fertig" and every
+     * finished issue on it was ingested as open — mining kept offering closed work, and
+     * `StarterWorkPoolReconciler` never saw a `CLOSED` to go stale on.
+     */
+    @Test
+    fun `a finished issue on a non-English instance is still closed`() {
+        assertThat(newIssue(statusCategory = "done", statusName = "Fertig").state).isEqualTo("CLOSED")
+    }
+
+    /**
+     * Rows ingested before the mapper carried the key hold the English category *name* in their
+     * metadata. Case-insensitive matching is what keeps those reading the same, so the change
+     * needs no backfill.
+     */
+    @Test
+    fun `a row holding the old category name still reads as closed`() {
+        assertThat(newIssue(statusCategory = "Done").state).isEqualTo("CLOSED")
     }
 
     /**

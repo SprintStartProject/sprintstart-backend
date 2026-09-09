@@ -30,7 +30,18 @@ class UserGoalServiceTest {
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository = mockk()
     private val userApi: UserApi = mockk()
-    private val service = UserGoalService(userGoalRepository, starterWorkTaskProposalRepository, userApi)
+
+    // Claiming reconciles the one row against its source first. Default to "nothing changed"; the
+    // tests that care about the closed case override it.
+    private val starterWorkPoolReconciler: StarterWorkPoolReconciler = mockk {
+        every { reconcileOne(any()) } returns false
+    }
+    private val service = UserGoalService(
+        userGoalRepository,
+        starterWorkTaskProposalRepository,
+        starterWorkPoolReconciler,
+        userApi,
+    )
 
     private val userId: UUID = UUID.randomUUID()
     private val projectId: UUID = UUID.randomUUID()
@@ -140,6 +151,44 @@ class UserGoalServiceTest {
 
             // A stale goal degrades to "no goal" rather than describing work that no longer exists.
             assertNull(service.findForUser(userId, projectId))
+        }
+    }
+
+    @Nested
+    inner class ClosedAtSource {
+        /**
+         * The pool is reconciled on a schedule and on ingestion, so a task closed since the last
+         * pass still reads as live. Claiming is where acting on that stale answer costs somebody
+         * real work, so the row is checked against its source before its status is trusted.
+         */
+        @Test
+        fun `a task closed since the last pass cannot be claimed`() {
+            val proposal = approvedProposal()
+            stageUser()
+            every { starterWorkTaskProposalRepository.findById(any()) } returns Optional.of(proposal)
+            every { starterWorkPoolReconciler.reconcileOne(proposal) } answers {
+                proposal.status = ProposalStatus.STALE
+                true
+            }
+
+            val error = assertThrows<ResponseStatusException> {
+                service.claimForMe(authId, projectId, proposal.id)
+            }
+
+            assertEquals(HttpStatus.CONFLICT, error.statusCode)
+            verify(exactly = 0) { userGoalRepository.save(any()) }
+        }
+
+        @Test
+        fun `a task still open is claimed as before`() {
+            val proposal = approvedProposal()
+            stageUser()
+            every { starterWorkTaskProposalRepository.findById(any()) } returns Optional.of(proposal)
+
+            val view = service.claimForMe(authId, projectId, proposal.id)
+
+            assertEquals(proposal.id, view.proposalId)
+            verify { starterWorkPoolReconciler.reconcileOne(proposal) }
         }
     }
 }

@@ -14,7 +14,13 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  * invite somebody to look for it forever.
  */
 enum class CandidatePoolState {
-    /** Not in the pool — the only state promotion accepts. */
+    /**
+     * Not on offer to anybody — the only state promotion accepts.
+     *
+     * Covers an issue with no proposal at all and one whose proposal went stale because the issue
+     * had closed. Promotion takes both: the first creates a row, the second revives one, and from
+     * a PM's side the click means the same thing either way.
+     */
     AVAILABLE,
 
     /** Already a live starter-work task, mined or picked. Promoting it again would duplicate it. */

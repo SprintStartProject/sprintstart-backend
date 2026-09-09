@@ -28,6 +28,7 @@ import java.util.UUID
 class UserGoalService(
     private val userGoalRepository: UserGoalRepository,
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository,
+    private val starterWorkPoolReconciler: StarterWorkPoolReconciler,
     private val userApi: UserApi,
 ) {
     /**
@@ -43,6 +44,11 @@ class UserGoalService(
         val proposal = starterWorkTaskProposalRepository.findById(proposalId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No starter-work task found with id: $proposalId")
         }
+        // Checked against the source before the status is trusted, not only against what the pool
+        // last believed. Reconciliation runs on a clock and on ingestion, so a task closed since
+        // the last pass still reads as live here — and this is the one moment where acting on that
+        // stale answer costs somebody real work. One local read, at the point of commitment.
+        starterWorkPoolReconciler.reconcileOne(proposal)
         if (proposal.status != ProposalStatus.LIVE) {
             throw ResponseStatusException(
                 HttpStatus.CONFLICT,
