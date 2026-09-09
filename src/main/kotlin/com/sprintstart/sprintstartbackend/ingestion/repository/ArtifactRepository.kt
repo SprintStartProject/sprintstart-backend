@@ -115,6 +115,25 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findProjectIdsByIngestionRunId(@Param("runId") runId: UUID): Set<UUID>
 
     /**
+     * Returns the projects of an explicit set of artifacts.
+     *
+     * The companion to [findProjectIdsByIngestionRunId] for artifacts a run touched without owning:
+     * `Artifact.ingestionRun` points at whichever run *stored* the row, so a run that only
+     * re-scoped or re-tracked existing artifacts is invisible to the run-scoped query.
+     *
+     * @param artifactIds The artifacts to resolve; an empty set returns nothing.
+     */
+    @Query(
+        """
+            SELECT DISTINCT p
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE a.id IN :artifactIds
+        """,
+    )
+    fun findProjectIdsByArtifactIdIn(@Param("artifactIds") artifactIds: Collection<UUID>): Set<UUID>
+
+    /**
      * Returns one artifact page limited to artifacts linked to the given project.
      */
     @Query(

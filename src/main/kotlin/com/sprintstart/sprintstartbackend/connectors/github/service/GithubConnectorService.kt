@@ -224,10 +224,52 @@ class GithubConnectorService(
             repoConnectionRepository.findByOwnerAndName(request.owner, request.name)
         }
         if (alreadyConnected != null) {
+            requireCallerCanSeeRepository(authId, request)
             return reuseConnection(alreadyConnected, request.projectId)
         }
 
         return connectNewRepository(authId, request, UUID.randomUUID())
+    }
+
+    /**
+     * Rejects a caller who cannot reach the repository on GitHub with their own credentials.
+     *
+     * Access to the target project is not enough on the reuse path. Reuse deliberately works across
+     * PMs (#257): whoever connected the repository first keeps the connection and its PAT, and a
+     * second PM may link it to their own project without ever learning about the first one. Without
+     * this check that becomes a way in -- any PM who guesses or reads an `owner/name` could attach
+     * somebody else's private repository to their own project, borrowing the other team's PAT, and
+     * the propagation would then make the whole repository answerable in their chat.
+     *
+     * The new-connection path already proves this implicitly: it resolves the caller's own stored
+     * PAT and calls `repositoryExists` before persisting anything. The reuse path skipped both, so
+     * it did the same work with none of the proof. This is that check, and nothing more -- it does
+     * not require any relationship to the existing connection, because requiring one would be
+     * exactly the cross-PM restriction #257 rules out.
+     *
+     * The failure is `RepositoryNotFoundException`, the same answer an unconnected and invisible
+     * repository gets, so a caller still cannot tell "you may not see this" from "this does not
+     * exist" -- which is also what #257 asks of the response.
+     *
+     * @param authId The authenticated caller subject.
+     * @param request The connect request, whose `tokenName` names the caller's own stored PAT.
+     * @throws GithubUserPatNotFoundException when the caller has no such PAT.
+     * @throws RepositoryNotFoundException when that PAT cannot see the repository.
+     */
+    private suspend fun requireCallerCanSeeRepository(authId: String, request: ConnectRepositoryRequest) {
+        val userId = userApi.getUserIdByAuthId(authId).orElseThrow { UserWithAuthIdNotFoundException(authId) }
+        val user = withContext(Dispatchers.IO) {
+            githubUserRepository.findById(GithubUserPat(authId = authId, name = request.tokenName))
+        }.orElseThrow {
+            GithubUserPatNotFoundException(request.tokenName, userId.toString())
+        }
+
+        // Transient and never saved: it exists only to carry the caller's credentials into the
+        // visibility probe, the same shape `connectNewRepository` builds before it persists.
+        val probe = GithubRepositoryConnection(owner = request.owner, name = request.name, user = user)
+        if (!githubClient.repositoryExists(probe)) {
+            throw RepositoryNotFoundException(request.owner, request.name)
+        }
     }
 
     /**

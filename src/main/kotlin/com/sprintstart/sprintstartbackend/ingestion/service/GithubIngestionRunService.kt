@@ -38,7 +38,10 @@ class GithubIngestionRunService(
         val run = ingestionRunRepository
             .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
-        run.finishedTypes.add(finishedType)
+        // Same guard as the failure path: a phase reported twice must not finish the run twice.
+        if (!run.finishedTypes.add(finishedType)) {
+            return
+        }
         if (run.finishedTypes.containsAll(FinishedTypes.entries)) {
             ingestionRunLifeCycleService.finishRun(run)
         }
@@ -65,6 +68,15 @@ class GithubIngestionRunService(
             .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
 
+        // Gated on the phase not having closed yet, because the same failure can be reported twice:
+        // `GithubFileService.fetchAndIngestFileUpdatesIncremental` publishes its fetch-failed event
+        // explicitly for a blank last SHA *and* again from the `runCatching` around it. Ungated,
+        // that run records the same failure twice, and -- if FILES is the last outstanding phase --
+        // finishes twice, firing `RunFinishedEvent` and the whole AI sync a second time.
+        if (!run.finishedTypes.add(finishedType)) {
+            return
+        }
+
         run.failedItems.add(
             FailedArtifact(
                 sourceId = null,
@@ -75,7 +87,6 @@ class GithubIngestionRunService(
         )
         run.failedCount++
 
-        run.finishedTypes.add(finishedType)
         if (run.finishedTypes.containsAll(FinishedTypes.entries)) {
             ingestionRunLifeCycleService.finishRun(run)
         }

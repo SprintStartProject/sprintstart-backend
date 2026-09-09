@@ -123,11 +123,17 @@ class ArtifactProjectService(
      */
     @Tracked("Purging a deleted project from the artifact store")
     suspend fun purgeProject(projectId: UUID) {
+        // The AI service goes first, and deliberately so. `artifact_projects` is the only remaining
+        // record of which artifacts carried this project -- the project row itself is already gone,
+        // since `AdminProjectService` publishes its event after commit. Deleting the links first
+        // and then failing the AI call would leave the markers on every chunk with nothing left to
+        // reconstruct the purge from. This way a failure throws before anything local is lost, and
+        // the operation stays repeatable.
+        val response = artifactIngestionClient.deleteProjectMemberships(projectId)
+
         val removedLinks = withContext(Dispatchers.IO) {
             transactionTemplate.execute { artifactProjectRepository.deleteProjectLinks(projectId) }
         } ?: 0
-
-        val response = artifactIngestionClient.deleteProjectMemberships(projectId)
 
         logger.info(
             "Purged deleted project {}: {} artifact link(s) locally, {} chunk(s) in the AI index",

@@ -140,8 +140,12 @@ class GithubArtifactProviderService(
             // change -- they leave `lastChangedAt` and the run's update count alone -- but both
             // travel in the AI payload, so they still have to reach the index.
             ArtifactType.ISSUE -> {
+                // Compared as sets: GitHub returns an issue's labels in no guaranteed order, and a
+                // list comparison would call a pure reordering a change -- putting every issue in
+                // the repository up for re-embedding on a nightly run that altered nothing.
                 val trackingChanged =
-                    artifact.state != command.state || artifact.labels != command.labels
+                    artifact.state != command.state ||
+                        artifact.labels.toSet() != command.labels.toSet()
                 artifact.state = command.state
                 artifact.labels.clear()
                 artifact.labels.addAll(command.labels)

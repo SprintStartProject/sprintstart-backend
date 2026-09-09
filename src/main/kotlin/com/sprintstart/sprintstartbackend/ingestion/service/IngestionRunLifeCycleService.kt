@@ -158,8 +158,15 @@ class IngestionRunLifeCycleService(
     fun finishRun(run: IngestionRun, successfulItemCount: Int = 0) {
         require(successfulItemCount >= 0) { "Successful item count must not be negative" }
         val changedArtifactCount = run.ingestedCount + run.updatedCount + run.deletedCount
+        // Work that moves no counter and still has to reach the AI index: an artifact an earlier
+        // run stored that this one re-scoped into another project, or whose `state`/labels moved.
+        // Neither is an ingest, an update or a delete -- by design, since nothing was fetched --
+        // so counting only the counters would call such a run empty and skip its sync entirely.
+        val hasPendingAiWork = run.artifactIdsToReingest.isNotEmpty() || run.artifactIdsToDeindex.isNotEmpty()
+        val didSomething = changedArtifactCount > 0 || hasPendingAiWork
+
         if (run.failedCount > 0) {
-            if (changedArtifactCount > 0 || successfulItemCount > 0) {
+            if (didSomething || successfulItemCount > 0) {
                 run.status = IngestionRunStatus.PARTIAL
             } else {
                 run.status = IngestionRunStatus.FAILED
@@ -170,11 +177,11 @@ class IngestionRunLifeCycleService(
 
         run.finishedAt = Instant.now()
         if (run.status == IngestionRunStatus.COMPLETED ||
-            (run.status == IngestionRunStatus.PARTIAL && changedArtifactCount > 0)
+            (run.status == IngestionRunStatus.PARTIAL && didSomething)
         ) {
             publisher.publishEvent(RunFinishedEvent(run.id))
         } else {
-            // Nothing was ingested, updated, or deleted, so there is nothing for the AI
+            // Nothing was ingested, updated, deleted or re-scoped, so there is nothing for the AI
             // sync layer to act on -- it will never run for this id.
             run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
         }
