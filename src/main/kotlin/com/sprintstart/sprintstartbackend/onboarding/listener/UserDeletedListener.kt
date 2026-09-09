@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepos
 import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
@@ -46,6 +47,7 @@ class UserDeletedListener(
     private val arrivalStepStateRepository: ArrivalStepStateRepository,
     private val boardRepository: BoardRepository,
     private val boardCardRepository: BoardCardRepository,
+    private val boardStructureRepository: BoardStructureRepository,
     private val userGoalRepository: UserGoalRepository,
     private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository,
     private val autonomyMilestoneRepository: AutonomyMilestoneRepository,
@@ -81,9 +83,12 @@ class UserDeletedListener(
     }
 
     private fun eraseBoards(userId: UUID) {
-        boardRepository.findAllByUserId(userId).forEach {
-            boardCardRepository.deleteAllByBoardId(it.id)
-        }
+        val boardIds = boardRepository.findAllByUserId(userId).map { it.id }
+        boardIds.forEach { boardCardRepository.deleteAllByBoardId(it) }
+        // The arrangement goes with the board it describes. It is not a stray preference: it holds
+        // what this person called the parts of their board and which sentences they marked, which
+        // is as much a description of them as the cards it arranges.
+        if (boardIds.isNotEmpty()) boardStructureRepository.deleteAllByBoardIdIn(boardIds)
         boardRepository.deleteAllByUserId(userId)
     }
 }

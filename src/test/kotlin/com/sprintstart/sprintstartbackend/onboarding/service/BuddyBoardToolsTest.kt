@@ -1,7 +1,15 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.HighlightColor
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.CardMarkPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -20,8 +28,9 @@ import java.util.UUID
 
 class BuddyBoardToolsTest {
     private val boardService: BoardService = mockk()
+    private val boardStructureService: BoardStructureService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val tools = BuddyBoardTools(boardService, userApi)
+    private val tools = BuddyBoardTools(boardService, boardStructureService, userApi)
 
     private val userId = UUID.randomUUID()
     private val projectId = UUID.randomUUID()
@@ -42,6 +51,22 @@ class BuddyBoardToolsTest {
         profileIcon = null,
         projects = projects.toSet(),
         projectRoles = emptyList(),
+    )
+
+    /**
+     * The place_card spec, by name.
+     *
+     * Named rather than taken as the only one: this component offers a second tool now, and a test
+     * that reached for "the spec" would have started asserting about whichever one came first.
+     */
+    private fun placeCardSpec() = tools.toolSpecs().first { it.name == "place_card" }
+
+    private fun readCall() = BuddyToolCallDto(id = "r0", name = "read_board", arguments = buildJsonObject {})
+
+    private fun boardOf(cards: List<BoardCardResponse>) = BoardResponse(
+        boardId = UUID.randomUUID(),
+        projectId = projectId,
+        cards = cards,
     )
 
     private fun placeCall(kind: String, subject: String? = null) = BuddyToolCallDto(
@@ -80,7 +105,7 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `the tool advertises subject as belonging to diagrams only`() {
-        val spec = tools.toolSpecs().single()
+        val spec = placeCardSpec()
 
         val subject = spec.parameters["properties"]!!.jsonObject["subject"]!!.jsonObject
         assertThat(subject["description"]!!.jsonPrimitive.content).contains("DIAGRAM only")
@@ -161,9 +186,136 @@ class BuddyBoardToolsTest {
         verify(exactly = 0) { boardService.place(any(), any(), any()) }
     }
 
+    /**
+     * The two questions a hire actually asked this tool, and could not get an answer to.
+     *
+     * "What have I pinned" came back as a general description of the board, because the read never
+     * mentioned the pins. "Which cards did I highlight something on" came back as an apology, with
+     * the mentor saying the board does not tell it — because it reported a count and no names.
+     * Both facts were in the stored arrangement the whole time.
+     */
+    @Test
+    fun `the read names what is pinned and what carries a highlight`() {
+        val kept = UUID.randomUUID()
+        val marked = UUID.randomUUID()
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns
+            BoardResponse(
+                boardId = UUID.randomUUID(),
+                projectId = projectId,
+                cards = listOf(note(kept, "Set up the VPN"), note(marked, "Deploys are on Thursdays")),
+            )
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    pinnedCardIds = listOf(kept.toString()),
+                    marks = mapOf(
+                        marked.toString() to
+                            listOf(CardMarkPayload("on Thursdays", HighlightColor.GREEN)),
+                    ),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+
+        assertThat(result).contains("Kept at the top of their board")
+        assertThat(result).contains("Set up the VPN")
+        // The words themselves, not "on 1 of these cards": the point of mentioning a highlight is
+        // that the mentor can ask about that part instead of the whole card.
+        assertThat(result).contains("Deploys are on Thursdays")
+        assertThat(result).contains("on Thursdays")
+    }
+
+    private fun note(id: UUID, text: String) = BoardCardResponse(
+        id = id,
+        kind = BoardCardKind.NOTE,
+        owner = BoardCardOwner.HIRE,
+        position = 0,
+        placedAt = null,
+        content = NoteContent(text = text),
+    )
+
+    @Test
+    fun `both tools are offered, and the read says it only looks`() {
+        val names = tools.toolSpecs().map { it.name }
+
+        assertThat(names).containsExactlyInAnyOrder("place_card", "read_board")
+        // The one thing the read's description has to get across: a mentor that thinks a read did
+        // something will tell the hire it did. It used to say "It changes nothing", which was more
+        // than was true — the read goes through the same path that keeps a board's baseline cards
+        // up to date — and a description that overstates one thing is not a good place to be
+        // believed about another.
+        assertThat(tools.toolSpecs().first { it.name == "read_board" }.description)
+            .contains("It only looks")
+    }
+
+    @Test
+    fun `a board the hire has never opened is not brought into existence by a read`() {
+        every { boardService.hasBoard(userId, projectId) } returns false
+
+        val result = tools.execute(readCall(), userId)
+
+        // Reading a board is what creates one. A hire who has never opened the page should not end
+        // up with a board because they asked the mentor a question about it.
+        assertThat(result).contains("has not opened their board yet")
+        verify(exactly = 0) { boardService.getBoard(any(), any()) }
+    }
+
+    @Test
+    fun `neither the pins nor the highlights let a client decide how long the read is`() {
+        val cards = (1..50).map { note(UUID.randomUUID(), "Card-%03d".format(it)) }
+        val first = cards.first()
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns boardOf(cards)
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    pinnedCardIds = List(5_000) { first.id.toString() },
+                    marks = mapOf(
+                        first.id.toString() to (1..500).map { CardMarkPayload("mark-%03d".format(it)) },
+                    ),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+        val pinnedLine = result.lineSequence().first { it.startsWith("Kept at the top") }
+        val markLine = result.lineSequence().first { it.contains("mark-001") }
+
+        // Everything in the arrangement was written by a client, so everything read out of it is a
+        // client deciding how large the next prompt for this board is. Five thousand pins of one
+        // card are one card, said once, and a card with five hundred highlights is quoted like any
+        // other card.
+        assertThat(pinnedLine.split("Card-001").size - 1).isEqualTo(1)
+        assertThat(markLine.split("mark-").size - 1).isLessThanOrEqualTo(6)
+    }
+
+    @Test
+    fun `a highlight that carries only a colour is left out rather than quoted as nothing`() {
+        val card = note(UUID.randomUUID(), "Set up the VPN")
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns boardOf(listOf(card))
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    marks = mapOf(card.id.toString() to listOf(CardMarkPayload(color = HighlightColor.GREEN))),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+
+        // On a NOTE the marked words are in the note's own text; the mark is the colour. Quoting
+        // its empty string would have the mentor asking about the part they highlighted and naming
+        // nothing at all.
+        assertThat(result).doesNotContain("Highlighted")
+        assertThat(result).doesNotContain("\"\"")
+    }
+
     @Test
     fun `the tool offers only the kinds the board does not keep by itself`() {
-        val spec = tools.toolSpecs().single()
+        val spec = placeCardSpec()
 
         assertThat(spec.name).isEqualTo("place_card")
         assertThat(spec.description).contains("CURRENT_TASK", "SUGGESTED_TASKS")
