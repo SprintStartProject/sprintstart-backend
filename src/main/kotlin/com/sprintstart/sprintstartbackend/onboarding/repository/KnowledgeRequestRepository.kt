@@ -12,6 +12,15 @@ interface KnowledgeRequestRepository : JpaRepository<KnowledgeRequest, UUID> {
         status: KnowledgeRequestStatus,
     ): List<KnowledgeRequest>
 
+    /**
+     * How many questions on a project are still waiting on a person.
+     *
+     * Counted in the database rather than by reading the queue and taking its length: the badge in
+     * the sidebar asks this on every navigation, and the full read now resolves each asker's name
+     * and onboarding position -- work nobody needs in order to render a number.
+     */
+    fun countByProjectIdAndStatus(projectId: UUID, status: KnowledgeRequestStatus): Long
+
     /** A hire's own escalations, newest first, so they can see what they asked and what came back. */
     fun findAllByHireIdOrderByCreatedAtDesc(hireId: UUID): List<KnowledgeRequest>
 

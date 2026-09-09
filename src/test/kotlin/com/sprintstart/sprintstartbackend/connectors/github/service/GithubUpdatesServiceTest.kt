@@ -24,6 +24,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -225,7 +226,15 @@ class GithubUpdatesServiceTest {
             testScope.advanceUntilIdle()
 
             coVerify { fileService.fetchAndIngestFileUpdatesIncremental(repo, any()) }
-            coVerify { githubOrgService.connectGithubOrgIfNecessary("owner", "test-token", any()) }
+            val transactionId = slot<java.util.UUID>()
+            coVerify {
+                githubOrgService.connectGithubOrgIfNecessary(
+                    "owner",
+                    "test-token",
+                    capture(transactionId),
+                )
+            }
+            assertThat(transactionId.captured).isNotNull()
             coVerify { commitsService.fetchAndIngestLatestCommits(repo.snapshot!!, any()) }
             coVerify { issuesService.fetchAndIngestAllIssues(repo.id, "owner", "repo", any(), true, any()) }
             coVerify {
@@ -251,6 +260,7 @@ class GithubUpdatesServiceTest {
             coJustRun { commitsService.verifyCommitSyncStatus(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
+            coJustRun { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
 
             service.updateRepository(UpdateRepositoryRequest("owner", "repo"), false)
             testScope.advanceUntilIdle()
@@ -265,6 +275,13 @@ class GithubUpdatesServiceTest {
                     "repo",
                     any(),
                     false,
+                    any(),
+                )
+            }
+            coVerify {
+                githubOrgService.connectGithubOrgIfNecessary(
+                    "owner",
+                    "test-token",
                     any(),
                 )
             }

@@ -20,7 +20,7 @@ fun insightsTestConfig(
     knowledgeGaps: KnowledgeGapsInsightsConfig = KnowledgeGapsInsightsConfig(),
 ): ApplicationConfig = ApplicationConfig(
     ai = AiConfig(baseUrl = "http://ai.test"),
-    github = GithubConfig(baseUrl = "https://github.test", cron = "0 0 * * *"),
+    github = GithubConfig(baseUrl = "https://github.test"),
     crypto = CryptoConfig(masterKey = "test-master-key", salt = "0123456789abcdef"),
     upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
     insights = InsightsConfig(faq = faq, knowledgeGaps = knowledgeGaps),

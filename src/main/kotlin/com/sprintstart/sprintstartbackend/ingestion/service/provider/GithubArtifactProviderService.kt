@@ -72,6 +72,7 @@ class GithubArtifactProviderService(
                 ArtifactType.ISSUE -> updateIssue(existing, command, runId)
                 ArtifactType.PULL_REQUEST -> updatePullRequest(existing, command, runId)
                 ArtifactType.ORG_METADATA -> Unit
+                ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
             }
             return
         }

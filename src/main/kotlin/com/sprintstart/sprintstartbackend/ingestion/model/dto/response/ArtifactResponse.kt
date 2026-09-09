@@ -14,4 +14,5 @@ data class ArtifactResponse(
     val artifactType: ArtifactType,
     val ingestedAt: Instant,
     val metadata: String,
+    val sourceVersion: String? = null,
 )

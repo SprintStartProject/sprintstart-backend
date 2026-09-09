@@ -1,0 +1,156 @@
+package com.sprintstart.sprintstartbackend.connectors.confluence.service
+
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.entity.ConfluenceSpaceConnection
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceCredentialNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.confluence.repository.ConfluenceSpaceConnectionRepository
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
+import java.time.Instant
+import java.util.UUID
+
+internal class ConfluenceConnectionRuntimeServiceTest {
+    private val repository = mockk<ConfluenceSpaceConnectionRepository>()
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
+    private val service = ConfluenceConnectionRuntimeService(repository, atlassianCredentialApi)
+
+    @Test
+    fun `module API returns safe project scoped source instances and connection ids`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG").also { stored ->
+            stored.createdAt = Instant.parse("2026-08-28T10:00:00Z")
+            stored.spaceName = "Engineering Handbook"
+        }
+        every { repository.findAllByProjectIdOrderByCreatedAtAsc(projectId) } returns listOf(connection)
+
+        val ids = service.getConnectionIdsByProject(projectId)
+        val source = service.getSourceInstances(projectId).single()
+
+        assertThat(ids).containsExactly(connection.id)
+        assertThat(source.connectionId).isEqualTo(connection.id)
+        assertThat(source.sourceRef).isEqualTo("https://tenant.invalid|${connection.spaceId}")
+        assertThat(source.spaceKey).isEqualTo("ENG")
+        assertThat(source.spaceName).isEqualTo("Engineering Handbook")
+        assertThat(source.sourceUrl).isEqualTo("https://tenant.invalid/wiki/spaces/ENG")
+        assertThat(source.status).isEqualTo("CONNECTED")
+        assertThat(source.enabled).isTrue()
+        assertThat(source.toString()).doesNotContain("token", "credential", "Authorization")
+        verify(exactly = 2) { repository.findAllByProjectIdOrderByCreatedAtAsc(projectId) }
+    }
+
+    @Test
+    fun `batch patch loads once updates atomically and preserves request order`() {
+        val projectId = UUID.randomUUID()
+        val first = connection(projectId, "ONE")
+        val second = connection(projectId, "TWO")
+        val requested = linkedMapOf(second.id to false, first.id to true)
+        every { repository.findAllByIdInAndProjectId(requested.keys, projectId) } returns listOf(first, second)
+
+        val result = service.patchSources(projectId, requested)
+
+        assertThat(result.map { source -> source.id }).containsExactly(second.id, first.id)
+        assertThat(result.map { source -> source.sourceEnabled }).containsExactly(false, true)
+        assertThat(second.sourceEnabled).isFalse()
+        assertThat(first.sourceEnabled).isTrue()
+        verify(exactly = 1) { repository.findAllByIdInAndProjectId(requested.keys, projectId) }
+        verify(exactly = 0) { repository.findById(any()) }
+    }
+
+    @Test
+    fun `missing or foreign project source rejects whole batch before mutation`() {
+        val projectId = UUID.randomUUID()
+        val owned = connection(projectId, "ONE").also { connection -> connection.sourceEnabled = true }
+        val foreignId = UUID.randomUUID()
+        val requested = linkedMapOf(owned.id to false, foreignId to false)
+        every { repository.findAllByIdInAndProjectId(requested.keys, projectId) } returns listOf(owned)
+
+        assertThatThrownBy { service.patchSources(projectId, requested) }
+            .isInstanceOf(ConfluenceConnectionNotFoundException::class.java)
+
+        assertThat(owned.sourceEnabled).isTrue()
+    }
+
+    @Test
+    fun `getConnectionForIngestion resolves credentials through the Atlassian credential API`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every {
+            atlassianCredentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+        } returns AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = "fake-token")
+
+        val snapshot = service.getConnectionForIngestion(projectId, connection.id)
+
+        assertThat(snapshot.credentials.email).isEqualTo("fake-user@example.invalid")
+        assertThat(snapshot.credentials.apiToken).isEqualTo("fake-token")
+    }
+
+    @Test
+    fun `getConnectionForIngestion fails when the referenced credential no longer exists`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findByIdAndProjectId(connection.id, projectId) } returns connection
+        every {
+            atlassianCredentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+        } returns null
+
+        assertThatThrownBy { service.getConnectionForIngestion(projectId, connection.id) }
+            .isInstanceOf(ConfluenceCredentialNotFoundException::class.java)
+    }
+
+    @Test
+    fun `updateSpaceMetadata refreshes cached name and key for an existing connection`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "OLD")
+        every { repository.findById(connection.id) } returns java.util.Optional.of(connection)
+
+        service.updateSpaceMetadata(connection.id, "  Engineering Handbook  ", "NEW")
+
+        assertThat(connection.spaceName).isEqualTo("Engineering Handbook")
+        assertThat(connection.spaceKey).isEqualTo("NEW")
+    }
+
+    @Test
+    fun `updateSpaceMetadata stores blank name as null and ignores blank key`() {
+        val projectId = UUID.randomUUID()
+        val connection = connection(projectId, "ENG")
+        every { repository.findById(connection.id) } returns java.util.Optional.of(connection)
+
+        service.updateSpaceMetadata(connection.id, "   ", "  ")
+
+        assertThat(connection.spaceName).isNull()
+        assertThat(connection.spaceKey).isEqualTo("ENG")
+    }
+
+    @Test
+    fun `updateSpaceMetadata is a no-op when the connection no longer exists`() {
+        val missingId = UUID.randomUUID()
+        every { repository.findById(missingId) } returns java.util.Optional.empty()
+
+        service.updateSpaceMetadata(missingId, "Engineering Handbook", "ENG")
+
+        verify(exactly = 1) { repository.findById(missingId) }
+    }
+
+    private fun connection(projectId: UUID, spaceKey: String): ConfluenceSpaceConnection {
+        val spaceId = UUID
+            .randomUUID()
+            .mostSignificantBits
+            .toString()
+            .removePrefix("-")
+        return ConfluenceSpaceConnection(
+            projectId = projectId,
+            baseUrl = "https://tenant.invalid",
+            spaceId = spaceId,
+            spaceKey = spaceKey,
+            credentialAuthId = "auth-id",
+            credentialName = "token",
+        )
+    }
+}

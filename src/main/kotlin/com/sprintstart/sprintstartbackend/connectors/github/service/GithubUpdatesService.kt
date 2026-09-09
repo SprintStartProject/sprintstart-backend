@@ -164,6 +164,16 @@ class GithubUpdatesService(
                 githubRepository.snapshot!!.lastPullRequestsSyncAt,
             )
         }
+        // Not a pretty fix but it does the job.
+        // As currently the org metadata has no update management, calling this method results in the fetching being
+        // aborted, however from the ingestion run POV it succeeded, therefore unlocks the ingestion run.
+        applicationScope.launch {
+            githubOrgService.connectGithubOrgIfNecessary(
+                githubRepository.owner,
+                githubRepository.user.token,
+                transactionId,
+            )
+        }
     }
 
     /**

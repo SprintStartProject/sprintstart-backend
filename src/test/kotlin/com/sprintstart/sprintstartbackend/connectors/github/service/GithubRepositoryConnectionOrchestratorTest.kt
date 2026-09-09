@@ -33,15 +33,15 @@ class GithubRepositoryConnectionOrchestratorTest {
         val transactionId1 = UUID.randomUUID()
         val transactionId2 = UUID.randomUUID()
 
-        coEvery { connectorService.connectRepositoryIfExists("auth-id", repo1) } returns transactionId1
-        coEvery { connectorService.connectRepositoryIfExists("auth-id", repo2) } returns transactionId2
+        coEvery { connectorService.connectRepositoryIfNecessary("auth-id", repo1) } returns transactionId1
+        coEvery { connectorService.connectRepositoryIfNecessary("auth-id", repo2) } returns transactionId2
 
         val result = orchestrator.connectRepositoriesIfExist("auth-id", request)
 
         assertThat(result.transactionIdsByRepositoryId)
             .containsEntry("owner1/repo1", transactionId1)
             .containsEntry("owner2/repo2", transactionId2)
-        coVerify { connectorService.connectRepositoryIfExists("auth-id", repo1) }
-        coVerify { connectorService.connectRepositoryIfExists("auth-id", repo2) }
+        coVerify { connectorService.connectRepositoryIfNecessary("auth-id", repo1) }
+        coVerify { connectorService.connectRepositoryIfNecessary("auth-id", repo2) }
     }
 }

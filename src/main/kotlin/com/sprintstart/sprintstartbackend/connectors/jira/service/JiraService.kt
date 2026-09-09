@@ -1,6 +1,9 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiatedEvent
@@ -9,14 +12,11 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.Conn
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.toDto
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
@@ -32,7 +32,7 @@ import java.util.UUID
 
 @Service
 internal class JiraService(
-    private val credentialsRepository: JiraCredentialsRepository,
+    private val atlassianCredentialApi: AtlassianCredentialApi,
     private val instanceRepository: JiraInstanceRepository,
     private val configRepository: JiraInstanceConfigRepository,
     private val jiraClient: JiraClient,
@@ -151,7 +151,7 @@ internal class JiraService(
      *                such as URL, display name, user email, and token name.
      * @param transactionId A unique identifier for tracking the current transaction.
      * @return The transaction ID associated with the connection process.
-     * @throws JiraCredentialNotFoundException If the provided credentials are not found.
+     * @throws AtlassianCredentialNotFoundException If the provided credentials are not found.
      * @throws JiraInstanceUnavailableException If the specified Jira instance is not reachable.
      * @throws Exception If an error occurs during retrieval of project details or subsequent steps.
      */
@@ -160,14 +160,7 @@ internal class JiraService(
         request: ConnectJiraInstanceRequest,
         transactionId: UUID,
     ): UUID {
-        val credentials = credentialsRepository
-            .findById(JiraCredentialsId(authId, request.tokenName))
-            .orElseThrow {
-                eventPublisher.publishEvent(
-                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
-                )
-                JiraCredentialNotFoundException(request.userEmail, request.tokenName)
-            }
+        val credentials = resolveCredentials(authId, request, transactionId)
 
         if (!jiraClient.checkInstanceCapabilities(request.url)) {
             eventPublisher.publishEvent(
@@ -208,12 +201,31 @@ internal class JiraService(
         applicationScope.launch {
             jiraIssueService.searchAndIngestAllIssuesOfProjects(
                 instance,
-                JiraCredentialsId(authId, request.tokenName),
+                authId,
+                request.tokenName,
                 transactionId,
             )
         }
 
         return transactionId
+    }
+
+    /**
+     * Resolves the Atlassian credential to authenticate the new instance with.
+     *
+     * @throws AtlassianCredentialNotFoundException when no credential matches [ConnectJiraInstanceRequest.tokenName].
+     */
+    private fun resolveCredentials(
+        authId: String,
+        request: ConnectJiraInstanceRequest,
+        transactionId: UUID,
+    ): AtlassianCredentialSecret {
+        return atlassianCredentialApi.findSecret(authId, request.tokenName) ?: run {
+            eventPublisher.publishEvent(
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
+            )
+            throw AtlassianCredentialNotFoundException(request.userEmail, request.tokenName)
+        }
     }
 
     /**

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
+import java.time.Duration
 
 /**
  * Contains the following application.yml config parameters
@@ -20,7 +21,20 @@ data class ApplicationConfig(
     val keycloak: KeycloakConfig = KeycloakConfig(),
     val crypto: CryptoConfig,
     val upload: UploadConfig,
+    val confluence: ConfluenceConfig = ConfluenceConfig(),
     val insights: InsightsConfig = InsightsConfig(),
+)
+
+data class ConfluenceConfig(
+    val retry: ConfluenceRetryConfig = ConfluenceRetryConfig(),
+)
+
+/** Defines bounded request-level retries for Confluence Cloud calls. */
+data class ConfluenceRetryConfig(
+    val maxAttempts: Int = 4,
+    val initialDelay: Duration = Duration.ofMillis(500),
+    val maxDelay: Duration = Duration.ofSeconds(30),
+    val multiplier: Double = 2.0,
 )
 
 /**
@@ -126,14 +140,11 @@ data class AiConfig(
  * sprintstart:
  *     github:
  *         base-url: ...
- *         cron: ...
  * ´´´
  */
 data class GithubConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
-    @get:JsonProperty("cron")
-    val cron: String,
 )
 
 data class KeycloakConfig(

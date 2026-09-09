@@ -1,11 +1,16 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
@@ -24,15 +29,42 @@ class IngestionEventListenerTest {
     private val ingestionRunLifeCycleService = mockk<IngestionRunLifeCycleService>(relaxed = true)
 
     private val artifactRepository = mockk<ArtifactRepository>(relaxed = true)
+    private val ingestionRunRepository = mockk<IngestionRunRepository>(relaxed = true)
     private val publisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
     private val listener = IngestionEventListener(
         runArtifactsIngestionService,
         ingestionRunLifeCycleService,
         artifactRepository,
+        ingestionRunRepository,
         publisher,
         testScope,
     )
+
+    @Test
+    fun `application startup marks running runs as failed`() {
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.GITHUB,
+            status = IngestionRunStatus.RUNNING,
+        )
+        every { ingestionRunRepository.findAllRunning() } returns listOf(run)
+
+        listener.handleApplicationStartedEvent()
+
+        verify(exactly = 1) {
+            ingestionRunLifeCycleService.markSyncFailed(run, "Status running on application startup")
+        }
+    }
+
+    @Test
+    fun `application startup does nothing when no runs are running`() {
+        every { ingestionRunRepository.findAllRunning() } returns emptyList()
+
+        listener.handleApplicationStartedEvent()
+
+        verify(exactly = 0) { ingestionRunLifeCycleService.markSyncFailed(any(), any()) }
+    }
 
     @Test
     fun `handleRunFinished marks the run as synced when the AI sync succeeds`() {

@@ -109,12 +109,35 @@ class IngestionRunLifeCycleService(
      * though AI sync had already been dispatched and marked succeeded.
      *
      * @param transactionId The ingestion run id to finish. No-op when the run is unknown.
+     * @param successfulItemCount Source-specific successful items, including unchanged items that
+     * do not increment the canonical write counters.
      */
     @Transactional
     @Tracked("Finishing ingestion run")
-    fun finishRun(transactionId: UUID) {
+    fun finishRun(transactionId: UUID, successfulItemCount: Int = 0) {
         val run = ingestionRunRepository.findByIdOrNull(transactionId) ?: return
-        finishRun(run)
+        finishRun(run, successfulItemCount)
+    }
+
+    /**
+     * Completes a successful run that performed no ingestion work.
+     *
+     * This is used for idempotent connector operations such as linking an already-connected
+     * source to another project. The run is persisted as completed, but no [RunFinishedEvent]
+     * is published because there are no artifacts to synchronize downstream.
+     *
+     * @param transactionId The ingestion run id to complete.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    @Transactional
+    @Tracked("Finishing empty ingestion run")
+    fun finishEmptyRun(transactionId: UUID) {
+        val run = ingestionRunRepository
+            .findByIdForUpdate(transactionId)
+            .orElseThrow { IngestionRunNotFoundException(transactionId) }
+        run.status = IngestionRunStatus.COMPLETED
+        run.finishedAt = Instant.now()
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
     }
 
     /**
@@ -128,12 +151,15 @@ class IngestionRunLifeCycleService(
      * run id must use [finishRun] with the id so the mutation is actually persisted.
      *
      * @param run The managed ingestion run entity whose terminal status should be calculated.
+     * @param successfulItemCount Source-specific successful items, including unchanged items.
      */
     @Transactional
     @Tracked("Finishing ingestion run")
-    fun finishRun(run: IngestionRun) {
+    fun finishRun(run: IngestionRun, successfulItemCount: Int = 0) {
+        require(successfulItemCount >= 0) { "Successful item count must not be negative" }
+        val changedArtifactCount = run.ingestedCount + run.updatedCount + run.deletedCount
         if (run.failedCount > 0) {
-            if (run.ingestedCount > 0 || run.updatedCount > 0 || run.deletedCount > 0) {
+            if (changedArtifactCount > 0 || successfulItemCount > 0) {
                 run.status = IngestionRunStatus.PARTIAL
             } else {
                 run.status = IngestionRunStatus.FAILED
@@ -143,7 +169,9 @@ class IngestionRunLifeCycleService(
         }
 
         run.finishedAt = Instant.now()
-        if (run.status in setOf(IngestionRunStatus.COMPLETED, IngestionRunStatus.PARTIAL)) {
+        if (run.status == IngestionRunStatus.COMPLETED ||
+            (run.status == IngestionRunStatus.PARTIAL && changedArtifactCount > 0)
+        ) {
             publisher.publishEvent(RunFinishedEvent(run.id))
         } else {
             // Nothing was ingested, updated, or deleted, so there is nothing for the AI
@@ -182,6 +210,23 @@ class IngestionRunLifeCycleService(
             run.aiSyncStatus = AiSyncStatus.FAILED
             run.aiSyncFailureReason = reason.truncateToDbLimit()
         }
+    }
+
+    /**
+     * Records that an ingestion run failed on the backend site, so before the ai sync even happened. Status is changed
+     * to failed, finished at is set to now, and reason is applied.
+     *
+     * @param run The ingestion run to set failed.
+     * @param reason The reason why that run failed.
+     */
+    @Tracked("Marking ingestion run failed")
+    fun markSyncFailed(run: IngestionRun, reason: String?) {
+        run.status = IngestionRunStatus.FAILED
+        run.finishedAt = Instant.now()
+        run.failureReason = reason
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+
+        ingestionRunRepository.save(run)
     }
 }
 
