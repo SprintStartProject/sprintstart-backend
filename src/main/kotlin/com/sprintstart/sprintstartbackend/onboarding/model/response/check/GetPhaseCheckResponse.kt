@@ -19,6 +19,10 @@ data class CheckQuestionResponse(
     val explanation: String?,
     val correctAnswer: String? = null,
     val options: List<CheckOptionResponse> = emptyList(),
+    val title: String = question,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )
 
 data class CheckOptionResponse(

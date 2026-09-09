@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
-import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse

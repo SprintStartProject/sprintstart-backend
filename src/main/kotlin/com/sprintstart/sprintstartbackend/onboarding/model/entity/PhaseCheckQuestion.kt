@@ -6,9 +6,6 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.Id
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
@@ -17,11 +14,8 @@ import java.util.UUID
 @Entity
 @Table(name = "phase_check_questions")
 class PhaseCheckQuestion(
-    @Id
-    val id: UUID = UUID.randomUUID(),
-    @ManyToOne
-    @JoinColumn(name = "phase_id", nullable = false)
-    val phase: OnboardingPhase,
+    id: UUID = UUID.randomUUID(),
+    phase: OnboardingPhase,
     @Column(nullable = false)
     var position: Int,
     @Enumerated(EnumType.STRING)
@@ -29,6 +23,7 @@ class PhaseCheckQuestion(
     var type: CheckQuestionType,
     @Column(nullable = false, columnDefinition = "TEXT")
     var question: String,
+    title: String = question,
     @Column(nullable = true, columnDefinition = "TEXT")
     var explanation: String? = null,
     // Expected answer for SHORT_TEXT questions, null for MULTIPLE_CHOICE
@@ -41,4 +36,12 @@ class PhaseCheckQuestion(
     )
     @OrderBy("position ASC")
     val options: MutableList<PhaseCheckOption> = mutableListOf(),
-)
+    graphX: Double? = null,
+    graphY: Double? = null,
+) : OnboardingSubGraphNode(
+        id = id,
+        phase = phase,
+        title = title,
+        graphX = graphX,
+        graphY = graphY,
+    )

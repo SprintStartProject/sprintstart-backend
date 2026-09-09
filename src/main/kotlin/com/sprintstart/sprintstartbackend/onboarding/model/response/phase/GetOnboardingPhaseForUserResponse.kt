@@ -15,4 +15,7 @@ data class GetOnboardingPhaseForUserResponse(
     val unlockReason: PhaseUnlockReason?,
     val checkSummary: PhaseCheckSummaryResponse,
     val steps: List<GetOnboardingStepsResponse>,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )

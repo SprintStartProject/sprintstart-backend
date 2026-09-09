@@ -68,6 +68,10 @@ fun PhaseCheckQuestion.toForUserResponse(): CheckQuestionForUserResponse {
         type = this.type,
         question = this.question,
         options = options.sortedBy { it.position }.map { it.toForUserResponse() },
+        title = this.title,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -97,6 +101,10 @@ fun PhaseCheckQuestion.toGetResponse(): CheckQuestionResponse {
         explanation = this.explanation,
         correctAnswer = this.correctAnswer,
         options = options.sortedBy { it.position }.map { it.toGetResponse() },
+        title = this.title,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 

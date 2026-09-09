@@ -108,35 +108,7 @@ class OnboardingPathController(
         onboardingPathService.deleteOnboardingPathForMe(jwt.subject)
     }
 
-    /**
-     * Generates an AI-personalized onboarding path for the authenticated user.
-     *
-     * The user's working area is read from their profile.
-     * Any existing path is replaced. The response is an SSE stream with
-     * `stage`, `path`, `done`, and `error` events.
-     */
-    @Operation(
-        summary = "Personalize onboarding path via AI",
-        description = "Triggers AI generation of a personalized onboarding path " +
-            "for the authenticated user. Returns an SSE stream with progress events.",
-    )
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "200", description = "SSE stream of personalization events"),
-            ApiResponse(responseCode = "401", description = "Authentication required"),
-        ],
-    )
-    @ResponseStatus(HttpStatus.OK)
-    @PostMapping("/me/path/personalize", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    @PreAuthorize("hasRole('USER')")
-    fun personalizePath(
-        @Parameter(hidden = true)
-        @AuthenticationPrincipal jwt: Jwt,
-    ): Flow<OnboardingSseEvent> {
-        return onboardingPersonalizationService.personalize(jwt.subject)
-    }
-
-//  ========================== Endpoints for admins ==========================
+    //  ========================== Endpoints for admins ==========================
 
     /**
      * Returns the onboarding path for a specific user.
@@ -195,8 +167,61 @@ class OnboardingPathController(
     @DeleteMapping("/users/{userId}/path")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
     fun deletePathByUserId(
-        @Parameter(description = "UUID of the user whose onboarding path should be deleted") @PathVariable userId: UUID,
+        @Parameter(description = "UUID of the user whose onboarding path should be deleted")
+        @PathVariable userId: UUID,
     ) {
         onboardingPathService.deleteOnboardingPathByUserId(userId)
+    }
+}
+
+/**
+ * Project-scoped onboarding-path entry points.
+ *
+ * Mirror of the blueprint controllers: the project that seeds generation is a path variable, so
+ * the client builds from the project it has selected rather than the service guessing from the
+ * user's memberships.
+ */
+@RestController
+@RequestMapping("/api/v1/projects/{projectId}/onboarding")
+@Tag(
+    name = "Onboarding - Paths (project-scoped)",
+    description = "Create onboarding paths from a specific project's blueprint",
+)
+class ProjectOnboardingPathController(
+    private val onboardingPersonalizationService: OnboardingPersonalizationService,
+) {
+    /**
+     * Creates an onboarding path from the selected project's active blueprint for the authenticated
+     * user.
+     *
+     * Path generation is project-scoped: the user's path is copied from the active blueprint of
+     * [projectId] — the project the frontend currently has selected — and never from a global
+     * template. The service rejects a project the user is not assigned to. Any existing path is
+     * replaced. A project must have exactly one active blueprint.
+     *
+     * @param projectId The project whose active blueprint seeds the path.
+     */
+    @Operation(
+        summary = "Create onboarding path from blueprint",
+        description = "Copies the selected project's active blueprint into an " +
+            "onboarding path for the authenticated user. The project is a path variable, " +
+            "so the path matches the project the user has selected in the UI.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "SSE stream of personalization events"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/me/path/personalize", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PreAuthorize("hasRole('USER')")
+    fun personalizePath(
+        @Parameter(description = "UUID of the project whose active blueprint seeds the path")
+        @PathVariable projectId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): Flow<OnboardingSseEvent> {
+        return onboardingPersonalizationService.personalize(jwt.subject, projectId)
     }
 }

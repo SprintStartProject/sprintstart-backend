@@ -136,6 +136,7 @@ class BlueprintPathAdminController(
 
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
+@Suppress("TooManyFunctions")
 class BlueprintPathController(
     private val blueprintPathService: BlueprintPathService,
     private val blueprintGraphNodeService: BlueprintGraphNodeService,

@@ -24,13 +24,14 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.UUID
 
-@WebMvcTest(OnboardingPathController::class)
+@WebMvcTest(OnboardingPathController::class, ProjectOnboardingPathController::class)
 @Import(SecurityConfig::class)
 @AutoConfigureMockMvc
 class OnboardingPathControllerTest(
@@ -47,6 +48,7 @@ class OnboardingPathControllerTest(
 
     private val pathId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
 
     private val authId = "test-auth-id"
     private val adminAuthId = "test-admin-auth-id"
@@ -173,6 +175,41 @@ class OnboardingPathControllerTest(
         verify(exactly = 1) {
             onboardingPathService.deleteOnboardingPathForMe(authId)
         }
+    }
+
+    // ========================== /me personalize (project-scoped) ==========================
+
+    @Test
+    fun `personalizePath passes the selected project path variable to the service`() {
+        every { onboardingPersonalizationService.personalize(authId, projectId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 1) {
+            onboardingPersonalizationService.personalize(authId, projectId)
+        }
+    }
+
+    @Test
+    fun `personalizePath should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize"),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `personalizePath should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(noUserRoleJwt),
+            ).andExpect(status().isForbidden)
     }
 
     // ========================== Admin endpoints ==========================

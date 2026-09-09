@@ -227,7 +227,13 @@ data: [DONE]
 
     @Test
     fun `non-2xx at stream open throws WebClientException before any chunks`() = runTest {
-        mockWebServer.enqueue(MockResponse().setResponseCode(401))
+        val validationBody =
+            """{"detail":[{"loc":["body","project_id"],"msg":"Field required"}]}"""
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(422)
+                .setBody(validationBody),
+        )
 
         val ex = assertFailsWith<WebClientException> {
             webClient
@@ -241,7 +247,9 @@ data: [DONE]
                 .toList()
         }
 
-        assertEquals(401, ex.statusCode)
+        assertEquals(422, ex.statusCode)
+        assertEquals(validationBody, ex.body)
+        assertTrue(ex.message.orEmpty().contains(validationBody))
     }
 
     @Test

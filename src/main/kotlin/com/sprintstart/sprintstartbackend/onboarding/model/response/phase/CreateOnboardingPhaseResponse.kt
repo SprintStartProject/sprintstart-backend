@@ -8,4 +8,7 @@ data class CreateOnboardingPhaseResponse(
     val position: Int,
     val title: String,
     val description: String,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )

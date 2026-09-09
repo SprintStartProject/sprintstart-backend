@@ -12,4 +12,7 @@ data class GetOnboardingPhasesResponse(
     // Mirrors the user-facing path response so reviewer screens can show whether the
     // phase has a knowledge check and how the user did on it.
     val checkSummary: PhaseCheckSummaryResponse,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )

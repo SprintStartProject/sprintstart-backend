@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.repository
 
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
-import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintSubGraphNode
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import java.util.UUID

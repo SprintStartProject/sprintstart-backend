@@ -16,6 +16,9 @@ fun OnboardingPhase.toGetAllResponse(): GetOnboardingPhasesResponse {
         title = this.title,
         description = this.description,
         checkSummary = toCheckSummaryResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -27,6 +30,9 @@ fun OnboardingPhase.toGetResponse(): GetOnboardingPhaseResponse {
         title = this.title,
         description = this.description,
         steps = this.steps.map { step -> step.toGetAllResponse() },
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -44,6 +50,9 @@ fun OnboardingPhase.toGetForUserResponse(
         unlockReason = unlockReason,
         checkSummary = this.toCheckSummaryResponse(),
         steps = this.steps.map { step -> step.toGetAllResponse() },
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -54,6 +63,9 @@ fun OnboardingPhase.toCreateResponse(): CreateOnboardingPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -64,5 +76,8 @@ fun OnboardingPhase.toUpdateResponse(): UpdateOnboardingPhaseResponse {
         position = this.position,
         title = this.title,
         description = this.description,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }

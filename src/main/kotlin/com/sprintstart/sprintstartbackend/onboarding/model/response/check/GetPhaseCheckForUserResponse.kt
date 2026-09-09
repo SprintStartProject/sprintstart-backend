@@ -23,6 +23,10 @@ data class CheckQuestionForUserResponse(
     // True when this question is a carried-over repeat from an earlier phase.
     val review: Boolean = false,
     val reviewSourcePhaseTitle: String? = null,
+    val title: String = question,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )
 
 data class CheckOptionForUserResponse(

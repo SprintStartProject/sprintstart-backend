@@ -91,7 +91,7 @@ class BlueprintSubGraphAdminController(
 @RestController
 @RequestMapping("api/v1/projects/{projectId}/onboarding/blueprints/sub-graph-nodes/{nodeId}")
 class BlueprintSubGraphController(
-    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService
+    private val blueprintSubGraphNodeService: BlueprintSubGraphNodeService,
 ) {
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")

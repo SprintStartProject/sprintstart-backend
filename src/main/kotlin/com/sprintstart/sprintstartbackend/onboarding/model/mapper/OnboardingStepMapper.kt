@@ -22,6 +22,9 @@ fun OnboardingStep.toGetAllResponse(): GetOnboardingStepsResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -43,6 +46,9 @@ fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -58,6 +64,9 @@ fun OnboardingStep.toCreateResponse(): CreateOnboardingStepResponse {
         isAiAssisted = this.aiAssisted,
         expectedOutcome = this.expectedOutcome,
         status = this.status,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -76,5 +85,8 @@ fun OnboardingStep.toUpdateResponse(): UpdateOnboardingStepResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }

@@ -24,6 +24,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
@@ -36,6 +37,7 @@ class AdminProjectServiceTest {
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
     private val jiraInstanceApi: JiraInstanceApi = mockk()
+    private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
@@ -43,6 +45,7 @@ class AdminProjectServiceTest {
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
         jiraInstanceApi = jiraInstanceApi,
+        eventPublisher = eventPublisher,
     )
 
     @Test

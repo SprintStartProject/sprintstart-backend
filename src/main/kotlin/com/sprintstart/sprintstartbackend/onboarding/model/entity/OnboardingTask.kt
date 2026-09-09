@@ -18,9 +18,9 @@ class OnboardingTask(
     val step: OnboardingStep,
     @Column(nullable = false)
     var position: Int,
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var title: String,
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var description: String,
     @Column(nullable = false)
     var finished: Boolean = false,

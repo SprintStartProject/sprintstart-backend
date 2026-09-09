@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.util.UUID
 
+@Suppress("TooManyFunctions")
 interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
     fun findByProjectIdAndBlueprintKeyAndStatus(
         projectId: UUID,
@@ -38,6 +39,8 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
     fun findAllByProjectIdNullAndBlueprintKeyOrderByVersionDesc(blueprintKey: UUID): MutableList<BlueprintPath>
 
     fun findAllByProjectId(projectId: UUID): MutableList<BlueprintPath>
+
+    fun findAllByProjectIdAndStatus(projectId: UUID, status: BlueprintStatus): List<BlueprintPath>
 
     fun findByProjectIdAndId(projectId: UUID, id: UUID): BlueprintPath?
 

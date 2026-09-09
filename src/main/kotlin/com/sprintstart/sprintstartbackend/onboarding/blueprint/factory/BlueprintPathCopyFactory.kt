@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhaseRequirement
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintResource
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintSubGraphNode
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import org.springframework.stereotype.Component
 import java.util.UUID
@@ -29,11 +30,11 @@ class BlueprintPathCopyFactory {
             version = version,
             status = status,
         )
-        val newStepsByOldId = mutableMapOf<UUID, BlueprintStep>()
+        val newNodesByOldId = mutableMapOf<UUID, BlueprintSubGraphNode>()
         val newPhasesByOldId = mutableMapOf<UUID, BlueprintPhase>()
 
         path.blueprintPhases
-            .map { copyPhase(it, copy, newPhasesByOldId, newStepsByOldId) }
+            .map { copyPhase(it, copy, newPhasesByOldId, newNodesByOldId) }
             .forEach(copy.blueprintPhases::add)
 
         path.blueprintPhases
@@ -46,12 +47,12 @@ class BlueprintPathCopyFactory {
             }
 
         path.blueprintPhases
-            .flatMap { it.blueprintSteps }
-            .forEach { oldStep ->
-                val newStep = newStepsByOldId.getValue(oldStep.id)
+            .flatMap { it.blueprintSteps + it.blueprintCheckQuestions }
+            .forEach { oldNode ->
+                val newNode = newNodesByOldId.getValue(oldNode.id)
 
-                oldStep.blockedBy.forEach { oldBlocker ->
-                    newStep.blockedBy.add(newStepsByOldId.getValue(oldBlocker.id))
+                oldNode.blockedBy.forEach { oldBlocker ->
+                    newNode.blockedBy.add(newNodesByOldId.getValue(oldBlocker.id))
                 }
             }
 
@@ -62,7 +63,7 @@ class BlueprintPathCopyFactory {
         phase: BlueprintPhase,
         newPath: BlueprintPath,
         newPhasesByOldId: MutableMap<UUID, BlueprintPhase>,
-        newStepsByOldId: MutableMap<UUID, BlueprintStep>,
+        newNodesByOldId: MutableMap<UUID, BlueprintSubGraphNode>,
     ): BlueprintPhase {
         val newPhase = BlueprintPhase(
             blueprintPath = newPath,
@@ -71,6 +72,8 @@ class BlueprintPathCopyFactory {
             description = phase.description,
             aiPrompt = phase.aiPrompt,
             type = phase.type,
+            graphX = phase.graphX,
+            graphY = phase.graphY,
         )
 
         newPhasesByOldId[phase.id] = newPhase
@@ -80,11 +83,11 @@ class BlueprintPathCopyFactory {
             .forEach(newPhase.requirements::add)
 
         phase.blueprintSteps
-            .map { copyStep(it, newPhase, newStepsByOldId) }
+            .map { copyStep(it, newPhase, newNodesByOldId) }
             .forEach(newPhase.blueprintSteps::add)
 
         phase.blueprintCheckQuestions
-            .map { copyQuestion(it, newPhase) }
+            .map { copyQuestion(it, newPhase, newNodesByOldId) }
             .forEach(newPhase.blueprintCheckQuestions::add)
 
         return newPhase
@@ -105,7 +108,7 @@ class BlueprintPathCopyFactory {
     private fun copyStep(
         step: BlueprintStep,
         newPhase: BlueprintPhase,
-        newStepsByOldId: MutableMap<UUID, BlueprintStep>,
+        newNodesByOldId: MutableMap<UUID, BlueprintSubGraphNode>,
     ): BlueprintStep {
         val newStep = BlueprintStep(
             blueprintPhase = newPhase,
@@ -120,7 +123,7 @@ class BlueprintPathCopyFactory {
             graphY = step.graphY,
         )
 
-        newStepsByOldId[step.id] = newStep
+        newNodesByOldId[step.id] = newStep
 
         step.blueprintTasks
             .map { copyTask(it, newStep) }
@@ -160,6 +163,7 @@ class BlueprintPathCopyFactory {
     private fun copyQuestion(
         question: BlueprintCheckQuestion,
         newPhase: BlueprintPhase,
+        newNodesByOldId: MutableMap<UUID, BlueprintSubGraphNode>,
     ): BlueprintCheckQuestion {
         val newQuestion = BlueprintCheckQuestion(
             blueprintPhase = newPhase,
@@ -172,6 +176,8 @@ class BlueprintPathCopyFactory {
             graphX = question.graphX,
             graphY = question.graphY,
         )
+
+        newNodesByOldId[question.id] = newQuestion
 
         question.blueprintCheckOptions
             .map { copyOption(it, newQuestion) }

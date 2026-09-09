@@ -4,7 +4,7 @@ import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AssembleDiagramRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AssembleOrientationRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BlueprintSchema
+import com.sprintstart.sprintstartbackend.onboarding.external.model.AssemblePhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentResponse
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCompactRequest
@@ -12,13 +12,9 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCompact
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.DiagramOutcome
-import com.sprintstart.sprintstartbackend.onboarding.external.model.GenerateBlueprintsRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.GenerateBlueprintsResponse
-import com.sprintstart.sprintstartbackend.onboarding.external.model.GenerateOnboardingPathRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.MineStarterWorkRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.OnboardingAiPathEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.OrientationOutcome
-import com.sprintstart.sprintstartbackend.onboarding.external.model.SkillAssessmentSchema
+import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseContentOutcome
 import com.sprintstart.sprintstartbackend.onboarding.external.model.StarterWorkOutcome
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
@@ -27,7 +23,6 @@ import kotlinx.coroutines.flow.Flow
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URI
-import java.util.UUID
 
 // One method per AI-service endpoint.
 @Suppress("TooManyFunctions")
@@ -249,6 +244,45 @@ class OnboardingAiClient(
         )
 
     /**
+     * Assembles one AI-enhanced onboarding phase's content from the project's corpus.
+     *
+     * The phase carries an author's prompt rather than a fixed step list; this fills it: grounded
+     * steps (with tasks and resources) plus a small knowledge check, scoped to [AssemblePhaseRequest.projectId].
+     * [lastFingerprint] can short-circuit an unchanged corpus; otherwise keep passing it so a
+     * re-assembly of the same phase is served from cache rather than regenerated.
+     *
+     * `skipped` with no content is a real answer and must reach the hire as an honest empty phase —
+     * never a fabricated one.
+     */
+    suspend fun assemblePhase(request: AssemblePhaseRequest): PhaseContentOutcome =
+        try {
+            webClient
+                .post()
+                .uri(uri("/api/v1/onboarding/phase"))
+                .body(request)
+                .sync()
+                .perform<PhaseContentOutcome>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            val msg = "Failed to assemble phase (HTTP ${e.statusCode}): ${e.body}"
+            throw OnboardingAiException(e.statusCode, e.body, msg)
+        }
+
+    /**
+     * Streams the AI service assembling one AI-enhanced onboarding phase's content.
+     *
+     * The streaming twin of [assemblePhase]: same inputs and same result, but the AI emits
+     * [AiProgressEvent]s as it works (a `stage` per retrieval step, an `item` per grounded
+     * step/question, a terminal `done` carrying the whole outcome). The backend relays these to the
+     * browser and takes the persisted phase content from the `done` event's `result`, so it is
+     * byte-for-byte what the non-streaming call returns.
+     */
+    fun streamPhase(request: AssemblePhaseRequest): Flow<AiProgressEvent> =
+        streamProgress(
+            "/api/v1/onboarding/phase/stream",
+            request,
+        )
+
+    /**
      * Opens an SSE stream of [AiProgressEvent]s against [path], POSTing [body].
      *
      * The reusable passthrough behind every streaming operation. A malformed chunk is logged and
@@ -267,79 +301,6 @@ class OnboardingAiClient(
                     true
                 },
             )
-
-    /**
-     * Opens an SSE stream against the AI service to generate a personalized onboarding path.
-     *
-     * The AI service is stateless, so the caller supplies the [blueprints] it should
-     * personalize against. Malformed SSE chunks are logged and skipped rather than
-     * terminating the stream.
-     *
-     * @param projectId The project the path is generated for; blueprints from other projects are
-     * ignored by the AI service.
-     * @param workingArea The user's working area scope (e.g. `backend`).
-     * @param skills The user's leveled skill assessments; lets proficiency drive personalization.
-     * @param blueprints The active blueprints the AI should personalize; empty yields a generic path.
-     * @return A cold [Flow] of [OnboardingAiPathEvent]s emitted as generation progresses.
-     */
-    fun generatePath(
-        projectId: UUID,
-        workingArea: String,
-        skills: List<SkillAssessmentSchema> = emptyList(),
-        blueprints: List<BlueprintSchema> = emptyList(),
-    ): Flow<OnboardingAiPathEvent> =
-        webClient
-            .post()
-            .uri(uri("/api/v1/onboarding/path"))
-            .body(
-                GenerateOnboardingPathRequest(
-                    projectId = projectId.toString(),
-                    workingArea = workingArea,
-                    skills = skills,
-                    blueprints = blueprints,
-                ),
-            ).stream()
-            .perform<OnboardingAiPathEvent>(
-                terminationMarkers = setOf("[DONE]"),
-                onChunkError = { raw, err ->
-                    logger.warn("Skipping malformed SSE chunk '{}': {}", raw, err.message)
-                    true
-                },
-            )
-
-    /**
-     * Runs the AI service's batch blueprint generation job over the ingested corpus.
-     *
-     * The AI service is stateless: [active] (the backend's current active blueprints)
-     * drives version numbering and lets the job skip an unchanged corpus. A non-2xx
-     * response is wrapped in an [OnboardingAiException] carrying the upstream status/body.
-     *
-     * @param projectId The project to generate for; bare scope names are qualified with it.
-     * @param scopes The scopes to (re)generate, or `null` to refresh all known scopes.
-     * @param active The backend's currently-active blueprints for the requested scopes.
-     * @return The per-scope generation outcomes returned by the AI service.
-     */
-    suspend fun generateBlueprints(
-        projectId: UUID,
-        scopes: List<String>?,
-        active: List<BlueprintSchema> = emptyList(),
-    ): GenerateBlueprintsResponse =
-        try {
-            webClient
-                .post()
-                .uri(uri("/api/v1/onboarding/blueprints/generate"))
-                .body(
-                    GenerateBlueprintsRequest(
-                        projectId = projectId.toString(),
-                        scopes = scopes,
-                        active = active,
-                    ),
-                ).sync()
-                .perform<GenerateBlueprintsResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            val msg = "Failed to generate blueprints (HTTP ${e.statusCode}): ${e.body}"
-            throw OnboardingAiException(e.statusCode, e.body, msg)
-        }
 
     /** Builds an absolute URI for [path] against the configured AI service base URL. */
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

@@ -18,6 +18,7 @@ fun OnboardingPath.toGetAllResponse(): GetOnboardingPathsResponse {
         finishedStepCount = phases.sumOf { phase ->
             phase.steps.count { step -> step.status == StepStatus.FINISHED || step.status == StepStatus.SKIPPED }
         },
+        blueprintId = this.blueprintId,
     )
 }
 
@@ -27,6 +28,7 @@ fun OnboardingPath.toGetResponse(): GetOnboardingPathResponse {
         userId = this.userId,
         createdAt = this.createdAt,
         phases = phases.map { phase -> phase.toGetAllResponse() },
+        blueprintId = this.blueprintId,
     )
 }
 
@@ -56,6 +58,7 @@ fun OnboardingPath.toGetForUserResponse(): GetOnboardingPathForUserResponse {
         userId = this.userId,
         createdAt = this.createdAt,
         phases = phaseResponses,
+        blueprintId = this.blueprintId,
     )
 }
 
@@ -64,5 +67,6 @@ fun OnboardingPath.toCreateResponse(): CreateOnboardingPathResponse {
         id = this.id,
         userId = this.userId,
         createdAt = this.createdAt,
+        blueprintId = this.blueprintId,
     )
 }
