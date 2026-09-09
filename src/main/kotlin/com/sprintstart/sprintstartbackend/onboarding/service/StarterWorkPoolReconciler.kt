@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Brings the starter-work pool back in line with what the trackers now say.
@@ -73,13 +74,22 @@ class StarterWorkPoolReconciler(
         var assigneeChanged = 0
         var skipped = 0
         val now = Instant.now()
+        // Rows the pass looked at and found nothing to change on. Collected rather than saved one
+        // by one: the only thing they need written is the timestamp, and that is one statement.
+        val unchanged = mutableListOf<UUID>()
+
+        // One lookup for the whole pool rather than one per row. A pass reads the corpus, so the
+        // cost was never a tracker call — but on an hourly job over a growing pool, N queries to
+        // answer one question is the kind of thing that is cheap until abruptly it is not.
+        val issues = artifactIngestionApi.getIssues(rows.map { it.sourceId })
 
         rows.forEach { proposal ->
-            val issue = artifactIngestionApi.getIssue(proposal.sourceId)
+            val issue = issues[proposal.sourceId]
             if (issue == null) {
                 // The corpus no longer holds the issue — a source disconnected, or an artifact
                 // pruned. That says nothing about whether the work is still open, so the row is
-                // left exactly as it is rather than guessed at.
+                // left exactly as it is rather than guessed at. Not even the timestamp is written:
+                // nothing was compared, so claiming a check happened would be untrue.
                 skipped++
                 return@forEach
             }
@@ -93,6 +103,11 @@ class StarterWorkPoolReconciler(
             // Counted separately rather than as an else-branch: a row can both go stale and change
             // hands in the same pass, and collapsing the two would under-report the quieter one.
             if (applied.assigneeChanged) assigneeChanged++
+            if (!applied.changed) unchanged += proposal.id
+        }
+
+        if (unchanged.isNotEmpty()) {
+            starterWorkTaskProposalRepository.markSourceChecked(unchanged, now)
         }
 
         val outcome = Outcome(rows.size, markedStale, revived, assigneeChanged, skipped)
@@ -132,14 +147,26 @@ class StarterWorkPoolReconciler(
     fun reconcileOne(proposal: StarterWorkTaskProposal): Boolean {
         if (proposal.status == ProposalStatus.REJECTED) return false
         val issue = artifactIngestionApi.getIssue(proposal.sourceId) ?: return false
-        return apply(proposal, issue.state, issue.hasAssignee, Instant.now()).transition != Transition.NONE
+        val now = Instant.now()
+        val applied = apply(proposal, issue.state, issue.hasAssignee, now)
+        if (!applied.changed) {
+            // [apply] leaves an unmoved row unwritten so a full pass can stamp them in one
+            // statement. There is only one row here, so it is stamped directly — the check still
+            // happened, and a claim path that quietly stopped recording that would make
+            // `sourceCheckedAt` mean something different depending on who asked.
+            starterWorkTaskProposalRepository.markSourceChecked(listOf(proposal.id), now)
+        }
+        return applied.transition != Transition.NONE
     }
 
     /** What one row's reconciliation did: the status move, if any, and whether it changed hands. */
     private data class Applied(
         val transition: Transition,
         val assigneeChanged: Boolean,
-    )
+    ) {
+        /** Whether anything about the row itself moved, and so whether it needed writing. */
+        val changed: Boolean get() = transition != Transition.NONE || assigneeChanged
+    }
 
     /**
      * Writes one row's source facts back onto it and says what that changed.
@@ -163,9 +190,15 @@ class StarterWorkPoolReconciler(
             Transition.TO_LIVE -> proposal.status = ProposalStatus.LIVE
             Transition.NONE -> Unit
         }
-        proposal.sourceCheckedAt = now
-        starterWorkTaskProposalRepository.save(proposal)
-        return Applied(transition, assigneeChanged)
+        val applied = Applied(transition, assigneeChanged)
+        // A row that moved is written here and now. One that did not still owes its caller a
+        // timestamp, but not a statement of its own — the full pass collects those and stamps them
+        // together, and the single-row path below has only the one to write anyway.
+        if (applied.changed) {
+            proposal.sourceCheckedAt = now
+            starterWorkTaskProposalRepository.save(proposal)
+        }
+        return applied
     }
 
     /**

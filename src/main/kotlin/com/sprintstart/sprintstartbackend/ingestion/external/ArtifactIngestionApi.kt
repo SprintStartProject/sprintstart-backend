@@ -117,6 +117,16 @@ interface ArtifactIngestionApi {
     fun getIssue(sourceId: String): IngestedIssue?
 
     /**
+     * Batch variant of [getIssue], for a caller holding a set of rows to compare against the
+     * corpus rather than one issue somebody browsed.
+     *
+     * @return One entry per source id the corpus still holds as an issue, keyed by source id.
+     *   Ids it does not hold — and ids belonging to something that is not an issue — are absent
+     *   rather than null-valued, so "no longer there" reads the same as it does from [getIssue].
+     */
+    fun getIssues(sourceIds: Collection<String>): Map<String, IngestedIssue>
+
+    /**
      * How responsive each of a project's repositories is to pull requests.
      *
      * A property of the *repository*, not of any one author: ingestion records when a pull

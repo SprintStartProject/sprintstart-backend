@@ -58,13 +58,21 @@ class StarterWorkPoolReconcilerTest {
         every { repository.findAllByStatusIn(any()) } returns rows.toList()
     }
 
+    /**
+     * What the corpus holds for the pool, as a full pass reads it: one call for every row, not one
+     * per row. A source id left out is one the corpus no longer holds.
+     */
+    private fun corpus(vararg entries: Pair<String, IngestedIssue>) {
+        every { artifactIngestionApi.getIssues(any()) } returns entries.toMap()
+    }
+
     @Nested
     inner class GoingStale {
         @Test
         fun `a live task whose issue was closed goes stale`() {
             val row = proposal(status = ProposalStatus.LIVE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "CLOSED")
+            corpus(row.sourceId to issue(state = "CLOSED"))
 
             val outcome = reconciler.reconcile()
 
@@ -76,7 +84,7 @@ class StarterWorkPoolReconcilerTest {
         fun `closed is matched however the tracker capitalises it`() {
             val row = proposal(status = ProposalStatus.LIVE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "closed")
+            corpus(row.sourceId to issue(state = "closed"))
 
             reconciler.reconcile()
 
@@ -87,7 +95,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an unknown state is not closed`() {
             val row = proposal(status = ProposalStatus.LIVE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = null)
+            corpus(row.sourceId to issue(state = null))
 
             val outcome = reconciler.reconcile()
 
@@ -99,7 +107,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an issue the corpus no longer holds is left alone`() {
             val row = proposal(status = ProposalStatus.LIVE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns null
+            corpus()
 
             val outcome = reconciler.reconcile()
 
@@ -116,7 +124,7 @@ class StarterWorkPoolReconcilerTest {
         fun `a stale task whose issue reopened returns to the pool`() {
             val row = proposal(status = ProposalStatus.STALE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "OPEN")
+            corpus(row.sourceId to issue(state = "OPEN"))
 
             val outcome = reconciler.reconcile()
 
@@ -128,7 +136,7 @@ class StarterWorkPoolReconcilerTest {
         fun `a stale task whose issue is still closed stays stale`() {
             val row = proposal(status = ProposalStatus.STALE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "CLOSED")
+            corpus(row.sourceId to issue(state = "CLOSED"))
 
             val outcome = reconciler.reconcile()
 
@@ -140,7 +148,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an unknown state does not revive a stale task either`() {
             val row = proposal(status = ProposalStatus.STALE)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = null)
+            corpus(row.sourceId to issue(state = null))
 
             reconciler.reconcile()
 
@@ -171,7 +179,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an assignee at the source is recorded on the row`() {
             val row = proposal(hasAssignee = null)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(hasAssignee = true)
+            corpus(row.sourceId to issue(hasAssignee = true))
 
             val outcome = reconciler.reconcile()
 
@@ -183,7 +191,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an unknown assignee never overwrites a definite one`() {
             val row = proposal(hasAssignee = true)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(hasAssignee = null)
+            corpus(row.sourceId to issue(hasAssignee = null))
 
             val outcome = reconciler.reconcile()
 
@@ -195,7 +203,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an issue somebody let go of is recorded as free again`() {
             val row = proposal(hasAssignee = true)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(hasAssignee = false)
+            corpus(row.sourceId to issue(hasAssignee = false))
 
             reconciler.reconcile()
 
@@ -206,7 +214,7 @@ class StarterWorkPoolReconcilerTest {
         fun `an unchanged assignee is not counted as a change`() {
             val row = proposal(hasAssignee = true)
             poolOf(row)
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(hasAssignee = true)
+            corpus(row.sourceId to issue(hasAssignee = true))
 
             assertEquals(0, reconciler.reconcile().assigneeChanged)
         }
@@ -219,18 +227,70 @@ class StarterWorkPoolReconcilerTest {
         val outcome = reconciler.reconcile()
 
         assertEquals(StarterWorkPoolReconciler.Outcome(0, 0, 0, 0, 0), outcome)
+        verify(exactly = 0) { artifactIngestionApi.getIssues(any()) }
         verify(exactly = 0) { artifactIngestionApi.getIssue(any()) }
     }
 
     @Test
-    fun `a compared row records when it was checked`() {
+    fun `a compared row records when it was checked, without a write of its own`() {
         val row = proposal()
         poolOf(row)
-        every { artifactIngestionApi.getIssue(row.sourceId) } returns issue()
+        corpus(row.sourceId to issue())
+
+        reconciler.reconcile()
+
+        // The row did not move, so it is stamped with the rest of the untouched pool in one
+        // statement rather than saved on its own. `sourceCheckedAt` still has to be written: the
+        // column exists to tell "nobody has checked" from "checked, and the tracker said nothing".
+        verify { repository.markSourceChecked(listOf(row.id), any()) }
+        verify(exactly = 0) { repository.save(any<StarterWorkTaskProposal>()) }
+    }
+
+    @Test
+    fun `a row that moved is saved with its own timestamp`() {
+        val row = proposal(status = ProposalStatus.LIVE)
+        poolOf(row)
+        corpus(row.sourceId to issue(state = "CLOSED"))
 
         reconciler.reconcile()
 
         assertTrue(row.sourceCheckedAt != null)
+        verify { repository.save(row) }
+        verify(exactly = 0) { repository.markSourceChecked(listOf(row.id), any()) }
+    }
+
+    @Test
+    fun `a row the corpus lost is not recorded as checked`() {
+        val row = proposal()
+        poolOf(row)
+        corpus()
+
+        reconciler.reconcile()
+
+        // Nothing was compared, so saying a check happened would be untrue -- and this is the one
+        // count in the outcome that is a problem rather than a result.
+        verify(exactly = 0) { repository.markSourceChecked(any(), any()) }
+        assertNull(row.sourceCheckedAt)
+    }
+
+    /**
+     * The whole pool is looked up in one call. A pass reads only the corpus, so the cost was never
+     * a tracker call -- but an hourly job asking N queries to answer one question is cheap right
+     * up until the pool grows.
+     */
+    @Test
+    fun `the pool is compared against the corpus in one lookup`() {
+        val first = proposal(sourceId = "github:acme/api:ISSUE:1")
+        val second = proposal(sourceId = "github:acme/api:ISSUE:2")
+        poolOf(first, second)
+        corpus(first.sourceId to issue(first.sourceId), second.sourceId to issue(second.sourceId))
+
+        reconciler.reconcile()
+
+        val requested = slot<Collection<String>>()
+        verify(exactly = 1) { artifactIngestionApi.getIssues(capture(requested)) }
+        assertEquals(setOf(first.sourceId, second.sourceId), requested.captured.toSet())
+        verify(exactly = 0) { artifactIngestionApi.getIssue(any()) }
     }
 
     @Nested
@@ -251,6 +311,21 @@ class StarterWorkPoolReconcilerTest {
 
             assertEquals(false, reconciler.reconcileOne(row))
             assertEquals(ProposalStatus.LIVE, row.status)
+        }
+
+        /**
+         * There is one row to stamp here rather than a pool, but it is stamped all the same: a
+         * claim path that quietly stopped recording the check would make `sourceCheckedAt` mean
+         * something different depending on which caller last looked at the row.
+         */
+        @Test
+        fun `an unmoved row still records that it was checked`() {
+            val row = proposal()
+            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "OPEN")
+
+            reconciler.reconcileOne(row)
+
+            verify { repository.markSourceChecked(listOf(row.id), any()) }
         }
 
         @Test
