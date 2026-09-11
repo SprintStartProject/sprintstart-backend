@@ -10,4 +10,5 @@ data class GetOnboardingPathForUserResponse(
     val createdAt: Instant,
     val phases: List<GetOnboardingPhaseForUserResponse>,
     val blueprintId: UUID? = null,
+    val generationIssues: List<OnboardingGenerationIssueResponse> = emptyList(),
 )

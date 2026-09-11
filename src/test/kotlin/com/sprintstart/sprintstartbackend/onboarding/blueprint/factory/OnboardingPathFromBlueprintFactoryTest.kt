@@ -11,13 +11,16 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
+import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import org.junit.jupiter.api.Test
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class OnboardingPathFromBlueprintFactoryTest {
     private val factory = OnboardingPathFromBlueprintFactory()
@@ -146,6 +149,88 @@ class OnboardingPathFromBlueprintFactoryTest {
     }
 
     @Test
+    fun `hides an empty AI phase and contracts its blockers for the learner path`() {
+        val blueprint = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            projectId = UUID.randomUUID(),
+            title = "Contracted onboarding",
+        )
+        val foundation = phase(blueprint, 0, "Foundation", 0.0, 0.0)
+        val unavailable = BlueprintPhase(
+            blueprintPath = blueprint,
+            position = 1,
+            title = "Generated role tasks",
+            description = "Generated tasks",
+            aiPrompt = "Generate role tasks",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        val delivery = phase(blueprint, 2, "Delivery", 2.0, 2.0)
+        unavailable.blockedBy += foundation
+        delivery.blockedBy += unavailable
+        blueprint.blueprintPhases += listOf(foundation, unavailable, delivery)
+
+        val result = factory.createFrom(
+            blueprintPath = blueprint,
+            userId = UUID.randomUUID(),
+            generatedContentByBlueprintPhaseId = mapOf(unavailable.id to GeneratedPhaseContent()),
+            generationStatusByBlueprintPhaseId = mapOf(unavailable.id to GenerationStatus.SKIPPED),
+        )
+
+        assertEquals(3, result.phases.size)
+        val persistedUnavailable = result.phases.single { it.title == "Generated role tasks" }
+        val persistedDelivery = result.phases.single { it.title == "Delivery" }
+        val persistedFoundation = result.phases.single { it.title == "Foundation" }
+        assertEquals(GenerationStatus.SKIPPED, persistedUnavailable.generationStatus)
+        assertEquals(setOf(persistedFoundation.id), persistedDelivery.blockedBy.map { it.id }.toSet())
+
+        val response = result.toGetForUserResponse()
+        assertEquals(listOf("Foundation", "Delivery"), response.phases.map { it.title })
+        assertEquals("Generated role tasks", response.generationIssues.single().title)
+        assertEquals(GenerationStatus.SKIPPED, response.generationIssues.single().status)
+    }
+
+    @Test
+    fun `hides a timed out AI phase and reports it as a generation issue`() {
+        val blueprint = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            projectId = UUID.randomUUID(),
+            title = "Timed out onboarding",
+        )
+        val foundation = phase(blueprint, 0, "Foundation", 0.0, 0.0)
+        val timedOut = BlueprintPhase(
+            blueprintPath = blueprint,
+            position = 1,
+            title = "Generated role tasks",
+            description = "Generated tasks",
+            aiPrompt = "Generate role tasks",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        val delivery = phase(blueprint, 2, "Delivery", 2.0, 2.0)
+        timedOut.blockedBy += foundation
+        delivery.blockedBy += timedOut
+        blueprint.blueprintPhases += listOf(foundation, timedOut, delivery)
+
+        val result = factory.createFrom(
+            blueprintPath = blueprint,
+            userId = UUID.randomUUID(),
+            generatedContentByBlueprintPhaseId = mapOf(timedOut.id to GeneratedPhaseContent()),
+            generationStatusByBlueprintPhaseId = mapOf(timedOut.id to GenerationStatus.TIMED_OUT),
+        )
+
+        assertEquals(3, result.phases.size)
+        val persistedTimedOut = result.phases.single { it.title == "Generated role tasks" }
+        val persistedDelivery = result.phases.single { it.title == "Delivery" }
+        val persistedFoundation = result.phases.single { it.title == "Foundation" }
+        assertEquals(GenerationStatus.TIMED_OUT, persistedTimedOut.generationStatus)
+        assertEquals(setOf(persistedFoundation.id), persistedDelivery.blockedBy.map { it.id }.toSet())
+
+        val response = result.toGetForUserResponse()
+        assertEquals(listOf("Foundation", "Delivery"), response.phases.map { it.title })
+        assertEquals("Generated role tasks", response.generationIssues.single().title)
+        assertEquals(GenerationStatus.TIMED_OUT, response.generationIssues.single().status)
+    }
+
+    @Test
     fun `merges generated AI content into an AI enhanced phase`() {
         val blueprint = BlueprintPath(
             blueprintKey = UUID.randomUUID(),
@@ -207,6 +292,67 @@ class OnboardingPathFromBlueprintFactoryTest {
         assertEquals(2, question.options.size)
         assertEquals(true, question.options[0].correct)
         assertEquals(false, question.options[1].correct)
+    }
+
+    @Test
+    fun `wires generated dependency edges by key onto the onboarding phase`() {
+        val blueprint = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            projectId = UUID.randomUUID(),
+            title = "AI onboarding",
+        )
+        val overview = BlueprintPhase(
+            blueprintPath = blueprint,
+            position = 0,
+            title = "Project Overview",
+            description = "Overview",
+            aiPrompt = "Generate an overview.",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        blueprint.blueprintPhases += overview
+
+        val generated = GeneratedPhaseContent(
+            steps = listOf(
+                GeneratedStep(key = "s1", title = "Read the README"),
+                GeneratedStep(
+                    key = "s2",
+                    title = "Configure the environment",
+                    blockedBy = listOf("s1"),
+                ),
+                GeneratedStep(
+                    key = "s3",
+                    title = "Depends on unknown and self",
+                    blockedBy = listOf("nope", "s3"),
+                ),
+            ),
+            checkQuestions = listOf(
+                GeneratedQuestion(
+                    key = "q1",
+                    type = CheckQuestionType.MULTIPLE_CHOICE,
+                    question = "What must be done first?",
+                    options = listOf(
+                        GeneratedOption(label = "Read the README", correct = true),
+                        GeneratedOption(label = "Configure", correct = false),
+                    ),
+                    blockedBy = listOf("s1"),
+                ),
+            ),
+        )
+
+        val result = factory.createFrom(
+            blueprintPath = blueprint,
+            userId = UUID.randomUUID(),
+            generatedContentByBlueprintPhaseId = mapOf(overview.id to generated),
+        )
+
+        val phase = result.phases.single()
+        val firstStep = phase.steps[0]
+        val secondStep = phase.steps[1]
+        val thirdStep = phase.steps[2]
+        assertEquals(setOf(firstStep.id), secondStep.blockedBy.map { it.id }.toSet())
+        assertTrue(thirdStep.blockedBy.isEmpty())
+        val question = phase.checkQuestions.single()
+        assertEquals(setOf(firstStep.id), question.blockedBy.map { it.id }.toSet())
     }
 
     private fun phase(

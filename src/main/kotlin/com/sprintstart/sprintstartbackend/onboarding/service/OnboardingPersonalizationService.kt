@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.GeneratedOption
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AssemblePhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseContentOutcome
@@ -23,12 +25,19 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.Onboard
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import jakarta.persistence.EntityManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import org.slf4j.LoggerFactory
@@ -48,7 +57,9 @@ class OnboardingPersonalizationService(
     private val onboardingAiClient: OnboardingAiClient,
     private val userApi: UserApi,
     private val json: Json,
+    private val entityManager: EntityManager,
     transactionManager: PlatformTransactionManager,
+    private val applicationConfig: ApplicationConfig,
 ) {
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
@@ -69,8 +80,15 @@ class OnboardingPersonalizationService(
      * `AI_ENHANCED` phases are filled at personalization time: for each included phase that carries
      * an author's prompt, the AI service is asked (streamed) to assemble the phase's steps, tasks,
      * resources and knowledge check from the project's corpus, and the result is persisted onto the
-     * user's onboarding phase. A phase the AI cannot ground is persisted as an honest empty phase
-     * rather than blocking the whole path.
+     * user's onboarding phase. Phases assemble concurrently — bounded by the configured concurrency
+     * limit — so a slow phase no longer holds up the whole path. Each phase runs under its own
+     * timeout, and the complete generation runs under a total timeout; a phase that crosses either
+     * is persisted as an honest `TIMED_OUT` placeholder (hidden from the journey, listed in the
+     * generation issues) rather than blocking the path. A phase the AI cannot ground is persisted as
+     * an honest empty phase rather than blocking the whole path.
+     *
+     * Every progress event carries the phase title in `name`, so interleaved parallel phase events
+     * stay understandable (`Project Overview — Searching the project for: ...`).
      *
      * @param authId External authentication identifier from the JWT subject.
      * @param projectId The project whose active blueprint seeds the path.
@@ -94,7 +112,7 @@ class OnboardingPersonalizationService(
             .toSet()
         val skillIds = profile.skills.map { it.skillId }.toSet()
 
-        return flow {
+        return channelFlow {
             val blueprint = loadBlueprintSelection(projectId, projectRoleIds, skillIds)
             logger.info(
                 "Starting onboarding personalization for user {} in project {} from blueprint {}",
@@ -104,28 +122,58 @@ class OnboardingPersonalizationService(
             )
 
             val generated = mutableMapOf<UUID, GeneratedPhaseContent>()
+            val generationStatuses = mutableMapOf<UUID, GenerationStatus>()
+            val phases = blueprint.aiEnhancedPhases
             logger.info(
                 "Blueprint {} contains {} included AI-enhanced phase(s)",
                 blueprint.id,
-                blueprint.aiEnhancedPhases.size,
+                phases.size,
             )
 
-            for (phase in blueprint.aiEnhancedPhases) {
-                logger.info(
-                    "Requesting AI content for blueprint phase {} ('{}') in project {}",
-                    phase.id,
-                    phase.title,
-                    projectId,
-                )
-                emit(
-                    OnboardingSseEvent(
-                        type = "stage",
-                        name = phase.title,
-                        detail = "Filling the phase from the project's material",
-                    ),
-                )
-                generated[phase.id] = streamPhaseContent(phase, projectId.toString()) { detail ->
-                    emit(OnboardingSseEvent(type = "stage", name = phase.title, detail = detail))
+            val sendEvent: suspend (OnboardingSseEvent) -> Unit = { event -> send(event) }
+            val semaphore = Semaphore(applicationConfig.onboarding.phaseConcurrency)
+            val phaseTimeoutMillis = applicationConfig.onboarding.phaseTimeoutSeconds * 1_000L
+            val totalTimeoutMillis = applicationConfig.onboarding.totalTimeoutSeconds * 1_000L
+
+            supervisorScope {
+                phases.forEach { phase ->
+                    logger.info(
+                        "Requesting AI content for blueprint phase {} ('{}') in project {}",
+                        phase.id,
+                        phase.title,
+                        projectId,
+                    )
+                    launch {
+                        try {
+                            generatePhase(
+                                phase = phase,
+                                projectId = projectId.toString(),
+                                phaseTimeoutMillis = phaseTimeoutMillis,
+                                totalTimeoutMillis = totalTimeoutMillis,
+                                semaphore = semaphore,
+                                emitStage = { detail ->
+                                    sendEvent(
+                                        OnboardingSseEvent(type = "stage", name = phase.title, detail = detail),
+                                    )
+                                },
+                            ).also { result ->
+                                generated[phase.id] = result.content
+                                generationStatuses[phase.id] = result.status
+                            }
+                        } catch (cause: CancellationException) {
+                            throw cause
+                        } catch (cause: Throwable) {
+                            logger.error(
+                                "Phase generation failed for '{}' ({}) on project {}",
+                                phase.title,
+                                phase.id,
+                                projectId,
+                                cause,
+                            )
+                            generated[phase.id] = GeneratedPhaseContent()
+                            generationStatuses[phase.id] = GenerationStatus.FAILED
+                        }
+                    }
                 }
             }
 
@@ -134,15 +182,22 @@ class OnboardingPersonalizationService(
                 profile.id,
                 generated.size,
             )
-            val response = persistPath(blueprint, profile.id, projectRoleIds, skillIds, generated)
+            val response = persistPath(
+                blueprint = blueprint,
+                userId = profile.id,
+                projectRoleIds = projectRoleIds,
+                skillIds = skillIds,
+                generated = generated,
+                generationStatuses = generationStatuses,
+            )
             logger.info(
                 "Personalized onboarding path {} persisted for user {} with {} phase(s)",
                 response.id,
                 profile.id,
                 response.phases.size,
             )
-            emit(OnboardingSseEvent(type = "path", path = response))
-            emit(OnboardingSseEvent(type = "done"))
+            sendEvent(OnboardingSseEvent(type = "path", path = response))
+            sendEvent(OnboardingSseEvent(type = "done"))
         }.catch { error ->
             logger.error(
                 "Onboarding personalization failed for authId {} in project {}",
@@ -193,6 +248,7 @@ class OnboardingPersonalizationService(
         projectRoleIds: Set<UUID>,
         skillIds: Set<UUID>,
         generated: Map<UUID, GeneratedPhaseContent>,
+        generationStatuses: Map<UUID, GenerationStatus>,
     ): GetOnboardingPathForUserResponse =
         withContext(Dispatchers.IO) {
             txTemplate.execute {
@@ -209,11 +265,87 @@ class OnboardingPersonalizationService(
                     projectRoleIds = projectRoleIds,
                     skillIds = skillIds,
                     generatedContentByBlueprintPhaseId = generated,
+                    generationStatusByBlueprintPhaseId = generationStatuses,
                 )
                 onboardingPathRepository.deleteByUserId(userId)
-                onboardingPathRepository.save(onboardingPath).toGetForUserResponse()
+                onboardingPathRepository.flush()
+                entityManager.persist(onboardingPath)
+                onboardingPath.toGetForUserResponse()
             }
         } ?: throw IllegalStateException("Onboarding path transaction returned no result")
+
+    /**
+     * Runs one phase's AI assembly under the concurrency and timeout bounds.
+     *
+     * The worker emits a `Waiting` stage before it enters the concurrency queue, then assembles the
+     * phase inside a phase-level timeout. The whole worker — including the wait for a concurrency
+     * permit — runs inside the overall generation timeout, so a run past the total deadline neither
+     * starts new phases nor lets a running one finish late. A timeout is not a failure: it returns
+     * an empty result with [GenerationStatus.TIMED_OUT] so siblings keep working and the timed-out
+     * phase is persisted as a hidden placeholder instead of blocking the path.
+     */
+    private suspend fun generatePhase(
+        phase: PhaseAssemblyTarget,
+        projectId: String,
+        phaseTimeoutMillis: Long,
+        totalTimeoutMillis: Long,
+        semaphore: Semaphore,
+        emitStage: suspend (detail: String) -> Unit,
+    ): PhaseGenerationResult {
+        emitStage("Waiting")
+        val result = withTimeoutOrNull(totalTimeoutMillis) {
+            semaphore.withPermit {
+                runPhaseAssembly(phase, projectId, phaseTimeoutMillis, emitStage)
+            }
+        }
+        return result ?: timedOut(phase, projectId, emitStage, totalTimeoutMillis)
+    }
+
+    /**
+     * Assembles one phase, cancelling it with a `TIMED_OUT` placeholder when the phase-level
+     * timeout elapses and relaying a `Completed` stage when the AI produced content in time.
+     */
+    private suspend fun runPhaseAssembly(
+        phase: PhaseAssemblyTarget,
+        projectId: String,
+        phaseTimeoutMillis: Long,
+        emitStage: suspend (detail: String) -> Unit,
+    ): PhaseGenerationResult {
+        val result = withTimeoutOrNull(phaseTimeoutMillis) {
+            streamPhaseContent(phase, projectId) { detail -> emitStage(detail) }
+        }
+        if (result == null) {
+            return timedOut(phase, projectId, emitStage, phaseTimeoutMillis)
+        }
+        if (result.status == GenerationStatus.GENERATED) {
+            emitStage("Completed")
+        }
+        return result
+    }
+
+    private suspend fun timedOut(
+        phase: PhaseAssemblyTarget,
+        projectId: String,
+        emitStage: suspend (detail: String) -> Unit,
+        timeoutMillis: Long,
+    ): PhaseGenerationResult {
+        emitStage("Timed out after ${timeoutMillis / 1_000} seconds")
+        // A timed-out phase is cancelled mid-stream, so streamPhaseContent's own outcome log
+        // never runs; log the status and which deadline caught it here so it is always visible.
+        logger.warn(
+            "AI phase assembly for blueprint phase {} ('{}') in project {} ended with status {}: " +
+                "timed out after {} seconds",
+            phase.id,
+            phase.title,
+            projectId,
+            GenerationStatus.TIMED_OUT,
+            timeoutMillis / 1_000,
+        )
+        return PhaseGenerationResult(
+            content = GeneratedPhaseContent(),
+            status = GenerationStatus.TIMED_OUT,
+        )
+    }
 
     /**
      * Streams the AI assembly for one `AI_ENHANCED` phase and returns the assembled content.
@@ -222,13 +354,13 @@ class OnboardingPersonalizationService(
      * `warning` becomes a stage event carrying its label), and takes the content from the terminal
      * `done` event's `result`, so it is byte-for-byte what the non-streaming call would return. A
      * stream that fails mid-way, a `skipped`/`unchanged` outcome, or a result that cannot be decoded
-     * all yield an empty phase — never a fabricated one.
+     * all yield empty content with an explicit generation status — never fabricated content.
      */
     private suspend fun streamPhaseContent(
         phase: PhaseAssemblyTarget,
         projectId: String,
         relay: suspend (detail: String) -> Unit,
-    ): GeneratedPhaseContent {
+    ): PhaseGenerationResult {
         val request = AssemblePhaseRequest(
             phaseTitle = phase.title,
             phaseDescription = phase.description,
@@ -236,6 +368,8 @@ class OnboardingPersonalizationService(
             projectId = projectId,
         )
         var content: GeneratedPhaseContent? = null
+        var generationStatus = GenerationStatus.FAILED
+        var outcomeReason = "stream ended without a done event"
         onboardingAiClient
             .streamPhase(request)
             .onEach { event ->
@@ -251,24 +385,41 @@ class OnboardingPersonalizationService(
                     AiProgressEvent.DONE -> {
                         val outcome = decodeOutcome(event)
                         when {
-                            outcome == null -> logger.warn(
-                                "AI phase stream completed without a decodable result for phase {}",
-                                phase.id,
-                            )
+                            outcome == null -> {
+                                generationStatus = GenerationStatus.FAILED
+                                outcomeReason = "done event carried no decodable result"
+                                logger.warn(
+                                    "AI phase stream completed without a decodable result for phase {}",
+                                    phase.id,
+                                )
+                            }
 
-                            outcome.status != "assembled" -> logger.warn(
-                                "AI phase assembly did not produce content for phase {}: status={}, " +
-                                    "chunksRetrieved={}, stepsDropped={}, questionsDropped={}, notes={}",
-                                phase.id,
-                                outcome.status,
-                                outcome.chunksRetrieved,
-                                outcome.stepsDropped,
-                                outcome.questionsDropped,
-                                outcome.notes.joinToString("; ").take(2_000),
-                            )
+                            outcome.status != "assembled" -> {
+                                generationStatus = when (outcome.status) {
+                                    "skipped", "unchanged" -> GenerationStatus.SKIPPED
+                                    else -> GenerationStatus.FAILED
+                                }
+                                outcomeReason = "AI reported status '${outcome.status}'"
+                                logger.warn(
+                                    "AI phase assembly did not produce content for phase {}: status={}, " +
+                                        "chunksRetrieved={}, stepsDropped={}, questionsDropped={}, notes={}",
+                                    phase.id,
+                                    outcome.status,
+                                    outcome.chunksRetrieved,
+                                    outcome.stepsDropped,
+                                    outcome.questionsDropped,
+                                    outcome.notes.joinToString("; ").take(2_000),
+                                )
+                            }
 
                             else -> {
                                 content = outcome.toGeneratedPhaseContent()
+                                generationStatus = if (content?.isEmpty() == true) {
+                                    outcomeReason = "AI assembled an empty phase"
+                                    GenerationStatus.EMPTY
+                                } else {
+                                    GenerationStatus.GENERATED
+                                }
                                 logger.info(
                                     "AI phase assembly completed for phase {} with {} step(s) and {} question(s)",
                                     phase.id,
@@ -279,17 +430,22 @@ class OnboardingPersonalizationService(
                         }
                     }
 
-                    AiProgressEvent.ERROR -> logger.error(
-                        "AI phase stream returned an error event for phase {}: {}",
-                        phase.id,
-                        event.message ?: event.label ?: "No error message supplied",
-                    )
+                    AiProgressEvent.ERROR -> {
+                        outcomeReason =
+                            "stream returned an error event: ${event.message ?: event.label ?: "No error message supplied"}"
+                        logger.error(
+                            "AI phase stream returned an error event for phase {}: {}",
+                            phase.id,
+                            event.message ?: event.label ?: "No error message supplied",
+                        )
+                    }
 
                     else -> {
                         relay(event.label ?: event.message ?: event.type)
                     }
                 }
             }.catch { cause ->
+                outcomeReason = "stream failed: ${cause.message ?: cause.javaClass.simpleName}"
                 logger.error(
                     "Phase assembly stream failed for '{}' ({}) on project {}",
                     phase.title,
@@ -298,6 +454,16 @@ class OnboardingPersonalizationService(
                     cause,
                 )
             }.collect { }
+        if (generationStatus != GenerationStatus.GENERATED) {
+            logger.warn(
+                "AI phase assembly for blueprint phase {} ('{}') in project {} ended with status {}: {}",
+                phase.id,
+                phase.title,
+                projectId,
+                generationStatus,
+                outcomeReason,
+            )
+        }
         if (content == null) {
             logger.warn(
                 "Using empty generated content for blueprint phase {} ('{}') in project {}",
@@ -306,7 +472,10 @@ class OnboardingPersonalizationService(
                 projectId,
             )
         }
-        return content ?: GeneratedPhaseContent()
+        return PhaseGenerationResult(
+            content = content ?: GeneratedPhaseContent(),
+            status = generationStatus,
+        )
     }
 
     private fun decodeOutcome(event: AiProgressEvent): PhaseContentOutcome? =
@@ -319,26 +488,32 @@ class OnboardingPersonalizationService(
     private fun PhaseContentOutcome.toGeneratedPhaseContent(): GeneratedPhaseContent = GeneratedPhaseContent(
         steps = steps.map { step ->
             GeneratedStep(
+                key = step.key,
                 title = step.title,
                 description = step.description,
                 tasks = step.tasks.map { GeneratedTask(title = it.title, description = it.description) },
                 resources = step.resources.map { GeneratedResource(title = it.title, url = it.url) },
                 estimatedMinutes = step.estimatedMinutes,
                 expectedOutcome = step.expectedOutcome,
+                blockedBy = step.blockedBy,
             )
         },
         checkQuestions = checkQuestions.mapNotNull { question ->
             val type = runCatching { CheckQuestionType.valueOf(question.type) }.getOrNull()
                 ?: return@mapNotNull null
             GeneratedQuestion(
+                key = question.key,
                 type = type,
                 question = question.question,
                 explanation = question.explanation,
                 correctAnswer = question.correctAnswer,
                 options = question.options.map { GeneratedOption(label = it.label, correct = it.correct) },
+                blockedBy = question.blockedBy,
             )
         },
     )
+
+    private fun GeneratedPhaseContent.isEmpty(): Boolean = steps.isEmpty() && checkQuestions.isEmpty()
 
     private fun selectActiveBlueprint(projectId: UUID): BlueprintPath {
         val activeBlueprints = blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
@@ -367,5 +542,10 @@ class OnboardingPersonalizationService(
         val title: String,
         val description: String,
         val prompt: String,
+    )
+
+    private data class PhaseGenerationResult(
+        val content: GeneratedPhaseContent,
+        val status: GenerationStatus,
     )
 }

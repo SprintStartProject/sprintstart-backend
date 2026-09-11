@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.blueprint.factory
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.RequirementType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckOption
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintCheckQuestion
@@ -9,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintTask
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
@@ -28,14 +30,24 @@ data class GeneratedPhaseContent(
     val checkQuestions: List<GeneratedQuestion> = emptyList(),
 )
 
-/** AI-generated step content as returned by the phase-assembly endpoint. */
+/**
+ * AI-generated step content as returned by the phase-assembly endpoint.
+ *
+ * [key] and [blockedBy] carry the optional dependency edges the model drew
+ * between the assembled items: [blockedBy] holds the keys of steps/questions
+ * that must be completed first. Keys are scoped to one assembled phase; a key
+ * that resolves to nothing (unknown, self, or an item grounding dropped) is
+ * ignored when the edges are wired onto the onboarding phase.
+ */
 data class GeneratedStep(
+    val key: String = "",
     val title: String,
     val description: String = "",
     val tasks: List<GeneratedTask> = emptyList(),
     val resources: List<GeneratedResource> = emptyList(),
     val estimatedMinutes: Int? = null,
     val expectedOutcome: String = "",
+    val blockedBy: List<String> = emptyList(),
 )
 
 data class GeneratedTask(
@@ -48,13 +60,20 @@ data class GeneratedResource(
     val url: String,
 )
 
-/** AI-generated knowledge-check question as returned by the phase-assembly endpoint. */
+/**
+ * AI-generated knowledge-check question as returned by the phase-assembly endpoint.
+ *
+ * [key] and [blockedBy] mirror [GeneratedStep]: optional dependency edges,
+ * resolved by key against the phase's assembled items.
+ */
 data class GeneratedQuestion(
+    val key: String = "",
     val type: CheckQuestionType,
     val question: String,
     val explanation: String? = null,
     val correctAnswer: String? = null,
     val options: List<GeneratedOption> = emptyList(),
+    val blockedBy: List<String> = emptyList(),
 )
 
 data class GeneratedOption(
@@ -99,6 +118,7 @@ class OnboardingPathFromBlueprintFactory {
         projectRoleIds: Set<UUID> = emptySet(),
         skillIds: Set<UUID> = emptySet(),
         generatedContentByBlueprintPhaseId: Map<UUID, GeneratedPhaseContent> = emptyMap(),
+        generationStatusByBlueprintPhaseId: Map<UUID, GenerationStatus> = emptyMap(),
     ): OnboardingPath {
         val onboardingPath = OnboardingPath(
             userId = userId,
@@ -112,18 +132,19 @@ class OnboardingPathFromBlueprintFactory {
 
         includedPhases
             .sortedBy { it.position }
-            .map { it.copyTo(onboardingPath, nodesByBlueprintId, generatedContentByBlueprintPhaseId[it.id]) }
-            .forEach { copied ->
+            .map {
+                it.copyTo(
+                    onboardingPath = onboardingPath,
+                    nodesByBlueprintId = nodesByBlueprintId,
+                    generated = generatedContentByBlueprintPhaseId[it.id],
+                    generationStatus = generationStatusByBlueprintPhaseId[it.id],
+                )
+            }.forEach { copied ->
                 onboardingPath.phases += copied.entity
                 phasesByBlueprintId[copied.sourceBlueprintId] = copied.entity
             }
 
-        includedPhases.forEach { blueprintPhase ->
-            val onboardingPhase = phasesByBlueprintId.getValue(blueprintPhase.id)
-            blueprintPhase.blockedBy.forEach { blocker ->
-                phasesByBlueprintId[blocker.id]?.let(onboardingPhase.blockedBy::add)
-            }
-        }
+        wirePhaseBlockers(includedPhases, phasesByBlueprintId)
 
         includedPhases
             .flatMap { it.blueprintSteps + it.blueprintCheckQuestions }
@@ -141,12 +162,19 @@ class OnboardingPathFromBlueprintFactory {
         onboardingPath: OnboardingPath,
         nodesByBlueprintId: MutableMap<UUID, OnboardingSubGraphNode>,
         generated: GeneratedPhaseContent? = null,
+        generationStatus: GenerationStatus? = null,
     ): CopiedPhase {
+        val resolvedGenerationStatus = generationStatus ?: when {
+            type != BlueprintPhaseType.AI_ENHANCED -> GenerationStatus.NOT_APPLICABLE
+            generated == null || generated.isEmpty() -> GenerationStatus.EMPTY
+            else -> GenerationStatus.GENERATED
+        }
         val onboardingPhase = OnboardingPhase(
             path = onboardingPath,
             position = position,
             title = title,
             description = description.orEmpty(),
+            generationStatus = resolvedGenerationStatus,
             graphX = graphX,
             graphY = graphY,
         )
@@ -174,7 +202,45 @@ class OnboardingPathFromBlueprintFactory {
         return CopiedPhase(id, onboardingPhase)
     }
 
+    private fun GeneratedPhaseContent.isEmpty(): Boolean = steps.isEmpty() && checkQuestions.isEmpty()
+
+    private fun wirePhaseBlockers(
+        includedPhases: List<BlueprintPhase>,
+        phasesByBlueprintId: Map<UUID, OnboardingPhase>,
+    ) {
+        fun visibleBlockers(
+            blueprintPhase: BlueprintPhase,
+            visiting: MutableSet<UUID>,
+        ): Set<OnboardingPhase> {
+            val copied = phasesByBlueprintId[blueprintPhase.id] ?: return emptySet()
+            if (!copied.generationStatus.isHiddenFromUser()) return setOf(copied)
+            if (!visiting.add(blueprintPhase.id)) return emptySet()
+            val inherited = blueprintPhase.blockedBy
+                .flatMap { blocker -> visibleBlockers(blocker, visiting) }
+                .toSet()
+            visiting.remove(blueprintPhase.id)
+            return inherited
+        }
+
+        includedPhases.forEach { blueprintPhase ->
+            val onboardingPhase = phasesByBlueprintId.getValue(blueprintPhase.id)
+            if (onboardingPhase.generationStatus.isHiddenFromUser()) {
+                blueprintPhase.blockedBy
+                    .mapNotNull { blocker -> phasesByBlueprintId[blocker.id] }
+                    .forEach(onboardingPhase.blockedBy::add)
+            } else {
+                blueprintPhase.blockedBy
+                    .flatMap { blocker -> visibleBlockers(blocker, mutableSetOf()) }
+                    .forEach(onboardingPhase.blockedBy::add)
+            }
+        }
+    }
+
     private fun GeneratedPhaseContent.copyInto(onboardingPhase: OnboardingPhase) {
+        val nodesByKey = mutableMapOf<String, OnboardingSubGraphNode>()
+        val nodes = mutableListOf<OnboardingSubGraphNode>()
+        val nodeEdges = mutableListOf<List<String>>()
+
         var stepPosition = onboardingPhase.steps.maxOfOrNull { it.position }?.let { it + 1 } ?: 0
         for (step in steps) {
             val onboardingStep = OnboardingStep(
@@ -207,6 +273,7 @@ class OnboardingPathFromBlueprintFactory {
                 )
             }
             onboardingPhase.steps += onboardingStep
+            registerNode(step.key, onboardingStep, nodesByKey, nodes, nodeEdges, step.blockedBy)
             stepPosition += 1
         }
 
@@ -231,7 +298,36 @@ class OnboardingPathFromBlueprintFactory {
                 )
             }
             onboardingPhase.checkQuestions += onboardingQuestion
+            registerNode(question.key, onboardingQuestion, nodesByKey, nodes, nodeEdges, question.blockedBy)
             questionPosition += 1
+        }
+
+        // Edges are wired after every node exists so a reference may point at a
+        // later item; a key that resolves to nothing or to the node itself is
+        // dropped rather than left dangling.
+        nodes.forEachIndexed { index, node ->
+            for (blockerKey in nodeEdges[index]) {
+                nodesByKey[blockerKey]?.let { blocker ->
+                    if (blocker != node) {
+                        node.blockedBy += blocker
+                    }
+                }
+            }
+        }
+    }
+
+    private fun registerNode(
+        key: String,
+        node: OnboardingSubGraphNode,
+        nodesByKey: MutableMap<String, OnboardingSubGraphNode>,
+        nodes: MutableList<OnboardingSubGraphNode>,
+        nodeEdges: MutableList<List<String>>,
+        blockedBy: List<String>,
+    ) {
+        nodes += node
+        nodeEdges += blockedBy
+        if (key.isNotBlank() && key !in nodesByKey) {
+            nodesByKey[key] = node
         }
     }
 

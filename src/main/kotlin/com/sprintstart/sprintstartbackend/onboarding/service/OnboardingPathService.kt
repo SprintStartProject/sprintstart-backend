@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDt
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -33,6 +34,7 @@ import java.util.UUID
 @Service
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
+    private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -53,10 +55,14 @@ class OnboardingPathService(
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
-        return onboardingPathRepository
+        val path = onboardingPathRepository
             .findOnboardingPathByUserId(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found for user with id: $userId") }
-            .toGetForUserResponse()
+
+        return path.toGetForUserResponse(
+            passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
+            attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
+        )
     }
 
     /**

@@ -29,8 +29,14 @@ import kotlin.test.assertNull
 class OnboardingSkipServiceTest {
     private val onboardingSkipRepository: OnboardingSkipRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingSkipService(onboardingSkipRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingSkipService(
+        onboardingSkipRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val stepId = UUID.randomUUID()

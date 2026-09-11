@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -190,6 +191,41 @@ data: [DONE]
         // Stream stopped after the malformed chunk
         assertEquals(1, chunks.size)
         assertEquals("before", chunks[0].content)
+    }
+
+    @Test
+    fun `early termination of the flow is not reported as malformed chunks`() = runTest {
+        mockWebServer.enqueue(
+            sseResponse(
+                """
+                data: {"type":"token","content":"one"}
+
+                data: {"type":"token","content":"two"}
+
+                data: {"type":"token","content":"three"}
+
+                data: [DONE]
+
+                """.trimIndent(),
+            ).throttleBody(16, 50, java.util.concurrent.TimeUnit.MILLISECONDS),
+        )
+
+        var chunkErrors = 0
+        val chunks = webClient
+            .post()
+            .uri(
+                mockWebServer
+                    .url("/stream")
+                    .toUri(),
+            ).stream()
+            .perform<AiStreamMessage>(onChunkError = { _, _ -> chunkErrors += 1; true })
+            .take(1)
+            .toList()
+
+        // `take(1)` aborts upstream with a CancellationException: it must stop the stream,
+        // not be mistaken for malformed chunks (which would keep reading and call onChunkError).
+        assertEquals(listOf("one"), chunks.map { it.content })
+        assertEquals(0, chunkErrors)
     }
 
     @Test

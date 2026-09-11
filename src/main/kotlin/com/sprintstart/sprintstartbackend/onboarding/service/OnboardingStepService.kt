@@ -36,6 +36,7 @@ import kotlin.ranges.contains
 class OnboardingStepService(
     private val onboardingPhaseRepository: OnboardingPhaseRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -236,6 +237,10 @@ class OnboardingStepService(
         }
 
         step.status = StepStatus.FINISHED
+
+        // The journey can end on a step just as well as on a question, so completion is
+        // re-evaluated here rather than only after a knowledge-check attempt.
+        onboardingCompletionService.completeIfFinished(userId)
 
         return step.toUpdateResponse()
     }

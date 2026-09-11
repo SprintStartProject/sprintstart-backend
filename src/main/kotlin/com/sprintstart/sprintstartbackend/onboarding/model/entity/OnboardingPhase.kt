@@ -1,8 +1,11 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.entity
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.JoinTable
@@ -27,6 +30,9 @@ class OnboardingPhase(
     var title: String,
     @Column(nullable = false, columnDefinition = "TEXT")
     var description: String,
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    var generationStatus: GenerationStatus = GenerationStatus.NOT_APPLICABLE,
     @OneToMany(
         mappedBy = "phase",
         cascade = [CascadeType.ALL],
@@ -41,13 +47,6 @@ class OnboardingPhase(
     )
     @OrderBy("position ASC")
     val checkQuestions: MutableList<PhaseCheckQuestion> = mutableListOf(),
-    @OneToMany(
-        mappedBy = "phase",
-        cascade = [CascadeType.ALL],
-        orphanRemoval = true,
-    )
-    @OrderBy("createdAt ASC")
-    val checkAttempts: MutableList<PhaseCheckAttempt> = mutableListOf(),
     @Column(nullable = true)
     var graphX: Double? = null,
     @Column(nullable = true)

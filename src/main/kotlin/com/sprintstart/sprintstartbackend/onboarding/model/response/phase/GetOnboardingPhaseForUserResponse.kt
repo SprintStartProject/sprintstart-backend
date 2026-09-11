@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.response.phase
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.PhaseUnlockReason
-import com.sprintstart.sprintstartbackend.onboarding.model.response.check.PhaseCheckSummaryResponse
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import java.util.UUID
 
@@ -12,10 +12,10 @@ data class GetOnboardingPhaseForUserResponse(
     val title: String,
     val description: String,
     val locked: Boolean,
-    val unlockReason: PhaseUnlockReason?,
-    val checkSummary: PhaseCheckSummaryResponse,
     val steps: List<GetOnboardingStepsResponse>,
+    val questions: List<GetOnboardingQuestionForUserResponse> = emptyList(),
     val graphX: Double? = null,
     val graphY: Double? = null,
     val blockerIds: Set<UUID> = emptySet(),
+    val generationStatus: GenerationStatus = GenerationStatus.NOT_APPLICABLE,
 )

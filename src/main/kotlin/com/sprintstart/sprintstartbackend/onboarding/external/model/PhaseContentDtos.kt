@@ -35,12 +35,14 @@ data class PhaseResourceDto(
 
 @Serializable
 data class PhaseStepDto(
+    val key: String = "",
     val title: String,
     val description: String = "",
     val tasks: List<PhaseTaskDto> = emptyList(),
     val resources: List<PhaseResourceDto> = emptyList(),
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
     @SerialName("expected_outcome") val expectedOutcome: String = "",
+    @SerialName("blocked_by") val blockedBy: List<String> = emptyList(),
 )
 
 @Serializable
@@ -52,12 +54,14 @@ data class PhaseCheckOptionDto(
 
 @Serializable
 data class PhaseCheckQuestionDto(
+    val key: String = "",
     val position: Int = 0,
     val type: String,
     val question: String,
     val explanation: String? = null,
     @SerialName("correct_answer") val correctAnswer: String? = null,
     val options: List<PhaseCheckOptionDto> = emptyList(),
+    @SerialName("blocked_by") val blockedBy: List<String> = emptyList(),
 )
 
 @Serializable

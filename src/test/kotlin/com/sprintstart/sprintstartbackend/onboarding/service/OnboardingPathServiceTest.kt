@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.every
@@ -23,8 +24,9 @@ import kotlin.test.assertTrue
 
 class OnboardingPathServiceTest {
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
+    private val questionAttemptRepository: QuestionAttemptRepository = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingPathService(onboardingPathRepository, userApi)
+    private val service = OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi)
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()

@@ -5,7 +5,6 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.request.phase.CreateOnboardingPhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.phase.UpdateOnboardingPhaseRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.response.check.PhaseCheckSummaryResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.CreateOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhasesResponse
@@ -59,15 +58,6 @@ class OnboardingPhaseControllerTest(
     private val authId = "test-auth-id"
     private val adminAuthId = "test-admin-auth-id"
 
-    /** A phase without a knowledge check, which is all these routing tests care about. */
-    private fun phaseCheckSummary() = PhaseCheckSummaryResponse(
-        required = false,
-        questionCount = 0,
-        passed = false,
-        latestAttemptId = null,
-        latestAttemptAt = null,
-    )
-
     private fun jwtWithSubject(
         subject: String,
         vararg roles: String,
@@ -99,7 +89,6 @@ class OnboardingPhaseControllerTest(
                 position = 1,
                 title = "Phase 1",
                 description = "desc",
-                checkSummary = phaseCheckSummary(),
             ),
         )
 
@@ -325,7 +314,6 @@ class OnboardingPhaseControllerTest(
                 position = 1,
                 title = "Phase 1",
                 description = "desc",
-                checkSummary = phaseCheckSummary(),
             ),
         )
 

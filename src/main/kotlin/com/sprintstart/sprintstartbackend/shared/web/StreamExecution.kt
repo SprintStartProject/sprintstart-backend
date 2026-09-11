@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -104,6 +105,10 @@ class StreamExecution internal constructor(
 
                 try {
                     emit(builder.jsonParser.decodeFromString<T>(raw))
+                } catch (e: CancellationException) {
+                    // Cancellation (e.g. a caller-imposed timeout, or `take(n)` completing) must
+                    // abort the stream, not be mistaken for a malformed chunk and swallowed.
+                    throw e
                 } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                     val shouldContinue = onChunkError(raw, e)
                     if (!shouldContinue) break

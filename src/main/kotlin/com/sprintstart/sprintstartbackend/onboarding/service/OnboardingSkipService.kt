@@ -46,6 +46,7 @@ import java.util.UUID
 class OnboardingSkipService(
     private val onboardingSkipRepository: OnboardingSkipRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -286,6 +287,9 @@ class OnboardingSkipService(
         skip.resolvedAt = reviewedAt
         skip.step.status = StepStatus.SKIPPED
         skip.step.completedAt = reviewedAt
+
+        // A skipped step counts as done, so accepting the last open one can finish onboarding.
+        onboardingCompletionService.completeIfFinished(skip.step.phase.path.userId)
 
         return skip.toReviewResponse()
     }

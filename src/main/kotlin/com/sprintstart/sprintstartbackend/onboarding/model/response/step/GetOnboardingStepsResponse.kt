@@ -22,6 +22,7 @@ data class GetOnboardingStepsResponse(
     val completedAt: Instant?,
     val feedback: GetOnboardingFeedbackResponse? = null,
     val skip: GetOnboardingStepSkipResponse?,
+    val locked: Boolean = false,
     val graphX: Double? = null,
     val graphY: Double? = null,
     val blockerIds: Set<UUID> = emptySet(),

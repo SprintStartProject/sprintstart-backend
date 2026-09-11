@@ -2,6 +2,13 @@ sprintstart:
   internal-event-secret: ${SPRINTSTART_KEYCLOAK_SHARED_SECRET:test-secret}
   ai:
     base-url: ${SPRINTSTART_AI_BASE_URL:http://host.docker.internal:8000}
+  onboarding:
+    # Bounded parallel AI phase assembly during personalization. A phase that
+    # exceeds phase-timeout-seconds is persisted as TIMED_OUT while siblings
+    # continue; total-timeout-seconds caps the whole run (queued phases included).
+    phase-timeout-seconds: ${SPRINTSTART_ONBOARDING_PHASE_TIMEOUT_SECONDS:240}
+    total-timeout-seconds: ${SPRINTSTART_ONBOARDING_TOTAL_TIMEOUT_SECONDS:900}
+    phase-concurrency: ${SPRINTSTART_ONBOARDING_PHASE_CONCURRENCY:4}
   ingestion:
     # Incremental AI sync: artifacts are embedded in small batches while a crawl is still
     # running, not in one payload after it finishes (see ArtifactAiSyncService).

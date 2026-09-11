@@ -21,6 +21,37 @@ data class ApplicationConfig(
     val crypto: CryptoConfig,
     val upload: UploadConfig,
     val insights: InsightsConfig = InsightsConfig(),
+    val onboarding: OnboardingConfig = OnboardingConfig(),
+)
+
+/**
+ * Contains the following application.yml config parameters
+ *
+ * ```yaml
+ * sprintstart:
+ *     onboarding:
+ *         phase-timeout-seconds: ...
+ *         total-timeout-seconds: ...
+ *         phase-concurrency: ...
+ * ```
+ *
+ * These bound the parallel AI phase assembly during onboarding personalization. Each phase runs
+ * inside its own timeout (a phase performs retrieval, generation, and possibly one JSON-correction
+ * retry), while the total timeout caps the whole run including phases still queued behind the
+ * concurrency limit. A phase that crosses either timeout is persisted as `TIMED_OUT` and left out
+ * of the learner journey instead of blocking the path.
+ *
+ * @property phaseTimeoutSeconds cap for a single phase's AI assembly
+ * @property totalTimeoutSeconds cap for the complete onboarding generation
+ * @property phaseConcurrency how many phases may assemble in parallel
+ */
+data class OnboardingConfig(
+    @get:JsonProperty("phase-timeout-seconds")
+    val phaseTimeoutSeconds: Long = 240,
+    @get:JsonProperty("total-timeout-seconds")
+    val totalTimeoutSeconds: Long = 900,
+    @get:JsonProperty("phase-concurrency")
+    val phaseConcurrency: Int = 4,
 )
 
 /**

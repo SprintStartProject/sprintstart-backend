@@ -30,8 +30,14 @@ import kotlin.test.assertNull
 class OnboardingStepServiceTest {
     private val onboardingPhaseRepository: OnboardingPhaseRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingStepService(onboardingPhaseRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingStepService(
+        onboardingPhaseRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val phaseId = UUID.randomUUID()
