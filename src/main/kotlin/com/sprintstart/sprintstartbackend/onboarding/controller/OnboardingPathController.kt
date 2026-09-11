@@ -200,17 +200,28 @@ class ProjectOnboardingPathController(
      * replaced. A project must have exactly one active blueprint.
      *
      * @param projectId The project whose active blueprint seeds the path.
+     * @return A stream of progress events ending in the new path plus a `done` event.
+     * @throws ResponseStatusException `403` when the user is not assigned to the project,
+     * `404` when the user does not exist.
      */
     @Operation(
         summary = "Create onboarding path from blueprint",
         description = "Copies the selected project's active blueprint into an " +
             "onboarding path for the authenticated user. The project is a path variable, " +
-            "so the path matches the project the user has selected in the UI.",
+            "so the path matches the project the user has selected in the UI. Failures after the " +
+            "stream has opened — e.g. a project without an active blueprint — are reported as an " +
+            "`error` event inside the `200` stream, not as an HTTP status.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "SSE stream of personalization events"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role to create an onboarding path, " +
+                    "or the authenticated user is not assigned to the given project",
+            ),
+            ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)

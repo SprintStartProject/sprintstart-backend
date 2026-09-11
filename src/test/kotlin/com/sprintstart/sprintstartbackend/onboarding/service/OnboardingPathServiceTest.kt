@@ -1,6 +1,10 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.PhaseCheckQuestion
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -34,6 +38,21 @@ class OnboardingPathServiceTest {
 
     private fun makePath(id: UUID = pathId, uid: UUID = userId) =
         OnboardingPath(id = id, userId = uid)
+
+    private fun makePathWithQuestion(questionId: UUID): OnboardingPath {
+        val path = makePath()
+        val phase = OnboardingPhase(path = path, position = 0, title = "Phase", description = "Desc")
+        val question = PhaseCheckQuestion(
+            id = questionId,
+            phase = phase,
+            position = 0,
+            type = CheckQuestionType.SHORT_TEXT,
+            question = "What is Kotlin?",
+        )
+        phase.checkQuestions += question
+        path.phases += phase
+        return path
+    }
 
     @Nested
     inner class GetOnboardingPathOverviewByUserId {
@@ -88,6 +107,72 @@ class OnboardingPathServiceTest {
             assertThrows<ResponseStatusException> {
                 service.getOnboardingPathForMe(authId)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `marks passed questions as passed in the returned path`() {
+            val questionId = UUID.randomUUID()
+            val path = makePathWithQuestion(questionId)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+            every { questionAttemptRepository.findPassedQuestionIdsByUserId(userId) } returns listOf(questionId)
+            every { questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId) } returns listOf(questionId)
+
+            val result = service.getOnboardingPathForMe(authId)
+
+            assertEquals(
+                QuestionStatus.PASSED,
+                result.phases
+                    .first()
+                    .questions
+                    .first()
+                    .status,
+            )
+        }
+
+        @Test
+        fun `marks attempted but never passed questions as retry in the returned path`() {
+            val questionId = UUID.randomUUID()
+            val path = makePathWithQuestion(questionId)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+            every { questionAttemptRepository.findPassedQuestionIdsByUserId(userId) } returns emptyList()
+            every { questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId) } returns listOf(questionId)
+
+            val result = service.getOnboardingPathForMe(authId)
+
+            assertEquals(
+                QuestionStatus.RETRY,
+                result.phases
+                    .first()
+                    .questions
+                    .first()
+                    .status,
+            )
+        }
+
+        @Test
+        fun `marks questions without attempts as open in the returned path`() {
+            val path = makePathWithQuestion(UUID.randomUUID())
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+            every { questionAttemptRepository.findPassedQuestionIdsByUserId(userId) } returns emptyList()
+            every { questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId) } returns emptyList()
+
+            val result = service.getOnboardingPathForMe(authId)
+
+            assertEquals(
+                QuestionStatus.OPEN,
+                result.phases
+                    .first()
+                    .questions
+                    .first()
+                    .status,
+            )
+            verify(exactly = 1) {
+                questionAttemptRepository.findPassedQuestionIdsByUserId(userId)
+                questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId)
+            }
         }
 
         @Test

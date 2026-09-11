@@ -1,16 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.AiConfig
+import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.OnboardingConfig
 import com.sprintstart.sprintstartbackend.UploadConfig
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintStatus
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.RequirementType
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.factory.OnboardingPathFromBlueprintFactory
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhase
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPhaseRequirement
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
@@ -25,6 +27,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseTaskDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -139,6 +142,161 @@ class OnboardingPersonalizationServiceTest {
                 .contains("expected exactly one"),
         )
         verify(exactly = 0) { onboardingPathRepository.deleteByUserId(any()) }
+    }
+
+    @Test
+    fun `returns not found error event when the project has no active blueprint`() = runTest {
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
+        every {
+            blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
+        } returns emptyList()
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertEquals("error", events.single().type)
+        assertTrue(
+            events
+                .single()
+                .message
+                .orEmpty()
+                .contains("No active blueprint"),
+        )
+        verify(exactly = 0) { onboardingPathRepository.deleteByUserId(any()) }
+        verify(exactly = 0) { onboardingAiClient.streamPhase(any()) }
+    }
+
+    @Test
+    fun `emits an error event when the selected blueprint no longer exists at persistence time`() = runTest {
+        val blueprint = blueprint(BlueprintStatus.ACTIVE)
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
+        every {
+            blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
+        } returns listOf(blueprint)
+        every { blueprintPathRepository.findById(blueprint.id) } returns Optional.empty()
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertEquals("error", events.single().type)
+        assertTrue(
+            events
+                .single()
+                .message
+                .orEmpty()
+                .contains("no longer exists"),
+        )
+        verify(exactly = 0) { onboardingPathRepository.deleteByUserId(any()) }
+        verify(exactly = 0) { entityManager.persist(any()) }
+    }
+
+    @Test
+    fun `skips phases whose requirements the user's roles and skills do not satisfy`() = runTest {
+        val roleId = UUID.randomUUID()
+        val profile = UserOnboardingProfile(
+            id = userId,
+            projectIds = setOf(projectId),
+            projectRoles = mapOf(
+                projectId to listOf(
+                    ProjectRoleDto(roleId = roleId, name = "Backend Developer", description = "Builds the backend"),
+                ),
+            ),
+        )
+        val path = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            projectId = projectId,
+            title = "Role-scoped onboarding",
+        )
+        path.status = BlueprintStatus.ACTIVE
+        val included = BlueprintPhase(
+            blueprintPath = path,
+            position = 0,
+            title = "Included",
+            description = "For the user's role",
+            aiPrompt = "Generate the role phase.",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        included.requirements += BlueprintPhaseRequirement(
+            blueprintPhase = included,
+            type = RequirementType.PROJECT_ROLE,
+            referenceId = roleId,
+            displayName = "Backend Developer",
+        )
+        val excluded = BlueprintPhase(
+            blueprintPath = path,
+            position = 1,
+            title = "Excluded",
+            description = "Requires a skill the user lacks",
+            aiPrompt = "Generate the skill phase.",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        excluded.requirements += BlueprintPhaseRequirement(
+            blueprintPhase = excluded,
+            type = RequirementType.SKILL,
+            referenceId = UUID.randomUUID(),
+            displayName = "Kotlin",
+        )
+        path.blueprintPhases += included
+        path.blueprintPhases += excluded
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
+        every {
+            blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
+        } returns listOf(path)
+        every { blueprintPathRepository.findById(path.id) } returns Optional.of(path)
+        every { onboardingPathRepository.deleteByUserId(userId) } just runs
+        every { onboardingPathRepository.flush() } just runs
+        every { onboardingAiClient.streamPhase(any()) } returns flowOf(doneEvent())
+
+        val events = service.personalize(authId, projectId).toList()
+
+        verify(exactly = 1) { onboardingAiClient.streamPhase(match { it.phaseTitle == "Included" }) }
+        val pathEvent = events.firstOrNull { it.type == "path" }
+        assertEquals(listOf("Included"), pathEvent?.path?.phases?.map { it.title })
+        assertTrue(
+            pathEvent
+                ?.path
+                ?.generationIssues
+                .orEmpty()
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun `only sends AI enhanced phases with a prompt to the AI service`() = runTest {
+        val path = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            projectId = projectId,
+            title = "Mixed onboarding",
+        )
+        path.status = BlueprintStatus.ACTIVE
+        path.blueprintPhases += BlueprintPhase(
+            blueprintPath = path,
+            position = 0,
+            title = "Authored",
+            description = "Fully authored",
+            aiPrompt = null,
+            type = BlueprintPhaseType.FIXED,
+        )
+        path.blueprintPhases += BlueprintPhase(
+            blueprintPath = path,
+            position = 1,
+            title = "Promptless",
+            description = "No prompt to assemble from",
+            aiPrompt = "   ",
+            type = BlueprintPhaseType.AI_ENHANCED,
+        )
+        expectBlueprint(path)
+
+        val events = service.personalize(authId, projectId).toList()
+
+        verify(exactly = 0) { onboardingAiClient.streamPhase(any()) }
+        assertEquals(listOf("path", "done"), events.map { it.type })
+        assertEquals(
+            listOf("Authored"),
+            events
+                .first()
+                .path
+                ?.phases
+                ?.map { it.title },
+        )
     }
 
     @Test
@@ -285,7 +443,13 @@ class OnboardingPersonalizationServiceTest {
         val events = service.personalize(authId, projectId).toList()
 
         val pathEvent = events.firstOrNull { it.type == "path" }
-        assertTrue(pathEvent?.path?.phases.orEmpty().isEmpty())
+        assertTrue(
+            pathEvent
+                ?.path
+                ?.phases
+                .orEmpty()
+                .isEmpty(),
+        )
         val issues = pathEvent?.path?.generationIssues.orEmpty()
         assertEquals(setOf("P0", "P1", "P2", "P3", "P4"), issues.map { it.title }.toSet())
         assertTrue(issues.all { it.status == GenerationStatus.TIMED_OUT })
@@ -322,9 +486,17 @@ class OnboardingPersonalizationServiceTest {
         expectBlueprint(blueprint)
         every { onboardingAiClient.streamPhase(any()) } answers {
             when (firstArg<AssemblePhaseRequest>().phaseTitle) {
-                "Slow0" -> flow { delay(200L); emit(doneEvent()) }
+                "Slow0" -> flow {
+                    delay(200L)
+                    emit(doneEvent())
+                }
+
                 "Fast1" -> flowOf(doneEvent())
-                else -> flow { delay(100L); emit(doneEvent()) }
+
+                else -> flow {
+                    delay(100L)
+                    emit(doneEvent())
+                }
             }
         }
 

@@ -9,10 +9,27 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.util.UUID
 
+/**
+ * Seeds the default global blueprint path into the database.
+ *
+ * Creates the "Seeded Blueprint" path with the phases defined in [BlueprintSeedData]
+ * as `AI_ENHANCED` phases, wires the default `blockedBy` dependency graph between
+ * the phases, and marks the path as [BlueprintStatus.ACTIVE]. The blueprint is
+ * global (no project ID), so it serves as a template that is copied into projects
+ * when they are created.
+ */
 @Component
 class BlueprintSeeder(
     private val blueprintPathRepository: BlueprintPathRepository,
 ) {
+    /**
+     * Seeds the default global blueprint path if none exists yet.
+     *
+     * The seeding is idempotent: if any global blueprint path (project ID is `null`)
+     * is already present, the method returns without doing anything. The phase
+     * blocker graph is hardcoded by index against [BlueprintSeedData.phases], so
+     * changing the seed list requires adjusting the blocker wiring accordingly.
+     */
     fun seed() {
         if (blueprintPathRepository.findAllByProjectIdIsNull().isNotEmpty()) {
             return

@@ -16,6 +16,7 @@ class OnboardingGeneratedContentMappingTest {
             OnboardingResource::class.java to "title",
             OnboardingResource::class.java to "description",
             OnboardingResource::class.java to "url",
+            PhaseCheckOption::class.java to "label",
         )
 
         fields.forEach { (entity, fieldName) ->

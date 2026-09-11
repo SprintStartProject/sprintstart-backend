@@ -30,6 +30,7 @@ class OnboardingPhase(
     var title: String,
     @Column(nullable = false, columnDefinition = "TEXT")
     var description: String,
+    /** Outcome of AI content generation for this phase; hidden statuses keep it out of the hire's view. */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var generationStatus: GenerationStatus = GenerationStatus.NOT_APPLICABLE,
@@ -51,6 +52,7 @@ class OnboardingPhase(
     var graphX: Double? = null,
     @Column(nullable = true)
     var graphY: Double? = null,
+    /** Phases that must be complete before this one unlocks for the user; edges of the path's blocker graph. */
     @ManyToMany
     @JoinTable(
         name = "onboarding_phase_blockers",

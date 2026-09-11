@@ -54,6 +54,7 @@ class StreamExecution internal constructor(
      * @param onChunkError Called when a chunk fails deserialization. Defaults to stderr logging.
      *   Return `true` to continue the stream, `false` to cancel it.
      */
+    @Suppress("CyclomaticComplexMethod")
     inline fun <reified T> perform(
         terminationMarkers: Set<String> = setOf("[DONE]"),
         crossinline onChunkError: (raw: String, error: Throwable) -> Boolean = { raw, err ->

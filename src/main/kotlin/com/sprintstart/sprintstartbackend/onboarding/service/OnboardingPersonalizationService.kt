@@ -74,8 +74,8 @@ class OnboardingPersonalizationService(
      * assigned to several projects always builds from the project they are looking at. A user who
      * is not assigned to the requested project is rejected instead of being given a path for a
      * project they do not belong to. A project is expected to have exactly one active blueprint at
-     * a time; several active alternatives are an inconsistent state and fail instead of being
-     * disambiguated by the caller.
+     * a time; several active alternatives are an inconsistent state and are reported as an error
+     * event instead of being disambiguated by the caller.
      *
      * `AI_ENHANCED` phases are filled at personalization time: for each included phase that carries
      * an author's prompt, the AI service is asked (streamed) to assemble the phase's steps, tasks,
@@ -92,8 +92,14 @@ class OnboardingPersonalizationService(
      *
      * @param authId External authentication identifier from the JWT subject.
      * @param projectId The project whose active blueprint seeds the path.
-     * @return A cold flow containing the copied path followed by a terminal `done` event.
-     * @throws ResponseStatusException If the user, project assignment, or blueprint selection is invalid.
+     * @return A cold flow that emits `stage` progress events while the phases assemble, then the
+     * copied path in a `path` event followed by a terminal `done` event. A failure once streaming
+     * has started — including blueprint selection (no active blueprint, or several) — is caught
+     * and emitted as a terminal `error` event instead of propagating, so an open SSE stream
+     * always ends with an event rather than a broken connection.
+     * @throws ResponseStatusException 404 if no user exists for [authId], 403 if the user is not
+     * assigned to [projectId]. Both are thrown before the flow is created; failures raised while
+     * the flow is collected are delivered as `error` events, not thrown.
      */
     @Tracked("Creating onboarding path from blueprint")
     fun personalize(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
@@ -356,6 +362,7 @@ class OnboardingPersonalizationService(
      * stream that fails mid-way, a `skipped`/`unchanged` outcome, or a result that cannot be decoded
      * all yield empty content with an explicit generation status — never fabricated content.
      */
+    @Suppress("CyclomaticComplexMethod")
     private suspend fun streamPhaseContent(
         phase: PhaseAssemblyTarget,
         projectId: String,

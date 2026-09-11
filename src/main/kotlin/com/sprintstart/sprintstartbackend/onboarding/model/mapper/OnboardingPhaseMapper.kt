@@ -37,6 +37,15 @@ fun OnboardingPhase.toGetResponse(): GetOnboardingPhaseResponse {
     )
 }
 
+/**
+ * Maps the phase for the path's owner, resolving each step's `locked` flag and each
+ * question's status from the phase lock state and the user's attempt history
+ * (see [OnboardingAvailability]).
+ *
+ * @param locked Whether the phase itself is locked by an incomplete blocker phase.
+ * @param passedQuestionIds IDs of questions the user has answered correctly at least once.
+ * @param attemptedQuestionIds IDs of questions the user has attempted (correctly or not).
+ */
 fun OnboardingPhase.toGetForUserResponse(
     locked: Boolean = false,
     passedQuestionIds: Set<UUID> = emptySet(),

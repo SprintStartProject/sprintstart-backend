@@ -218,7 +218,10 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>(onChunkError = { _, _ -> chunkErrors += 1; true })
+            .perform<AiStreamMessage>(onChunkError = { _, _ ->
+                chunkErrors += 1
+                true
+            })
             .take(1)
             .toList()
 

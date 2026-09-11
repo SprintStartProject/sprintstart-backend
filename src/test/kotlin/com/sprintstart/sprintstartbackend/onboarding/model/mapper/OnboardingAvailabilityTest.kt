@@ -191,6 +191,16 @@ class OnboardingAvailabilityTest {
     }
 
     @Test
+    fun `a question reports open when it was never attempted`() {
+        val p = path()
+        val ph1 = phase(0, p)
+        val q = question(ph1, 0)
+
+        val status = q.questionStatus(false, emptySet(), emptySet())
+        assertEquals(QuestionStatus.OPEN, status)
+    }
+
+    @Test
     fun `a question reports retry after an attempt that was never correct`() {
         val p = path()
         val ph1 = phase(0, p)

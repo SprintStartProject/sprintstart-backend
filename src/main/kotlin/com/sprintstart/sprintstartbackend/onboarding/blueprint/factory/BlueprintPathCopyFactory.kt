@@ -13,8 +13,32 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.Blue
 import org.springframework.stereotype.Component
 import java.util.UUID
 
+/**
+ * Creates deep copies of blueprint paths, including their whole content tree.
+ *
+ * The copy covers phases, requirements, steps, tasks, resources, check questions,
+ * and check options. Dependency edges (`blockedBy`) between phases and between
+ * steps/questions are not copied directly; instead, the factory records every
+ * created entity in old-ID to new-entity maps and rewires the edges in a second
+ * pass, so the copied graph references only the new entities.
+ */
 @Component
 class BlueprintPathCopyFactory {
+    /**
+     * Copies [path] into a new blueprint path with the given identity and lifecycle values.
+     *
+     * The copy is detached from persistence (no IDs are carried over) and must be
+     * saved by the caller. `blockedBy` edges are preserved: phases keep their phase
+     * blockers and steps/check questions keep their node blockers, remapped onto the
+     * copied entities.
+     *
+     * @param path the blueprint path to copy.
+     * @param blueprintKey the blueprint key assigned to the copy.
+     * @param projectId the project the copy belongs to, or `null` for a global blueprint.
+     * @param status the lifecycle status the copy starts with.
+     * @param version the version number assigned to the copy.
+     * @return the new, unpersisted blueprint path with its full content tree.
+     */
     fun createCopyFrom(
         path: BlueprintPath,
         blueprintKey: UUID,

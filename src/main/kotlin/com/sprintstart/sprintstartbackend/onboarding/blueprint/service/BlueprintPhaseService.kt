@@ -26,6 +26,13 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.ranges.contains
 
+/**
+ * Manages ordered phases within a scoped blueprint path.
+ *
+ * Insertions and moves keep phase positions contiguous by shifting affected siblings. Mutations require a draft path
+ * and matching optimistic revision. Deletion also removes graph edges so surviving phases cannot reference the deleted
+ * phase.
+ */
 @Service
 class BlueprintPhaseService(
     private val blueprintAccessService: BlueprintAccessService,
@@ -33,6 +40,15 @@ class BlueprintPhaseService(
     private val blueprintGraphNodeService: BlueprintGraphNodeService,
     private val entityManager: EntityManager,
 ) {
+    /**
+     * Returns phases for path.
+     *
+     * Runs the repository query matching the requested scope and maps the ordered phase entities to response DTOs.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPhasesForPath(
         scope: BlueprintScope,
@@ -51,6 +67,16 @@ class BlueprintPhaseService(
         }.map { it.toGetResponse() }
     }
 
+    /**
+     * Returns phase by id.
+     *
+     * Uses the access service to enforce the ownership scope before mapping the phase.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPhaseById(
         scope: BlueprintScope,
@@ -61,6 +87,19 @@ class BlueprintPhaseService(
             .toGetResponse()
     }
 
+    /**
+     * Creates phase for path.
+     *
+     * Requires an editable parent, validates the insertion position, shifts later siblings right, and persists the
+     * new phase.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid insertion position, 404 for a missing parent, or 409 when
+     *   its path is not a draft.
+     */
     @Transactional
     fun createBlueprintPhaseForPath(
         scope: BlueprintScope,
@@ -85,6 +124,19 @@ class BlueprintPhaseService(
         return blueprintPhaseRepository.save(phase).toCreateResponse()
     }
 
+    /**
+     * Updates phase by id.
+     *
+     * Requires an editable phase and matching revision, shifts siblings when its position changes, and persists the
+     * replacement values.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintPhaseById(
         scope: BlueprintScope,
@@ -106,6 +158,19 @@ class BlueprintPhaseService(
         return blueprintPhaseRepository.save(phase).toUpdateResponse()
     }
 
+    /**
+     * Updates phase position by id.
+     *
+     * Requires an editable phase and matching revision, shifts intervening siblings, and flushes every changed
+     * position together.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintPhasePositionById(
         scope: BlueprintScope,
@@ -124,6 +189,18 @@ class BlueprintPhaseService(
         return shiftedPhases.map { it.toUpdatePositionResponse() }
     }
 
+    /**
+     * Deletes phase by id.
+     *
+     * Requires an editable phase and matching revision before deletion. Incoming and outgoing graph edges are
+     * removed before deletion, and affected revisions are returned.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing entity, or 409 for a stale revision or non-draft path.
+     */
     @Transactional
     fun deleteBlueprintPhaseById(
         scope: BlueprintScope,

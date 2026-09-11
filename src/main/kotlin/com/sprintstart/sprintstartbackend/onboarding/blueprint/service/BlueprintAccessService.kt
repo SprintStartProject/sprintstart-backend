@@ -24,6 +24,13 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+/**
+ * Centralizes scope-aware access to blueprint entities.
+ *
+ * Every lookup chooses either the global repository path or a project-qualified repository path from [BlueprintScope].
+ * Editable lookups additionally require the owning path to be a draft. Keeping these checks here prevents individual
+ * services from accidentally reading across project boundaries or mutating active and archived blueprint versions.
+ */
 @Suppress("TooManyFunctions")
 @Service
 class BlueprintAccessService(
@@ -36,6 +43,17 @@ class BlueprintAccessService(
     private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
     private val blueprintSubGraphNodeRepository: BlueprintSubGraphNodeRepository,
 ) {
+    /**
+     * Returns authorized path.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedPath(scope: BlueprintScope, pathId: UUID): BlueprintPath {
         val path = when (scope) {
@@ -53,6 +71,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized draft path.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedDraftPath(scope: BlueprintScope, pathId: UUID): BlueprintPath {
         val draft = getAuthorizedPath(scope, pathId)
@@ -66,6 +96,17 @@ class BlueprintAccessService(
         return draft
     }
 
+    /**
+     * Finds active for authorized key.
+     *
+     * Runs the scope-specific active-version query and enforces the invariant that a stable key has at most one
+     * active path.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 500 when persisted versions violate the single-result invariant.
+     */
     @Transactional(readOnly = true)
     fun findActiveForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID): BlueprintPath? {
         val activePathList = when (scope) {
@@ -92,6 +133,16 @@ class BlueprintAccessService(
         }
     }
 
+    /**
+     * Finds draft for authorized key.
+     *
+     * Runs the scope-specific draft query and enforces the invariant that a stable key has at most one draft path.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 500 when persisted versions violate the single-result invariant.
+     */
     @Transactional(readOnly = true)
     fun findDraftForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID): BlueprintPath? {
         val draftList = when (scope) {
@@ -118,6 +169,17 @@ class BlueprintAccessService(
         }
     }
 
+    /**
+     * Returns archived for authorized key.
+     *
+     * Runs the scope-specific key-and-version query and requires exactly one matching historical path.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @param version Archived blueprint version to resolve.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 500 when the requested historical version is missing or duplicated.
+     */
     @Transactional(readOnly = true)
     fun getArchivedForAuthorizedBlueprintKey(scope: BlueprintScope, blueprintKey: UUID, version: Int): BlueprintPath {
         val archivedList = when (scope) {
@@ -148,6 +210,17 @@ class BlueprintAccessService(
         }
     }
 
+    /**
+     * Returns authorized phase.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedPhase(scope: BlueprintScope, phaseId: UUID): BlueprintPhase {
         val phase = when (scope) {
@@ -166,6 +239,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable phase.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditablePhase(scope: BlueprintScope, phaseId: UUID): BlueprintPhase {
         val phase = getAuthorizedPhase(scope, phaseId)
@@ -179,6 +264,17 @@ class BlueprintAccessService(
         return phase
     }
 
+    /**
+     * Returns authorized step.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedStep(scope: BlueprintScope, stepId: UUID): BlueprintStep {
         val step = when (scope) {
@@ -198,6 +294,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable step.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableStep(scope: BlueprintScope, stepId: UUID): BlueprintStep {
         val step = getAuthorizedStep(scope, stepId)
@@ -211,6 +319,17 @@ class BlueprintAccessService(
         return step
     }
 
+    /**
+     * Returns authorized resource.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param resourceId Identifier of the blueprint resource.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedResource(scope: BlueprintScope, resourceId: UUID): BlueprintResource {
         val resource = when (scope) {
@@ -230,6 +349,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable resource.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param resourceId Identifier of the blueprint resource.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableResource(scope: BlueprintScope, resourceId: UUID): BlueprintResource {
         val resource = getAuthorizedResource(scope, resourceId)
@@ -242,6 +373,17 @@ class BlueprintAccessService(
         return resource
     }
 
+    /**
+     * Returns authorized task.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedTask(scope: BlueprintScope, taskId: UUID): BlueprintTask {
         val task = when (scope) {
@@ -261,6 +403,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable task.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableTask(scope: BlueprintScope, taskId: UUID): BlueprintTask {
         val task = getAuthorizedTask(scope, taskId)
@@ -274,6 +428,17 @@ class BlueprintAccessService(
         return task
     }
 
+    /**
+     * Returns authorized check question.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param questionId Identifier of the check question.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedCheckQuestion(scope: BlueprintScope, questionId: UUID): BlueprintCheckQuestion {
         val question = when (scope) {
@@ -293,6 +458,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable check question.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param questionId Identifier of the check question.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableCheckQuestion(scope: BlueprintScope, questionId: UUID): BlueprintCheckQuestion {
         val question = getAuthorizedCheckQuestion(scope, questionId)
@@ -306,6 +483,17 @@ class BlueprintAccessService(
         return question
     }
 
+    /**
+     * Returns authorized check option.
+     *
+     * Chooses the global or project repository query from the supplied scope, preventing an identifier from
+     * resolving across ownership boundaries.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedCheckOption(scope: BlueprintScope, optionId: UUID): BlueprintCheckOption {
         val option = when (scope) {
@@ -325,6 +513,18 @@ class BlueprintAccessService(
         )
     }
 
+    /**
+     * Returns authorized editable check option.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableCheckOption(scope: BlueprintScope, optionId: UUID): BlueprintCheckOption {
         val option = getAuthorizedCheckOption(scope, optionId)
@@ -338,6 +538,18 @@ class BlueprintAccessService(
         return option
     }
 
+    /**
+     * Returns authorized editable sub graph node.
+     *
+     * First resolves the entity inside the requested ownership boundary, then verifies that its owning path has
+     * DRAFT status before returning it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param nodeId Operation input.
+     * @return The authorized entity or lookup result.
+     * @throws ResponseStatusException With 404 when the entity is outside the scope, or 409 when its path is not a
+     *   draft.
+     */
     @Transactional(readOnly = true)
     fun getAuthorizedEditableSubGraphNode(scope: BlueprintScope, nodeId: UUID): BlueprintSubGraphNode {
         val node = when (scope) {

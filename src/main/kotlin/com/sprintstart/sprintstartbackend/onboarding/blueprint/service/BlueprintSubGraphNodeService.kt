@@ -25,12 +25,30 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+/**
+ * Manages graph-specific state shared by blueprint steps and check questions.
+ *
+ * The service resolves editable nodes through [BlueprintAccessService], applies optimistic revision checks before
+ * mutations, and forces version increments when blocker relationships change. Blocker edges are kept acyclic, and
+ * removing a node's graph position also disconnects every incoming and outgoing edge so unplaced nodes cannot remain
+ * part of the rendered graph.
+ */
 @Service
 class BlueprintSubGraphNodeService(
     private val blueprintAccessService: BlueprintAccessService,
     private val entityManager: EntityManager,
     private val blueprintSubGraphNodeRepository: BlueprintSubGraphNodeRepository,
 ) {
+    /**
+     * Returns every sub-graph node in the requested blueprint phase and scope.
+     *
+     * Global scope selects nodes belonging to blueprint paths without a project, while project scope restricts the
+     * result to the supplied project. The response includes both steps and check questions in repository order.
+     *
+     * @param scope blueprint ownership boundary used to select nodes
+     * @param phaseId phase whose sub-graph should be returned
+     * @return the mapped nodes belonging to the phase in the requested scope
+     */
     @Transactional
     fun getSubGraph(scope: BlueprintScope, phaseId: UUID): GetBlueprintSubGraphResponse {
         return GetBlueprintSubGraphResponse(
@@ -51,6 +69,21 @@ class BlueprintSubGraphNodeService(
         )
     }
 
+    /**
+     * Adds a directed blocker relationship to an editable sub-graph node.
+     *
+     * Both nodes must be editable in the same [scope]. The supplied revision must match the blocked node, an existing
+     * edge cannot be added twice, and the new edge must not create a direct or transitive cycle. A successful change
+     * forces an optimistic version increment for the blocked node.
+     *
+     * @param scope blueprint ownership boundary used to authorize both nodes
+     * @param nodeId identifier of the node that will be blocked
+     * @param blockerId identifier of the node that will become a blocker
+     * @param request expected revision of the blocked node
+     * @return the predicted next revision and complete blocker ID set
+     * @throws ResponseStatusException with 409 when the revision is stale, 403 when the edge already exists, or 400
+     * when the edge would create a cycle
+     */
     @Transactional
     fun addSubGraphNodeBlocker(
         scope: BlueprintScope,
@@ -74,6 +107,15 @@ class BlueprintSubGraphNodeService(
         return node.toAddBlockerResponse()
     }
 
+    /**
+     * Updates the graph coordinates of an editable sub-graph node.
+     *
+     * @param scope blueprint ownership boundary used to authorize the node
+     * @param nodeId identifier of the node to move
+     * @param request expected revision and replacement coordinates
+     * @return the node's current revision and updated coordinates
+     * @throws ResponseStatusException with 409 when the revision is stale
+     */
     @Transactional
     fun updateSubGraphNodePositionById(
         scope: BlueprintScope,
@@ -90,6 +132,19 @@ class BlueprintSubGraphNodeService(
         return node.toUpdatePositionResponse()
     }
 
+    /**
+     * Removes a blocker relationship from an editable sub-graph node.
+     *
+     * Both nodes are resolved in the same [scope]. A successful mutation forces an optimistic version increment for
+     * the blocked node and returns its remaining blocker IDs.
+     *
+     * @param scope blueprint ownership boundary used to authorize both nodes
+     * @param nodeId identifier of the blocked node
+     * @param blockerId identifier of the blocker to remove
+     * @param request expected revision of the blocked node
+     * @return the predicted next revision and remaining blocker ID set
+     * @throws ResponseStatusException with 409 when the revision is stale
+     */
     @Transactional
     fun removeSubGraphNodeBlocker(
         scope: BlueprintScope,
@@ -109,6 +164,18 @@ class BlueprintSubGraphNodeService(
         return node.toRemoveBlockerResponse()
     }
 
+    /**
+     * Clears an editable node's graph coordinates and disconnects all of its blocker relationships.
+     *
+     * Incoming edges from dependant nodes and outgoing edges from the target are removed together. Every affected
+     * node is marked for an optimistic version increment and represented in the response.
+     *
+     * @param scope blueprint ownership boundary used to authorize the node
+     * @param nodeId identifier of the node to remove from the graph layout
+     * @param request expected revision of the node
+     * @return identifiers and predicted next revisions for every affected node
+     * @throws ResponseStatusException with 409 when the revision is stale
+     */
     @Transactional
     fun removeSubGraphNodePositionById(
         scope: BlueprintScope,
@@ -129,8 +196,6 @@ class BlueprintSubGraphNodeService(
         )
     }
 
-// ========== Helper methods ===========
-
     private fun dfs(currentNode: BlueprintSubGraphNode, targetNode: BlueprintSubGraphNode) {
         if (currentNode.id == targetNode.id) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Blocking cant be cyclic")
@@ -141,6 +206,16 @@ class BlueprintSubGraphNodeService(
         }
     }
 
+    /**
+     * Removes every incoming and outgoing blocker relationship for [node].
+     *
+     * The caller must execute this operation in a transaction and manage any required version change for [node]. Each
+     * dependant whose incoming edge is removed is marked for an optimistic version increment. The returned list always
+     * starts with [node], followed by dependants in repository order.
+     *
+     * @param node node whose blocker relationships should be cleared
+     * @return every node whose persisted relationship state was changed
+     */
     fun removeAllConnections(node: BlueprintSubGraphNode): List<BlueprintSubGraphNode> {
         val dependants = blueprintSubGraphNodeRepository.findAllByBlockedBy(node.id)
         val changedNodes = listOf(node) + dependants

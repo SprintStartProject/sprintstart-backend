@@ -37,6 +37,10 @@ fun OnboardingPath.toGetResponse(): GetOnboardingPathResponse {
  * Maps the path for its owner, deriving per-phase and per-node lock state from the real
  * blocker graph (see [OnboardingAvailability]).
  *
+ * Phases whose [com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus]
+ * is hidden from users are left out of `phases` and reported in `generationIssues` instead;
+ * the lock state is computed over the visible phases only.
+ *
  * @param passedQuestionIds IDs of questions the user has answered correctly at least once.
  * @param attemptedQuestionIds IDs of questions the user has attempted (correctly or not).
  */

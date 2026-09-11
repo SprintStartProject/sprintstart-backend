@@ -43,9 +43,12 @@ class OnboardingPathService(
      * Returns the onboarding path for the authenticated user.
      *
      * The user is resolved from the external auth ID before the path lookup is performed.
+     * The response is enriched with the user's question attempt history: passed and
+     * attempted question IDs are loaded from [QuestionAttemptRepository] and drive the
+     * per-phase lock state and per-question status of the returned path.
      *
      * @param authId External authentication identifier.
-     * @return The authenticated user's onboarding path.
+     * @return The authenticated user's onboarding path, annotated with the user's attempt state.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
     @Transactional(readOnly = true)

@@ -11,6 +11,9 @@ import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.ch
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionPositionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.checkquestion.UpdateBlueprintCheckQuestionResponse
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.service.BlueprintCheckQuestionService
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import org.springframework.http.HttpStatus
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -24,11 +27,45 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
+/**
+ * Exposes global administrative blueprint check question endpoints.
+ *
+ * All routes use [BlueprintScope.Global] and require the administrator role. The controller translates HTTP input
+ * into service calls; authorization of blueprint state, revisions, and graph rules remains in the service layer.
+ */
 @RestController
 @RequestMapping("/api/v1/onboarding/blueprints/")
 class BlueprintCheckQuestionAdminController(
     private val blueprintCheckQuestionService: BlueprintCheckQuestionService,
 ) {
+    /**
+     * Returns check questions for phase.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param phaseId Blueprint phase identifier.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Returns check questions for phase",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Returns check questions for phase successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/phase/{phaseId}/checks/questions")
@@ -38,6 +75,38 @@ class BlueprintCheckQuestionAdminController(
         return blueprintCheckQuestionService.getBlueprintCheckQuestionsForPhase(BlueprintScope.Global, phaseId)
     }
 
+    /**
+     * Returns check question by id.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param questionId Blueprint check-question identifier.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Returns check question by id",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Returns check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/checks/questions/{questionId}")
@@ -47,6 +116,48 @@ class BlueprintCheckQuestionAdminController(
         return blueprintCheckQuestionService.getBlueprintCheckQuestionById(BlueprintScope.Global, questionId)
     }
 
+    /**
+     * Creates check question for phase.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param phaseId Blueprint phase identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Creates check question for phase",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "201",
+                description = "Blueprint resource created",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/phase/{phaseId}/checks/questions")
@@ -61,6 +172,48 @@ class BlueprintCheckQuestionAdminController(
         )
     }
 
+    /**
+     * Updates check question by id.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Updates check question by id",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Updates check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/checks/question/{questionId}")
@@ -75,6 +228,48 @@ class BlueprintCheckQuestionAdminController(
         )
     }
 
+    /**
+     * Updates check question position by id.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Updates check question position by id",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Updates check question position by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/checks/question/{questionId}/position")
@@ -89,6 +284,44 @@ class BlueprintCheckQuestionAdminController(
         )
     }
 
+    /**
+     * Deletes check question by id.
+     *
+     * The endpoint delegates to the blueprint service with global scope and is restricted to administrators.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Deletes check question by id",
+        description = "Uses global scope; the service enforces blueprint state and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Deletes check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/checks/question/{questionId}")
@@ -104,11 +337,48 @@ class BlueprintCheckQuestionAdminController(
     }
 }
 
+/**
+ * Exposes project-scoped blueprint check question endpoints.
+ *
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
+ * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints/")
 class BlueprintCheckQuestionController(
     private val blueprintCheckQuestionService: BlueprintCheckQuestionService,
 ) {
+    /**
+     * Returns check questions for phase.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param phaseId Blueprint phase identifier.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Returns check questions for phase",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Returns check questions for phase successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @GetMapping("/phase/{phaseId}/checks/questions")
@@ -122,6 +392,41 @@ class BlueprintCheckQuestionController(
         )
     }
 
+    /**
+     * Returns check question by id.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param questionId Blueprint check-question identifier.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Returns check question by id",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Returns check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @GetMapping("/checks/questions/{questionId}")
@@ -135,6 +440,51 @@ class BlueprintCheckQuestionController(
         )
     }
 
+    /**
+     * Creates check question for phase.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param phaseId Blueprint phase identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Creates check question for phase",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "201",
+                description = "Blueprint resource created",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @PostMapping("/phase/{phaseId}/checks/questions")
@@ -150,6 +500,51 @@ class BlueprintCheckQuestionController(
         )
     }
 
+    /**
+     * Updates check question by id.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Updates check question by id",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Updates check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @PutMapping("/checks/question/{questionId}")
@@ -165,6 +560,51 @@ class BlueprintCheckQuestionController(
         )
     }
 
+    /**
+     * Updates check question position by id.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Updates check question position by id",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Updates check question position by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "400",
+                description = "Request data, position, relationship, or blueprint state is invalid",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @PutMapping("/checks/question/{questionId}/position")
@@ -180,6 +620,47 @@ class BlueprintCheckQuestionController(
         )
     }
 
+    /**
+     * Deletes check question by id.
+     *
+     * The endpoint builds a project scope from `projectId` and delegates authorization and business validation to
+     * the blueprint service.
+     *
+     * @param projectId Project whose blueprint is being accessed.
+     *
+     * @param questionId Blueprint check-question identifier.
+     *
+     * @param request Request payload containing the mutation data and, where required, the expected revision.
+     * @return The service response for the requested blueprint operation.
+     */
+    @Operation(
+        summary = "Deletes check question by id",
+        description = "Uses project scope; the service enforces ownership, state, and revisions.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Deletes check question by id successfully",
+            ),
+            ApiResponse(
+                responseCode = "401",
+                description = "Authentication required",
+            ),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role or blueprint scope access",
+            ),
+            ApiResponse(
+                responseCode = "404",
+                description = "Requested blueprint resource not found in the selected scope",
+            ),
+            ApiResponse(
+                responseCode = "409",
+                description = "Blueprint is not editable or the supplied revision is stale",
+            ),
+        ],
+    )
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
     @DeleteMapping("/checks/question/{questionId}")

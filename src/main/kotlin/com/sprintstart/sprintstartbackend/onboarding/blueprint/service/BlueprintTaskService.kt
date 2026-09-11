@@ -23,11 +23,26 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.ranges.contains
 
+/**
+ * Manages ordered tasks attached to blueprint steps.
+ *
+ * Reads are restricted through scope-specific repository queries. Writes require a draft blueprint and matching
+ * revision, while insertion and movement shift affected siblings to preserve a contiguous task order.
+ */
 @Service
 class BlueprintTaskService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintTaskRepository: BlueprintTaskRepository,
 ) {
+    /**
+     * Returns tasks for step.
+     *
+     * Runs the repository query matching the requested scope and maps the ordered task entities to response DTOs.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintTasksForStep(
         scope: BlueprintScope,
@@ -49,6 +64,16 @@ class BlueprintTaskService(
         }.map { it.toGetResponse() }
     }
 
+    /**
+     * Returns task by id.
+     *
+     * Uses the access service to enforce the ownership scope before mapping the task.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintTaskById(
         scope: BlueprintScope,
@@ -59,6 +84,19 @@ class BlueprintTaskService(
             .toGetResponse()
     }
 
+    /**
+     * Creates task for step.
+     *
+     * Requires an editable parent, validates the insertion position, shifts later siblings right, and persists the
+     * new task.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid insertion position, 404 for a missing parent, or 409 when
+     *   its path is not a draft.
+     */
     @Transactional
     fun createBlueprintTaskForStep(
         scope: BlueprintScope,
@@ -79,6 +117,19 @@ class BlueprintTaskService(
         return blueprintTaskRepository.save(blueprintTask).toCreateResponse()
     }
 
+    /**
+     * Updates task by id.
+     *
+     * Requires an editable task and matching revision, shifts siblings when its position changes, and persists the
+     * replacement values.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintTaskById(
         scope: BlueprintScope,
@@ -98,6 +149,19 @@ class BlueprintTaskService(
         return blueprintTaskRepository.save(blueprintTask).toUpdateResponse()
     }
 
+    /**
+     * Updates task position by id.
+     *
+     * Requires an editable task and matching revision, shifts intervening siblings, and flushes every changed
+     * position together.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintTaskPositionById(
         scope: BlueprintScope,
@@ -116,6 +180,16 @@ class BlueprintTaskService(
         return shiftedTasks.map { it.toUpdatePositionResponse() }
     }
 
+    /**
+     * Deletes task by id.
+     *
+     * Requires an editable task and matching revision before deletion.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param taskId Identifier of the blueprint task.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @throws ResponseStatusException With 404 for a missing entity, or 409 for a stale revision or non-draft path.
+     */
     @Transactional
     fun deleteBlueprintTaskById(
         scope: BlueprintScope,

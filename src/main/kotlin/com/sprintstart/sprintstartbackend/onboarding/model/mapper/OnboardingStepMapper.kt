@@ -6,6 +6,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 
+/**
+ * @param locked The step's derived availability (see [OnboardingAvailability]); defaults to
+ * unlocked for the admin-facing views that do not compute it.
+ */
 fun OnboardingStep.toGetAllResponse(locked: Boolean = false): GetOnboardingStepsResponse {
     return GetOnboardingStepsResponse(
         id = this.id,

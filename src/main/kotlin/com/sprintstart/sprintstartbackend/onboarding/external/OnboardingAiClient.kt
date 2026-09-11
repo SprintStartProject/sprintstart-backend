@@ -248,11 +248,12 @@ class OnboardingAiClient(
      *
      * The phase carries an author's prompt rather than a fixed step list; this fills it: grounded
      * steps (with tasks and resources) plus a small knowledge check, scoped to [AssemblePhaseRequest.projectId].
-     * [lastFingerprint] can short-circuit an unchanged corpus; otherwise keep passing it so a
-     * re-assembly of the same phase is served from cache rather than regenerated.
+     * [AssemblePhaseRequest.lastFingerprint] can short-circuit an unchanged corpus; otherwise keep
+     * passing it so a re-assembly of the same phase is served from cache rather than regenerated.
      *
      * `skipped` with no content is a real answer and must reach the hire as an honest empty phase —
-     * never a fabricated one.
+     * never a fabricated one. A non-2xx response is wrapped in an [OnboardingAiException] carrying
+     * the upstream status/body.
      */
     suspend fun assemblePhase(request: AssemblePhaseRequest): PhaseContentOutcome =
         try {

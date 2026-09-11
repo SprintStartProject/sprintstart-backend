@@ -21,6 +21,13 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.collections.orEmpty
 
+/**
+ * Manages skill and project-role requirements attached to blueprint phases.
+ *
+ * External references are resolved through module APIs and snapshotted into blueprint-owned requirement entities.
+ * Missing references are rejected, duplicates are ignored, and the phase receives a forced optimistic revision
+ * increment only when its requirement set actually changes.
+ */
 @Service
 class BlueprintPhaseRequirementService(
     private val blueprintAccessService: BlueprintAccessService,
@@ -28,6 +35,19 @@ class BlueprintPhaseRequirementService(
     private val projectRoleApi: ProjectRoleApi,
     private val entityManager: EntityManager,
 ) {
+    /**
+     * Creates phase requirements for phase.
+     *
+     * Resolves skill and project-role references through module APIs, rejects missing references, ignores existing
+     * pairs, and increments the phase only when the set changes.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for missing requirement references, 404 for a missing phase, or 409 for
+     *   stale/non-editable state.
+     */
     @Transactional
     fun createBlueprintPhaseRequirementsForPhase(
         scope: BlueprintScope,
@@ -62,6 +82,19 @@ class BlueprintPhaseRequirementService(
         )
     }
 
+    /**
+     * Deletes phase requirements for phase.
+     *
+     * Validates every requested ID against the phase, removes those requirements, and increments the phase only for
+     * a non-empty deletion.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for missing requirement references, 404 for a missing phase, or 409 for
+     *   stale/non-editable state.
+     */
     @Transactional
     fun deleteBlueprintPhaseRequirementsForPhase(
         scope: BlueprintScope,

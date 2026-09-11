@@ -22,6 +22,13 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+/**
+ * Manages the lifecycle and version history of blueprint paths.
+ *
+ * Paths are grouped by a stable blueprint key and exist as draft, active, or archived versions inside either global or
+ * project scope. This service owns creation, draft copying, publication, rollback, archival, revision validation, and
+ * mapping persistence entities to API responses.
+ */
 @Service
 class BlueprintPathService(
     private val blueprintAccessService: BlueprintAccessService,
@@ -29,6 +36,14 @@ class BlueprintPathService(
     private val blueprintPathCopyFactory: BlueprintPathCopyFactory,
     private val entityManager: EntityManager,
 ) {
+    /**
+     * Returns path overviews grouped by key.
+     *
+     * Runs the scope-specific latest-version query and maps one overview per stable blueprint key.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPathOverviewsGroupedByBlueprintKey(
         scope: BlueprintScope,
@@ -45,6 +60,15 @@ class BlueprintPathService(
         return paths.map { it.toGetOverviewResponse() }
     }
 
+    /**
+     * Returns path history by key.
+     *
+     * Loads all versions for the stable key inside the requested scope in descending version order.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPathHistoryByBlueprintKey(
         scope: BlueprintScope,
@@ -65,6 +89,15 @@ class BlueprintPathService(
     }
 
     // remove soon
+
+    /**
+     * Returns path overviews for project id.
+     *
+     * Loads all blueprint paths owned by the project. This legacy query does not group versions by stable key.
+     *
+     * @param projectId Identifier of the owning project.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPathOverviewsForProjectId(projectId: UUID): List<GetBlueprintPathOverviewResponse> {
         return blueprintPathRepository
@@ -72,6 +105,16 @@ class BlueprintPathService(
             .map { it.toGetOverviewResponse() }
     }
 
+    /**
+     * Returns path by id.
+     *
+     * Uses the access service to enforce the ownership scope before mapping the path.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the path does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintPathById(scope: BlueprintScope, pathId: UUID): GetBlueprintPathResponse {
         return blueprintAccessService
@@ -79,6 +122,15 @@ class BlueprintPathService(
             .toGetResponse()
     }
 
+    /**
+     * Creates path.
+     *
+     * Creates version zero in DRAFT status and derives project ownership directly from the supplied scope.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     */
     @Transactional
     fun createBlueprintPath(
         scope: BlueprintScope,
@@ -100,6 +152,16 @@ class BlueprintPathService(
         return blueprintPathRepository.save(path).toCreateResponse()
     }
 
+    /**
+     * Opens path draft by key.
+     *
+     * Returns an existing draft when present; otherwise deep-copies the active aggregate into the next draft version.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when no active version exists for the key.
+     */
     @Transactional
     fun openBlueprintPathDraftByBlueprintKey(
         scope: BlueprintScope,
@@ -129,6 +191,17 @@ class BlueprintPathService(
         return copy.toGetResponse()
     }
 
+    /**
+     * Publishes path draft by id.
+     *
+     * Requires a draft, archives the current active version, and promotes the draft in the same transaction.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the draft or active version is missing, or 409 when the supplied
+     *   path is not a draft.
+     */
     @Transactional
     fun publishBlueprintPathDraftById(
         scope: BlueprintScope,
@@ -147,6 +220,19 @@ class BlueprintPathService(
         return draft.toGetResponse()
     }
 
+    /**
+     * Rolls back path by key.
+     *
+     * Validates that the requested version predates the active one, deletes later versions, and reactivates the
+     * selected archive.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @param rollbackVersion Earlier archived version that should become active.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid rollback version, 404 when no active version exists, or
+     *   500 when archived history is inconsistent.
+     */
     @Transactional
     fun rollbackBlueprintPathByBlueprintKey(
         scope: BlueprintScope,
@@ -187,6 +273,18 @@ class BlueprintPathService(
         return rollbackPath.toGetResponse()
     }
 
+    /**
+     * Updates path by id.
+     *
+     * Requires a scoped draft and matching revision before replacing its mutable metadata.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the path is missing, or 409 when it is not a draft or its revision
+     *   is stale.
+     */
     @Transactional
     fun updateBlueprintPathById(
         scope: BlueprintScope,
@@ -208,6 +306,15 @@ class BlueprintPathService(
         return blueprintPathRepository.save(path).toUpdateResponse()
     }
 
+    /**
+     * Deletes path draft by id.
+     *
+     * Deletes the scoped path only when it is still a draft.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @throws ResponseStatusException With 404 when the path is missing, or 400 when it is not a draft.
+     */
     @Transactional
     fun deleteBlueprintPathDraftById(
         scope: BlueprintScope,
@@ -222,6 +329,15 @@ class BlueprintPathService(
         blueprintPathRepository.delete(path)
     }
 
+    /**
+     * Archives path by key.
+     *
+     * Archives the active version and deletes any unpublished draft for the same key and scope.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param blueprintKey Stable key shared by every version of a blueprint.
+     * @throws ResponseStatusException With 404 when no active version exists for the key.
+     */
     @Transactional
     fun archiveBlueprintPathByBlueprintKey(scope: BlueprintScope, blueprintKey: UUID) {
         val path = blueprintAccessService
@@ -239,43 +355,3 @@ class BlueprintPathService(
             ?.let { blueprintPathRepository.delete(it) }
     }
 }
-
-// Todo:
-//  - [x] Finish the rest of the data structures with simple services
-//  - [x] Add an umbrella Blueprint structure that holds all the paths -> needs a Stable Key separate from the ID
-//  - [x] Add a check for the revision in every update
-//  - [x] Create an endpoint for editing the blueprint with /blueprint/paths/{pathId}/drafts
-//      - [x] returns the current opened draft
-//      - [x] creates a new deep-copy (draft) of the blueprint and returns it as a draft
-//  - [x] change all the update, create and delete calls to use the draft
-//  - [x] Create an endpoint to save a draft as the new active and retire the old blueprint
-//  - [x] Change the path delete endpoint to a retire
-//  - [x] Create Blueprint status enum
-//  - [x] Add a revert function to the path
-//  - [x] Add an extra endpoint to every blueprint entity with a position
-//      -> this should return the complete changed List of entities
-//  - [x] Add delete endpoint for drafts
-//  - [x] Add role and skill "requirements" to phases
-//  - [x] Add an option to just specify a prompt as the phase
-//  - [x] Make everything tied to a project id
-//  - [x] Add a general blueprint path that is seeded on first bootup of SprintStart
-//      - [x] make project Id Optional
-//      - [x] mostly ai prompt phases
-//      - [x] Add Seeder
-//  - [x] Add an option to make phases be blocked by a previous one or not
-//      - [x] BlockedBy via Question
-//  - [] Add the Blueprint -> AI Conversion service and controller
-//      - [] Add prompt -> phase service
-//      - [] Add a way that Ai could SSE stream a phase or path (via Buddy or Button)
-//      - [] maybe add some sort of auto allign to the graph
-//              (Add from 0,0 down right end then offset by middle of width and height/2)
-//  - [x] Add @PreAutherize and @ResponseStatus to every controller function
-//  - [] Add Documentation
-//  - [] Add Tests
-
-// Backlog:
-//  - [] Add a for all members option which will add a Task with each members name (only 70% need to be reached)
-//  - [] ( Add filter options to the phase query )
-//  - [] Think about a teamOverview phase with : (Name, roles, Ai work summary) per person
-//      -> TeamMemberProfile (I think I will move this into the user)
-//  - [] (Add authors to the Blueprint, as a Set with all the people that edited the draft)

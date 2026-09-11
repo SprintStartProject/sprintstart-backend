@@ -23,11 +23,15 @@ class OnboardingCompletionService(
     private val userApi: UserApi,
 ) {
     /**
-     * Marks the user onboarded when nothing is left to do, and reports whether that
-     * happened in this call.
+     * Marks the user onboarded when nothing is left to do.
+     *
+     * A user without any phases is never marked: an empty path means onboarding has not
+     * been set up yet, not that it is finished. Marking is idempotent, so re-evaluating
+     * after every step completion and question attempt is safe.
      *
      * @param userId Identifier of the user to evaluate.
-     * @return true when the user counts as onboarded, false while anything is still open.
+     * @return true when every phase is complete and the user counts as onboarded, false
+     * while anything is still open or the user has no path yet.
      */
     @Transactional
     fun completeIfFinished(userId: UUID): Boolean {

@@ -25,12 +25,28 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+/**
+ * Manages phase coordinates and blocker relationships in a blueprint graph.
+ *
+ * Both endpoints of an edge are authorized in the same scope. Relationship mutations use forced optimistic version
+ * increments, duplicate and cyclic blockers are rejected, and removing a phase from the layout disconnects all of its
+ * incoming and outgoing edges.
+ */
 @Service
 class BlueprintGraphNodeService(
     private val blueprintPhaseRepository: BlueprintPhaseRepository,
     private val blueprintAccessService: BlueprintAccessService,
     private val entityManager: EntityManager,
 ) {
+    /**
+     * Returns graph.
+     *
+     * Loads phases with the repository query matching the requested scope and maps their coordinates and blocker edges.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param pathId Identifier of the blueprint path.
+     * @return The mapped result of the operation.
+     */
     @Transactional
     fun getGraph(scope: BlueprintScope, pathId: UUID): GetBlueprintGraphResponse {
         return GetBlueprintGraphResponse(
@@ -51,6 +67,19 @@ class BlueprintGraphNodeService(
         )
     }
 
+    /**
+     * Adds graph node blocker.
+     *
+     * Validates the target revision, rejects duplicate and cyclic edges, then forces an optimistic version increment.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param blockerId Operation input.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for a cycle, 403 for a duplicate edge, 404 for a missing phase, or 409
+     *   for stale/non-editable state.
+     */
     @Transactional
     fun addGraphNodeBlocker(
         scope: BlueprintScope,
@@ -74,6 +103,17 @@ class BlueprintGraphNodeService(
         return phase.toAddBlockerResponse()
     }
 
+    /**
+     * Updates graph node position by id.
+     *
+     * Validates the target revision, replaces both coordinates, and flushes before mapping the response.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing phase, or 409 for stale/non-editable state.
+     */
     @Transactional
     fun updateGraphNodePositionById(
         scope: BlueprintScope,
@@ -90,6 +130,18 @@ class BlueprintGraphNodeService(
         return phase.toUpdateGraphPositionResponse()
     }
 
+    /**
+     * Removes graph node blocker.
+     *
+     * Validates the target revision, removes the selected edge, and forces an optimistic version increment.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param blockerId Operation input.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing phase, or 409 for stale/non-editable state.
+     */
     @Transactional
     fun removeGraphNodeBlocker(
         scope: BlueprintScope,
@@ -109,6 +161,17 @@ class BlueprintGraphNodeService(
         return phase.toRemoveBlockerResponse()
     }
 
+    /**
+     * Removes graph node position by id.
+     *
+     * Clears coordinates and removes all incoming and outgoing blocker edges, returning every affected revision.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param phaseId Identifier of the blueprint phase.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing phase, or 409 for stale/non-editable state.
+     */
     @Transactional
     fun removeGraphNodePositionById(
         scope: BlueprintScope,
@@ -140,6 +203,16 @@ class BlueprintGraphNodeService(
             dfs(node, targetNode)
         }
     }
+
+    /**
+     * Removes all connections.
+     *
+     * Removes incoming edges from dependants and clears outgoing edges. The caller owns the transaction and
+     * target-node version handling.
+     *
+     * @param phase Phase whose graph relationships should be removed.
+     * @return The mapped result of the operation.
+     */
 
     fun removeAllConnections(phase: BlueprintPhase): List<BlueprintPhase> {
         val dependants = blueprintPhaseRepository.findAllBlockedById(phase.id)

@@ -18,11 +18,26 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
+/**
+ * Manages reference resources attached to blueprint steps.
+ *
+ * Reads are selected by global or project scope. Creation requires an editable parent step, while updates and deletes
+ * require both scoped draft access and a matching optimistic revision. Entities are always mapped to response DTOs.
+ */
 @Service
 class BlueprintResourceService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintResourceRepository: BlueprintResourceRepository,
 ) {
+    /**
+     * Returns resources for step.
+     *
+     * Runs the scope-specific step-resource query and maps the resources in repository order.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintResourcesForStep(
         scope: BlueprintScope,
@@ -44,6 +59,16 @@ class BlueprintResourceService(
         }.map { it.toGetResponse() }
     }
 
+    /**
+     * Returns resource by id.
+     *
+     * Uses the access service to enforce the ownership scope before mapping the resource.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param resourceId Identifier of the blueprint resource.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintResourceById(
         scope: BlueprintScope,
@@ -54,6 +79,17 @@ class BlueprintResourceService(
             .toGetResponse()
     }
 
+    /**
+     * Creates resource for step.
+     *
+     * Requires an editable parent step, constructs the attached resource, and persists it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param stepId Identifier of the blueprint step.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing step, or 409 when its path is not a draft.
+     */
     @Transactional
     fun createBlueprintResourceForStep(
         scope: BlueprintScope,
@@ -72,6 +108,17 @@ class BlueprintResourceService(
         return blueprintResourceRepository.save(blueprintResource).toCreateResponse()
     }
 
+    /**
+     * Updates resource by id.
+     *
+     * Requires an editable resource and matching revision before replacing its title, description, and URL.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param resourceId Identifier of the blueprint resource.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 for a missing resource, or 409 for a stale revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintResourceById(
         scope: BlueprintScope,
@@ -89,6 +136,16 @@ class BlueprintResourceService(
         return blueprintResourceRepository.save(blueprintResource).toUpdateResponse()
     }
 
+    /**
+     * Deletes resource by id.
+     *
+     * Requires an editable resource and matching revision before deleting it.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param resourceId Identifier of the blueprint resource.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @throws ResponseStatusException With 404 for a missing entity, or 409 for a stale revision or non-draft path.
+     */
     @Transactional
     fun deleteBlueprintResourceById(
         scope: BlueprintScope,

@@ -23,11 +23,27 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.collections.forEach
 
+/**
+ * Manages ordered answer options within blueprint check questions.
+ *
+ * Scope-specific reads prevent cross-project access. Insertions and moves shift siblings to keep positions contiguous,
+ * while updates and deletes require the owning blueprint to remain a draft and the supplied revision to be current.
+ */
 @Service
 class BlueprintCheckOptionService(
     private val blueprintAccessService: BlueprintAccessService,
     private val blueprintCheckOptionRepository: BlueprintCheckOptionRepository,
 ) {
+    /**
+     * Returns check options for question.
+     *
+     * Runs the repository query matching the requested scope and maps the ordered check option entities to response
+     * DTOs.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param questionId Identifier of the check question.
+     * @return The mapped result of the operation.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintCheckOptionsForQuestion(
         scope: BlueprintScope,
@@ -51,6 +67,16 @@ class BlueprintCheckOptionService(
         }.map { it.toGetResponse() }
     }
 
+    /**
+     * Returns check option by id.
+     *
+     * Uses the access service to enforce the ownership scope before mapping the check option.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 404 when the entity does not exist in the requested scope.
+     */
     @Transactional(readOnly = true)
     fun getBlueprintCheckOptionById(
         scope: BlueprintScope,
@@ -61,6 +87,19 @@ class BlueprintCheckOptionService(
             .toGetResponse()
     }
 
+    /**
+     * Creates check option for question.
+     *
+     * Requires an editable parent, validates the insertion position, shifts later siblings right, and persists the
+     * new check option.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param questionId Identifier of the check question.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid insertion position, 404 for a missing parent, or 409 when
+     *   its path is not a draft.
+     */
     @Transactional
     fun createBlueprintCheckOptionForQuestion(
         scope: BlueprintScope,
@@ -81,6 +120,19 @@ class BlueprintCheckOptionService(
         return blueprintCheckOptionRepository.save(option).toCreateResponse()
     }
 
+    /**
+     * Updates check option by id.
+     *
+     * Requires an editable check option and matching revision, shifts siblings when its position changes, and
+     * persists the replacement values.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintCheckOptionById(
         scope: BlueprintScope,
@@ -100,6 +152,19 @@ class BlueprintCheckOptionService(
         return blueprintCheckOptionRepository.save(option).toUpdateResponse()
     }
 
+    /**
+     * Updates check option position by id.
+     *
+     * Requires an editable check option and matching revision, shifts intervening siblings, and flushes every
+     * changed position together.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @return The mapped result of the operation.
+     * @throws ResponseStatusException With 400 for an invalid position, 404 for a missing entity, or 409 for a stale
+     *   revision or non-draft path.
+     */
     @Transactional
     fun updateBlueprintCheckOptionPositionById(
         scope: BlueprintScope,
@@ -119,6 +184,16 @@ class BlueprintCheckOptionService(
         return shiftedOptions.map { it.toUpdatePositionResponse() }
     }
 
+    /**
+     * Deletes check option by id.
+     *
+     * Requires an editable check option and matching revision before deletion.
+     *
+     * @param scope Ownership boundary used for repository selection and authorization.
+     * @param optionId Identifier of the check option.
+     * @param request Request data, including the expected revision when optimistic concurrency applies.
+     * @throws ResponseStatusException With 404 for a missing entity, or 409 for a stale revision or non-draft path.
+     */
     @Transactional
     fun deleteBlueprintCheckOptionById(
         scope: BlueprintScope,
