@@ -831,14 +831,22 @@ class BuddyActionService(
             description = "Offer to keep a list you have just written as a checklist card on the " +
                 "hire's board. Use it right after you have answered 'how do I start' or 'what do " +
                 "I do next' with steps — the conversation is not replayed, so a list they only " +
-                "read here is a list they will have to ask for again tomorrow. Pass the SAME " +
-                "lines you wrote in the reply, one per item, in the same order and the same " +
-                "words: this puts your sentences on a surface the hire treats as their own, so " +
-                "anything you keep must be something they have just read. Never use it for a list " +
-                "the task itself already states — say so and let them keep the task's own words. " +
-                "This does NOT write anything by itself; the hire sees a confirm button and only " +
-                "they can keep it. Ticking it changes nothing anywhere else — it is their working " +
-                "copy, not a status.",
+                "read here is a list they will have to ask for again tomorrow. " +
+                "ONE ITEM PER THING THEY DO, not one per line you wrote. A card is a flat list of " +
+                "things to tick off, so an answer with headed sections and bullets under them " +
+                "becomes one item per section, with the detail folded into that item's own words " +
+                "— 'Set up locally: npm install and npm run dev in the frontend, backend per the " +
+                "repo docs', not a separate item for each bullet and another for the heading. " +
+                "Aim for 3-7 items. Write each one as something they can finish and tick: start " +
+                "with a verb, keep it to a line, and drop anything that is context rather than a " +
+                "step (a goal, a list of dependencies, an offer to help further). Say the same " +
+                "things you said in the reply — this puts your sentences on a surface the hire " +
+                "treats as their own, so nothing may appear on the card that they have not just " +
+                "read. Never use it for a list the task itself already states: those are the " +
+                "task's words and the board already offers them. " +
+                "This does NOT write anything by itself; the hire sees a confirm button with the " +
+                "lines on it and only they can keep it. Ticking it changes nothing anywhere else " +
+                "— it is their working copy, not a status.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -850,8 +858,11 @@ class BuddyActionService(
                         put("type", "array")
                         put(
                             "description",
-                            "The steps, one per entry, worded as you wrote them in the reply. " +
-                                "At least $MIN_CHECKLIST_ITEMS; anything past $MAX_CHECKLIST_ITEMS is dropped.",
+                            "One entry per thing the hire does, in the order they do them, in the " +
+                                "words you used in the reply. Fold a section's bullets into that " +
+                                "section's entry rather than making an entry of each. Aim for " +
+                                "3-7; at least $MIN_CHECKLIST_ITEMS, and anything past " +
+                                "$MAX_CHECKLIST_ITEMS is dropped.",
                         )
                         putJsonObject("items") { put("type", "string") }
                     }
