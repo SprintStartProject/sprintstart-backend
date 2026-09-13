@@ -39,6 +39,14 @@ data class BuddyActionRequest(
     val questionId: UUID? = null,
     val phaseId: UUID? = null,
     /**
+     * The checklist line `complete_task` would tick off.
+     *
+     * Its own field rather than [taskId], which already means a *starter-work* task for `claim_goal`.
+     * Two different things called a task is confusing enough in the product without one wire field
+     * standing for both.
+     */
+    val onboardingTaskId: UUID? = null,
+    /**
      * The hire's answer to a knowledge question, in their own words, for `answer_question`.
      *
      * Matched to an option server-side for a multiple-choice question rather than being sent as an

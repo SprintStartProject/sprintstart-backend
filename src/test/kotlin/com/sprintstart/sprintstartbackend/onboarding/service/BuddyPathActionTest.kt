@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.question.SubmitQuestionAttemptRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
@@ -15,6 +16,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.question.Sub
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.CreateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.UpdateOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
@@ -45,6 +48,7 @@ import java.util.UUID
 class BuddyPathActionTest {
     private val buddyPathTools: BuddyPathTools = mockk()
     private val onboardingStepService: OnboardingStepService = mockk()
+    private val onboardingTaskService: OnboardingTaskService = mockk()
     private val questionAttemptService: QuestionAttemptService = mockk()
     private val userApi: UserApi = mockk()
 
@@ -54,6 +58,7 @@ class BuddyPathActionTest {
     private val pathActions = BuddyPathActions(
         buddyPathTools = buddyPathTools,
         onboardingStepService = onboardingStepService,
+        onboardingTaskService = onboardingTaskService,
         questionAttemptService = questionAttemptService,
         userApi = userApi,
     )
@@ -93,6 +98,19 @@ class BuddyPathActionTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("not theirs")
+    }
+
+    @Test
+    fun `every refusal says out loud that no button was shown`() {
+        // It had been telling hires to confirm something that was never rendered. From inside the
+        // model a refusal written as advice reads a lot like the offer having been made.
+        val done = step("Clone the repository", StepStatus.FINISHED)
+        every { buddyPathTools.findStep(userId, done.id) } returns done
+
+        val outcome = service.propose(call("complete_step", "step_id" to done.id.toString()), userId)
+
+        assertThat(outcome.toolResult).startsWith("NOT PROPOSED")
+        assertThat(outcome.toolResult).contains("do not tell them to confirm anything")
     }
 
     @Test
@@ -145,6 +163,73 @@ class BuddyPathActionTest {
         // A path belongs to a person, so no project is resolved -- a hire onboarding on two
         // projects, or on none yet, still has exactly one path.
         verify(exactly = 0) { userApi.getUsersByIds(any()) }
+    }
+
+    // -- complete_task ----------------------------------------------------------------------------
+
+    @Test
+    fun `a line of a step on the hire's path can be ticked off on its own`() {
+        // The finer claim, and the reason both exist: "I have done the first two" is not a finished
+        // step, and a mentor holding only complete_step would either overstate it or drop it.
+        val step = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val task = task("Install git", finished = false, stepId = step.id)
+        every { onboardingTaskService.getOnboardingTaskById(task.id) } returns task
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(call("complete_task", "task_id" to task.id.toString()), userId)
+
+        assertThat(outcome.proposal?.label).isEqualTo("Tick off “Install git”")
+        assertThat(outcome.proposal?.onboardingTaskId).isEqualTo(task.id)
+        verify(exactly = 0) { onboardingTaskService.updateOnboardingTaskForMe(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a line whose step is not on the hire's path is not theirs to tick`() {
+        // Ownership is the step's: the task read is by id, and this is what makes that safe.
+        val task = task("Install git", finished = false, stepId = UUID.randomUUID())
+        every { onboardingTaskService.getOnboardingTaskById(task.id) } returns task
+        every { buddyPathTools.findStep(userId, task.stepId) } returns null
+
+        val outcome = service.propose(call("complete_task", "task_id" to task.id.toString()), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).startsWith("NOT PROPOSED")
+    }
+
+    @Test
+    fun `a line already ticked off is not offered again`() {
+        val step = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val task = task("Install git", finished = true, stepId = step.id)
+        every { onboardingTaskService.getOnboardingTaskById(task.id) } returns task
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(call("complete_task", "task_id" to task.id.toString()), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("already ticked off")
+    }
+
+    @Test
+    fun `a confirmed tick writes the line back with everything else unchanged`() = runTest {
+        val task = task("Install git", finished = false, stepId = UUID.randomUUID())
+        every { onboardingTaskService.getOnboardingTaskForMe(authId, task.id) } returns task
+        val written = slot<UpdateOnboardingTaskRequest>()
+        every {
+            onboardingTaskService.updateOnboardingTaskForMe(authId, task.id, capture(written))
+        } returns updatedTask(task.title)
+
+        val result = service.perform(
+            BuddyActionRequest(action = "complete_task", onboardingTaskId = task.id),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(written.captured.finished).isTrue()
+        // The mentor is changing one tick box, not editing the hire's checklist.
+        assertThat(written.captured.title).isEqualTo(task.title)
+        assertThat(written.captured.position).isEqualTo(task.position)
+        // And it must not imply the step is now done, because it is not.
+        assertThat(result.message).contains("still yours to finish")
     }
 
     // -- answer_question --------------------------------------------------------------------------
@@ -426,6 +511,24 @@ class BuddyPathActionTest {
             QuestionOptionForUserResponse(id = UUID.randomUUID(), position = index, label = label)
         },
         status = status,
+    )
+
+    private fun task(title: String, finished: Boolean, stepId: UUID) = GetOnboardingTaskResponse(
+        id = UUID.randomUUID(),
+        stepId = stepId,
+        position = 2,
+        title = title,
+        description = "what it involves",
+        finished = finished,
+    )
+
+    private fun updatedTask(title: String) = UpdateOnboardingTaskResponse(
+        id = UUID.randomUUID(),
+        stepId = UUID.randomUUID(),
+        position = 2,
+        title = title,
+        description = "what it involves",
+        finished = true,
     )
 
     private fun completed(title: String) = UpdateOnboardingStepResponse(

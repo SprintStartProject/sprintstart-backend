@@ -68,6 +68,16 @@ enum class BuddyActionType(
 
     /** Adds a step the conversation produced to a phase of the hire's own path. */
     ADD_PATH_STEP("add_path_step", "Add this step to your path"),
+
+    /**
+     * Ticks one line off the checklist of the step the hire is on.
+     *
+     * Separate from [COMPLETE_STEP] because they are different claims, and the product treats them as
+     * such: a step may be finished with lines still open, and unticking a line reopens a finished
+     * step. A mentor that could only make the coarse claim would either tick a whole step off for one
+     * line of progress or do nothing at all.
+     */
+    COMPLETE_TASK("complete_task", "Tick this off"),
     ;
 
     companion object {

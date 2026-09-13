@@ -11,8 +11,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnb
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -29,7 +31,13 @@ import java.util.UUID
  */
 class BuddyPathToolsTest {
     private val onboardingPathService: OnboardingPathService = mockk()
-    private val tools = BuddyPathTools(onboardingPathService)
+
+    // Checklists are read per step, so a phase with no started step never reaches it. Empty by
+    // default: the cases that are about a checklist put one there.
+    private val onboardingTaskService: OnboardingTaskService = mockk {
+        every { getOnboardingTasksByStepId(any()) } returns emptyList()
+    }
+    private val tools = BuddyPathTools(onboardingPathService, onboardingTaskService)
 
     private val userId = UUID.randomUUID()
 
@@ -171,6 +179,113 @@ class BuddyPathToolsTest {
         assertThat(text).contains("next thing waiting for them: the step “Read the runbook”")
     }
 
+    // -- what a hire and a mentor can both point at ------------------------------------------------
+
+    @Test
+    fun `items are numbered the way the hire's page numbers them`() {
+        // Steps first in position order, then questions -- the order the page lists them in, which is
+        // the whole point: a number only helps if "3" means the same item on both sides.
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            phase(
+                0,
+                "Setup",
+                steps = listOf(step("First", StepStatus.WAITING), step("Second", StepStatus.WAITING)),
+                questions = listOf(question("Third?", QuestionStatus.OPEN)),
+            ),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("#1 [open] “First”")
+        assertThat(text).contains("#2 [open] “Second”")
+        assertThat(text).contains("#3 [open] “Third?”")
+    }
+
+    @Test
+    fun `every item carries the link that opens it`() {
+        val step = step("Clone the repository", StepStatus.WAITING)
+        val question = question("Who runs the retro?", QuestionStatus.OPEN)
+        val phase = phase(0, "Setup", steps = listOf(step), questions = listOf(question))
+        every { onboardingPathService.findPathForUserId(userId) } returns path(phase)
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("link: /onboarding/${step.id}")
+        assertThat(text).contains("link: /onboarding?question=${question.id}")
+        assertThat(text).contains("link: /onboarding?phase=${phase.id}")
+    }
+
+    @Test
+    fun `a locked step says what it waits on, by name`() {
+        // Told only "locked", the mentor agreed a hire could go ahead with a step their own page
+        // refuses to open. The blocker's title and number are the answer it should give instead.
+        val blocker = step("Install the toolchain", StepStatus.WAITING)
+        val blocked = step("Run the tests", StepStatus.WAITING, locked = true, blockers = setOf(blocker.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(blocker, blocked)))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("LOCKED, cannot be started yet")
+        assertThat(text).contains("waits on #1 “Install the toolchain”")
+        assertThat(text).contains("Do not offer to start it")
+    }
+
+    @Test
+    fun `a phase locked from outside says so once rather than on every line`() {
+        val earlier = phase(0, "Overview", steps = listOf(step("Read the wiki", StepStatus.WAITING)))
+        val later = phase(
+            1,
+            "Deployment",
+            locked = true,
+            steps = listOf(step("Ship something", StepStatus.WAITING, locked = true)),
+        )
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(earlier, later.copy(blockerIds = setOf(earlier.id)))
+
+        // Its own phase is the one being described, so select it by finishing the first.
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            earlier.copy(steps = listOf(step("Read the wiki", StepStatus.FINISHED))),
+            later.copy(blockerIds = setOf(earlier.id)),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("This whole phase is locked")
+        assertThat(text).contains("It waits on: “Overview”")
+    }
+
+    @Test
+    fun `the checklist of the step they are on comes with it`() {
+        val started = step("Clone the repository", StepStatus.IN_PROGRESS)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(started)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(started.id) } returns listOf(
+            task("Install git", finished = true),
+            task("Clone it", finished = false),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("[done] “Install git”")
+        assertThat(text).contains("[open] “Clone it”")
+        assertThat(text).contains("complete_task")
+        // The product allows a finished step with open lines, and the mentor must not invent a rule
+        // it does not have.
+        assertThat(text).contains("finished with lines still open")
+    }
+
+    @Test
+    fun `a locked step's checklist is never the one put in front of the mentor`() {
+        val locked = step("Deploy to staging", StepStatus.WAITING, locked = true)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(locked)))
+
+        tools.execute(userId)
+
+        verify(exactly = 0) { onboardingTaskService.getOnboardingTasksByStepId(locked.id) }
+    }
+
     // -- the empty-phase repair -------------------------------------------------------------------
 
     @Test
@@ -282,21 +397,35 @@ class BuddyPathToolsTest {
 
     private var stepPosition = 0
 
-    private fun step(title: String, status: StepStatus, locked: Boolean = false) =
-        GetOnboardingStepsResponse(
-            id = UUID.randomUUID(),
-            phaseId = UUID.randomUUID(),
-            position = stepPosition++,
-            title = title,
-            description = "",
-            type = StepType.TASK,
-            estimatedMinutes = 20,
-            isAiAssisted = false,
-            status = status,
-            completedAt = null,
-            skip = null,
-            locked = locked,
-        )
+    private fun step(
+        title: String,
+        status: StepStatus,
+        locked: Boolean = false,
+        blockers: Set<UUID> = emptySet(),
+    ) = GetOnboardingStepsResponse(
+        id = UUID.randomUUID(),
+        phaseId = UUID.randomUUID(),
+        position = stepPosition++,
+        title = title,
+        description = "",
+        type = StepType.TASK,
+        estimatedMinutes = 20,
+        isAiAssisted = false,
+        status = status,
+        completedAt = null,
+        skip = null,
+        locked = locked,
+        blockerIds = blockers,
+    )
+
+    private fun task(title: String, finished: Boolean) = GetOnboardingTaskResponse(
+        id = UUID.randomUUID(),
+        stepId = UUID.randomUUID(),
+        position = 0,
+        title = title,
+        description = "",
+        finished = finished,
+    )
 
     private var questionPosition = 100
 

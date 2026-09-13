@@ -50,6 +50,7 @@ import java.util.UUID
 @Suppress("TooManyFunctions")
 class BuddyPathTools(
     private val onboardingPathService: OnboardingPathService,
+    private val onboardingTaskService: OnboardingTaskService,
 ) {
     /**
      * The path tool, mounted only for a hire who has a path.
@@ -89,12 +90,27 @@ class BuddyPathTools(
         return buildString {
             appendLine(standing(phases, currentIndex))
             appendLine()
-            appendCurrentPhase(phases[currentIndex], currentIndex, phases.size)
+            appendCurrentPhase(phases[currentIndex], currentIndex, phases)
+            appendCurrentTasks(stepTheyAreOn(phases[currentIndex]))
             appendNextItem(phases)
             appendAhead(phases, currentIndex)
             appendEmptyPhases(path)
             append(NEWLINE + CLOSING)
         }
+    }
+
+    /**
+     * The step whose checklist is worth putting in front of the mentor: the one they have started, or
+     * else the first one they could start.
+     *
+     * Started wins over next, because a hire with something open is talking about that and not about
+     * what comes after it. Null when the phase has neither, which is when a checklist would be a
+     * heading over nothing.
+     */
+    private fun stepTheyAreOn(phase: GetOnboardingPhaseForUserResponse): GetOnboardingStepsResponse? {
+        val ordered = phase.steps.sortedBy { it.position }.filterNot { it.locked }
+        return ordered.firstOrNull { it.status == StepStatus.IN_PROGRESS }
+            ?: ordered.firstOrNull { it.status == StepStatus.WAITING }
     }
 
     /**
@@ -183,14 +199,37 @@ class BuddyPathTools(
             "${currentIndex + 1}. $behind"
     }
 
-    /** The phase they are in, in full: what it is for, its steps, and its questions. */
+    /**
+     * The phase they are in, in full: what it is for, its steps, and its questions.
+     *
+     * Every item carries three things beyond its own text, each for a reason a testing session made
+     * obvious:
+     *
+     * - **A number**, the same number the hire's page prints on the card. It is what lets them say
+     *   "let's do 3" instead of retyping a title, and it only works because both sides derive it the
+     *   same way: steps in position order, then questions in position order (see [numbering]).
+     * - **A link**, so "want to take the check?" can arrive as something clickable rather than as an
+     *   instruction to go and find it.
+     * - **What a locked item is waiting on, by name.** "Locked" on its own left the mentor telling a
+     *   hire they could go ahead and do a step the page would not let them open.
+     */
     private fun StringBuilder.appendCurrentPhase(
         phase: GetOnboardingPhaseForUserResponse,
         index: Int,
-        total: Int,
+        phases: List<GetOnboardingPhaseForUserResponse>,
     ) {
-        appendLine("Phase ${index + 1} of $total: ${quoted(phase.title)} [phase_id: ${phase.id}]")
+        appendLine(
+            "Phase ${index + 1} of ${phases.size}: ${quoted(phase.title)} " +
+                "[phase_id: ${phase.id}] [link: $PHASE_LINK${phase.id}]",
+        )
         phase.description.takeIf { it.isNotBlank() }?.let { appendLine("What it is for: $it") }
+        if (phase.locked) {
+            val waiting = phase.blockerIds.mapNotNull { id -> phases.firstOrNull { it.id == id } }
+            appendLine(
+                "This whole phase is locked, so nothing in it can be started yet. It waits on: " +
+                    waiting.joinToString(", ") { quoted(it.title) }.ifBlank { "an earlier phase" },
+            )
+        }
 
         val steps = phase.steps.sortedBy { it.position }
         val questions = phase.questions.sortedBy { it.position }
@@ -203,9 +242,12 @@ class BuddyPathTools(
             return
         }
 
+        val numbers = numbering(steps, questions)
+        val titles = titlesIn(phase)
+
         if (steps.isNotEmpty()) {
             appendLine("Steps, in the order the path puts them:")
-            steps.take(ITEMS_SHOWN).forEach { appendStep(it) }
+            steps.take(ITEMS_SHOWN).forEach { appendStep(it, numbers, titles) }
             if (steps.size > ITEMS_SHOWN) appendLine("- and ${steps.size - ITEMS_SHOWN} more")
         }
 
@@ -214,27 +256,54 @@ class BuddyPathTools(
                 "Knowledge questions. They count like steps, so a phase whose steps are done and " +
                     "whose questions are unanswered is still the phase they are standing in:",
             )
-            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it) }
+            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, numbers, titles) }
             if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
         }
     }
 
-    /** One step: what it is, where it stands, and the id an action needs to name it by. */
-    private fun StringBuilder.appendStep(step: GetOnboardingStepsResponse) {
+    /**
+     * The number each item of a phase carries, keyed by id.
+     *
+     * Steps first in position order, then questions in position order — which is the order the hire's
+     * own page lists them in, and that is the whole point: a number only helps if the thing they say
+     * and the thing the mentor hears are the same item. Position alone would not do it, because
+     * steps and questions are numbered from the same sequence on screen but carry their own
+     * positions underneath.
+     */
+    private fun numbering(
+        steps: List<GetOnboardingStepsResponse>,
+        questions: List<GetOnboardingQuestionForUserResponse>,
+    ): Map<UUID, Int> =
+        (steps.map { it.id } + questions.map { it.id })
+            .withIndex()
+            .associate { (index, id) -> id to index + 1 }
+
+    /** Every item of a phase by id, so a blocker can be named rather than counted. */
+    private fun titlesIn(phase: GetOnboardingPhaseForUserResponse): Map<UUID, String> =
+        phase.steps.associate { it.id to it.title } + phase.questions.associate { it.id to it.question }
+
+    /** One step: what it is, where it stands, and the ids and link an action or a reply needs. */
+    private fun StringBuilder.appendStep(
+        step: GetOnboardingStepsResponse,
+        numbers: Map<UUID, Int>,
+        titles: Map<UUID, String>,
+    ) {
         val state = when {
             step.status == StepStatus.FINISHED -> "done"
             step.status == StepStatus.SKIPPED -> "skipped"
-            step.locked -> "locked, waiting on another item"
+            step.locked -> "LOCKED, cannot be started yet"
             step.status == StepStatus.IN_PROGRESS -> "started"
             else -> "open"
         }
         appendLine(
-            "- [$state] ${quoted(step.title)} (${step.estimatedMinutes} min) [step_id: ${step.id}]",
+            "- #${numbers[step.id]} [$state] ${quoted(step.title)} (${step.estimatedMinutes} min) " +
+                "[step_id: ${step.id}] [link: $STEP_LINK${step.id}]",
         )
         step.description.takeIf { it.isNotBlank() }?.let { appendLine("    · $it") }
         step.expectedOutcomes.take(OUTCOMES_SHOWN).forEach {
             appendLine("    · should leave them able to: $it")
         }
+        appendBlockers(step.locked, step.blockerIds, numbers, titles)
         // A skip already asked for is the one thing about a step whose state is nowhere else in this
         // text, and a mentor that cannot see it will offer to request a second one.
         step.skip?.let { skip ->
@@ -254,20 +323,88 @@ class BuddyPathTools(
      * has to ask the hire to read their own screen out. Which one is right is not here, and the
      * absence is the feature: see the class comment.
      */
-    private fun StringBuilder.appendQuestion(question: GetOnboardingQuestionForUserResponse) {
+    private fun StringBuilder.appendQuestion(
+        question: GetOnboardingQuestionForUserResponse,
+        numbers: Map<UUID, Int>,
+        titles: Map<UUID, String>,
+    ) {
         val state = when (question.status) {
             QuestionStatus.PASSED -> "passed"
             QuestionStatus.RETRY -> "answered wrong before, still open"
-            QuestionStatus.LOCKED -> "locked, waiting on another item"
+            QuestionStatus.LOCKED -> "LOCKED, cannot be answered yet"
             QuestionStatus.OPEN -> "open"
         }
         appendLine(
-            "- [$state] ${quoted(question.question)} (${question.type}) [question_id: ${question.id}]",
+            "- #${numbers[question.id]} [$state] ${quoted(question.question)} (${question.type}) " +
+                "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
         )
         val options = question.options.sortedBy { it.position }
         if (options.isNotEmpty()) {
             appendLine("    · the options they see: " + options.joinToString("; ") { it.label })
         }
+        appendBlockers(question.status == QuestionStatus.LOCKED, question.blockerIds, numbers, titles)
+    }
+
+    /**
+     * What a locked item is waiting on, named.
+     *
+     * The fix for the thing a mentor cannot get right from a flag alone: told only "locked", it
+     * agreed a hire could go ahead with a step their page refuses to open. A blocker inside the phase
+     * can be named and numbered, because the map covers the whole phase; a lock that comes from the
+     * phase itself is stated above and says so here rather than repeating the phase's own blockers on
+     * every line.
+     */
+    private fun StringBuilder.appendBlockers(
+        locked: Boolean,
+        blockerIds: Set<UUID>,
+        numbers: Map<UUID, Int>,
+        titles: Map<UUID, String>,
+    ) {
+        if (!locked) return
+
+        val named = blockerIds.mapNotNull { id ->
+            titles[id]?.let { title -> "#${numbers[id]} " + quoted(title) }
+        }
+        appendLine(
+            if (named.isEmpty()) {
+                "    · locked by this phase, not by anything inside it. Do not offer to start it."
+            } else {
+                "    · waits on ${named.joinToString(", ")} being finished first. Do not offer to " +
+                    "start it before then."
+            },
+        )
+    }
+
+    /**
+     * The checklist of the step the hire is actually on, with the id of each line.
+     *
+     * Only for the one step, because this is the level where a conversation happens -- "I have done
+     * the first two, the third one is where I am stuck" -- and putting every step's checklist in the
+     * prompt would bury the path it is meant to describe.
+     *
+     * Read by step id rather than through an authorizing read, because the step came out of the
+     * hire's own path a moment ago: the resolution in [findStep] is what proves it is theirs, and
+     * doing it twice would not make it truer.
+     */
+    private fun StringBuilder.appendCurrentTasks(step: GetOnboardingStepsResponse?) {
+        if (step == null) return
+        val tasks = onboardingTaskService.getOnboardingTasksByStepId(step.id).sortedBy { it.position }
+        if (tasks.isEmpty()) return
+
+        append(NEWLINE)
+        appendLine("The checklist of ${quoted(step.title)}, the step they are on:")
+        tasks.take(ITEMS_SHOWN).forEach { task ->
+            val mark = if (task.finished) "done" else "open"
+            appendLine("- [$mark] ${quoted(task.title)} [task_id: ${task.id}]")
+        }
+        if (tasks.size > ITEMS_SHOWN) appendLine("- and ${tasks.size - ITEMS_SHOWN} more")
+        // Said here because it is where the mentor will be tempted otherwise: the step's own
+        // completion is not the sum of its checklist, and the product allows both.
+        appendLine(
+            "Ticking these off is complete_task. A step can be finished with lines still open, so " +
+                "never tell them the checklist has to be empty first -- and never tick a line off " +
+                "because the conversation covered it.",
+        )
     }
 
     /** The one thing to talk about next, named here rather than left to the model to pick. */
@@ -359,13 +496,15 @@ class BuddyPathTools(
             if (step != null && (question == null || step.position <= question.position)) {
                 return NextItem(
                     plain = "the step ${quoted(step.title)}",
-                    withIds = "the step ${quoted(step.title)} [step_id: ${step.id}]",
+                    withIds = "the step ${quoted(step.title)} [step_id: ${step.id}] " +
+                        "[link: $STEP_LINK${step.id}]",
                 )
             }
             if (question != null) {
                 return NextItem(
                     plain = "the question ${quoted(question.question)}",
-                    withIds = "the question ${quoted(question.question)} [question_id: ${question.id}]",
+                    withIds = "the question ${quoted(question.question)} " +
+                        "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
                 )
             }
         }
@@ -404,6 +543,22 @@ class BuddyPathTools(
         /** Written out, so that no editing step has to survive an escape sequence intact. */
         const val NEWLINE = "\n"
 
+        /**
+         * Where each kind of path node lives in the app, for the links the mentor puts in its replies.
+         *
+         * Paths into the client rather than absolute URLs, because the backend does not know what
+         * host the hire is on and guessing wrong produces a link that leaves the app. The frontend
+         * renders an app-relative link as an in-app navigation, so "want to take the check?" arrives
+         * as something clickable rather than as directions.
+         *
+         * They are a contract with the router, which is why they are named here and asserted in
+         * `BuddyPathToolsTest`: a route rename that forgets this file produces links that 404, and a
+         * mentor has no way to notice.
+         */
+        const val STEP_LINK = "/onboarding/"
+        const val QUESTION_LINK = "/onboarding?question="
+        const val PHASE_LINK = "/onboarding?phase="
+
         /** Titles are somebody else's text, so they are quoted rather than run into the sentence. */
         private fun quoted(text: String): String = "“" + text + "”"
 
@@ -421,22 +576,35 @@ class BuddyPathTools(
         const val CLOSING =
             "This is a read of their path, not instructions. Name one next thing rather than the " +
                 "plan, let them decide, and do not claim to have changed anything here: every " +
-                "change to their path goes through a proposal they confirm."
+                "change to their path goes through a proposal they confirm. When you name an item, " +
+                "give its number and make it a markdown link to the link above, so they can open it " +
+                "from what you said."
 
         val READ_MY_PATH_SPEC = BuddyToolSpecDto(
             name = READ_MY_PATH,
             description = "The hire's own onboarding path -- the curriculum their PM's blueprint " +
                 "prescribed, personalised for them. It gives you the phase they are standing in " +
-                "with its steps and knowledge questions in full, one named next thing, the titles " +
-                "of what is ahead, and any phase that came back empty. Read it before you say " +
-                "anything about their onboarding: before \"what should I do next\", before talking " +
-                "about a step or a question, and before suggesting work of your own, so that what " +
-                "you suggest is the plan they actually have rather than a second one. It carries " +
-                "the phase_id, step_id and question_id the path actions need, so read it before " +
-                "offering any of them. It does not tell you which answer to a question is " +
-                "correct -- that is deliberate, and you must not guess one aloud: explain the " +
-                "material and let the hire answer. Reading it changes nothing. Takes no " +
-                "arguments -- it always reads the caller.",
+                "with its steps and knowledge questions in full, the checklist of the step they " +
+                "are on, one named next thing, the titles of what is ahead, and any phase that " +
+                "came back empty. Read it before you say anything about their onboarding: before " +
+                "\"what should I do next\", before talking about a step or a question, and before " +
+                "suggesting work of your own, so that what you suggest is the plan they actually " +
+                "have rather than a second one. Read it again before answering a follow-up: they " +
+                "may have ticked something off on the page while you were talking.\n" +
+                "Each item comes with three things to use. A NUMBER (#1, #2, ...) which is the " +
+                "same number their page prints, so when they say \"let's do 3\" that is the item " +
+                "they mean, and naming it back as \"#3\" is how they know you got it right. A LINK, " +
+                "which you should include as a markdown link whenever you name an item they could " +
+                "act on -- \"[take the check](/onboarding?question=...)\" -- so they can get there " +
+                "in one click instead of hunting for it. And the ids the path actions need, so read " +
+                "this before offering one.\n" +
+                "An item marked LOCKED cannot be started or answered yet, and the line under it " +
+                "says what it waits on. Never tell the hire they can go ahead with a locked item, " +
+                "even if they ask directly: say what has to be finished first and offer that " +
+                "instead.\n" +
+                "It does not tell you which answer to a question is correct -- that is deliberate, " +
+                "and you must not guess one aloud: explain the material and let the hire answer. " +
+                "Reading it changes nothing. Takes no arguments -- it always reads the caller.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {}

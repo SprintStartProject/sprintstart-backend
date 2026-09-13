@@ -412,6 +412,7 @@ class BuddyService(
                         stepId = proposal.stepId?.toString(),
                         questionId = proposal.questionId?.toString(),
                         phaseId = proposal.phaseId?.toString(),
+                        onboardingTaskId = proposal.onboardingTaskId?.toString(),
                         answer = proposal.answer,
                         description = proposal.description,
                     ),

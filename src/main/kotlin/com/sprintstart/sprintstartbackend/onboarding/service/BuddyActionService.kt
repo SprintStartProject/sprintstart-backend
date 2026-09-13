@@ -387,6 +387,7 @@ class BuddyActionService(
                     BuddyActionType.SET_GITHUB_LOGIN,
                     BuddyActionType.RECORD_ASSESSMENT,
                     BuddyActionType.COMPLETE_STEP,
+                    BuddyActionType.COMPLETE_TASK,
                     BuddyActionType.ANSWER_QUESTION,
                     BuddyActionType.ADD_PATH_STEP,
                     -> error("handled above")
@@ -570,6 +571,7 @@ class BuddyActionService(
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
             // Unused for the same reason again: a path is not project-scoped either.
             BuddyActionType.COMPLETE_STEP -> "tick a step off their path"
+            BuddyActionType.COMPLETE_TASK -> "tick a line off their checklist"
             BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
             BuddyActionType.ADD_PATH_STEP -> "add a step to their path"
         }
@@ -603,6 +605,8 @@ class BuddyActionService(
         val stepId: UUID? = null,
         val questionId: UUID? = null,
         val phaseId: UUID? = null,
+        /** The checklist line `complete_task` would tick off. See the request DTO for why not [taskId]. */
+        val onboardingTaskId: UUID? = null,
         val answer: String? = null,
         val description: String? = null,
     )

@@ -50,6 +50,7 @@ data class BuddyStreamEvent(
     @SerialName("step_id") val stepId: String? = null,
     @SerialName("question_id") val questionId: String? = null,
     @SerialName("phase_id") val phaseId: String? = null,
+    @SerialName("onboarding_task_id") val onboardingTaskId: String? = null,
     val answer: String? = null,
     val description: String? = null,
 )

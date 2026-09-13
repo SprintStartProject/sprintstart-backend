@@ -10,9 +10,11 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpe
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.question.SubmitQuestionAttemptRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -27,9 +29,9 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
- * The three actions that let a conversation move the hire along their onboarding path.
+ * The actions that let a conversation move the hire along their onboarding path.
  *
- * A component of its own rather than three more branches in [BuddyActionService], for the reason
+ * A component of its own rather than four more branches in [BuddyActionService], for the reason
  * [BuddyBoardTools] is one: they share a subject that the rest of the catalog does not touch, and
  * they come as a set. [BuddyActionService] still owns the propose/confirm contract — it routes to
  * this and emits what comes back — so there is exactly one place where an action becomes a button.
@@ -54,6 +56,7 @@ import java.util.UUID
 class BuddyPathActions(
     private val buddyPathTools: BuddyPathTools,
     private val onboardingStepService: OnboardingStepService,
+    private val onboardingTaskService: OnboardingTaskService,
     private val questionAttemptService: QuestionAttemptService,
     private val userApi: UserApi,
 ) {
@@ -70,12 +73,13 @@ class BuddyPathActions(
         if (!buddyPathTools.hasPath(userId)) {
             emptyList()
         } else {
-            listOf(COMPLETE_STEP_SPEC, ANSWER_QUESTION_SPEC, ADD_PATH_STEP_SPEC)
+            listOf(COMPLETE_STEP_SPEC, COMPLETE_TASK_SPEC, ANSWER_QUESTION_SPEC, ADD_PATH_STEP_SPEC)
         }
 
     /** Whether [type] is one of this component's actions. */
     fun handles(type: BuddyActionType): Boolean =
         type == BuddyActionType.COMPLETE_STEP ||
+            type == BuddyActionType.COMPLETE_TASK ||
             type == BuddyActionType.ANSWER_QUESTION ||
             type == BuddyActionType.ADD_PATH_STEP
 
@@ -97,6 +101,7 @@ class BuddyPathActions(
     ): BuddyActionService.ProposeOutcome =
         when (type) {
             BuddyActionType.COMPLETE_STEP -> proposeCompleteStep(call, type, userId)
+            BuddyActionType.COMPLETE_TASK -> proposeCompleteTask(call, type, userId)
             BuddyActionType.ANSWER_QUESTION -> proposeAnswer(call, type, userId)
             else -> proposeAddPathStep(call, type, userId)
         }
@@ -109,6 +114,7 @@ class BuddyPathActions(
     ): BuddyActionResponse =
         when (type) {
             BuddyActionType.COMPLETE_STEP -> completeStep(authId, request.stepId)
+            BuddyActionType.COMPLETE_TASK -> completeTask(authId, request.onboardingTaskId)
             BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request.questionId, request.answer)
             else -> addPathStep(authId, request.phaseId, request.title, request.description)
         }
@@ -291,6 +297,92 @@ class BuddyPathActions(
         )
     }
 
+    /**
+     * Offers to tick one line off the checklist of a step.
+     *
+     * The finer of the two claims, and the reason both exist. A hire who says "I have done the first
+     * two" has not finished the step, and a mentor holding only `complete_step` would either overstate
+     * that or drop it. The read tool carries the checklist of the step they are on, which is where the
+     * task_id comes from.
+     */
+    private fun proposeCompleteTask(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        userId: UUID,
+    ): BuddyActionService.ProposeOutcome {
+        val taskId = call.uuidArg("task_id")
+            ?: return refused(
+                "No task_id was provided. Read get_my_onboarding_path for the checklist of the step " +
+                    "they are on and pass the task_id of the line they mean.",
+            )
+        val task = findTask(userId, taskId)
+            ?: return refused(
+                "No checklist line of this hire's own path has that id. Read get_my_onboarding_path " +
+                    "again — it only carries the checklist of the step they are on, and a line of some " +
+                    "other step is not in front of you.",
+            )
+        if (task.finished) {
+            return refused(
+                "“${task.title}” is already ticked off. Tell them it is already done rather than " +
+                    "offering it again.",
+            )
+        }
+
+        return BuddyActionService.ProposeOutcome(
+            toolResult = "Proposed to the hire: tick “${task.title}” off their checklist. They see a " +
+                "confirm button and nothing changes unless they click it. Ask whether they have done " +
+                "it; ticking a line because the conversation covered it is not the same thing.",
+            proposal = BuddyActionService.BuddyActionProposal(
+                action = type.toolName,
+                label = "Tick off “${task.title}”",
+                question = null,
+                onboardingTaskId = task.id,
+            ),
+        )
+    }
+
+    /**
+     * One checklist line of the hire's own path, or null.
+     *
+     * Ownership is the *step's*: a line belongs to this hire exactly when the step it hangs on is on
+     * their path, which [BuddyPathTools.findStep] answers. That is why the unscoped read by id is safe
+     * here and would not be on its own.
+     */
+    private fun findTask(userId: UUID, taskId: UUID): GetOnboardingTaskResponse? {
+        val task = runCatching { onboardingTaskService.getOnboardingTaskById(taskId) }.getOrNull()
+            ?: return null
+        return task.takeIf { buddyPathTools.findStep(userId, it.stepId) != null }
+    }
+
+    /**
+     * Ticks the confirmed line off.
+     *
+     * Read first and written back whole, because the endpoint that owns this takes the task as it
+     * should now be rather than a patch. Everything else on it is echoed back unchanged: the mentor is
+     * changing one tick box, not editing the hire's checklist.
+     */
+    private fun completeTask(authId: String, taskId: UUID?): BuddyActionResponse {
+        if (taskId == null) {
+            return BuddyActionResponse(ok = false, message = "No checklist line was proposed to tick off.")
+        }
+        val task = onboardingTaskService.getOnboardingTaskForMe(authId, taskId)
+        onboardingTaskService.updateOnboardingTaskForMe(
+            authId,
+            taskId,
+            UpdateOnboardingTaskRequest(
+                position = task.position,
+                title = task.title,
+                description = task.description,
+                finished = true,
+            ),
+        )
+        return BuddyActionResponse(
+            ok = true,
+            message = "Ticked “${task.title}” off. The step itself is still yours to finish when you " +
+                "are ready — a checklist does not close it.",
+        )
+    }
+
     private fun completeStep(authId: String, stepId: UUID?): BuddyActionResponse {
         if (stepId == null) {
             return BuddyActionResponse(ok = false, message = "No step was proposed to complete.")
@@ -407,8 +499,16 @@ class BuddyPathActions(
         return answerContains.singleOrNull()
     }
 
-    /** A reason and no button, for the mentor to act on rather than for the hire to click past. */
-    private fun refused(reason: String) = BuddyActionService.ProposeOutcome(reason, null)
+    /**
+     * A reason and no button.
+     *
+     * Prefixed, and that prefix is load-bearing. A refusal phrased as ordinary guidance came back
+     * from testing as the mentor telling the hire to click a button that was never rendered: from the
+     * model's side a tool result is a tool result, and "say what doing it involves and offer it again"
+     * reads a lot like "offered". The prefix says the one thing it has to know -- that nothing is on
+     * screen -- before the advice it should act on.
+     */
+    private fun refused(reason: String) = BuddyActionService.ProposeOutcome(NOT_PROPOSED + reason, null)
 
     private fun resolveUserId(authId: String): UUID =
         userApi
@@ -453,6 +553,37 @@ class BuddyPathActions(
                     }
                 }
                 putJsonArray("required") { add("step_id") }
+            },
+        )
+
+        /**
+         * The prefix every refusal here carries.
+         *
+         * Testing found the mentor telling a hire to click a button that was never rendered: a
+         * refusal written as advice ("say what doing it involves and offer it again") reads, from
+         * inside the model, a lot like the offer having been made. This says the fact first.
+         */
+        const val NOT_PROPOSED = "NOT PROPOSED — no button was shown to the hire, so do not tell " +
+            "them to confirm anything. "
+
+        val COMPLETE_TASK_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.COMPLETE_TASK.toolName,
+            description = "Offer to tick one line off the checklist of the step the hire is on. Read " +
+                "get_my_onboarding_path for the checklist and pass that line's task_id. This does " +
+                "NOT tick anything by itself; the hire sees a confirm button naming the line. Use it " +
+                "when they say they have done part of a step — that is what this is for, and it is " +
+                "why it is separate from complete_step: a step can be finished with lines still open, " +
+                "and finishing a step is a bigger claim than ticking a line. Ask; do not tick a line " +
+                "off because the conversation covered it.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("task_id") {
+                        put("type", "string")
+                        put("description", "The task_id from the checklist in get_my_onboarding_path.")
+                    }
+                }
+                putJsonArray("required") { add("task_id") }
             },
         )
 
