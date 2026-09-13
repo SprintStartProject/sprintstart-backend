@@ -86,9 +86,12 @@ class BuddySuggestionService(
                 label = "How am I doing?",
                 question = "How is my onboarding going so far?",
             ),
+            // Not "Where do I stand?" any more. Next to the path chip that reads "Where am I on my
+            // path?" the two were a coin toss, and they lead to different halves of the product: this
+            // one is the competency ledger, that one is the plan. The chips have to say which.
             BuddyToolExecutor.GET_MY_COMPETENCIES to BuddySuggestionResponse(
-                label = "Where do I stand?",
-                question = "Where do I stand — what have I shown so far?",
+                label = "What have I shown?",
+                question = "What have I shown so far — where does my ledger stand?",
             ),
             // Mounted with attestation, so it is only offered where somebody could actually be
             // asked. The chip stops at naming people: whether that ends in request_attestation is
