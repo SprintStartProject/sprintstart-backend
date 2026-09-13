@@ -384,7 +384,12 @@ class BuddyPathTools(
         val withIds: String,
     )
 
-    private companion object {
+    /**
+     * Not private, for the same reason [BuddyToolExecutor]'s tool names are not: the chip catalog in
+     * [BuddySuggestionService] binds to this constant, so renaming the tool stops that catalog
+     * compiling rather than quietly offering the hire a doorway the mentor cannot walk through.
+     */
+    companion object {
         const val READ_MY_PATH = "get_my_onboarding_path"
 
         /** How many steps or questions of the current phase are named. */

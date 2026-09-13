@@ -36,6 +36,17 @@ class BuddySuggestionServiceTest {
             .containsExactly("How am I doing?", "What should I work on?")
     }
 
+    @Test
+    fun `offers the path chip only for a hire who has an onboarding path`() {
+        mounted(BuddyToolExecutor.GET_MY_METRICS)
+        assertThat(service.forHire(userId).map { it.label }).doesNotContain("Where am I on my path?")
+
+        // The read tool is mounted only for a hire who has a path, so the chip inherits that gate --
+        // nobody is offered a doorway into a plan they have not got.
+        mounted(BuddyPathTools.READ_MY_PATH, BuddyToolExecutor.GET_MY_METRICS)
+        assertThat(service.forHire(userId).map { it.label }).contains("Where am I on my path?")
+    }
+
     /**
      * The whole point of deriving rather than listing: a chip appears exactly when its tool does.
      * Unlike the tool, a chip is something the hire *sees*, so getting this wrong is louder.

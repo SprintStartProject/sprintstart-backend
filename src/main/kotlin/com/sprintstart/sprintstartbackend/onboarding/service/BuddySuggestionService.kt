@@ -66,6 +66,14 @@ class BuddySuggestionService(
                 label = "What do I still need?",
                 question = "What do I still need to get set up?",
             ),
+            // Mounted only for a hire who has an onboarding path, so the chip can talk about one
+            // without checking. Asks where they are rather than for the plan: the mentor answers
+            // with the phase they are standing in and one next thing, which is what a hire looking
+            // at an empty composer actually wants -- the plan itself is a page they already have.
+            BuddyPathTools.READ_MY_PATH to BuddySuggestionResponse(
+                label = "Where am I on my path?",
+                question = "Where am I in my onboarding path, and what should I do next?",
+            ),
             BuddyToolExecutor.GET_SUGGESTED_TASKS to BuddySuggestionResponse(
                 label = "What should I work on?",
                 question = "What should I work on next?",
