@@ -7,7 +7,9 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
@@ -21,7 +23,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
-import java.util.UUID
 
 /**
  * The buddy's *action* tools: the buddy stops only advising and starts doing — always on the hire's
@@ -390,11 +391,30 @@ class BuddyActionService(
                     "the step-by-step, cited guide is right here in our conversation.",
             )
         } else {
-            BuddyActionResponse(
-                ok = false,
-                message = orientation.reason ?: "There's no current task to open a packet for yet.",
-            )
+            BuddyActionResponse(ok = false, message = noPacketReason(orientation))
         }
+    }
+
+    /**
+     * Why there is no packet, said only as far as this knows.
+     *
+     * Three states used to collapse into one sentence, and the sentence was a claim about the
+     * hire's work rather than about this call: a hire whose packet had failed to assemble was told
+     * they had no current task, which they could see on their own board was untrue. Being told a
+     * false thing about your own state is worse than being told nothing — it is the hire's word
+     * against the system's, and the hire stops trusting the surface rather than the sentence.
+     *
+     * So the no-task line is now only used where [MyOrientationResponse.taskId] really is null.
+     * With a task and no packet, the honest answer names the task and says the packet is what is
+     * missing, which is also the difference between "claim something" and "try again".
+     */
+    private fun noPacketReason(orientation: MyOrientationResponse): String = when {
+        orientation.reason != null -> orientation.reason
+        orientation.taskId == null ->
+            "There's no current task to open a packet for yet — claim one and I'll put it together."
+        else ->
+            "I couldn't put a packet together for “${orientation.taskTitle}” just now. " +
+                "Nothing is wrong with the task — ask me again in a moment."
     }
 
     private fun claimGoal(
@@ -465,6 +485,22 @@ class BuddyActionService(
         )
     }
 
+    /**
+     * What the model is told when it offers an action, and what it must not do afterwards.
+     *
+     * The second half of this text is not decoration. **The model never finds out what happened to
+     * a proposal**: the hire confirms out-of-band, the outcome lands in the client's own message
+     * state, and nothing about it comes back into the conversation. So the model is blind here, and
+     * a blind model that believes a button is still on screen starts pointing at it — a hire once
+     * spent a whole exchange being told to click a button that had been spent on a failed confirm
+     * several turns earlier, ending with the mentor guessing aloud where on their screen it might
+     * be hiding. Telling somebody they must be missing something they can see is not there is the
+     * worst thing this surface can do: it makes them distrust the app rather than the sentence.
+     *
+     * Hence the rule the text carries — never describe the button, and when the hire says it did
+     * not work, call the tool again instead of insisting. A fresh proposal costs one click and puts
+     * a real control back on screen; describing the old one cannot.
+     */
     private fun proposed(
         type: BuddyActionType,
         projectName: String,
@@ -476,7 +512,11 @@ class BuddyActionService(
     ): ProposeOutcome =
         ProposeOutcome(
             toolResult = "Proposed to the hire on $projectName: “${type.label}”. They will see a confirm " +
-                "button; the action runs only if they click it. Offer it — do not claim it is done.",
+                "button; the action runs only if they click it. Offer it — do not claim it is done. " +
+                "You will never be told whether they confirmed it or what came of it, and a confirmed " +
+                "proposal leaves the screen. So do not describe the button, tell them where to find " +
+                "it, or ask them to click it again. If they say nothing happened or they cannot see " +
+                "it, believe them and call this tool again to offer it afresh.",
             proposal = BuddyActionProposal(
                 action = type.toolName,
                 label = type.label,
