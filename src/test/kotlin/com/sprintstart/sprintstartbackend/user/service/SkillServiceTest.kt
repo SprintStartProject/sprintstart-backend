@@ -360,4 +360,27 @@ class SkillServiceTest {
         val ex = assertThrows<ResponseStatusException> { service.getMySkillAssessments("unknown") }
         assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
     }
+
+    @Test
+    fun `getSkillsByIds returns only active skills for the requested ids`() {
+        val active = skill(name = "Kotlin")
+        val retired = skill(name = "Cobol", status = SkillStatus.RETIRED)
+        every { skillRepository.findAllById(setOf(active.id, retired.id)) } returns listOf(active, retired)
+
+        val result = service.getSkillsByIds(setOf(active.id, retired.id))
+
+        assertEquals(1, result.size)
+        assertEquals(active.id, result.single().id)
+        assertEquals("Kotlin", result.single().name)
+    }
+
+    @Test
+    fun `getSkillsByIds omits unknown ids from the result`() {
+        val known = skill()
+        every { skillRepository.findAllById(any()) } returns listOf(known)
+
+        val result = service.getSkillsByIds(setOf(known.id, UUID.randomUUID()))
+
+        assertEquals(setOf(known.id), result.map { it.id }.toSet())
+    }
 }

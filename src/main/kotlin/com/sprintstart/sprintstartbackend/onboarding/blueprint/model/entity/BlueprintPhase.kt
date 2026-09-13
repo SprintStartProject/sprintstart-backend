@@ -1,0 +1,74 @@
+package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity
+
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
+import jakarta.persistence.CascadeType
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
+import jakarta.persistence.FetchType
+import jakarta.persistence.Id
+import jakarta.persistence.JoinColumn
+import jakarta.persistence.JoinTable
+import jakarta.persistence.ManyToMany
+import jakarta.persistence.ManyToOne
+import jakarta.persistence.OneToMany
+import jakarta.persistence.OrderBy
+import jakarta.persistence.Table
+import jakarta.persistence.Version
+import java.util.UUID
+
+@Entity
+@Table(name = "blueprint_phases")
+class BlueprintPhase(
+    @Id
+    val id: UUID = UUID.randomUUID(),
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "blueprint_path_id")
+    val blueprintPath: BlueprintPath,
+    @Column(nullable = false)
+    @Version
+    var revision: Long = 0,
+    @Column(nullable = false)
+    var position: Int,
+    @Column(nullable = false)
+    var title: String,
+    @Column(nullable = true, columnDefinition = "TEXT")
+    var description: String?,
+    @Column(nullable = true, columnDefinition = "TEXT")
+    var aiPrompt: String?,
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    var type: BlueprintPhaseType,
+    @OneToMany(
+        mappedBy = "blueprintPhase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("position ASC")
+    val blueprintSteps: MutableList<BlueprintStep> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "blueprintPhase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    @OrderBy("position ASC")
+    val blueprintCheckQuestions: MutableList<BlueprintCheckQuestion> = mutableListOf(),
+    @OneToMany(
+        mappedBy = "blueprintPhase",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val requirements: MutableSet<BlueprintPhaseRequirement> = mutableSetOf(),
+    @Column(nullable = true)
+    var graphX: Double? = null,
+    @Column(nullable = true)
+    var graphY: Double? = null,
+    @ManyToMany
+    @JoinTable(
+        name = "blueprint_phase_blockers",
+        joinColumns = [JoinColumn(name = "blocked_phase_id")],
+        inverseJoinColumns = [JoinColumn(name = "blocker_phase_id")],
+    )
+    val blockedBy: MutableSet<BlueprintPhase> = mutableSetOf(),
+)
