@@ -4,6 +4,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.goal.GoalView
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
@@ -15,18 +17,21 @@ import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
+import java.time.Instant
+import java.util.Optional
+import java.util.UUID
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.server.ResponseStatusException
-import java.time.Instant
-import java.util.Optional
-import java.util.UUID
 
 class BuddyActionServiceTest {
     private val taskZeroService: TaskZeroService = mockk()
@@ -106,7 +111,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the seven action tools`() {
+    fun `exposes exactly the eight action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -115,6 +120,7 @@ class BuddyActionServiceTest {
             "request_attestation",
             "set_github_login",
             "record_assessment",
+            "place_checklist",
         )
     }
 
@@ -592,5 +598,90 @@ class BuddyActionServiceTest {
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("not a member")
+    }
+
+    // -- place_checklist ---------------------------------------------------------------------------
+
+    private fun checklistCall(title: String, vararg items: String) = BuddyToolCallDto(
+        id = "c0",
+        name = "place_checklist",
+        arguments = buildJsonObject {
+            put("title", title)
+            putJsonArray("items") { items.forEach { add(it) } }
+        },
+    )
+
+    /**
+     * The only action whose payload is content the model wrote, so the proposal has to carry the
+     * lines themselves — a confirm that re-derived them could keep words the hire never read.
+     */
+    @Test
+    fun `proposes a checklist carrying the lines it offered to keep`() {
+        onOneProject()
+
+        val outcome = service.propose(
+            checklistCall("Getting started", "Find the component", "Run it locally"),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.action).isEqualTo("place_checklist")
+        assertThat(outcome.proposal?.checklistTitle).isEqualTo("Getting started")
+        assertThat(outcome.proposal?.checklistItems)
+            .containsExactly("Find the component", "Run it locally")
+        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any()) }
+    }
+
+    /** One bullet is how a model emphasises a sentence; a card of it repeats the reply above it. */
+    @Test
+    fun `refuses to call a single line a checklist`() {
+        onOneProject()
+
+        val outcome = service.propose(checklistCall("Getting started", "Find the component"), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("at least 2")
+    }
+
+    @Test
+    fun `confirming keeps the proposed lines as a card the hire owns`() = runTest {
+        asHire()
+        onOneProject()
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "place_checklist",
+                checklistTitle = "Getting started",
+                checklistItems = listOf("Find the component", "Run it locally"),
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        val request = slot<AuthoredCardRequest>()
+        verify { boardService.addAuthoredCard(userId, projectId, capture(request)) }
+        val checklist = request.captured as ChecklistCardRequest
+        assertThat(checklist.title).isEqualTo("Getting started")
+        assertThat(checklist.items.map { it.text })
+            .containsExactly("Find the component", "Run it locally")
+        assertThat(checklist.items).allMatch { !it.done }
+    }
+
+    /** Free text from the client, so the caps are re-applied at confirm rather than trusted. */
+    @Test
+    fun `a confirm stripped of its list writes nothing`() = runTest {
+        asHire()
+        onOneProject()
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "place_checklist",
+                checklistTitle = "Getting started",
+                checklistItems = listOf("   ", ""),
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any()) }
     }
 }

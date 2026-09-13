@@ -42,4 +42,13 @@ data class BuddyStreamEvent(
     /** `record_assessment` confirm payload: which competency, and the level in words. */
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
+    /**
+     * `place_checklist` confirm payload: the list the mentor offered to keep, as it was offered.
+     *
+     * Echoed back on confirm like every other payload here, and for a sharper reason: these lines
+     * are content rather than a target id, so re-deriving them at confirm time would mean writing
+     * a card the hire never read. What they saw is what gets kept.
+     */
+    @SerialName("checklist_title") val checklistTitle: String? = null,
+    @SerialName("checklist_items") val checklistItems: List<String>? = null,
 )

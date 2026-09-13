@@ -5,6 +5,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionT
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistItemRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
@@ -12,6 +14,7 @@ import com.sprintstart.sprintstartbackend.user.external.UserApi
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -39,7 +42,7 @@ import org.springframework.web.server.ResponseStatusException
  * project the buddy did not scope it to, nor act as another hire.
  */
 @Service
-@Suppress("TooManyFunctions") // Six wrapped actions, each with a propose + a perform helper.
+@Suppress("TooManyFunctions") // Seven wrapped actions, each with a propose + a perform helper.
 class BuddyActionService(
     private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
@@ -60,6 +63,7 @@ class BuddyActionService(
             REQUEST_ATTESTATION_SPEC,
             SET_GITHUB_LOGIN_SPEC,
             RECORD_ASSESSMENT_SPEC,
+            PLACE_CHECKLIST_SPEC,
         )
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
@@ -132,6 +136,7 @@ class BuddyActionService(
                 }
             }
             BuddyActionType.REQUEST_ATTESTATION -> proposeAttestation(call, type, project.name)
+            BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, project.name)
             else -> proposed(type, project.name, question = null)
         }
     }
@@ -286,6 +291,76 @@ class BuddyActionService(
     }
 
     /**
+     * Offers to keep a list the mentor wrote as a card, refusing anything that is not a list.
+     *
+     * A single item is refused on purpose. One line is how a model emphasises a sentence, and a
+     * "checklist" of one is a card that says what the reply already said — the same reason
+     * `checklistFromMarkdown` on the client will not make one either. Two is where a list starts.
+     *
+     * Nothing is summarised here. The lines the model passes are the lines that get kept, so what
+     * lands on the board is what the hire read in the reply above the button.
+     */
+    private fun proposeChecklist(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val title = call.stringArg("title").trim().take(MAX_CHECKLIST_TITLE).ifBlank { null }
+        val items = call.stringListArg("items")
+        return when {
+            items.size < MIN_CHECKLIST_ITEMS ->
+                ProposeOutcome(
+                    "A checklist needs at least $MIN_CHECKLIST_ITEMS items, and these were " +
+                        "${items.size}. Say it in the reply instead — one line is not a list.",
+                    null,
+                )
+            else -> proposed(
+                type,
+                projectName,
+                question = null,
+                checklistTitle = title,
+                checklistItems = items.take(MAX_CHECKLIST_ITEMS),
+            )
+        }
+    }
+
+    /**
+     * Keeps the proposed list as a card the hire owns.
+     *
+     * Re-capped here rather than trusted from the confirm: this is the only action whose payload is
+     * free text the client sends back, and a card is cheap to write and awkward to remove.
+     */
+    private fun placeChecklist(
+        userId: UUID,
+        projectId: UUID,
+        title: String?,
+        items: List<String>?,
+    ): BuddyActionResponse {
+        val lines = items.orEmpty()
+            .map { it.trim().take(MAX_CHECKLIST_ITEM_LENGTH) }
+            .filter { it.isNotBlank() }
+            .take(MAX_CHECKLIST_ITEMS)
+
+        if (lines.size < MIN_CHECKLIST_ITEMS) {
+            return BuddyActionResponse(ok = false, message = "There was no list left to keep.")
+        }
+
+        boardService.addAuthoredCard(
+            userId,
+            projectId,
+            ChecklistCardRequest(
+                title = title?.trim()?.take(MAX_CHECKLIST_TITLE)?.ifBlank { null },
+                items = lines.map { ChecklistItemRequest(text = it, done = false) },
+            ),
+        )
+        return BuddyActionResponse(
+            ok = true,
+            message = "Kept on your board — ${lines.size} things to tick off. It's yours now: " +
+                "edit it, re-order it, throw it away.",
+        )
+    }
+
+    /**
      * Runs a confirmed action on behalf of [jwt]'s user, scoped to their re-resolved project.
      *
      * Never throws for a handled outcome: an expected precondition failure ("no eligible Task 0",
@@ -356,6 +431,12 @@ class BuddyActionService(
                         claimGoal(resolved.userId, authId, resolved.projectId, request.taskId)
                     BuddyActionType.REQUEST_ATTESTATION ->
                         requestAttestation(resolved, request.title, request.attesterId)
+                    BuddyActionType.PLACE_CHECKLIST -> placeChecklist(
+                        resolved.userId,
+                        resolved.projectId,
+                        request.checklistTitle,
+                        request.checklistItems,
+                    )
                     BuddyActionType.OPEN_ORIENTATION,
                     // Not project-scoped, so these return before the project gate this dispatch
                     // sits behind.
@@ -509,6 +590,8 @@ class BuddyActionService(
         title: String? = null,
         attesterId: UUID? = null,
         githubLogin: String? = null,
+        checklistTitle: String? = null,
+        checklistItems: List<String>? = null,
     ): ProposeOutcome =
         ProposeOutcome(
             toolResult = "Proposed to the hire on $projectName: “${type.label}”. They will see a confirm " +
@@ -525,6 +608,8 @@ class BuddyActionService(
                 title = title,
                 attesterId = attesterId?.toString(),
                 githubLogin = githubLogin,
+                checklistTitle = checklistTitle,
+                checklistItems = checklistItems,
             ),
         )
 
@@ -557,6 +642,19 @@ class BuddyActionService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
     /** Reads a string argument the model passed to a tool, or "" when it is missing/non-text. */
+    /**
+     * A list-of-strings argument, with anything that is not a usable line dropped.
+     *
+     * Defensive rather than strict: a model that sends numbers, nulls or a stray object in an
+     * array of steps has sent a *mostly* good list, and refusing the whole thing over one bad
+     * element would lose the hire the other nine. What cannot be read as a non-blank string simply
+     * is not a step.
+     */
+    private fun BuddyToolCallDto.stringListArg(name: String): List<String> =
+        (arguments[name] as? JsonArray)
+            .orEmpty()
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { line -> line.isNotBlank() } }
+
     private fun BuddyToolCallDto.stringArg(name: String): String =
         (arguments[name] as? JsonPrimitive)?.contentOrNull.orEmpty()
 
@@ -579,6 +677,7 @@ class BuddyActionService(
             // Unused for the same reason: not project-scoped, so it never reaches the no-project
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
+            BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -602,6 +701,9 @@ class BuddyActionService(
         /** `record_assessment` confirm payload: which competency, and the level in words. */
         val competencyKey: String? = null,
         val level: String? = null,
+        /** `place_checklist` confirm payload: the list as the hire will read it before confirming. */
+        val checklistTitle: String? = null,
+        val checklistItems: List<String>? = null,
     )
 
     private sealed interface ProjectResolution {
@@ -628,6 +730,23 @@ class BuddyActionService(
     }
 
     private companion object {
+        /**
+         * The fewest lines that count as a list worth keeping.
+         *
+         * Two, matching `checklistFromMarkdown` on the client, and for the same reason: one bullet
+         * is how a model emphasises a sentence, and a card made of it repeats the reply above it.
+         */
+        const val MIN_CHECKLIST_ITEMS = 2
+
+        /** How many lines a card will take. Past this it is a document, not a checklist. */
+        const val MAX_CHECKLIST_ITEMS = 25
+
+        /** A step is a line, not a paragraph — anything longer is cut rather than refused. */
+        const val MAX_CHECKLIST_ITEM_LENGTH = 300
+
+        /** A heading length: long enough to say what the list is, short enough not to wrap. */
+        const val MAX_CHECKLIST_TITLE = 120
+
         private fun noArgs() = buildJsonObject {
             put("type", "object")
             put("properties", buildJsonObject { })
@@ -704,6 +823,43 @@ class BuddyActionService(
                     }
                 }
                 putJsonArray("required") { add("login") }
+            },
+        )
+
+        val PLACE_CHECKLIST_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.PLACE_CHECKLIST.toolName,
+            description = "Offer to keep a list you have just written as a checklist card on the " +
+                "hire's board. Use it right after you have answered 'how do I start' or 'what do " +
+                "I do next' with steps — the conversation is not replayed, so a list they only " +
+                "read here is a list they will have to ask for again tomorrow. Pass the SAME " +
+                "lines you wrote in the reply, one per item, in the same order and the same " +
+                "words: this puts your sentences on a surface the hire treats as their own, so " +
+                "anything you keep must be something they have just read. Never use it for a list " +
+                "the task itself already states — say so and let them keep the task's own words. " +
+                "This does NOT write anything by itself; the hire sees a confirm button and only " +
+                "they can keep it. Ticking it changes nothing anywhere else — it is their working " +
+                "copy, not a status.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("title") {
+                        put("type", "string")
+                        put("description", "What the list is about, in a few words. The card's heading.")
+                    }
+                    putJsonObject("items") {
+                        put("type", "array")
+                        put(
+                            "description",
+                            "The steps, one per entry, worded as you wrote them in the reply. " +
+                                "At least $MIN_CHECKLIST_ITEMS; anything past $MAX_CHECKLIST_ITEMS is dropped.",
+                        )
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                }
+                putJsonArray("required") {
+                    add("title")
+                    add("items")
+                }
             },
         )
 

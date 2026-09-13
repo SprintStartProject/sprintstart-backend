@@ -40,6 +40,22 @@ enum class BuddyActionType(
      * skill is not something anybody should have to confirm blind.
      */
     RECORD_ASSESSMENT("record_assessment", "Save this placement"),
+
+    /**
+     * Keeps a list the mentor just wrote as a checklist card on the hire's board.
+     *
+     * **The one action whose payload is content the model wrote**, and the reason it is an action
+     * rather than a board tool. Every other card is a request to show a known read; this one puts
+     * the mentor's own sentences on a surface the hire treats as theirs, so the confirm button is
+     * not a formality here — it is the whole safeguard. What lands is what they read in the reply
+     * above it, and the card is theirs to edit or throw away the moment it exists.
+     *
+     * The board already had the same thing as a button under any reply holding a list
+     * (`SaveReplyToBoard`). That still stands, and this is for the other half of the cases: a task
+     * whose steps the mentor had to work out rather than copy, where nothing in the reply looks
+     * like a markdown list and the hire would otherwise be left retyping it.
+     */
+    PLACE_CHECKLIST("place_checklist", "Keep this as a checklist"),
     ;
 
     companion object {

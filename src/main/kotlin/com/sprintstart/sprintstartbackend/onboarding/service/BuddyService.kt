@@ -409,6 +409,8 @@ class BuddyService(
                         githubLogin = proposal.githubLogin,
                         competencyKey = proposal.competencyKey,
                         level = proposal.level,
+                        checklistTitle = proposal.checklistTitle,
+                        checklistItems = proposal.checklistItems,
                     ),
                 )
             }
