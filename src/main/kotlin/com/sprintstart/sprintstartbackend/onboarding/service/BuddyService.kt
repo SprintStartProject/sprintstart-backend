@@ -255,7 +255,7 @@ class BuddyService(
         // was never given is one it cannot call, so the mode is enforced here rather than asked for
         // in the prompt. Retrieval is untouched — `search_docs` runs AI-side, not as a backend tool.
         val tools = if (capabilitiesEnabled) {
-            buddyToolExecutor.toolSpecs(userId) + buddyActionService.actionSpecs()
+            buddyToolExecutor.toolSpecs(userId) + buddyActionService.actionSpecs(userId)
         } else {
             emptyList()
         }
@@ -409,6 +409,11 @@ class BuddyService(
                         githubLogin = proposal.githubLogin,
                         competencyKey = proposal.competencyKey,
                         level = proposal.level,
+                        stepId = proposal.stepId?.toString(),
+                        questionId = proposal.questionId?.toString(),
+                        phaseId = proposal.phaseId?.toString(),
+                        answer = proposal.answer,
+                        description = proposal.description,
                     ),
                 )
             }

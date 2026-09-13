@@ -54,6 +54,14 @@ class BuddyToolExecutorTest {
         every { topicsFor(any()) } returns emptyList()
     }
 
+    // Pathless, and explicitly rather than relaxed: a relaxed mock would put an empty greeting
+    // section into the snapshot these cases assert on.
+    private val buddyPathTools: BuddyPathTools = mockk {
+        every { toolSpecs(any()) } returns emptyList()
+        every { snapshotFor(any()) } returns null
+        every { handles(any()) } returns false
+    }
+
     private val executor = BuddyToolExecutor(
         onboardingMetricsService,
         myCompetencyService,
@@ -67,6 +75,9 @@ class BuddyToolExecutorTest {
         projectMembershipApi,
         arrivalStepService,
         competencyPlacementService,
+        // Pathless by default: every case here is about a tool that reads something other than the
+        // onboarding path, and "no path" is what keeps the path tool out of their expectations.
+        buddyPathTools,
     )
 
     private val userId = UUID.randomUUID()

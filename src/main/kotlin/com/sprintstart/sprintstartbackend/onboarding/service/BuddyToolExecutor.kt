@@ -42,6 +42,7 @@ class BuddyToolExecutor(
     private val projectMembershipApi: ProjectMembershipApi,
     private val arrivalStepService: ArrivalStepService,
     private val competencyPlacementService: CompetencyPlacementService,
+    private val buddyPathTools: BuddyPathTools,
 ) {
     /**
      * The backend tools the AI reasoner is told it may call, for this hire.
@@ -61,6 +62,10 @@ class BuddyToolExecutor(
         if (arrivalStepService.forHire(userId).isNotEmpty()) {
             add(GET_ARRIVAL_STEPS_SPEC)
         }
+        // Second, and ahead of everything about how their work is going: the path is the *plan*, so
+        // a mentor that has not read it answers "what should I do next" out of the work pool while
+        // the hire is looking at a page that says something else. Mounted only when a path exists.
+        addAll(buddyPathTools.toolSpecs(userId))
         add(GET_MY_METRICS_SPEC)
         add(GET_MY_COMPETENCIES_SPEC)
         // Mounted only while something is still unplaced, on the same "absent, never empty" rule
@@ -97,6 +102,10 @@ class BuddyToolExecutor(
         listOfNotNull(
             ("Before they can work:\n" + getArrivalSteps(userId))
                 .takeIf { arrivalStepService.forHire(userId).isNotEmpty() },
+            // Before progress, for the same reason the tool is mounted before the metrics one: the
+            // plan is what a greeting should open on. Absent entirely for a hire with no path, so a
+            // greeting can never open by discussing one they have not generated.
+            buddyPathTools.snapshotFor(userId),
             "Progress:\n" + getMyMetrics(userId),
             // Omitted for somebody whose work cannot be found at all, on the same rule as the
             // tool: a greeting handed "Open pull requests: you have not set a GitHub username"
@@ -127,6 +136,7 @@ class BuddyToolExecutor(
     fun execute(call: BuddyToolCallDto, userId: UUID): String =
         when {
             buddyBoardTools.handles(call.name) -> buddyBoardTools.execute(call, userId)
+            buddyPathTools.handles(call.name) -> buddyPathTools.execute(userId)
             else -> when (call.name) {
                 GET_ARRIVAL_STEPS -> getArrivalSteps(userId)
                 GET_MY_METRICS -> getMyMetrics(userId)

@@ -72,7 +72,7 @@ class BuddyServiceTest {
     fun stubActionDefaults() {
         // Default: no action tools, and every tool the AI calls is a read-only one. Tests that
         // exercise an action override these.
-        every { buddyActionService.actionSpecs() } returns emptyList()
+        every { buddyActionService.actionSpecs(any()) } returns emptyList()
         every { buddyActionService.isAction(any()) } returns false
         // Retrieval is scoped to the hire's projects, so every turn resolves them. Default: none,
         // which means the AI narrows nothing -- the behaviour before scoping existed.
@@ -494,7 +494,7 @@ class BuddyServiceTest {
             every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
             )
-            every { buddyActionService.actionSpecs() } returns listOf(
+            every { buddyActionService.actionSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
             )
             val requests = mutableListOf<BuddyAgentRequest>()
@@ -512,7 +512,7 @@ class BuddyServiceTest {
             every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
             )
-            every { buddyActionService.actionSpecs() } returns listOf(
+            every { buddyActionService.actionSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
             )
             val requests = mutableListOf<BuddyAgentRequest>()

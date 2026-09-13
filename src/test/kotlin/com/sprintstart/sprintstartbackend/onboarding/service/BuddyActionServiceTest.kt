@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.goal.GoalView
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
@@ -40,6 +41,15 @@ class BuddyActionServiceTest {
     // are not about -- the case that asserts it says so explicitly.
     private val boardService: BoardService = mockk(relaxed = true)
     private val competencyPlacementService: CompetencyPlacementService = mockk()
+
+    // The path half of the buddy, which owns its own three actions. These cases are about the
+    // project-scoped ones; `BuddyPathActionTest` covers the other half against the real component.
+    // Answers "not mine" for every action here, which is what these cases are: the path component
+    // is asked first for every proposal and every confirm, so a mock that could not say no would
+    // make every case below a stubbing error.
+    private val buddyPathActions: BuddyPathActions = mockk {
+        every { handles(any()) } returns false
+    }
     private val service = BuddyActionService(
         taskZeroService,
         taskOrientationService,
@@ -49,6 +59,7 @@ class BuddyActionServiceTest {
         attestationService,
         boardService,
         competencyPlacementService,
+        buddyPathActions,
     )
 
     private val userId = UUID.randomUUID()
@@ -106,8 +117,10 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the seven action tools`() {
-        assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
+    fun `exposes the project-scoped action tools, and no path action without a path`() {
+        every { buddyPathActions.specs(userId) } returns emptyList()
+
+        assertThat(service.actionSpecs(userId).map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
             "open_orientation",
@@ -116,6 +129,15 @@ class BuddyActionServiceTest {
             "set_github_login",
             "record_assessment",
         )
+    }
+
+    @Test
+    fun `mounts whatever path actions the path component offers for this hire`() {
+        every { buddyPathActions.specs(userId) } returns listOf(
+            BuddyToolSpecDto(name = "complete_step", description = "", parameters = buildJsonObject { }),
+        )
+
+        assertThat(service.actionSpecs(userId).map { it.name }).contains("complete_step")
     }
 
     @Test

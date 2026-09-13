@@ -27,4 +27,26 @@ data class BuddyActionRequest(
      */
     val competencyKey: String? = null,
     val level: String? = null,
+    /**
+     * The path node a path action is aimed at: [stepId] for `complete_step`, [questionId] for
+     * `answer_question`, [phaseId] for `add_path_step`.
+     *
+     * Echoed back verbatim like every other payload here, and re-resolved server-side through the
+     * caller's *own* path — so an id that belongs to somebody else's onboarding is not found rather
+     * than acted on.
+     */
+    val stepId: UUID? = null,
+    val questionId: UUID? = null,
+    val phaseId: UUID? = null,
+    /**
+     * The hire's answer to a knowledge question, in their own words, for `answer_question`.
+     *
+     * Matched to an option server-side for a multiple-choice question rather than being sent as an
+     * option id, for the same reason `record_assessment` re-reads the level from its word: what is
+     * recorded should be derived from what the hire was shown, not from something a client
+     * substituted afterwards.
+     */
+    val answer: String? = null,
+    /** What a step added by `add_path_step` is about, one or two sentences. */
+    val description: String? = null,
 )

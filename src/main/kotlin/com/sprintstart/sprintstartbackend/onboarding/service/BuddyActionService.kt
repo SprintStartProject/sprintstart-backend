@@ -38,7 +38,7 @@ import java.util.UUID
  * project the buddy did not scope it to, nor act as another hire.
  */
 @Service
-@Suppress("TooManyFunctions") // Six wrapped actions, each with a propose + a perform helper.
+@Suppress("TooManyFunctions") // Nine wrapped actions, each with a propose + a perform helper.
 class BuddyActionService(
     private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
@@ -48,9 +48,16 @@ class BuddyActionService(
     private val attestationService: AttestationService,
     private val boardService: BoardService,
     private val competencyPlacementService: CompetencyPlacementService,
+    private val buddyPathActions: BuddyPathActions,
 ) {
-    /** The action tools the AI reasoner is told it may propose, alongside the read-only tools. */
-    fun actionSpecs(): List<BuddyToolSpecDto> =
+    /**
+     * The action tools the AI reasoner is told it may propose, alongside the read-only tools.
+     *
+     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the three
+     * path actions have a subject that may not exist. A mentor handed `complete_step` for somebody
+     * with no onboarding path will offer to tick a step off a plan they have not got.
+     */
+    fun actionSpecs(userId: UUID): List<BuddyToolSpecDto> =
         listOf(
             FLAG_TO_PM_SPEC,
             CLAIM_TASK_ZERO_SPEC,
@@ -59,7 +66,7 @@ class BuddyActionService(
             REQUEST_ATTESTATION_SPEC,
             SET_GITHUB_LOGIN_SPEC,
             RECORD_ASSESSMENT_SPEC,
-        )
+        ) + buddyPathActions.specs(userId)
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
     fun isAction(toolName: String): Boolean = BuddyActionType.fromToolName(toolName) != null
@@ -89,6 +96,14 @@ class BuddyActionService(
         // somebody on day one, who is exactly the hire it exists for.
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return proposeAssessment(call, type)
+        }
+
+        // Also before the project gate, and for a reason worth stating: an onboarding path belongs
+        // to a *person*. It is generated from one project's blueprint, but the path itself is not
+        // project-scoped, so gating these would refuse a hire onboarding on two projects — and they
+        // still have exactly one path, sitting on the page they are looking at.
+        if (buddyPathActions.handles(type)) {
+            return buddyPathActions.propose(call, type, userId)
         }
 
         val project = when (val resolution = resolveProject(userId)) {
@@ -317,6 +332,17 @@ class BuddyActionService(
             }
         }
 
+        // And again: a path belongs to a person, not to a project. See the note in `propose`.
+        if (buddyPathActions.handles(type)) {
+            return try {
+                withContext(Dispatchers.IO) { buddyPathActions.perform(type, authId, request) }
+            } catch (ex: ResponseStatusException) {
+                // A precondition the underlying route owns (a step that is already finished, a
+                // question that is not theirs). Relay its sentence rather than failing the confirm.
+                BuddyActionResponse(ok = false, message = ex.reason ?: "That didn't go through.")
+            }
+        }
+
         val context = withContext(Dispatchers.IO) { resolveContext(authId) }
         val resolved = when (context) {
             is CallerContext.Resolved -> context
@@ -360,6 +386,9 @@ class BuddyActionService(
                     // sits behind.
                     BuddyActionType.SET_GITHUB_LOGIN,
                     BuddyActionType.RECORD_ASSESSMENT,
+                    BuddyActionType.COMPLETE_STEP,
+                    BuddyActionType.ANSWER_QUESTION,
+                    BuddyActionType.ADD_PATH_STEP,
                     -> error("handled above")
                 }
             }
@@ -539,6 +568,10 @@ class BuddyActionService(
             // Unused for the same reason: not project-scoped, so it never reaches the no-project
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
+            // Unused for the same reason again: a path is not project-scoped either.
+            BuddyActionType.COMPLETE_STEP -> "tick a step off their path"
+            BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
+            BuddyActionType.ADD_PATH_STEP -> "add a step to their path"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -562,6 +595,16 @@ class BuddyActionService(
         /** `record_assessment` confirm payload: which competency, and the level in words. */
         val competencyKey: String? = null,
         val level: String? = null,
+        /**
+         * Path-action confirm payloads: the node of the hire's own path the action names, the answer
+         * `answer_question` would send in the hire's own words, and the description of a step
+         * `add_path_step` would add.
+         */
+        val stepId: UUID? = null,
+        val questionId: UUID? = null,
+        val phaseId: UUID? = null,
+        val answer: String? = null,
+        val description: String? = null,
     )
 
     private sealed interface ProjectResolution {

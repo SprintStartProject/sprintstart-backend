@@ -42,4 +42,14 @@ data class BuddyStreamEvent(
     /** `record_assessment` confirm payload: which competency, and the level in words. */
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
+    /**
+     * Path-action confirm payloads: which node of the hire's own onboarding path the action is aimed
+     * at, the answer `answer_question` will send in the hire's own words, and the description of a
+     * step `add_path_step` would add.
+     */
+    @SerialName("step_id") val stepId: String? = null,
+    @SerialName("question_id") val questionId: String? = null,
+    @SerialName("phase_id") val phaseId: String? = null,
+    val answer: String? = null,
+    val description: String? = null,
 )

@@ -40,6 +40,34 @@ enum class BuddyActionType(
      * skill is not something anybody should have to confirm blind.
      */
     RECORD_ASSESSMENT("record_assessment", "Save this placement"),
+
+    /**
+     * The three path actions: the mentor moving the hire along the curriculum their PM wrote.
+     *
+     * They are what turns the buddy from a second onboarding mechanism into the tutor for the first
+     * one. One line decides how far that goes, and it is worth stating here rather than only in the
+     * tool descriptions: **these touch the hire's own copy of the path, never the blueprint.** The
+     * curriculum belongs to the PM; a mentor that could edit it is a mentor whose team stops
+     * trusting it. Everything here is reversible on the hire's own page, which is what makes
+     * proposing them reasonable at all.
+     *
+     * Their [label]s are fallbacks. Each proposal names the actual step, the actual answer or the
+     * actual title, because "Confirm" over a change to somebody's onboarding is not something
+     * anybody should have to click blind.
+     */
+    COMPLETE_STEP("complete_step", "Mark this step as done"),
+
+    /**
+     * Sends the hire's own answer to a knowledge question.
+     *
+     * The hire's words, never the mentor's. The mentor is not told which option is correct (see
+     * `BuddyPathTools`), so it cannot answer for them even if it tried — and the button shows the
+     * answer that will be sent, because an attempt is recorded whether it is right or not.
+     */
+    ANSWER_QUESTION("answer_question", "Send this answer"),
+
+    /** Adds a step the conversation produced to a phase of the hire's own path. */
+    ADD_PATH_STEP("add_path_step", "Add this step to your path"),
     ;
 
     companion object {
