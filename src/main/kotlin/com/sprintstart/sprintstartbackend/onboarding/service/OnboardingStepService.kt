@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
@@ -79,6 +80,10 @@ class OnboardingStepService(
         authId: String,
         phaseId: UUID,
         request: CreateOnboardingStepRequest,
+        // Who is adding it, which the request may not decide: a client that could name its own
+        // origin could claim a step came from the team. Defaults to the hire, because this endpoint
+        // is theirs; the buddy passes [StepOrigin.BUDDY] when it is a confirmed proposal.
+        origin: StepOrigin = StepOrigin.HIRE,
     ): CreateOnboardingStepResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -98,6 +103,7 @@ class OnboardingStepService(
             description = request.description,
             type = request.type,
             aiAssisted = false,
+            origin = origin,
             estimatedMinutes = request.estimatedMinutes,
             expectedOutcome = request.expectedOutcome,
             status = StepStatus.WAITING,
@@ -334,6 +340,8 @@ class OnboardingStepService(
             description = request.description,
             type = request.type,
             aiAssisted = false,
+            // Written on somebody else's path, which only a PM, HR or an admin can do.
+            origin = StepOrigin.PM,
             estimatedMinutes = request.estimatedMinutes,
             expectedOutcome = request.expectedOutcome,
             status = StepStatus.WAITING,

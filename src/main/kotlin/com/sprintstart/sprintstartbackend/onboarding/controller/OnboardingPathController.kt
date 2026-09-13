@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
@@ -140,7 +139,7 @@ class OnboardingPathController(
         @Parameter(
             description = "UUID of the user whose onboarding path should be returned",
         ) @PathVariable userId: UUID,
-    ): GetOnboardingPathResponse {
+    ): GetOnboardingPathForUserResponse {
         return onboardingPathService.getOnboardingPathByUserId(userId)
     }
 

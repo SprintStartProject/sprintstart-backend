@@ -3,7 +3,6 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import io.mockk.Runs
@@ -215,8 +214,11 @@ class OnboardingPathControllerTest(
     // ========================== Admin endpoints ==========================
 
     @Test
-    fun `getOnboardingPathForUserId should return 200 and path overview`() {
-        val response = GetOnboardingPathResponse(
+    fun `getOnboardingPathForUserId should return 200 and the path as its owner has it`() {
+        // The hire-shaped response, not the summary: a reviewer looking at somebody's onboarding
+        // needs the phases' contents and the per-question status, and every client that tried to
+        // rebuild those from the summary shape got it wrong or crashed.
+        val response = GetOnboardingPathForUserResponse(
             id = pathId,
             userId = userId,
             createdAt = Instant.now(),

@@ -76,6 +76,25 @@ class OnboardingPathServiceTest {
         }
 
         @Test
+        fun `answers a reviewer with the phases' contents, questions included`() {
+            // It used to answer with the summary shape: phases and nothing inside them. Reviewer
+            // screens rebuilt the rest client-side and could not get the questions at all, so the
+            // team page crashed on `phase.questions` the moment questions became phase members.
+            val questionId = UUID.randomUUID()
+            every { userApi.exists(userId) } returns true
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns
+                Optional.of(makePathWithQuestion(questionId))
+
+            val result = service.getOnboardingPathByUserId(userId)
+
+            val phase = result.phases.single()
+            assertEquals(1, phase.questions.size)
+            assertEquals(questionId, phase.questions.single().id)
+            // And the reviewer sees that member's own status, not a blank one.
+            assertEquals(QuestionStatus.OPEN, phase.questions.single().status)
+        }
+
+        @Test
         fun `throws 404 when user does not exist`() {
             every { userApi.exists(userId) } returns false
 

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -438,7 +439,15 @@ class BuddyPathActionTest {
         every { buddyPathTools.findPhase(userId, phase.id) } returns phase
         val created = slot<CreateOnboardingStepRequest>()
         every {
-            onboardingStepService.createOnboardingStepForMe(authId, phase.id, capture(created))
+            onboardingStepService.createOnboardingStepForMe(
+                authId,
+                phase.id,
+                capture(created),
+                // The origin, asserted by being the only stub that matches: a step the buddy added
+                // used to arrive labelled "Custom step by PM" -- something the hire's team requires
+                // -- when it was something they agreed to in a chat.
+                StepOrigin.BUDDY,
+            )
         } returns createdStep("Walk through a release")
 
         val result = service.perform(

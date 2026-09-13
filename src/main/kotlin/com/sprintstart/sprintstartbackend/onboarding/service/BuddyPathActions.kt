@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -463,6 +464,10 @@ class BuddyPathActions(
                 // will leave somebody able to do, and the mentor is not in a position to make one.
                 expectedOutcome = "",
             ),
+            // Theirs, but not their idea, and the card says so. Without this the step arrived
+            // labelled "Custom step by PM" -- a thing their team requires -- when it was something
+            // they agreed to in a chat.
+            origin = StepOrigin.BUDDY,
         )
         return BuddyActionResponse(
             ok = true,
