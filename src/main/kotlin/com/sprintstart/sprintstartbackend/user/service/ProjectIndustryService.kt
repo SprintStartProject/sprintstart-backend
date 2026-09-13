@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryAiClient
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
@@ -9,6 +10,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectInd
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
@@ -22,14 +24,16 @@ import java.util.UUID
  *
  * Coordinates industry evaluation with the AI service and persists the result on the project.
  * Manual evaluation triggers always persist the evaluated industry and confidence, overriding
- * any previous values.
+ * any previous values. Automatic and lazy triggers enforce threshold and monotonicity rules.
  */
 @Service
 class ProjectIndustryService(
     private val projectRepository: ProjectRepository,
     private val projectIndustryAiClient: ProjectIndustryAiClient,
     transactionManager: PlatformTransactionManager,
-) {
+) : ProjectIndustryApi {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     // The AI call is a long-running suspend operation, so it must not run inside a
     // transaction (a DB connection would be pinned for its whole duration).
     private val txTemplate = TransactionTemplate(transactionManager)
@@ -47,7 +51,7 @@ class ProjectIndustryService(
      *   when the AI service fails to respond or returns an error.
      */
     @Tracked("Evaluating project industry")
-    suspend fun evaluateIndustry(projectId: UUID): AiIndustryEvaluationResponse {
+    override suspend fun evaluateIndustry(projectId: UUID): AiIndustryEvaluationResponse {
         withContext(Dispatchers.IO) { findProject(projectId) }
         val response = projectIndustryAiClient.evaluateIndustry(projectId)
 
@@ -84,6 +88,107 @@ class ProjectIndustryService(
     }
 
     /**
+     * Retrieves the persisted industry if present; otherwise queries the AI service lazily once.
+     *
+     * Persists only if the evaluated confidence is at least `medium`. Returns null on low confidence
+     * or when evaluation fails, without throwing.
+     */
+    @Tracked("Getting or lazily evaluating project industry")
+    override suspend fun getOrEvaluateIndustry(projectId: UUID): String? {
+        val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: return null
+        if (!existingProject.industry.isNullOrBlank()) {
+            return existingProject.industry
+        }
+
+        return try {
+            val response = projectIndustryAiClient.evaluateIndustry(projectId)
+            if (isEligibleConfidence(response.confidence) && response.industry.isNotBlank()) {
+                withContext(Dispatchers.IO) {
+                    txTemplate.executeWithoutResult {
+                        val project = findProject(projectId)
+                        val shouldUpdate = project.industry.isNullOrBlank() ||
+                            isHigherConfidence(response.confidence, project.industryConfidence)
+                        if (shouldUpdate) {
+                            project.industry = response.industry
+                            project.industryConfidence = response.confidence
+                            projectRepository.save(project)
+                        }
+                    }
+                }
+                response.industry
+            } else {
+                logger.debug(
+                    "Lazy industry evaluation for project {} discarded due to low confidence: {}",
+                    projectId,
+                    response.confidence,
+                )
+                null
+            }
+        } catch (e: Exception) {
+            logger.warn("Lazy industry evaluation failed for project {}: {}", projectId, e.message)
+            null
+        }
+    }
+
+    /**
+     * Evaluates the project industry automatically (e.g. after an ingestion run) and persists
+     * it only if confidence is at least `medium` and strictly higher than the current confidence.
+     *
+     * Failures are caught and logged so ingestion sync is never broken.
+     */
+    @Tracked("Evaluating project industry automatically")
+    override suspend fun evaluateIndustryAutomatically(projectId: UUID) {
+        try {
+            val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: run {
+                logger.warn("Cannot auto-evaluate industry for non-existent project {}", projectId)
+                return
+            }
+
+            val response = projectIndustryAiClient.evaluateIndustry(projectId)
+            if (!isEligibleConfidence(response.confidence) || response.industry.isBlank()) {
+                logger.debug(
+                    "Auto industry evaluation for project {} discarded (confidence: {}, industry: '{}')",
+                    projectId,
+                    response.confidence,
+                    response.industry,
+                )
+                return
+            }
+
+            withContext(Dispatchers.IO) {
+                txTemplate.executeWithoutResult {
+                    val project = findProject(projectId)
+                    val shouldUpdate = project.industry.isNullOrBlank() ||
+                        isHigherConfidence(response.confidence, project.industryConfidence)
+                    if (shouldUpdate) {
+                        logger.info(
+                            "Updating industry for project {} from '{}' ({}) to '{}' ({})",
+                            projectId,
+                            project.industry,
+                            project.industryConfidence,
+                            response.industry,
+                            response.confidence,
+                        )
+                        project.industry = response.industry
+                        project.industryConfidence = response.confidence
+                        projectRepository.save(project)
+                    } else {
+                        logger.debug(
+                            "Auto industry evaluation for project {} discarded by monotonicity: " +
+                                "stored confidence {} >= new {}",
+                            projectId,
+                            project.industryConfidence,
+                            response.confidence,
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("Automatic industry evaluation failed for project {}: {}", projectId, e.message)
+        }
+    }
+
+    /**
      * Finds a project by its unique identifier.
      *
      * @param id The unique identifier of the project to retrieve.
@@ -94,6 +199,25 @@ class ProjectIndustryService(
         return projectRepository
             .findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project with id $id not found") }
+    }
+
+    private fun findProjectOrNull(id: UUID): Project? {
+        return projectRepository.findById(id).orElse(null)
+    }
+
+    private fun isEligibleConfidence(confidence: String?): Boolean {
+        return confidenceRank(confidence) >= 1
+    }
+
+    private fun isHigherConfidence(newConfidence: String?, existingConfidence: String?): Boolean {
+        return confidenceRank(newConfidence) > confidenceRank(existingConfidence)
+    }
+
+    private fun confidenceRank(confidence: String?): Int = when (confidence?.lowercase()) {
+        "high" -> 2
+        "medium" -> 1
+        "low" -> 0
+        else -> -1
     }
 
     companion object {
