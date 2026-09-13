@@ -44,7 +44,6 @@ class AdminProjectService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceApi: JiraInstanceApi,
-    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
