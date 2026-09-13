@@ -353,12 +353,19 @@ class BuddyBoardTools(
         )
 
         /**
-         * The kinds the mentor may place, and only those.
+         * The kinds the mentor may place *here*, and only those.
          *
          * A baseline card is on the board already, so offering it would only let the model claim
-         * credit for something that was there anyway. A card the *hire* wrote is theirs — the
-         * mentor cannot create one, and the surest way to keep it that way is that no tool exists
-         * which could.
+         * credit for something that was there anyway. The hire's own kinds stay out of this list
+         * for a stronger reason: a card they wrote is theirs, and every card this tool places
+         * appears with no confirmation at all.
+         *
+         * **That is the line, and it is about the confirm rather than about the kind.** The mentor
+         * *can* now put a `CHECKLIST` on a board — `place_checklist` in `BuddyActionService` keeps
+         * a list it has just written — but that one is an action: nothing is written until the hire
+         * presses a button showing the lines. So the no-confirm tool stays limited to live reads,
+         * whose contents it does not choose, and content the mentor wrote only ever arrives through
+         * a gate the hire opens. Widening this list would be the hole; the action is not one.
          */
         private val PLACEABLE =
             BoardCardKind.entries.filter { it.placement == BoardCardKind.Placement.MENTOR }
@@ -374,10 +381,13 @@ class BuddyBoardTools(
                 "shown them suggestions (SUGGESTED_TASKS), or after explaining how some part of " +
                 "the system fits together (DIAGRAM). This applies straight away — no " +
                 "confirmation — and the card is clearly marked as yours and easy for them to " +
-                "dismiss. You choose *that* a card belongs there; you never choose what it says, " +
-                "because its contents are read live from the same place your other tools read. " +
-                "Kinds: " + placeableKindNames() + ". Do not place a card they have already " +
-                "dismissed, and do not place one just to have placed something.",
+                "dismiss. For these kinds you choose *that* a card belongs there and never what " +
+                "it says, because their contents are read live from the same place your other " +
+                "tools read. Kinds: " + placeableKindNames() + ". Do not place a card they have " +
+                "already dismissed, and do not place one just to have placed something. " +
+                "This is not the only way a card reaches their board, so never tell them you " +
+                "cannot put your own words on one: to keep a list you wrote, use place_checklist, " +
+                "which shows them the lines and writes the card when they confirm.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
