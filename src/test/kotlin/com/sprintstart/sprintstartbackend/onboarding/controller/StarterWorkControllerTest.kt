@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkCandidateResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkTaskProposalResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.UnreviewedStarterWorkResponse
+import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkPoolReconciler
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkTaskProposalService
 import com.sprintstart.sprintstartbackend.onboarding.service.UserGoalService
 import io.mockk.coEvery
@@ -47,6 +48,9 @@ class StarterWorkControllerTest(
 ) {
     @MockkBean
     private lateinit var starterWorkTaskProposalService: StarterWorkTaskProposalService
+
+    @MockkBean
+    private lateinit var starterWorkPoolReconciler: StarterWorkPoolReconciler
 
     @MockkBean
     private lateinit var userGoalService: UserGoalService
@@ -386,5 +390,30 @@ class StarterWorkControllerTest(
 
         assertTrue(body.contains("\"type\":\"item\""))
         assertTrue(body.contains("\"type\":\"done\""))
+    }
+
+    @Test
+    fun `reconcile should return 200 and the counts for a PM`() {
+        every { starterWorkPoolReconciler.reconcile() } returns
+            StarterWorkPoolReconciler.Outcome(
+                examined = 3,
+                markedStale = 1,
+                revived = 0,
+                assigneeChanged = 2,
+                skipped = 0,
+            )
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/starter-work/reconcile").with(jwtWithRoles("PM")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.markedStale").value(1))
+            .andExpect(jsonPath("$.assigneeChanged").value(2))
+    }
+
+    @Test
+    fun `reconcile should return 403 for a plain USER`() {
+        mockMvc
+            .perform(post("/api/v1/onboarding/starter-work/reconcile").with(jwtWithRoles("USER")))
+            .andExpect(status().isForbidden)
     }
 }

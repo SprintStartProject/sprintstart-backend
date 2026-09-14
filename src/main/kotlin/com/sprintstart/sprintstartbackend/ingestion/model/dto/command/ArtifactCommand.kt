@@ -74,16 +74,25 @@ data class JiraArtifactCommand(
     val projectIds: Set<UUID> = emptySet(),
 ) : ArtifactCommand {
     private companion object {
-        const val DONE_CATEGORY = "Done"
+        /**
+         * Jira's stable category key for "finished".
+         *
+         * Matched case-insensitively so rows ingested before the mapper carried the key — whose
+         * metadata holds the English category *name*, "Done" — keep folding the same way.
+         */
+        const val DONE_CATEGORY = "done"
     }
 
     /**
      * The issue's open/closed state in the vocabulary `Artifact.state` uses.
      *
      * Jira has no open/closed flag — a board's statuses are whatever a team typed — but every
-     * status belongs to one of Jira's own three *categories*, and `Done` is the only one that means
-     * finished. Folding on the category rather than the name is what makes this work for a board
-     * whose done column is called "Shipped" or "Akzeptiert".
+     * status belongs to one of Jira's own three *categories*, and `done` is the only one that means
+     * finished. Folding on the category rather than the status name is what makes this work for a
+     * board whose done column is called "Shipped" or "Akzeptiert".
+     *
+     * The category is read as its *key*, because the category's name is localized too: matching
+     * the English "Done" silently read every finished issue on a non-English instance as open.
      *
      * This is what makes a Jira issue visible to starter-work mining at all: the miner's
      * candidate filter is `state == "OPEN"`, so an issue with no state was skipped in silence.

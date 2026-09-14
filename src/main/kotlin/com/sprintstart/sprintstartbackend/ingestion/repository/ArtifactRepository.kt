@@ -21,6 +21,16 @@ import java.util.UUID
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
+    /**
+     * Batch variant of [findBySourceId]. Source ids with no artifact are simply absent, so a
+     * caller comparing a set of rows against the corpus learns which of them it no longer holds.
+     *
+     * Unscoped, like [findBySourceId] and unlike [findAllBySourceSystemAndSourceIdIn]: a caller
+     * holding a set of source ids that came from more than one tracker — the starter-work pool is
+     * one — has no single source system to scope by.
+     */
+    fun findAllBySourceIdIn(sourceIds: Collection<String>): List<Artifact>
+
     fun findBySourceSystemAndSourceId(sourceSystem: SourceSystem, sourceId: String): Artifact?
 
     fun findAllBySourceSystemAndSourceIdIn(

@@ -167,6 +167,14 @@ data class CurrentTaskContent(
     val url: String?,
     /** True when the hire claimed this as their goal, false for a Task 0 they were handed. */
     val chosen: Boolean,
+    /**
+     * True once the issue behind this task is closed where it lives.
+     *
+     * Carried rather than letting the card disappear: a hire whose task was closed under them has
+     * to be told, or they keep working on it. False whenever there is no task at all, which is a
+     * different state and says nothing about anything.
+     */
+    val closedAtSource: Boolean,
 ) : BoardCardContent
 
 /**
