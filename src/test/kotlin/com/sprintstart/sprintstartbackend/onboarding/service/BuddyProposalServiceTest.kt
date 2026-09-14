@@ -11,6 +11,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -64,7 +65,7 @@ class BuddyProposalServiceTest {
 
         override fun recheck(params: JsonObject, context: TeamToolContext) = recheckResult
 
-        override fun perform(params: JsonObject, context: TeamToolContext): String {
+        override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
             performed.add(params)
             return performAnswer(params)
         }
@@ -108,6 +109,10 @@ class BuddyProposalServiceTest {
         )
         every { repository.findById(proposal.id) } returns Optional.of(proposal)
         return proposal
+    }
+
+    private fun claimSucceeds(proposal: BuddyActionProposal) {
+        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
     }
 
     private fun call() = BuddyToolCallDto(id = "c1", name = "dismiss_escalation")
@@ -157,7 +162,7 @@ class BuddyProposalServiceTest {
     }
 
     @Test
-    fun `confirming runs exactly the stored params once and records it as confirmed`() {
+    fun `confirming runs exactly the stored params once and records it as confirmed`() = runTest {
         val proposal = stored()
         every {
             repository.transition(proposal.id, BuddyProposalStatus.PROPOSED, BuddyProposalStatus.CONFIRMING, now)
@@ -174,7 +179,7 @@ class BuddyProposalServiceTest {
 
     /** A proposal id says nothing about whether somebody else's proposal exists. */
     @Test
-    fun `confirming somebody else's proposal is a 404 and runs nothing`() {
+    fun `confirming somebody else's proposal is a 404 and runs nothing`() = runTest {
         val proposal = stored(owner = UUID.randomUUID())
 
         assertThrows<ResponseStatusException> { service().confirm(authId, proposal.id) }
@@ -184,7 +189,7 @@ class BuddyProposalServiceTest {
     }
 
     @Test
-    fun `confirming an already decided proposal says so and runs nothing`() {
+    fun `confirming an already decided proposal says so and runs nothing`() = runTest {
         val proposal = stored(status = BuddyProposalStatus.DISMISSED)
 
         val response = service().confirm(authId, proposal.id)
@@ -196,7 +201,7 @@ class BuddyProposalServiceTest {
 
     /** A preview written about yesterday's state is not confirmed as if it were current. */
     @Test
-    fun `confirming an expired proposal marks it expired and runs nothing`() {
+    fun `confirming an expired proposal marks it expired and runs nothing`() = runTest {
         val proposal = stored(expiresAt = now.minusSeconds(1))
         every {
             repository.transition(proposal.id, BuddyProposalStatus.PROPOSED, BuddyProposalStatus.EXPIRED, now)
@@ -212,7 +217,7 @@ class BuddyProposalServiceTest {
 
     /** Two confirms that both saw it open: only the one that wins the claim performs anything. */
     @Test
-    fun `a confirm that loses the claim runs nothing`() {
+    fun `a confirm that loses the claim runs nothing`() = runTest {
         val proposal = stored()
         every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 0
 
@@ -224,9 +229,9 @@ class BuddyProposalServiceTest {
     }
 
     @Test
-    fun `a manager who lost the project since the proposal cannot confirm it`() {
+    fun `a manager who lost the project since the proposal cannot confirm it`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
         every { userApi.canManageProject(authId, projectId) } returns false
 
         val response = service().confirm(authId, proposal.id)
@@ -238,9 +243,9 @@ class BuddyProposalServiceTest {
     }
 
     @Test
-    fun `a target that changed since the preview is refused with the action's reason`() {
+    fun `a target that changed since the preview is refused with the action's reason`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
         action.recheckResult = "Somebody already answered that question."
 
         val response = service().confirm(authId, proposal.id)
@@ -252,9 +257,9 @@ class BuddyProposalServiceTest {
     }
 
     @Test
-    fun `a handled failure in the action is shown and recorded, not thrown`() {
+    fun `a handled failure in the action is shown and recorded, not thrown`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
         action.performAnswer = { throw ResponseStatusException(HttpStatus.CONFLICT, "That question is gone.") }
 
         val response = service().confirm(authId, proposal.id)
@@ -266,9 +271,9 @@ class BuddyProposalServiceTest {
 
     /** A claimed proposal never stays in CONFIRMING, whatever the action throws. */
     @Test
-    fun `an unexpected failure still records the proposal as failed and propagates`() {
+    fun `an unexpected failure still records the proposal as failed and propagates`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
         action.performAnswer = { error("database went away") }
 
         assertThrows<IllegalStateException> { service().confirm(authId, proposal.id) }
@@ -313,9 +318,9 @@ class BuddyProposalServiceTest {
      * record it must not turn that into an error: the manager would be told a change failed that happened.
      */
     @Test
-    fun `a failure to record the outcome still returns what actually happened`() {
+    fun `a failure to record the outcome still returns what actually happened`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
         every { repository.finish(any(), any(), any(), any(), any()) } throws
             DataAccessResourceFailureException("connection lost")
 
@@ -328,9 +333,9 @@ class BuddyProposalServiceTest {
 
     /** Recording is one conditional update, so it cannot lose an optimistic-lock race to a stale entity. */
     @Test
-    fun `the outcome is recorded with a conditional update, not by saving the loaded proposal`() {
+    fun `the outcome is recorded with a conditional update, not by saving the loaded proposal`() = runTest {
         val proposal = stored()
-        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        claimSucceeds(proposal)
 
         service().confirm(authId, proposal.id)
 

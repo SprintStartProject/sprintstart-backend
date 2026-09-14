@@ -36,10 +36,13 @@ interface TeamActionHandler {
     /**
      * Makes the change and returns the line to show the manager.
      *
+     * Suspending, because some changes are a call to another service that nobody should hold a
+     * request thread for — rebuilding a project's FAQ asks the AI service to regroup every question.
+     *
      * @throws org.springframework.web.server.ResponseStatusException for a handled failure; its reason
      * is shown to the manager and the proposal is marked failed.
      */
-    fun perform(params: JsonObject, context: TeamToolContext): String
+    suspend fun perform(params: JsonObject, context: TeamToolContext): String
 }
 
 /** What [TeamActionHandler.draft] made of a call. */
