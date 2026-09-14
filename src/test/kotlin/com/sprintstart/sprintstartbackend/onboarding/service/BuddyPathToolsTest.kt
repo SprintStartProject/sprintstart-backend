@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.Onboard
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingStepSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import io.mockk.every
@@ -352,6 +353,40 @@ class BuddyPathToolsTest {
     }
 
     @Test
+    fun `a step waiting on a skip decision is marked, and is never the next thing`() {
+        // Pushing a hire to do a step they asked to skip, or to finish it -- which withdraws the
+        // request -- is the mentor overruling a question that is their PM's to answer.
+        val asked = step("Set up the VPN", StepStatus.WAITING).copy(skip = skip(accepted = null))
+        val after = step("Read the handbook", StepStatus.WAITING)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(asked, after)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(asked.id) } returns
+            listOf(task("Install the client", finished = true))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("[SKIP REQUESTED, waiting on their PM] “Set up the VPN”")
+        assertThat(text).contains("finishing the step withdraws the request")
+        assertThat(text).contains("[page: /onboarding/${asked.id}]")
+        assertThat(text).contains("The next thing waiting for them: the step “Read the handbook”")
+        // Its checklist is done, but closing it would withdraw the request: not ready to close.
+        assertThat(text).doesNotContain("READY TO CLOSE")
+    }
+
+    @Test
+    fun `a declined skip carries the PM's comment`() {
+        val declined = step("Set up the VPN", StepStatus.WAITING)
+            .copy(skip = skip(accepted = false, reviewComment = "Everyone needs the company VPN."))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(declined)))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("their PM declined it")
+        assertThat(text).contains("their PM's comment on it: “Everyone needs the company VPN.”")
+    }
+
+    @Test
     fun `a locked step's checklist is never the one put in front of the mentor`() {
         val locked = step("Deploy to staging", StepStatus.WAITING, locked = true)
         every { onboardingPathService.findPathForUserId(userId) } returns
@@ -492,6 +527,15 @@ class BuddyPathToolsTest {
         skip = null,
         locked = locked,
         blockerIds = blockers,
+    )
+
+    private fun skip(accepted: Boolean?, reviewComment: String? = null) = GetOnboardingStepSkipResponse(
+        id = UUID.randomUUID(),
+        stepId = UUID.randomUUID(),
+        reason = "I already know this.",
+        accepted = accepted,
+        reviewComment = reviewComment,
+        reviewedAt = null,
     )
 
     private fun task(title: String, finished: Boolean) = GetOnboardingTaskResponse(

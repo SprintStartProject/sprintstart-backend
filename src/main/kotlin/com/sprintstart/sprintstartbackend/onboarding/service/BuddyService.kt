@@ -415,6 +415,7 @@ class BuddyService(
                         onboardingTaskId = proposal.onboardingTaskId?.toString(),
                         answer = proposal.answer,
                         description = proposal.description,
+                        reason = proposal.reason,
                     ),
                 )
             }

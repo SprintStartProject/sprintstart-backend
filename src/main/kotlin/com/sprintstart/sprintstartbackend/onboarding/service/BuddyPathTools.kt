@@ -137,6 +137,8 @@ class BuddyPathTools(
     ): List<GetOnboardingStepsResponse> =
         phase.steps
             .sortedBy { it.position }
+            // Not a step they asked to skip: pushing them to finish it would withdraw the request.
+            .filterNot { it.hasPendingSkip() }
             .filter { step -> checklists[step.id]?.let { it.isNotEmpty() && it.all { task -> task.finished } } == true }
 
     /**
@@ -413,6 +415,7 @@ class BuddyPathTools(
         val state = when {
             step.status == StepStatus.FINISHED -> "done"
             step.status == StepStatus.SKIPPED -> "skipped"
+            step.hasPendingSkip() -> "SKIP REQUESTED, waiting on their PM"
             step.locked -> "LOCKED, cannot be started yet"
             step.status == StepStatus.IN_PROGRESS -> "started"
             else -> "open"
@@ -426,8 +429,17 @@ class BuddyPathTools(
             appendLine("    · should leave them able to: $it")
         }
         appendBlockers(step.locked, step.blockerIds, numbers, titles)
-        // A skip already asked for is the one thing about a step whose state is nowhere else in this
-        // text, and a mentor that cannot see it will offer to request a second one.
+        appendSkip(step)
+    }
+
+    /**
+     * Where a skip request for [step] stands, and what that means for the mentor.
+     *
+     * A skip already asked for is the one thing about a step whose state is nowhere else in this
+     * text, and a mentor that cannot see it will offer to request a second one -- or push the hire
+     * to finish a step whose skip is waiting on their PM, which withdraws the request.
+     */
+    private fun StringBuilder.appendSkip(step: GetOnboardingStepsResponse) {
         step.skip?.let { skip ->
             val verdict = when (skip.accepted) {
                 true -> "their PM accepted it"
@@ -435,6 +447,19 @@ class BuddyPathTools(
                 null -> "nobody has decided yet"
             }
             appendLine("    · they asked to skip this ($verdict): ${quoted(skip.reason)}")
+            // The PM's own words are the most useful thing about a decision, and a declined request
+            // is exactly when the hire will want to talk about why.
+            skip.reviewComment?.takeIf { it.isNotBlank() }?.let {
+                appendLine("    · their PM's comment on it: ${quoted(it)}")
+            }
+            if (skip.accepted == null) {
+                appendLine(
+                    "    · while it is pending, do not push them to do this step, and do not offer " +
+                        "complete_step for it unless they say they did it anyway: finishing the step " +
+                        "withdraws the request. They can change or withdraw the reason on the step's " +
+                        "own page [page: $STEP_PAGE_LINK${step.id}].",
+                )
+            }
         }
     }
 
@@ -600,6 +625,9 @@ class BuddyPathTools(
         )
     }
 
+    /** Whether the hire asked to skip this step and their PM has not decided yet. */
+    private fun GetOnboardingStepsResponse.hasPendingSkip(): Boolean = skip != null && skip.accepted == null
+
     /** Whether a step can still be finished: not locked, and neither finished nor skipped. */
     private fun GetOnboardingStepsResponse.isFinishable(): Boolean =
         !locked && (status == StepStatus.WAITING || status == StepStatus.IN_PROGRESS)
@@ -628,7 +656,11 @@ class BuddyPathTools(
             val step = phase.steps
                 .sortedBy { it.position }
                 .firstOrNull {
-                    !it.locked && it.status != StepStatus.FINISHED && it.status != StepStatus.SKIPPED
+                    !it.locked &&
+                        it.status != StepStatus.FINISHED &&
+                        it.status != StepStatus.SKIPPED &&
+                        // Asked to skip and waiting on the PM: not what to tell them to do next.
+                        !it.hasPendingSkip()
                 }
             val question = phase.questions
                 .sortedBy { it.position }
@@ -701,6 +733,9 @@ class BuddyPathTools(
          * mentor has no way to notice.
          */
         const val STEP_LINK = "/onboarding?step="
+
+        /** A step's own page, where its checklist, its skip request and its reason live. */
+        const val STEP_PAGE_LINK = "/onboarding/"
         const val QUESTION_LINK = "/onboarding?question="
         const val PHASE_LINK = "/onboarding?phase="
 
@@ -747,6 +782,8 @@ class BuddyPathTools(
                 "says what it waits on. Never tell the hire they can go ahead with a locked item, " +
                 "even if they ask directly: say what has to be finished first and offer that " +
                 "instead.\n" +
+                "A step marked SKIP REQUESTED is waiting on their PM: do not push them to do it. " +
+                "When they want to skip a step, that is request_skip -- their PM decides.\n" +
                 "It does not tell you which answer to a question is correct -- that is deliberate, " +
                 "and you must not guess one aloud: explain the material and let the hire answer. " +
                 "Reading it changes nothing. Takes no arguments -- it always reads the caller.",

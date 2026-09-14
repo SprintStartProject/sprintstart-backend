@@ -53,7 +53,7 @@ class BuddyActionService(
     /**
      * The action tools the AI reasoner is told it may propose, alongside the read-only tools.
      *
-     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the four
+     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the
      * path actions have a subject that may not exist. A mentor handed `complete_step` for somebody
      * with no onboarding path will offer to tick a step off a plan they have not got.
      */
@@ -390,6 +390,7 @@ class BuddyActionService(
                     BuddyActionType.COMPLETE_TASK,
                     BuddyActionType.ANSWER_QUESTION,
                     BuddyActionType.ADD_PATH_STEP,
+                    BuddyActionType.REQUEST_SKIP,
                     -> error("handled above")
                 }
             }
@@ -574,6 +575,7 @@ class BuddyActionService(
             BuddyActionType.COMPLETE_TASK -> "tick a line off their checklist"
             BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
             BuddyActionType.ADD_PATH_STEP -> "add a step to their path"
+            BuddyActionType.REQUEST_SKIP -> "ask their PM to skip a step"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -609,6 +611,8 @@ class BuddyActionService(
         val onboardingTaskId: UUID? = null,
         val answer: String? = null,
         val description: String? = null,
+        /** The reason `request_skip` would send to the PM. */
+        val reason: String? = null,
     )
 
     private sealed interface ProjectResolution {

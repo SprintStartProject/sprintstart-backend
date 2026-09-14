@@ -78,6 +78,15 @@ enum class BuddyActionType(
      * line of progress or do nothing at all.
      */
     COMPLETE_TASK("complete_task", "Tick this off"),
+
+    /**
+     * Asks the hire's PM to let them skip one step of their path, with the hire's reason.
+     *
+     * A *request*, and the PM's decision -- exactly the one the step page files. The mentor helps put
+     * the reason into words, and the button shows the whole of it, because it is sent to a person in
+     * the hire's name.
+     */
+    REQUEST_SKIP("request_skip", "Ask your PM to skip this"),
     ;
 
     companion object {

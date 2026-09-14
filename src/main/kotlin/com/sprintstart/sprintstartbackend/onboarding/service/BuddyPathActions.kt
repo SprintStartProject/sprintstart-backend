@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.question.SubmitQuestionAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.CreateOnboardingSkipRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
@@ -32,7 +33,7 @@ import java.util.UUID
 /**
  * The actions that let a conversation move the hire along their onboarding path.
  *
- * A component of its own rather than four more branches in [BuddyActionService], for the reason
+ * A component of its own rather than more branches in [BuddyActionService], for the reason
  * [BuddyBoardTools] is one: they share a subject that the rest of the catalog does not touch, and
  * they come as a set. [BuddyActionService] still owns the propose/confirm contract — it routes to
  * this and emits what comes back — so there is exactly one place where an action becomes a button.
@@ -59,6 +60,7 @@ class BuddyPathActions(
     private val onboardingStepService: OnboardingStepService,
     private val onboardingTaskService: OnboardingTaskService,
     private val questionAttemptService: QuestionAttemptService,
+    private val onboardingSkipService: OnboardingSkipService,
     private val userApi: UserApi,
 ) {
     /**
@@ -74,7 +76,7 @@ class BuddyPathActions(
         if (!buddyPathTools.hasPath(userId)) {
             emptyList()
         } else {
-            listOf(COMPLETE_STEP_SPEC, COMPLETE_TASK_SPEC, ANSWER_QUESTION_SPEC, ADD_PATH_STEP_SPEC)
+            listOf(COMPLETE_STEP_SPEC, COMPLETE_TASK_SPEC, ANSWER_QUESTION_SPEC, ADD_PATH_STEP_SPEC, REQUEST_SKIP_SPEC)
         }
 
     /** Whether [type] is one of this component's actions. */
@@ -82,10 +84,11 @@ class BuddyPathActions(
         type == BuddyActionType.COMPLETE_STEP ||
             type == BuddyActionType.COMPLETE_TASK ||
             type == BuddyActionType.ANSWER_QUESTION ||
-            type == BuddyActionType.ADD_PATH_STEP
+            type == BuddyActionType.ADD_PATH_STEP ||
+            type == BuddyActionType.REQUEST_SKIP
 
     /**
-     * Offers one of the four, checked against the hire's own path before the hire sees a button.
+     * Offers one of them, checked against the hire's own path before the hire sees a button.
      *
      * Every precondition is resolved here rather than at confirm time, for the reason the assessment
      * proposal gives: a step that is already finished, a locked question, an answer that matches no
@@ -104,6 +107,7 @@ class BuddyPathActions(
             BuddyActionType.COMPLETE_STEP -> proposeCompleteStep(call, type, userId)
             BuddyActionType.COMPLETE_TASK -> proposeCompleteTask(call, type, userId)
             BuddyActionType.ANSWER_QUESTION -> proposeAnswer(call, type, userId)
+            BuddyActionType.REQUEST_SKIP -> proposeSkip(call, type, userId)
             else -> proposeAddPathStep(call, type, userId)
         }
 
@@ -117,6 +121,7 @@ class BuddyPathActions(
             BuddyActionType.COMPLETE_STEP -> completeStep(authId, request.stepId)
             BuddyActionType.COMPLETE_TASK -> completeTask(authId, request.onboardingTaskId)
             BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request.questionId, request.answer)
+            BuddyActionType.REQUEST_SKIP -> requestSkip(authId, request.stepId, request.reason)
             else -> addPathStep(authId, request.phaseId, request.title, request.description)
         }
 
@@ -157,13 +162,28 @@ class BuddyPathActions(
         }
         if (refusal != null) return refused(refusal)
 
+        // Finishing a step withdraws a skip request still waiting on the PM. Allowed -- somebody who
+        // did the step anyway should be able to close it -- but never without saying so, on the
+        // button and to the mentor, because nothing else would tell them the request is gone.
+        val pendingSkip = step.skip != null && step.skip.accepted == null
+        val withdraws = if (pendingSkip) {
+            " They asked their PM to skip this step and nobody has decided yet: finishing it withdraws " +
+                "that request, so say so plainly before they click."
+        } else {
+            ""
+        }
+
         return BuddyActionService.ProposeOutcome(
             toolResult = "Proposed to the hire: mark “${step.title}” as done. They see a confirm " +
                 "button and nothing changes unless they click it. Ask whether they have actually " +
-                "done it — never say that it is done.",
+                "done it — never say that it is done.$withdraws",
             proposal = BuddyActionService.BuddyActionProposal(
                 action = type.toolName,
-                label = "Mark “${step.title}” as done",
+                label = if (pendingSkip) {
+                    "Mark “${step.title}” as done (withdraws your skip request)"
+                } else {
+                    "Mark “${step.title}” as done"
+                },
                 question = null,
                 stepId = step.id,
             ),
@@ -238,6 +258,93 @@ class BuddyPathActions(
                 questionId = question.id,
                 answer = answer,
             ),
+        )
+    }
+
+    /**
+     * Offers to send the hire's skip request for one step to their PM.
+     *
+     * The same request the step page files, reached from a conversation: the mentor's part is
+     * helping the hire say *why*, because a reason the PM can act on is the difference between a
+     * request that is decided and one that sits. The reason goes out in the hire's name, so the
+     * proposal carries all of it and the button shows it before anything is sent.
+     *
+     * Checked here rather than left to the route, so the mentor hears "already asked" or "already
+     * done" while it can still say something useful about it.
+     */
+    private fun proposeSkip(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        userId: UUID,
+    ): BuddyActionService.ProposeOutcome {
+        val stepId = call.uuidArg("step_id")
+            ?: return refused(
+                "No step_id was provided. Read get_my_onboarding_path and pass the step_id of the " +
+                    "step they want to skip.",
+            )
+        val step = buddyPathTools.findStep(userId, stepId)
+            ?: return refused(
+                "No step of this hire's own path has that id. Read get_my_onboarding_path again.",
+            )
+        val reason = call.stringArg("reason").trim()
+        val previous = step.skip
+
+        val refusal = when {
+            step.status == StepStatus.FINISHED ->
+                "“${step.title}” is already done, so there is nothing to skip."
+            step.status == StepStatus.SKIPPED ->
+                "“${step.title}” is already skipped — their PM accepted it."
+            previous != null && previous.accepted == null ->
+                "They already asked to skip “${step.title}” and their PM has not decided yet. A second " +
+                    "request cannot be sent; they can change the reason on the step's own page " +
+                    "(${BuddyPathTools.STEP_PAGE_LINK}${step.id})."
+            reason.isBlank() ->
+                "No reason was provided. Their PM decides on the reason, so ask why they want to skip " +
+                    "it — already know it, not relevant to their role, covered elsewhere — and put " +
+                    "that into a sentence or two before offering this again."
+            else -> null
+        }
+        if (refusal != null) return refused(refusal)
+
+        // A declined request can be asked again, and the PM said why the first time. The new reason
+        // should answer that, or it will be declined for the same thing.
+        val declinedBefore = previous
+            ?.takeIf { it.accepted == false }
+            ?.let { declined ->
+                " Their PM declined an earlier request" +
+                    (declined.reviewComment?.takeIf { it.isNotBlank() }?.let { " with: “$it”" } ?: "") +
+                    " — make sure this reason addresses that."
+            }.orEmpty()
+
+        return BuddyActionService.ProposeOutcome(
+            toolResult = "Proposed to the hire: ask their PM to skip “${step.title}”, with the reason " +
+                "“$reason”. They see a confirm button showing that reason, and nothing is sent unless " +
+                "they click it. Their PM decides; until then the step stays on their path, and if it " +
+                "is accepted it counts as done and unlocks what waits on it. Do not promise it will " +
+                "be accepted.$declinedBefore",
+            proposal = BuddyActionService.BuddyActionProposal(
+                action = type.toolName,
+                label = "Ask your PM to skip “${step.title}”",
+                question = null,
+                stepId = step.id,
+                reason = reason,
+            ),
+        )
+    }
+
+    /** Files the confirmed skip request through the hire's own route, which owns every rule about it. */
+    private fun requestSkip(authId: String, stepId: UUID?, reason: String?): BuddyActionResponse {
+        if (stepId == null || reason.isNullOrBlank()) {
+            return BuddyActionResponse(ok = false, message = "No skip request was proposed to send.")
+        }
+        val step = buddyPathTools.findStep(resolveUserId(authId), stepId)
+            ?: return BuddyActionResponse(ok = false, message = "That step isn't on your path.")
+
+        onboardingSkipService.createOnboardingSkipForMe(authId, stepId, CreateOnboardingSkipRequest(reason = reason))
+        return BuddyActionResponse(
+            ok = true,
+            message = "Sent — your PM will decide on skipping “${step.title}”. Until then it stays on " +
+                "your path; you can change or withdraw the reason on the step's page.",
         )
     }
 
@@ -658,6 +765,41 @@ class BuddyPathActions(
                 putJsonArray("required") {
                     add("question_id")
                     add("answer")
+                }
+            },
+        )
+
+        val REQUEST_SKIP_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.REQUEST_SKIP.toolName,
+            description = "Offer to send the hire's request to skip one step of their onboarding path " +
+                "to their PM. Read get_my_onboarding_path for the step_id. Use it when THEY want to " +
+                "skip a step — never suggest skipping to get through the path faster, and never for a " +
+                "step just because it looks hard. Their PM decides, so the reason is what matters: " +
+                "ask why before you offer this, help them put it into one or two clear sentences " +
+                "(what they already know, why it does not apply to their role, where it is covered " +
+                "already), and pass that. It goes out in their name, so it must say what they said, " +
+                "not what you think. This does NOT send anything by itself; they see a confirm button " +
+                "with the reason. Do not promise it will be accepted. A step that already has a " +
+                "request waiting cannot get a second one.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("step_id") {
+                        put("type", "string")
+                        put("description", "The step_id from get_my_onboarding_path.")
+                    }
+                    putJsonObject("reason") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "Why they want to skip it, in one or two sentences their PM can decide on, " +
+                                "written as the hire.",
+                        )
+                    }
+                }
+                putJsonArray("required") {
+                    add("step_id")
+                    add("reason")
                 }
             },
         )

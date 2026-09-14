@@ -57,4 +57,6 @@ data class BuddyActionRequest(
     val answer: String? = null,
     /** What a step added by `add_path_step` is about, one or two sentences. */
     val description: String? = null,
+    /** The reason `request_skip` sends to the PM, in the words the hire confirmed. */
+    val reason: String? = null,
 )

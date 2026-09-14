@@ -2,18 +2,22 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.question.SubmitQuestionAttemptRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.CreateOnboardingSkipRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.SubmitQuestionAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.CreateOnboardingSkipResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingStepSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.CreateOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
@@ -35,7 +39,7 @@ import java.util.Optional
 import java.util.UUID
 
 /**
- * The four actions that let a conversation move somebody along their onboarding path.
+ * The actions that let a conversation move somebody along their onboarding path.
  *
  * The through-line, and the reason each of these is a *proposal*: **the mentor may say what it
  * thinks, and the hire is the one who changes their own onboarding.** Three rules follow, and every
@@ -51,9 +55,10 @@ class BuddyPathActionTest {
     private val onboardingStepService: OnboardingStepService = mockk()
     private val onboardingTaskService: OnboardingTaskService = mockk()
     private val questionAttemptService: QuestionAttemptService = mockk()
+    private val onboardingSkipService: OnboardingSkipService = mockk()
     private val userApi: UserApi = mockk()
 
-    // The real path component behind a real action service: these cases are about the four actions
+    // The real path component behind a real action service: these cases are about the path actions
     // *and* about BuddyActionService routing them around the project gate, and mocking the component
     // would test the routing against nothing.
     private val pathActions = BuddyPathActions(
@@ -61,6 +66,7 @@ class BuddyPathActionTest {
         onboardingStepService = onboardingStepService,
         onboardingTaskService = onboardingTaskService,
         questionAttemptService = questionAttemptService,
+        onboardingSkipService = onboardingSkipService,
         userApi = userApi,
     )
 
@@ -410,6 +416,105 @@ class BuddyPathActionTest {
         assertThat(submitted.captured.selectedOptionIds).isEmpty()
     }
 
+    // -- request_skip -----------------------------------------------------------------------------
+
+    @Test
+    fun `a skip request without a reason sends the mentor back to ask why`() {
+        // The PM decides on the reason; a request with none is one that sits.
+        val step = step("Set up the VPN", StepStatus.WAITING)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(call("request_skip", "step_id" to step.id.toString()), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("ask why they want to skip it")
+    }
+
+    @Test
+    fun `a step already waiting on a skip decision cannot get a second request`() {
+        val step = step("Set up the VPN", StepStatus.WAITING).copy(skip = skip(accepted = null))
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(
+            call("request_skip", "step_id" to step.id.toString(), "reason" to "I already have access."),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("has not decided yet")
+        // Where they can change it instead, since a second request is not possible.
+        assertThat(outcome.toolResult).contains("/onboarding/${step.id}")
+    }
+
+    @Test
+    fun `the skip proposal carries the reason, and proposing sends nothing`() {
+        val step = step("Set up the VPN", StepStatus.WAITING)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(
+            call("request_skip", "step_id" to step.id.toString(), "reason" to "I already have VPN access."),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.label).isEqualTo("Ask your PM to skip “Set up the VPN”")
+        assertThat(outcome.proposal?.reason).isEqualTo("I already have VPN access.")
+        assertThat(outcome.toolResult).contains("Do not promise it will be accepted")
+        verify(exactly = 0) { onboardingSkipService.createOnboardingSkipForMe(any(), any(), any()) }
+    }
+
+    @Test
+    fun `asking again after a decline puts the PM's comment in front of the mentor`() {
+        val step = step("Set up the VPN", StepStatus.WAITING)
+            .copy(skip = skip(accepted = false, reviewComment = "Everyone needs the company VPN."))
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(
+            call("request_skip", "step_id" to step.id.toString(), "reason" to "I work on-site only."),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNotNull()
+        assertThat(outcome.toolResult).contains("“Everyone needs the company VPN.”")
+        assertThat(outcome.toolResult).contains("addresses that")
+    }
+
+    @Test
+    fun `a confirmed skip request goes through the hire's own skip route`() = runTest {
+        val step = step("Set up the VPN", StepStatus.WAITING)
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+        val sent = slot<CreateOnboardingSkipRequest>()
+        every { onboardingSkipService.createOnboardingSkipForMe(authId, step.id, capture(sent)) } returns
+            CreateOnboardingSkipResponse(
+                id = UUID.randomUUID(),
+                stepId = step.id,
+                status = SkipStatus.PENDING,
+                reason = "I already have VPN access.",
+                createdAt = Instant.EPOCH,
+            )
+
+        val result = service.perform(
+            BuddyActionRequest(action = "request_skip", stepId = step.id, reason = "I already have VPN access."),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(sent.captured.reason).isEqualTo("I already have VPN access.")
+        assertThat(result.message).contains("your PM will decide")
+    }
+
+    @Test
+    fun `completing a step with a pending skip says on the button that it withdraws the request`() {
+        // The completion route drops a pending skip. Allowed, but never silently.
+        val step = step("Set up the VPN", StepStatus.IN_PROGRESS).copy(skip = skip(accepted = null))
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(call("complete_step", "step_id" to step.id.toString()), userId)
+
+        assertThat(outcome.proposal?.label).contains("withdraws your skip request")
+        assertThat(outcome.toolResult).contains("finishing it withdraws that request")
+    }
+
     // -- add_path_step ----------------------------------------------------------------------------
 
     @Test
@@ -555,6 +660,15 @@ class BuddyPathActionTest {
             QuestionOptionForUserResponse(id = UUID.randomUUID(), position = index, label = label)
         },
         status = status,
+    )
+
+    private fun skip(accepted: Boolean?, reviewComment: String? = null) = GetOnboardingStepSkipResponse(
+        id = UUID.randomUUID(),
+        stepId = UUID.randomUUID(),
+        reason = "I already know this.",
+        accepted = accepted,
+        reviewComment = reviewComment,
+        reviewedAt = null,
     )
 
     private fun task(title: String, finished: Boolean, stepId: UUID) = GetOnboardingTaskResponse(
