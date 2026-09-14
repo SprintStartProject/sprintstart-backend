@@ -314,6 +314,52 @@ class BoardService(
     }
 
     /**
+     * Adds lines to the end of one of the hire's checklists, and can do nothing else to it.
+     *
+     * **Append-only, enforced here rather than asked of the caller.** [editAuthoredCard] replaces a
+     * card's content whole, which is right for the hire editing their own card and wrong for the
+     * mentor adding to one: given the whole list to send back, a model that rewords a line it
+     * dislikes, drops one it thinks is done, or reorders them into what it considers a better
+     * sequence has silently edited the hire's card, and the hire has no way to see what changed.
+     * So the existing items are read from storage and copied through untouched — their ids, their
+     * words, their ticks — and the new lines can only land after them.
+     *
+     * Ids are minted here for the new lines, the same way [addAuthoredCard] mints them, so a tick
+     * still lands on a line rather than on a position.
+     *
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when it is a
+     * card of another kind.
+     */
+    fun appendChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): BoardCardResponse {
+        val (card, board) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = json.decodeFromString<BoardCardPayload>(card.payload) as? ChecklistPayload
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That card holds no checklist")
+
+        val added = lines.filter { it.isNotBlank() }
+        if (added.isEmpty()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
+        }
+
+        card.payload = json.encodeToString<BoardCardPayload>(
+            existing.copy(
+                items = existing.items +
+                    added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+            ),
+        )
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        val member = memberOrNull(userId, board.projectId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
+        return card.toResponse(
+            member,
+            board.projectId,
+            timeline = null,
+            arrivalSteps = arrivalStepService.forHire(member.userId),
+        )
+    }
+
+    /**
      * Puts the hire's cards in the order they asked for.
      *
      * Takes the whole order, not a from/to pair. Ids not on this board are ignored, not rejected.

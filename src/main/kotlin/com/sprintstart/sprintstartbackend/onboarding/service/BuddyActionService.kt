@@ -7,6 +7,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistItemRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
@@ -42,7 +44,7 @@ import org.springframework.web.server.ResponseStatusException
  * project the buddy did not scope it to, nor act as another hire.
  */
 @Service
-@Suppress("TooManyFunctions") // Seven wrapped actions, each with a propose + a perform helper.
+@Suppress("TooManyFunctions") // Eleven wrapped actions, each with a propose + a perform helper.
 class BuddyActionService(
     private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
@@ -64,6 +66,9 @@ class BuddyActionService(
             SET_GITHUB_LOGIN_SPEC,
             RECORD_ASSESSMENT_SPEC,
             PLACE_CHECKLIST_SPEC,
+            AMEND_CHECKLIST_SPEC,
+            PLACE_LINK_SPEC,
+            PLACE_NOTE_SPEC,
         )
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
@@ -137,6 +142,9 @@ class BuddyActionService(
             }
             BuddyActionType.REQUEST_ATTESTATION -> proposeAttestation(call, type, project.name)
             BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, project.name)
+            BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, project.name)
+            BuddyActionType.PLACE_LINK -> proposeLink(call, type, project.name)
+            BuddyActionType.PLACE_NOTE -> proposeNote(call, type, project.name)
             else -> proposed(type, project.name, question = null)
         }
     }
@@ -361,6 +369,153 @@ class BuddyActionService(
     }
 
     /**
+     * Offers to add lines to a checklist the hire already has.
+     *
+     * Takes only the *new* lines, never the whole list. The mentor is not asked to send back what
+     * is already on the card, so there is no version of this where it quietly rewords or drops one
+     * — see `BoardService.appendChecklistItems`, which is where that guarantee lives.
+     *
+     * The card id comes from `read_board`, which is the only place the mentor learns that a
+     * checklist exists at all.
+     */
+    private fun proposeAmendment(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val cardId = call.uuidArg("card_id")
+        val items = call.stringListArg("items")
+        return when {
+            cardId == null ->
+                ProposeOutcome(
+                    "No card_id was provided. Read read_board to find the checklist you mean, and " +
+                        "pass its id.",
+                    null,
+                )
+            items.isEmpty() ->
+                ProposeOutcome("No lines were provided to add.", null)
+            else -> proposed(
+                type,
+                projectName,
+                question = null,
+                cardId = cardId,
+                checklistItems = items.take(MAX_CHECKLIST_ITEMS),
+            )
+        }
+    }
+
+    /**
+     * Offers to keep a link the mentor cited.
+     *
+     * `http(s)` only, and the same check `LinkCard` relies on for what it renders into an `href`.
+     * The mentor reads project material that came from elsewhere, so a `javascript:` or `data:`
+     * address in somebody's issue body is not something to mint a card from.
+     */
+    private fun proposeLink(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val url = call.stringArg("url").trim()
+        val label = call.stringArg("label").trim().take(MAX_CHECKLIST_TITLE).ifBlank { null }
+        return when {
+            !isHttpUrl(url) ->
+                ProposeOutcome(
+                    "That is not an http or https address, so there is no link to keep. Offer one " +
+                        "from a citation you actually read rather than one you remember.",
+                    null,
+                )
+            else -> proposed(type, projectName, question = null, linkUrl = url, linkLabel = label)
+        }
+    }
+
+    /**
+     * Offers to keep an explanation as a note.
+     *
+     * Refuses a note that is only a heading's worth of words: every reply already carries a button
+     * that keeps the whole answer, so a card holding one sentence out of it is worth less than the
+     * thing the hire could have pressed anyway.
+     */
+    private fun proposeNote(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val text = call.stringArg("text").trim()
+        return when {
+            text.length < MIN_NOTE_LENGTH ->
+                ProposeOutcome(
+                    "That is too short to be worth a card of its own — say it in the reply instead.",
+                    null,
+                )
+            else -> proposed(type, projectName, question = null, noteText = text.take(MAX_NOTE_LENGTH))
+        }
+    }
+
+    /** Adds the proposed lines to the hire's card, and can do nothing else to it. */
+    private fun amendChecklist(
+        userId: UUID,
+        cardId: UUID?,
+        items: List<String>?,
+    ): BuddyActionResponse {
+        if (cardId == null) {
+            return BuddyActionResponse(ok = false, message = "No card was proposed to add to.")
+        }
+        val lines = items.orEmpty()
+            .map { it.trim().take(MAX_CHECKLIST_ITEM_LENGTH) }
+            .filter { it.isNotBlank() }
+            .take(MAX_CHECKLIST_ITEMS)
+        if (lines.isEmpty()) {
+            return BuddyActionResponse(ok = false, message = "There was nothing left to add.")
+        }
+
+        return try {
+            boardService.appendChecklistItems(userId, cardId, lines)
+            BuddyActionResponse(
+                ok = true,
+                message = "Added ${lines.size} to that list. Nothing else on it changed.",
+            )
+        } catch (ex: ResponseStatusException) {
+            // A card that is not theirs, or not a checklist. Both are things the hire can see for
+            // themselves, so they come back as the sentence rather than as a failed confirm.
+            BuddyActionResponse(ok = false, message = ex.reason ?: "That list could not be added to.")
+        }
+    }
+
+    private fun placeLink(
+        userId: UUID,
+        projectId: UUID,
+        url: String?,
+        label: String?,
+    ): BuddyActionResponse {
+        val address = url?.trim().orEmpty()
+        if (!isHttpUrl(address)) {
+            return BuddyActionResponse(ok = false, message = "There was no address to keep.")
+        }
+
+        boardService.addAuthoredCard(
+            userId,
+            projectId,
+            LinkCardRequest(url = address, label = label?.trim()?.take(MAX_CHECKLIST_TITLE)?.ifBlank { null }),
+        )
+        return BuddyActionResponse(ok = true, message = "Kept on your board — it'll be there tomorrow.")
+    }
+
+    private fun placeNote(userId: UUID, projectId: UUID, text: String?): BuddyActionResponse {
+        val body = text?.trim()?.take(MAX_NOTE_LENGTH).orEmpty()
+        if (body.length < MIN_NOTE_LENGTH) {
+            return BuddyActionResponse(ok = false, message = "There was no note left to keep.")
+        }
+
+        boardService.addAuthoredCard(userId, projectId, NoteCardRequest(text = body))
+        return BuddyActionResponse(ok = true, message = "Kept on your board. It's yours — edit it as you like.")
+    }
+
+    /** Whether this is an address worth putting behind a link. Same rule the client's card renders by. */
+    private fun isHttpUrl(candidate: String): Boolean =
+        candidate.startsWith("http://") || candidate.startsWith("https://")
+
+    /**
      * Runs a confirmed action on behalf of [jwt]'s user, scoped to their re-resolved project.
      *
      * Never throws for a handled outcome: an expected precondition failure ("no eligible Task 0",
@@ -437,6 +592,16 @@ class BuddyActionService(
                         request.checklistTitle,
                         request.checklistItems,
                     )
+                    BuddyActionType.AMEND_CHECKLIST ->
+                        amendChecklist(resolved.userId, request.cardId, request.checklistItems)
+                    BuddyActionType.PLACE_LINK -> placeLink(
+                        resolved.userId,
+                        resolved.projectId,
+                        request.linkUrl,
+                        request.linkLabel,
+                    )
+                    BuddyActionType.PLACE_NOTE ->
+                        placeNote(resolved.userId, resolved.projectId, request.noteText)
                     BuddyActionType.OPEN_ORIENTATION,
                     // Not project-scoped, so these return before the project gate this dispatch
                     // sits behind.
@@ -592,6 +757,10 @@ class BuddyActionService(
         githubLogin: String? = null,
         checklistTitle: String? = null,
         checklistItems: List<String>? = null,
+        cardId: UUID? = null,
+        linkUrl: String? = null,
+        linkLabel: String? = null,
+        noteText: String? = null,
     ): ProposeOutcome =
         ProposeOutcome(
             toolResult = "Proposed to the hire on $projectName: “${type.label}”. They will see a confirm " +
@@ -610,6 +779,10 @@ class BuddyActionService(
                 githubLogin = githubLogin,
                 checklistTitle = checklistTitle,
                 checklistItems = checklistItems,
+                cardId = cardId,
+                linkUrl = linkUrl,
+                linkLabel = linkLabel,
+                noteText = noteText,
             ),
         )
 
@@ -678,6 +851,9 @@ class BuddyActionService(
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
             BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
+            BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
+            BuddyActionType.PLACE_LINK -> "keep a link on your board"
+            BuddyActionType.PLACE_NOTE -> "keep a note on your board"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -704,6 +880,13 @@ class BuddyActionService(
         /** `place_checklist` confirm payload: the list as the hire will read it before confirming. */
         val checklistTitle: String? = null,
         val checklistItems: List<String>? = null,
+        /** `amend_checklist`: the card being added to, and only the lines being added. */
+        val cardId: UUID? = null,
+        /** `place_link` confirm payload. */
+        val linkUrl: String? = null,
+        val linkLabel: String? = null,
+        /** `place_note` confirm payload. */
+        val noteText: String? = null,
     )
 
     private sealed interface ProjectResolution {
@@ -746,6 +929,17 @@ class BuddyActionService(
 
         /** A heading length: long enough to say what the list is, short enough not to wrap. */
         const val MAX_CHECKLIST_TITLE = 120
+
+        /**
+         * The fewest characters worth a note card of its own.
+         *
+         * Every reply already carries a button that keeps the whole answer, so a card holding one
+         * short sentence out of it is worth less than the thing the hire could have pressed anyway.
+         */
+        const val MIN_NOTE_LENGTH = 80
+
+        /** Past this a note is a document. `NoteCard` already folds a long one behind a count. */
+        const val MAX_NOTE_LENGTH = 2000
 
         private fun noArgs() = buildJsonObject {
             put("type", "object")
@@ -871,6 +1065,92 @@ class BuddyActionService(
                     add("title")
                     add("items")
                 }
+            },
+        )
+
+        val AMEND_CHECKLIST_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.AMEND_CHECKLIST.toolName,
+            description = "Offer to add steps to a checklist the hire ALREADY has, instead of " +
+                "making a second card beside it. Use it when they have worked through part of a " +
+                "list and ask what comes next, or when something you have just explained is the " +
+                "next step on a list they are already ticking. Read read_board first and pass that " +
+                "card's id. Pass ONLY the new lines — never the ones already on the card. You " +
+                "cannot reword, re-order or remove what is there, and you should not try: those " +
+                "lines are the hire's, even the ones you suggested, and the card is what they are " +
+                "working from. This does NOT write anything by itself; they see a confirm button " +
+                "showing only what would be added.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("card_id") {
+                        put("type", "string")
+                        put("description", "The checklist card's id, exactly as read_board gave it.")
+                    }
+                    putJsonObject("items") {
+                        put("type", "array")
+                        put("description", "Only the new lines, in the order they should be done.")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                }
+                putJsonArray("required") {
+                    add("card_id")
+                    add("items")
+                }
+            },
+        )
+
+        val PLACE_LINK_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.PLACE_LINK.toolName,
+            description = "Offer to keep a link on the hire's board — a runbook, a guide, a page " +
+                "you have just pointed them at. Use it when your answer sends them somewhere they " +
+                "will need again: the conversation is not replayed, so a link they were only told " +
+                "about is one they will search for tomorrow. Pass an address you actually read in " +
+                "a citation from this project's material, never one you remember or guess — a " +
+                "card is a promise that the address works. http and https only. Give a label in " +
+                "the words they would recognise it by, not the bare URL. This does NOT write " +
+                "anything by itself; the hire sees a confirm button with the link on it.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("url") {
+                        put("type", "string")
+                        put("description", "The address, from a citation you read. http(s) only.")
+                    }
+                    putJsonObject("label") {
+                        put("type", "string")
+                        put("description", "What to call it, in a few words the hire would recognise.")
+                    }
+                }
+                putJsonArray("required") {
+                    add("url")
+                    add("label")
+                }
+            },
+        )
+
+        val PLACE_NOTE_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.PLACE_NOTE.toolName,
+            description = "Offer to keep an explanation you have just given as a note on the " +
+                "hire's board. Use it sparingly and only for something that will still be true " +
+                "and still be needed next week — how a part of this system works, a convention " +
+                "the team holds to. Not for an answer about right now, and not for steps: those " +
+                "are place_checklist. Pass the explanation in your own words from the reply, " +
+                "shortened to what is worth keeping. Every reply already carries a button that " +
+                "keeps the whole answer, so only offer this when a card is better than that. This " +
+                "does NOT write anything by itself; the hire sees a confirm button with the text " +
+                "on it, and the note is theirs to edit afterwards.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("text") {
+                        put("type", "string")
+                        put(
+                            "description",
+                            "The note, in your words from the reply. Markdown; first line is the heading.",
+                        )
+                    }
+                }
+                putJsonArray("required") { add("text") }
             },
         )
 

@@ -56,6 +56,38 @@ enum class BuddyActionType(
      * like a markdown list and the hire would otherwise be left retyping it.
      */
     PLACE_CHECKLIST("place_checklist", "Keep this as a checklist"),
+
+    /**
+     * Adds lines to a checklist the hire already has.
+     *
+     * The half of [PLACE_CHECKLIST] that stops the board filling with near-duplicates: a hire who
+     * finishes two steps and asks what comes next should get the answer on the card they are
+     * already ticking, not on a second one beside it.
+     *
+     * Append-only, and that is enforced in `BoardService.appendChecklistItems` rather than asked of
+     * the mentor. Their existing lines come back untouched — same words, same ids, same ticks — and
+     * the confirm shows only what would be added, because a change you cannot see is one you cannot
+     * agree to.
+     */
+    AMEND_CHECKLIST("amend_checklist", "Add these to the list"),
+
+    /**
+     * Keeps a link the mentor cited as a card.
+     *
+     * The lowest-risk of the authored actions: the address comes from material this project has
+     * ingested rather than from the model's memory, so the one thing on the card that has to be
+     * exactly right is the one thing it did not invent.
+     */
+    PLACE_LINK("place_link", "Keep this link"),
+
+    /**
+     * Keeps an explanation the mentor just gave as a note.
+     *
+     * The weakest of the four on its own — every reply already carries a "keep this answer" button
+     * that needs no tool. What this adds is the mentor *offering* when it can tell the answer is
+     * worth having tomorrow, rather than waiting to be asked.
+     */
+    PLACE_NOTE("place_note", "Keep this as a note"),
     ;
 
     companion object {

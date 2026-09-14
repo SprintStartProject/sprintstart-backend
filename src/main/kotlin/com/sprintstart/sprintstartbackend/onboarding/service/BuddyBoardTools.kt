@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardStage
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
@@ -166,6 +167,28 @@ class BuddyBoardTools(
                         if (mark.length > QUOTE_LIMIT) mark.take(QUOTE_LIMIT) + "…" else mark
                     }
                     append(NEWLINE + "- " + BoardReading.nameOf(card) + ": \"" + words + "\"")
+                }
+            }
+
+            // Inline rather than an appender of its own, for the reason the pinned block above
+            // gives: this class is at detekt's ceiling on how many functions it may have.
+            //
+            // Ids appear here and nowhere else on purpose. Every other line of this read is written
+            // to be *said* — names, counts, what waits on what — and an id in one of those is a
+            // thing the mentor would end up reading out. `amend_checklist` needs exactly one id and
+            // only for the hire's own checklists, so that is the whole of what this lists.
+            val amendable = cards
+                .asSequence()
+                .filter { it.kind == BoardCardKind.CHECKLIST && it.owner == BoardCardOwner.HIRE }
+                .take(LIST_LIMIT)
+                .toList()
+            if (amendable.isNotEmpty()) {
+                append(NEWLINE + NEWLINE)
+                append("Checklists of theirs you can add steps to with amend_checklist, rather than ")
+                append("making a second card beside one. The id is for the tool only — never say it ")
+                append("to the hire:")
+                amendable.forEach { card ->
+                    append(NEWLINE + "- " + BoardReading.nameOf(card) + " (id: " + card.id + ")")
                 }
             }
 
