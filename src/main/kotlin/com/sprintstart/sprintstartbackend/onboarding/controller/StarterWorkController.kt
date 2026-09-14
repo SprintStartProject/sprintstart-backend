@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkCandidateResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkTaskProposalResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.UnreviewedStarterWorkResponse
+import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkPoolReconciler
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkTaskProposalService
 import com.sprintstart.sprintstartbackend.onboarding.service.UserGoalService
 import io.swagger.v3.oas.annotations.Operation
@@ -50,6 +51,7 @@ import java.util.UUID
 @Suppress("TooManyFunctions")
 class StarterWorkController(
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
+    private val starterWorkPoolReconciler: StarterWorkPoolReconciler,
     private val userGoalService: UserGoalService,
 ) {
 //  ========================== Endpoints for admins ==========================
@@ -235,6 +237,34 @@ class StarterWorkController(
     @GetMapping("/pool")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun listPool(): List<StarterWorkTaskProposalResponse> = starterWorkTaskProposalService.listPool()
+
+    /**
+     * Brings the pool back in line with its trackers now, rather than waiting for the next pass.
+     *
+     * Reconciliation already runs on a schedule and whenever a tracker fetch completes, so this is
+     * not how the pool normally stays current. It is here for the times somebody needs the answer
+     * immediately and knows it: an issue closed seconds ago, a demonstration, a PM who wants to see
+     * the pool as it stands before acting on it.
+     *
+     * Synchronous, unlike the event-driven path — the caller is waiting, and the counts are the
+     * answer they asked for.
+     */
+    @Operation(
+        summary = "Reconcile the starter-work pool against its sources",
+        description = "Compares every live and stale pool row against the ingested corpus, marking closed " +
+            "issues stale and returning reopened ones to the pool. Rejected tasks are never touched.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Reconciliation ran; the body says what changed"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/reconcile")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    fun reconcile(): StarterWorkPoolReconciler.Outcome = starterWorkPoolReconciler.reconcile()
 
     /**
      * Records that somebody has looked at a starter-work task and is happy with it.

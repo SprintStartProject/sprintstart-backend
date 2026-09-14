@@ -31,9 +31,11 @@ class AssignedIssueReader(
         const val STATUS_FIELD = "status"
         const val ASSIGNEE_FIELD = "assignee"
 
-        // Jira's own category name for "finished", independent of whatever a team called the
-        // status itself -- one board's "Done" is another's "Shipped" or "Akzeptiert".
-        const val DONE_CATEGORY = "Done"
+        // Jira's own category key for "finished", independent of whatever a team called the
+        // status itself -- one board's "Done" is another's "Shipped" or "Akzeptiert". The key
+        // rather than the category name, which Jira localizes; case-insensitive matching keeps
+        // rows ingested before that change, whose metadata holds the name, reading the same.
+        const val DONE_CATEGORY = "done"
     }
 
     /**
