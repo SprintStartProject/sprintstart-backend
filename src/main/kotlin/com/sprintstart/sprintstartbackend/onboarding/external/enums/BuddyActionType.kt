@@ -102,6 +102,17 @@ enum class BuddyActionType(
      * work, and the checkbox on the card is right there.
      */
     TICK_CHECKLIST_ITEMS("tick_checklist_items", "Tick these off"),
+
+    /**
+     * Rewrites one line of a checklist, when the hire asks for that line to be clearer.
+     *
+     * Deliberately its own action rather than something [AMEND_CHECKLIST] could also do. That one
+     * is append-only *by construction*: it is never handed the existing lines, so there is no
+     * version of adding a step in which a line quietly changes on the way. Rewording is a thing the
+     * hire asks for, about a line they name, and the confirm shows both wordings — which is what
+     * makes it an edit they can see rather than one they would have to go looking for.
+     */
+    REWORD_CHECKLIST_ITEM("reword_checklist_item", "Reword this line"),
     ;
 
     companion object {

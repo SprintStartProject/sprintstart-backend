@@ -107,7 +107,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the twelve action tools`() {
+    fun `exposes exactly the thirteen action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -121,6 +121,7 @@ class BuddyActionServiceTest {
             "place_link",
             "place_note",
             "tick_checklist_items",
+            "reword_checklist_item",
         )
     }
 

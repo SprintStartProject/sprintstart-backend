@@ -53,6 +53,7 @@ class BuddyBoardWriteActions(
             PLACE_CHECKLIST_SPEC,
             AMEND_CHECKLIST_SPEC,
             TICK_CHECKLIST_SPEC,
+            REWORD_CHECKLIST_SPEC,
             PLACE_LINK_SPEC,
             PLACE_NOTE_SPEC,
         )
@@ -67,6 +68,7 @@ class BuddyBoardWriteActions(
             BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, projectName)
             BuddyActionType.PLACE_LINK -> proposeLink(call, type, projectName)
             BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, projectName)
+            BuddyActionType.REWORD_CHECKLIST_ITEM -> proposeReword(call, type, projectName)
             else -> proposeNote(call, type, projectName)
         }
 
@@ -83,6 +85,8 @@ class BuddyBoardWriteActions(
         BuddyActionType.PLACE_LINK -> placeLink(userId, projectId, payload.linkUrl, payload.linkLabel)
         BuddyActionType.TICK_CHECKLIST_ITEMS ->
             tickItems(userId, payload.cardId, payload.checklistItems)
+        BuddyActionType.REWORD_CHECKLIST_ITEM ->
+            rewordItem(userId, payload.cardId, payload.lineBefore, payload.lineAfter)
         else -> placeNote(userId, projectId, payload.noteText)
     }
 
@@ -94,6 +98,8 @@ class BuddyBoardWriteActions(
         val linkUrl: String? = null,
         val linkLabel: String? = null,
         val noteText: String? = null,
+        val lineBefore: String? = null,
+        val lineAfter: String? = null,
     )
 
     /**
@@ -268,6 +274,65 @@ class BuddyBoardWriteActions(
     }
 
     /**
+     * Offers to rewrite one line the hire has asked to be clearer.
+     *
+     * Both wordings travel with the proposal, so the confirm can show the change rather than
+     * assert one. Refuses a rewording that says nothing, and a rewording that says exactly what
+     * the line already said.
+     */
+    private fun proposeReword(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val cardId = call.uuidArg("card_id")
+        val before = call.stringArg("line").trim()
+        val after = call.stringArg("reworded").trim().take(MAX_CHECKLIST_ITEM_LENGTH)
+        return when {
+            cardId == null ->
+                ProposeOutcome(
+                    "No card_id was provided. Read read_board to find the checklist you mean, and " +
+                        "pass its id.",
+                    null,
+                )
+            before.isEmpty() || after.isEmpty() ->
+                ProposeOutcome("Both the line and its rewording are needed.", null)
+            before.equals(after, ignoreCase = true) ->
+                ProposeOutcome("That is what the line already says — there is nothing to change.", null)
+            else -> offer(type, projectName, cardId = cardId, lineBefore = before, lineAfter = after)
+        }
+    }
+
+    /** Rewrites the named line, and can do nothing else to the card. */
+    private fun rewordItem(
+        userId: UUID,
+        cardId: UUID?,
+        before: String?,
+        after: String?,
+    ): BuddyActionResponse {
+        if (cardId == null || before.isNullOrBlank() || after.isNullOrBlank()) {
+            return BuddyActionResponse(ok = false, message = "There was no line to reword.")
+        }
+
+        return try {
+            if (boardService.rewordChecklistItem(userId, cardId, before, after.take(MAX_CHECKLIST_ITEM_LENGTH))) {
+                BuddyActionResponse(
+                    ok = true,
+                    message = "Reworded. It keeps its place and its tick; nothing else changed.",
+                )
+            } else {
+                BuddyActionResponse(
+                    ok = false,
+                    message = "Nothing changed — that line is not on the card, or more than one " +
+                        "line reads exactly like it.",
+                )
+            }
+        } catch (ex: ResponseStatusException) {
+            BuddyActionResponse(ok = false, message = ex.reason ?: "That line could not be reworded.")
+        }
+    }
+
+    /**
      * Offers to keep a link the mentor cited.
      *
      * `http(s)` only, and the same check `LinkCard` relies on for what it renders into an `href`.
@@ -401,6 +466,8 @@ class BuddyBoardWriteActions(
         linkUrl: String? = null,
         linkLabel: String? = null,
         noteText: String? = null,
+        lineBefore: String? = null,
+        lineAfter: String? = null,
     ): ProposeOutcome =
         ProposeOutcome(
             toolResult = "Proposed to the hire on $projectName: \u201C${type.label}\u201D. They will see a " +
@@ -418,6 +485,8 @@ class BuddyBoardWriteActions(
                 linkUrl = linkUrl,
                 linkLabel = linkLabel,
                 noteText = noteText,
+                lineBefore = lineBefore,
+                lineAfter = lineAfter,
             ),
         )
 
@@ -440,6 +509,7 @@ class BuddyBoardWriteActions(
             BuddyActionType.PLACE_LINK,
             BuddyActionType.PLACE_NOTE,
             BuddyActionType.TICK_CHECKLIST_ITEMS,
+            BuddyActionType.REWORD_CHECKLIST_ITEM,
         )
 
         /**
@@ -585,6 +655,42 @@ class BuddyBoardWriteActions(
                 putJsonArray("required") {
                     add("card_id")
                     add("items")
+                }
+            },
+        )
+
+        val REWORD_CHECKLIST_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.REWORD_CHECKLIST_ITEM.toolName,
+            description = "Offer to rewrite ONE line of a checklist, when the hire asks for that " +
+                "line to be clearer or says it no longer says the right thing. Only when they ask " +
+                "about a line: their words are theirs, including the ones you suggested, and " +
+                "tidying a list nobody asked you to tidy is how a board stops being somebody's " +
+                "own. Read read_board for the card's id and the line word for word — it is matched " +
+                "by its words, and a line two of them read alike is refused rather than guessed " +
+                "at. The line keeps its place and its tick: rewording a step is not undoing it, so " +
+                "do not use this to mark something done. For a step that is missing use " +
+                "amend_checklist; this replaces, it does not add. They see both wordings on the " +
+                "confirm button and only they can apply it.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("card_id") {
+                        put("type", "string")
+                        put("description", "The checklist card's id, exactly as read_board gave it.")
+                    }
+                    putJsonObject("line") {
+                        put("type", "string")
+                        put("description", "The line as it reads now, word for word from read_board.")
+                    }
+                    putJsonObject("reworded") {
+                        put("type", "string")
+                        put("description", "What it should say instead. One line, still a thing to tick off.")
+                    }
+                }
+                putJsonArray("required") {
+                    add("card_id")
+                    add("line")
+                    add("reworded")
                 }
             },
         )

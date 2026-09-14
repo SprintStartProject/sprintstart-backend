@@ -371,6 +371,8 @@ class BuddyActionService(
                     BuddyActionType.AMEND_CHECKLIST,
                     BuddyActionType.PLACE_LINK,
                     BuddyActionType.PLACE_NOTE,
+                    BuddyActionType.TICK_CHECKLIST_ITEMS,
+                    BuddyActionType.REWORD_CHECKLIST_ITEM,
                     -> boardWrites.perform(
                         type,
                         resolved.userId,
@@ -382,6 +384,8 @@ class BuddyActionService(
                             linkUrl = request.linkUrl,
                             linkLabel = request.linkLabel,
                             noteText = request.noteText,
+                            lineBefore = request.lineBefore,
+                            lineAfter = request.lineAfter,
                         ),
                     )
                     BuddyActionType.OPEN_ORIENTATION,
@@ -623,6 +627,8 @@ class BuddyActionService(
             BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
             BuddyActionType.PLACE_LINK -> "keep a link on your board"
             BuddyActionType.PLACE_NOTE -> "keep a note on your board"
+            BuddyActionType.TICK_CHECKLIST_ITEMS -> "tick something off your board"
+            BuddyActionType.REWORD_CHECKLIST_ITEM -> "reword a line on your board"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */

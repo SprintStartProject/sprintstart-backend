@@ -58,4 +58,8 @@ data class BuddyStreamEvent(
     @SerialName("link_label") val linkLabel: String? = null,
     /** `place_note` confirm payload: the note's text, as the hire will read it on the offer. */
     @SerialName("note_text") val noteText: String? = null,
+    /** `reword_checklist_item`: the line as it reads now, and as it would read. Both, so the
+     *  hire confirms a change they can see rather than one they would have to go looking for. */
+    @SerialName("line_before") val lineBefore: String? = null,
+    @SerialName("line_after") val lineAfter: String? = null,
 )

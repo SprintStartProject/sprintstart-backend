@@ -415,6 +415,8 @@ class BuddyService(
                         linkUrl = proposal.linkUrl,
                         linkLabel = proposal.linkLabel,
                         noteText = proposal.noteText,
+                        lineBefore = proposal.lineBefore,
+                        lineAfter = proposal.lineAfter,
                     ),
                 )
             }

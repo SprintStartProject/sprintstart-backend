@@ -401,4 +401,83 @@ class BuddyBoardWriteActionsTest {
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("Nothing changed")
     }
+
+    // -- reword_checklist_item ---------------------------------------------------------------------
+
+    private fun rewordCall(cardId: UUID, line: String, reworded: String) = BuddyToolCallDto(
+        id = "c0",
+        name = "reword_checklist_item",
+        arguments = buildJsonObject {
+            put("card_id", cardId.toString())
+            put("line", line)
+            put("reworded", reworded)
+        },
+    )
+
+    /** Both wordings, so the confirm shows the change rather than asserting one. */
+    @Test
+    fun `proposes a rewording carrying the line as it reads and as it would`() {
+        onOneProject()
+        val cardId = UUID.randomUUID()
+
+        val outcome = service.propose(
+            rewordCall(cardId, "Fix it", "Fix the redirect so it keeps the query string"),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.lineBefore).isEqualTo("Fix it")
+        assertThat(outcome.proposal?.lineAfter).isEqualTo("Fix the redirect so it keeps the query string")
+        verify(exactly = 0) { boardService.rewordChecklistItem(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `does not propose a rewording that says what the line already said`() {
+        onOneProject()
+
+        val outcome = service.propose(rewordCall(UUID.randomUUID(), "Fix it", "fix it"), userId)
+
+        assertThat(outcome.proposal).isNull()
+    }
+
+    @Test
+    fun `confirming rewords the line and says what it kept`() = runTest {
+        asHire()
+        onOneProject()
+        val cardId = UUID.randomUUID()
+        every { boardService.rewordChecklistItem(userId, cardId, "Fix it", "Fix the redirect") } returns true
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "reword_checklist_item",
+                cardId = cardId,
+                lineBefore = "Fix it",
+                lineAfter = "Fix the redirect",
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(result.message).contains("tick")
+    }
+
+    /** A card where the wrong line silently changed is worse than one that did not change. */
+    @Test
+    fun `an ambiguous or missing line comes back as nothing changed`() = runTest {
+        asHire()
+        onOneProject()
+        every { boardService.rewordChecklistItem(any(), any(), any(), any()) } returns false
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "reword_checklist_item",
+                cardId = UUID.randomUUID(),
+                lineBefore = "Fix it",
+                lineAfter = "Fix the redirect",
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("Nothing changed")
+    }
 }

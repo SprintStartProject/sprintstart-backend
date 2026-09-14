@@ -397,6 +397,42 @@ class BoardService(
     }
 
     /**
+     * Rewrites one line of a checklist, keeping everything the line is apart from its words.
+     *
+     * Its id survives, so a tick stays on the line rather than sliding to a neighbour, and so does
+     * whether it was ticked — rewording a step is not undoing it. Nothing else on the card moves.
+     *
+     * **Refuses an ambiguous match rather than picking one.** Two lines that read the same are rare
+     * and a card where the wrong one silently changed is worse than a card that did not change: the
+     * hire asked for one edit and would have to diff the list to find out they got another.
+     *
+     * @return true when a line was rewritten, false when the text matched none or more than one.
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs.
+     */
+    fun rewordChecklistItem(userId: UUID, cardId: UUID, before: String, after: String): Boolean {
+        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = card.checklistOrThrow()
+        val wanted = before.trim().lowercase()
+        val words = after.trim()
+        if (words.isEmpty()) return false
+
+        val matches = existing.items.filter { it.text.trim().lowercase() == wanted }
+        if (matches.size != 1) return false
+
+        card.payload = json.encodeToString<BoardCardPayload>(
+            existing.copy(
+                items = existing.items.map { item ->
+                    if (item.id == matches.first().id) item.copy(text = words) else item
+                },
+            ),
+        )
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        return true
+    }
+
+    /**
      * Puts the hire's cards in the order they asked for.
      *
      * Takes the whole order, not a from/to pair. Ids not on this board are ignored, not rejected.

@@ -42,4 +42,7 @@ data class BuddyActionRequest(
     val linkLabel: String? = null,
     /** `place_note` payload: the note's text. */
     val noteText: String? = null,
+    /** `reword_checklist_item`: which line, and what it should say instead. */
+    val lineBefore: String? = null,
+    val lineAfter: String? = null,
 )
