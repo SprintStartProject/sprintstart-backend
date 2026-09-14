@@ -290,6 +290,7 @@ class OnboardingStepService(
             .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }
 
+        bridgeOverInGraph(step)
         onboardingStepRepository.delete(step)
     }
 
@@ -414,10 +415,35 @@ class OnboardingStepService(
             .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }
 
+        bridgeOverInGraph(step)
         onboardingStepRepository.delete(step)
     }
 
 //  ========================== Helper Methods ==========================
+
+    /**
+     * Takes a step out of its phase's dependency graph before it is deleted, joining up what it sat
+     * between.
+     *
+     * Blocker edges are a many-to-many between subgraph nodes, and deleting a step removes only the
+     * rows it owns -- the ones saying what *it* waits on. The rows saying what waits on *it* belong to
+     * the other nodes and outlived it: the delete failed on the join table, or the items after it
+     * stayed locked behind a step nobody could finish any more. Steps a hire adds with their buddy are
+     * placed inside the graph, and they are told they can delete them, so this is not a corner case.
+     *
+     * Bridged rather than only cut: for A -> X -> B, deleting X leaves A -> B, so B still opens after
+     * what it opened after before X was put in the way -- instead of suddenly opening at once.
+     */
+    private fun bridgeOverInGraph(step: OnboardingStep) {
+        val phase = step.phase
+        val dependents = (phase.steps + phase.checkQuestions)
+            .filter { node -> node.id != step.id && node.blockedBy.any { it.id == step.id } }
+        dependents.forEach { node ->
+            node.blockedBy.removeIf { it.id == step.id }
+            node.blockedBy += step.blockedBy.filter { it.id != node.id }
+        }
+        step.blockedBy.clear()
+    }
 
     /**
      * Makes room for a new step at the requested position by shifting all existing

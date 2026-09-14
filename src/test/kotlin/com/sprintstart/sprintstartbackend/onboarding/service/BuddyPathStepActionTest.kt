@@ -40,7 +40,10 @@ import java.util.UUID
  * every refusal addressed to the mentor.
  */
 class BuddyPathStepActionTest {
-    private val buddyPathTools: BuddyPathTools = mockk()
+    // No other phase waits on the ones in these cases unless a case says so.
+    private val buddyPathTools: BuddyPathTools = mockk {
+        every { phasesOf(any()) } returns emptyList()
+    }
     private val onboardingStepService: OnboardingStepService = mockk()
     private val onboardingStepPlacementService: OnboardingStepPlacementService = mockk()
     private val onboardingTaskService: OnboardingTaskService = mockk()
@@ -347,6 +350,30 @@ class BuddyPathStepActionTest {
 
         assertThat(outcome.proposal?.waitsOnIds).containsExactly(finished.id)
         assertThat(outcome.proposal?.unlocksIds).containsExactly(question.id)
+    }
+
+    @Test
+    fun `a step is not added to a finished phase that another phase waits on`() {
+        // A finished phase is what unlocked the phases after it; a new open step there would lock
+        // the phase the hire is actually working in.
+        val done = step("Read the runbook", StepStatus.FINISHED)
+        val finished = phase("Setup", steps = listOf(done))
+        val current = phase("First change").copy(blockerIds = setOf(finished.id))
+        every { buddyPathTools.findPhase(userId, finished.id) } returns finished
+        every { buddyPathTools.phasesOf(userId) } returns listOf(finished, current)
+
+        val outcome = service.propose(
+            call(
+                "add_path_step",
+                "phase_id" to finished.id.toString(),
+                "title" to "Refresher",
+                "description" to "Reread the runbook.",
+            ),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("would lock that again")
     }
 
     @Test

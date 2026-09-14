@@ -291,6 +291,10 @@ class BuddyPathTools(
     fun findPhase(userId: UUID, phaseId: UUID): GetOnboardingPhaseForUserResponse? =
         onboardingPathService.findPathForUserId(userId)?.phases?.firstOrNull { it.id == phaseId }
 
+    /** Every phase of the hire's own path, or empty when they have none. */
+    fun phasesOf(userId: UUID): List<GetOnboardingPhaseForUserResponse> =
+        onboardingPathService.findPathForUserId(userId)?.phases.orEmpty()
+
     /** One step of the hire's own path by id, or null. See [findPhase] for why it resolves this way. */
     fun findStep(userId: UUID, stepId: UUID): GetOnboardingStepsResponse? =
         onboardingPathService

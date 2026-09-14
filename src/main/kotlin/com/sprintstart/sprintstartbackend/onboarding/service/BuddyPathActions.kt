@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.CreateOn
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.task.UpdateOnboardingTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
@@ -387,7 +388,7 @@ class BuddyPathActions(
             phase.steps.any { it.title.trim().equals(title, ignoreCase = true) } ->
                 "“$title” is already a step of “${phase.title}”, so nothing needs adding. Point them " +
                     "at the one that is there."
-            else -> placement.problem()
+            else -> reopensFinishedPhase(userId, phase) ?: placement.problem()
         }
         if (refusal != null) return refused(refusal)
 
@@ -433,6 +434,26 @@ class BuddyPathActions(
     }
 
     /**
+     * Why adding a step to [phase] would take away something the hire already has, or null.
+     *
+     * A finished phase is what unlocked every phase that waits on it. A new open step makes it
+     * unfinished again, and those phases lock -- a hire asking for one extra step would find the phase
+     * they were working in shut. The page's own "add step" has the same effect, which is exactly why
+     * the mentor should not reach for it without knowing.
+     */
+    private fun reopensFinishedPhase(userId: UUID, phase: GetOnboardingPhaseForUserResponse): String? {
+        val finished = (phase.steps.isNotEmpty() || phase.questions.isNotEmpty()) &&
+            phase.steps.all { it.status == StepStatus.FINISHED || it.status == StepStatus.SKIPPED } &&
+            phase.questions.all { it.status == QuestionStatus.PASSED }
+        if (!finished) return null
+        val waiting = buddyPathTools.phasesOf(userId).filter { phase.id in it.blockerIds }
+        if (waiting.isEmpty()) return null
+        return "“${phase.title}” is finished, and ${waiting.joinToString(", ") { "“${it.title}”" }} " +
+            "waits on it: a new step there would lock that again until it is done. Put the step in the " +
+            "phase they are standing in instead."
+    }
+
+    /**
      * Offers to tick one line off the checklist of a step.
      *
      * The finer of the two claims, and the reason both exist. A hire who says "I have done the first
@@ -460,6 +481,13 @@ class BuddyPathActions(
             return refused(
                 "“${task.title}” is already ticked off. Tell them it is already done rather than " +
                     "offering it again.",
+            )
+        }
+        // The task route does not check locks; the page does, by never opening a locked step.
+        if (buddyPathTools.findStep(userId, task.stepId)?.locked == true) {
+            return refused(
+                "The step “${task.title}” belongs to is locked, so nothing on its checklist can be " +
+                    "ticked yet. Say what the step is waiting on instead.",
             )
         }
 
@@ -501,6 +529,12 @@ class BuddyPathActions(
             return BuddyActionResponse(ok = false, message = "No checklist line was proposed to tick off.")
         }
         val task = onboardingTaskService.getOnboardingTaskForMe(authId, taskId)
+        if (buddyPathTools.findStep(resolveUserId(authId), task.stepId)?.locked == true) {
+            return BuddyActionResponse(
+                ok = false,
+                message = "That step is locked right now, so its checklist can't be ticked yet.",
+            )
+        }
         onboardingTaskService.updateOnboardingTaskForMe(
             authId,
             taskId,

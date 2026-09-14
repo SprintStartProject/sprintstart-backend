@@ -186,6 +186,20 @@ class BuddyPathActionTest {
     // -- complete_task ----------------------------------------------------------------------------
 
     @Test
+    fun `a line of a locked step is not offered`() {
+        // The task route does not check locks: only the page does, by never opening the step.
+        val step = step("Deploy to staging", StepStatus.WAITING, locked = true)
+        val task = task("Run the deploy script", finished = false, stepId = step.id)
+        every { onboardingTaskService.getOnboardingTaskById(task.id) } returns task
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val outcome = service.propose(call("complete_task", "task_id" to task.id.toString()), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("is locked")
+    }
+
+    @Test
     fun `a line of a step on the hire's path can be ticked off on its own`() {
         // The finer claim, and the reason both exist: "I have done the first two" is not a finished
         // step, and a mentor holding only complete_step would either overstate it or drop it.
@@ -229,8 +243,11 @@ class BuddyPathActionTest {
 
     @Test
     fun `a confirmed tick writes the line back with everything else unchanged`() = runTest {
-        val task = task("Install git", finished = false, stepId = UUID.randomUUID())
+        val step = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val task = task("Install git", finished = false, stepId = step.id)
         every { onboardingTaskService.getOnboardingTaskForMe(authId, task.id) } returns task
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
         val written = slot<UpdateOnboardingTaskRequest>()
         every {
             onboardingTaskService.updateOnboardingTaskForMe(authId, task.id, capture(written))
