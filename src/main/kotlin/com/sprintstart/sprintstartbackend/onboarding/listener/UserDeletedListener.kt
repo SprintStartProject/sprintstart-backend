@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMileston
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyActionProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
@@ -53,6 +54,7 @@ class UserDeletedListener(
     private val buddyMessageRepository: BuddyMessageRepository,
     private val buddyTeamSessionRepository: BuddyTeamSessionRepository,
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
+    private val buddyActionProposalRepository: BuddyActionProposalRepository,
     private val userCompetencyStateRepository: UserCompetencyStateRepository,
     private val arrivalStepStateRepository: ArrivalStepStateRepository,
     private val boardRepository: BoardRepository,
@@ -97,6 +99,9 @@ class UserDeletedListener(
             buddyTeamMessageRepository.deleteAllBySessionId(it.id)
         }
         buddyTeamSessionRepository.deleteAllByUserId(userId)
+
+        // What the buddy offered them in team mode, and what they decided.
+        buddyActionProposalRepository.deleteAllByUserId(userId)
     }
 
     private fun eraseBoards(userId: UUID) {
