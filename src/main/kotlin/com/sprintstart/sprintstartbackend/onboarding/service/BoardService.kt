@@ -332,11 +332,8 @@ class BoardService(
      */
     fun appendChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): BoardCardResponse {
         val (card, board) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
-        val existing = json.decodeFromString<BoardCardPayload>(card.payload) as? ChecklistPayload
-            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That card holds no checklist")
-
-        val added = lines.filter { it.isNotBlank() }
-        if (added.isEmpty()) {
+        val existing = card.checklistOrThrow()
+        val added = lines.filter { it.isNotBlank() }.ifEmpty {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
         }
 
@@ -633,6 +630,22 @@ class BoardService(
         placedAt = placedAt,
         content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps),
     )
+
+    /**
+     * The checklist a card holds.
+     *
+     * Its own function only because [appendChecklistItems] may raise at most two kinds of refusal
+     * before detekt calls it a function that does too much deciding — which is a fair thing to be
+     * told about a write, so this is the decision that moved rather than the rule that bent.
+     *
+     * A null payload and a payload of another shape get the same refusal, because they are the
+     * same thing from here: a row whose kind says CHECKLIST over content that is not one. Neither
+     * is reachable by any write in this class, which is exactly why it is worth saying out loud
+     * rather than asserting.
+     */
+    private fun BoardCard.checklistOrThrow(): ChecklistPayload =
+        payload?.let { json.decodeFromString<BoardCardPayload>(it) } as? ChecklistPayload
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That card holds no checklist")
 
     /**
      * The card this edit is allowed to change, with the board it sits on.
