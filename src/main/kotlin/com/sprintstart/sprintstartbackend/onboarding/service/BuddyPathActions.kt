@@ -37,7 +37,7 @@ import java.util.UUID
  * they come as a set. [BuddyActionService] still owns the propose/confirm contract — it routes to
  * this and emits what comes back — so there is exactly one place where an action becomes a button.
  *
- * ### The line these three do not cross
+ * ### The line these do not cross
  *
  * They write to **the hire's own copy of the path**, never to the blueprint it was copied from. The
  * curriculum is the PM's: a mentor that could edit it is a mentor whose team stops trusting it.
@@ -85,7 +85,7 @@ class BuddyPathActions(
             type == BuddyActionType.ADD_PATH_STEP
 
     /**
-     * Offers one of the three, checked against the hire's own path before the hire sees a button.
+     * Offers one of the four, checked against the hire's own path before the hire sees a button.
      *
      * Every precondition is resolved here rather than at confirm time, for the reason the assessment
      * proposal gives: a step that is already finished, a locked question, an answer that matches no
@@ -384,9 +384,25 @@ class BuddyPathActions(
         )
     }
 
+    /**
+     * Ticks the confirmed step off.
+     *
+     * The lock is checked again here, because the route underneath does not check it — the hire's
+     * page enforces it by never offering the button — and a proposal can sit in a conversation long
+     * enough for the path around it to change. Finished and skipped stay with the route, which
+     * refuses both with a sentence of its own.
+     */
     private fun completeStep(authId: String, stepId: UUID?): BuddyActionResponse {
         if (stepId == null) {
             return BuddyActionResponse(ok = false, message = "No step was proposed to complete.")
+        }
+        val current = buddyPathTools.findStep(resolveUserId(authId), stepId)
+            ?: return BuddyActionResponse(ok = false, message = "That step isn't on your path.")
+        if (current.locked) {
+            return BuddyActionResponse(
+                ok = false,
+                message = "“${current.title}” is locked right now — something it waits on isn't finished yet.",
+            )
         }
         val step = onboardingStepService.completeOnboardingStepForMe(authId, stepId)
         return BuddyActionResponse(
@@ -410,6 +426,21 @@ class BuddyPathActions(
         }
         val question = buddyPathTools.findQuestion(resolveUserId(authId), questionId)
             ?: return BuddyActionResponse(ok = false, message = "That question isn't on your path.")
+
+        // Checked again at confirm time, for the same reason [completeStep] checks the lock: the
+        // attempt route grades whatever it is sent, and a button left in the conversation can be
+        // clicked after the hire already passed the question on their page. A second attempt there
+        // would be kept for no reason, and a wrong one would read as having lost the pass.
+        when (question.status) {
+            QuestionStatus.PASSED ->
+                return BuddyActionResponse(ok = false, message = "You've already passed that one — nothing was sent.")
+            QuestionStatus.LOCKED ->
+                return BuddyActionResponse(
+                    ok = false,
+                    message = "That question is locked right now — something it waits on isn't finished yet.",
+                )
+            else -> Unit
+        }
 
         val submission = if (question.type == CheckQuestionType.MULTIPLE_CHOICE) {
             val option = matchOption(question, answer)

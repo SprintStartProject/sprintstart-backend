@@ -29,9 +29,10 @@ class OnboardingStep(
     @Column(name = "is_ai_assisted", nullable = false, columnDefinition = "boolean not null default true")
     var aiAssisted: Boolean = true,
     /**
-     * Who put this step here. Defaults to [StepOrigin.GENERATED], which is what every row written
-     * before this column existed was: the ones a person authored are still recognisable by
-     * `aiAssisted` being false, and the badge falls back to that -- see `StepOriginBadge`.
+     * Who put this step here. Defaults to [StepOrigin.GENERATED], which is what a blueprint copy is
+     * and what every row written before this column existed became: the ones a person authored are
+     * still recognisable by `aiAssisted` being false, and the badge falls back to that -- see
+     * `StepOriginBadge`.
      */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, columnDefinition = "varchar(16) not null default 'GENERATED'")

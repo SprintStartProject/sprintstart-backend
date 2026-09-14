@@ -53,7 +53,7 @@ class BuddyActionService(
     /**
      * The action tools the AI reasoner is told it may propose, alongside the read-only tools.
      *
-     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the three
+     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the four
      * path actions have a subject that may not exist. A mentor handed `complete_step` for somebody
      * with no onboarding path will offer to tick a step off a plan they have not got.
      */

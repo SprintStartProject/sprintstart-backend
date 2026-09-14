@@ -35,7 +35,7 @@ import java.util.Optional
 import java.util.UUID
 
 /**
- * The three actions that let a conversation move somebody along their onboarding path.
+ * The four actions that let a conversation move somebody along their onboarding path.
  *
  * The through-line, and the reason each of these is a *proposal*: **the mentor may say what it
  * thinks, and the hire is the one who changes their own onboarding.** Three rules follow, and every
@@ -53,7 +53,7 @@ class BuddyPathActionTest {
     private val questionAttemptService: QuestionAttemptService = mockk()
     private val userApi: UserApi = mockk()
 
-    // The real path component behind a real action service: these cases are about the three actions
+    // The real path component behind a real action service: these cases are about the four actions
     // *and* about BuddyActionService routing them around the project gate, and mocking the component
     // would test the routing against nothing.
     private val pathActions = BuddyPathActions(
@@ -153,17 +153,34 @@ class BuddyPathActionTest {
 
     @Test
     fun `a confirmed completion goes through the hire's own endpoint`() = runTest {
-        val stepId = UUID.randomUUID()
-        every { onboardingStepService.completeOnboardingStepForMe(authId, stepId) } returns
+        val step = step("Clone the repository", StepStatus.IN_PROGRESS)
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+        every { onboardingStepService.completeOnboardingStepForMe(authId, step.id) } returns
             completed("Clone the repository")
 
-        val result = service.perform(BuddyActionRequest(action = "complete_step", stepId = stepId), jwt)
+        val result = service.perform(BuddyActionRequest(action = "complete_step", stepId = step.id), jwt)
 
         assertThat(result.ok).isTrue()
         assertThat(result.message).contains("Clone the repository")
         // A path belongs to a person, so no project is resolved -- a hire onboarding on two
         // projects, or on none yet, still has exactly one path.
         verify(exactly = 0) { userApi.getUsersByIds(any()) }
+    }
+
+    @Test
+    fun `a step that became locked since the button was shown is not completed`() = runTest {
+        // The completion route does not check locks -- the page enforces them by never offering the
+        // button -- so a proposal clicked after the path around it changed has to be caught here.
+        val step = step("Deploy to staging", StepStatus.WAITING, locked = true)
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findStep(userId, step.id) } returns step
+
+        val result = service.perform(BuddyActionRequest(action = "complete_step", stepId = step.id), jwt)
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("locked")
+        verify(exactly = 0) { onboardingStepService.completeOnboardingStepForMe(any(), any()) }
     }
 
     // -- complete_task ----------------------------------------------------------------------------
@@ -349,6 +366,24 @@ class BuddyPathActionTest {
         assertThat(result.ok).isTrue()
         assertThat(result.message).contains("Not quite")
         assertThat(result.message).contains("try again")
+    }
+
+    @Test
+    fun `an answer confirmed after the question was passed on the page is not sent again`() = runTest {
+        // A button can outlive the state it was offered against. A second attempt would be kept for
+        // nothing, and a wrong one would read as having lost the pass.
+        val question = question("Who runs the retro?", QuestionStatus.PASSED, options = listOf("The SM", "The PO"))
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findQuestion(userId, question.id) } returns question
+
+        val result = service.perform(
+            BuddyActionRequest(action = "answer_question", questionId = question.id, answer = "The SM"),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("already passed")
+        verify(exactly = 0) { questionAttemptService.submitQuestionAttemptForMe(any(), any(), any()) }
     }
 
     @Test

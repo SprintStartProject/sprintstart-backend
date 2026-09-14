@@ -13,7 +13,11 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  * knows, and nothing keeps that afterwards.
  */
 enum class StepOrigin {
-    /** Copied from the blueprint, or assembled for an AI-enhanced phase. The ordinary case. */
+    /**
+     * Copied from the blueprint, or assembled for an AI-enhanced phase. The ordinary case. A copy of
+     * a blueprint step the PM wrote by hand is still this, and keeps `aiAssisted = false` from its
+     * blueprint -- which is what the badge reads to say the team authored it.
+     */
     GENERATED,
 
     /** Written by a PM, HR or an admin on somebody else's path: what the team requires. */
