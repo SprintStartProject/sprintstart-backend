@@ -102,7 +102,7 @@ class BuddyProposalService(
      * @return The line to show; a refusal or a handled failure is `ok = false`, not an error.
      * @throws ResponseStatusException 404 when the caller does not exist or the proposal is not theirs.
      */
-    fun confirm(authId: String, proposalId: UUID): BuddyActionResponse {
+    suspend fun confirm(authId: String, proposalId: UUID): BuddyActionResponse {
         val proposal = ownProposal(authId, proposalId)
         if (proposal.status != BuddyProposalStatus.PROPOSED) {
             return BuddyActionResponse(ok = false, message = alreadyDecided(proposal.status))
@@ -149,7 +149,7 @@ class BuddyProposalService(
         }
     }
 
-    private fun runClaimed(proposal: BuddyActionProposal, authId: String): BuddyActionResponse {
+    private suspend fun runClaimed(proposal: BuddyActionProposal, authId: String): BuddyActionResponse {
         var outcome = Outcome(ok = false, message = "Something went wrong, so this was not done.")
         try {
             outcome = attempt(proposal, authId)
@@ -163,7 +163,7 @@ class BuddyProposalService(
         return BuddyActionResponse(ok = outcome.ok, message = outcome.message)
     }
 
-    private fun attempt(proposal: BuddyActionProposal, authId: String): Outcome {
+    private suspend fun attempt(proposal: BuddyActionProposal, authId: String): Outcome {
         if (!userApi.canManageProject(authId, proposal.projectId)) {
             return Outcome(ok = false, message = "You no longer manage this project, so this was not done.")
         }

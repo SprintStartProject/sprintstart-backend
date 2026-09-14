@@ -48,7 +48,7 @@ class BuddyProposalController(
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/{proposalId}/confirm")
     @PreAuthorize("hasRole('USER')")
-    fun confirm(
+    suspend fun confirm(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = "The id carried on the `action_proposal` stream event.")

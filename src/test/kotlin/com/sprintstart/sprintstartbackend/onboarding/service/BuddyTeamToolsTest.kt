@@ -70,7 +70,7 @@ class BuddyTeamToolsTest {
 
             override fun recheck(params: JsonObject, context: TeamToolContext): String? = null
 
-            override fun perform(params: JsonObject, context: TeamToolContext) = "unused"
+            override suspend fun perform(params: JsonObject, context: TeamToolContext) = "unused"
         }
 
     private fun spec(name: String) =
