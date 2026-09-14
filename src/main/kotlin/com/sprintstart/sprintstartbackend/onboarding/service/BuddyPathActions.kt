@@ -577,9 +577,11 @@ class BuddyPathActions(
             description = "Offer to mark one step of the hire's onboarding path as done. Read " +
                 "get_my_onboarding_path first and pass that step's step_id. This does NOT complete " +
                 "anything by itself: the hire sees a confirm button naming the step, and only they " +
-                "can click it. Use it when they say they have finished something — never because " +
-                "the conversation went well, and never to tidy up their path. Only they know " +
-                "whether the work is done, so ask; do not announce it as done.",
+                "can click it. Use it when they say they have finished something, and when " +
+                "get_my_onboarding_path lists a step as READY TO CLOSE (its checklist is done but " +
+                "the step is still open, so what waits on it stays locked) — never because the " +
+                "conversation went well, and never to tidy up their path. Only they know whether " +
+                "the work is done, so ask; do not announce it as done.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -666,10 +668,14 @@ class BuddyPathActions(
                 "onboarding path. Read get_my_onboarding_path for the phase_id. This does NOT add " +
                 "anything by itself; the hire confirms, and afterwards the step is theirs to edit, " +
                 "reorder or delete. It never touches their PM's blueprint — the curriculum is the " +
-                "PM's, and you are not editing it. Use it for two things and little else: a phase " +
+                "PM's, and you are not editing it. Use it for three things and little else: a phase " +
                 "that came back empty, where the two of you have worked out something concrete it " +
-                "should contain; and something real the hire is stuck on that their path does not " +
-                "mention, so it stops living in a conversation that is gone tomorrow. Give a title " +
+                "should contain; something real the hire is stuck on that their path does not " +
+                "mention, so it stops living in a conversation that is gone tomorrow; and a " +
+                "knowledge question they got wrong, once you have gone through the material, when " +
+                "what they missed is bigger than one explanation — then one short refresher step in " +
+                "that question's phase, saying what to revisit and where, and never the answer. " +
+                "Offer it; do not add one after every wrong answer. Give a title " +
                 "of a few words and a description saying what doing it involves. Do not offer a " +
                 "step for something already on their path, do not add several at once, and do not " +
                 "add one just to have added something.",

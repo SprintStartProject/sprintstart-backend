@@ -210,7 +210,7 @@ class BuddyPathToolsTest {
 
         val text = tools.execute(userId)
 
-        assertThat(text).contains("link: /onboarding/${step.id}")
+        assertThat(text).contains("link: /onboarding?step=${step.id}")
         assertThat(text).contains("link: /onboarding?question=${question.id}")
         assertThat(text).contains("link: /onboarding?phase=${phase.id}")
     }
@@ -273,6 +273,82 @@ class BuddyPathToolsTest {
         // The product allows a finished step with open lines, and the mentor must not invent a rule
         // it does not have.
         assertThat(text).contains("finished with lines still open")
+    }
+
+    @Test
+    fun `a step whose checklist is done but that is still open is named, with what it holds up`() {
+        // Every line ticked, the step's own button never pressed: whatever waits on it stays locked
+        // and the hire has no idea why. The mentor has to raise it, and has to be able to say why.
+        val done = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val waiting = step("Run the tests", StepStatus.WAITING, locked = true, blockers = setOf(done.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(done, waiting)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(done.id) } returns listOf(
+            task("Install git", finished = true),
+            task("Clone it", finished = true),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("READY TO CLOSE")
+        assertThat(text).contains("#1 “Clone the repository” [step_id: ${done.id}]")
+        assertThat(text).contains("it is what #2 “Run the tests” waits on")
+        assertThat(text).contains("call complete_step for it in the same reply")
+    }
+
+    @Test
+    fun `a step with open lines, or with no checklist at all, is not ready to close`() {
+        // No checklist is not a done checklist: there is nothing that says the work happened.
+        val partly = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val bare = step("Read the handbook", StepStatus.WAITING)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(partly, bare)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(partly.id) } returns listOf(
+            task("Install git", finished = true),
+            task("Clone it", finished = false),
+        )
+
+        assertThat(tools.execute(userId)).doesNotContain("READY TO CLOSE")
+    }
+
+    @Test
+    fun `closing the last open step of a phase names the phases waiting on it`() {
+        val done = step("Clone the repository", StepStatus.IN_PROGRESS)
+        val setup = phase(0, "Setup", steps = listOf(done))
+        val next = phase(1, "First change", locked = true).copy(blockerIds = setOf(setup.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns path(setup, next)
+        every { onboardingTaskService.getOnboardingTasksByStepId(done.id) } returns
+            listOf(task("Clone it", finished = true))
+
+        assertThat(tools.execute(userId)).contains("it is what the phase “First change” waits on")
+    }
+
+    @Test
+    fun `the greeting opens on a step that is done but never closed`() {
+        val done = step("Clone the repository", StepStatus.IN_PROGRESS)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(done)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(done.id) } returns
+            listOf(task("Clone it", finished = true))
+
+        val snapshot = tools.snapshotFor(userId)
+
+        assertThat(snapshot).contains("Every line of the checklist of “Clone the repository” is ticked")
+        // Addressed to a greeting, which holds no tools: no tool name in front of the hire.
+        assertThat(snapshot).doesNotContain("complete_step")
+    }
+
+    @Test
+    fun `a question answered wrong suggests a refresher step, and never the answer`() {
+        val missed = question("Who runs the retro?", QuestionStatus.RETRY, options = listOf("The SM", "The PO"))
+        val setup = phase(0, "Meetings", questions = listOf(missed))
+        every { onboardingPathService.findPathForUserId(userId) } returns path(setup)
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("they got this wrong before")
+        assertThat(text).contains("add_path_step for one short refresher step in this phase [phase_id: ${setup.id}]")
+        assertThat(text).contains("never the answer")
     }
 
     @Test

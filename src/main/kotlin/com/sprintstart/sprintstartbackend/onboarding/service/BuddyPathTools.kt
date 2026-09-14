@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -87,16 +88,126 @@ class BuddyPathTools(
 
         val currentIndex = phases.indexOfFirst { it.isOpen() }.takeIf { it >= 0 } ?: phases.lastIndex
 
+        val current = phases[currentIndex]
+        val checklists = checklistsOf(current)
+
         return buildString {
             appendLine(standing(phases, currentIndex))
             appendLine()
-            appendCurrentPhase(phases[currentIndex], currentIndex, phases)
-            appendCurrentTasks(stepTheyAreOn(phases[currentIndex]))
+            appendCurrentPhase(current, currentIndex, phases)
+            appendReadyToClose(current, phases, checklists)
+            appendCurrentTasks(stepTheyAreOn(current), checklists)
             appendNextItem(phases)
             appendAhead(phases, currentIndex)
             appendEmptyPhases(path)
             append(NEWLINE + CLOSING)
         }
+    }
+
+    /**
+     * The checklist of every step in [phase] the hire could still finish, keyed by step id.
+     *
+     * Read once per call and shared, because two sections need it: the checklist of the step they
+     * are on, and the steps whose checklist is already done. Locked and finished steps are left out
+     * -- neither can be finished now, so neither checklist is anything to talk about -- and so is a
+     * locked phase, where nothing can.
+     */
+    private fun checklistsOf(phase: GetOnboardingPhaseForUserResponse): Map<UUID, List<GetOnboardingTaskResponse>> {
+        if (phase.locked) return emptyMap()
+        return phase.steps
+            .filter { it.isFinishable() }
+            .associate { step ->
+                step.id to onboardingTaskService.getOnboardingTasksByStepId(step.id).sortedBy { it.position }
+            }
+    }
+
+    /**
+     * The steps whose every checklist line is ticked while the step itself is still open.
+     *
+     * The most common way a hire gets stuck without knowing it: they did the work, ticked every line,
+     * and never pressed the step's own button -- so whatever waits on the step stays locked, and the
+     * page gives no reason. A checklist that is done is not a finished step (the product keeps the
+     * two apart on purpose), which is exactly why this is something to *ask* about rather than
+     * something to assume. A step with no checklist is never on this list: there is nothing that
+     * says it is done.
+     */
+    private fun readyToClose(
+        phase: GetOnboardingPhaseForUserResponse,
+        checklists: Map<UUID, List<GetOnboardingTaskResponse>>,
+    ): List<GetOnboardingStepsResponse> =
+        phase.steps
+            .sortedBy { it.position }
+            .filter { step -> checklists[step.id]?.let { it.isNotEmpty() && it.all { task -> task.finished } } == true }
+
+    /**
+     * What finishing [step] would open up, named: the items in its phase that wait on it, and --
+     * when it is the last open thing in the phase -- the phases that wait on the phase.
+     *
+     * Named because "it unlocks the next thing" is a reason nobody can check, and "it is what #3
+     * waits on" is one the hire can see on their page.
+     */
+    private fun unlockedBy(
+        step: GetOnboardingStepsResponse,
+        phase: GetOnboardingPhaseForUserResponse,
+        phases: List<GetOnboardingPhaseForUserResponse>,
+        numbers: Map<UUID, Int>,
+    ): List<String> {
+        val inPhase = phase.steps
+            .filter { step.id in it.blockerIds && it.id != step.id }
+            .map { "#${numbers[it.id]} ${quoted(it.title)}" } +
+            phase.questions
+                .filter { step.id in it.blockerIds }
+                .map { "#${numbers[it.id]} ${quoted(it.question)}" }
+
+        // Locked steps count as open here: one waiting on this step is still between it and the end.
+        val lastOpen = phase.steps.none {
+            it.id != step.id && it.status != StepStatus.FINISHED && it.status != StepStatus.SKIPPED
+        } &&
+            phase.questions.all { it.status == QuestionStatus.PASSED }
+        val laterPhases = if (lastOpen) {
+            phases.filter { phase.id in it.blockerIds }.map { "the phase ${quoted(it.title)}" }
+        } else {
+            emptyList()
+        }
+        return inPhase + laterPhases
+    }
+
+    /**
+     * Steps they have done the work of but not closed, with what each is holding up.
+     *
+     * Addressed to the mentor with an instruction, because this is the one case where it should bring
+     * a completion up *unprompted*: a hire who does not know why their next step is locked is not
+     * going to ask about the step that is locking it.
+     */
+    private fun StringBuilder.appendReadyToClose(
+        phase: GetOnboardingPhaseForUserResponse,
+        phases: List<GetOnboardingPhaseForUserResponse>,
+        checklists: Map<UUID, List<GetOnboardingTaskResponse>>,
+    ) {
+        val ready = readyToClose(phase, checklists)
+        if (ready.isEmpty()) return
+
+        val numbers = numbering(phase.steps.sortedBy { it.position }, phase.questions.sortedBy { it.position })
+        append(NEWLINE)
+        appendLine(
+            "READY TO CLOSE -- every line of these checklists is ticked, but the step itself is still " +
+                "open, so nothing that waits on it has unlocked:",
+        )
+        ready.take(ITEMS_SHOWN).forEach { step ->
+            val waiting = unlockedBy(step, phase, phases, numbers)
+            val holding = if (waiting.isEmpty()) "" else " -- it is what ${waiting.joinToString(", ")} waits on"
+            appendLine(
+                "- #${numbers[step.id]} ${quoted(step.title)} [step_id: ${step.id}] " +
+                    "[link: $STEP_LINK${step.id}]$holding",
+            )
+        }
+        appendLine(
+            "Bring this up yourself: first thing when they ask what is next, where they are or why " +
+                "something is locked, and otherwise in a sentence at the end of your answer. Say the " +
+                "checklist looks done, name what it is holding up, and call complete_step for it in " +
+                "the same reply so the button is there. Ask whether they are finished -- a ticked " +
+                "checklist is a very good sign, not proof. Once is enough: if they say not yet, leave it.",
+        )
     }
 
     /**
@@ -108,6 +219,7 @@ class BuddyPathTools(
      * heading over nothing.
      */
     private fun stepTheyAreOn(phase: GetOnboardingPhaseForUserResponse): GetOnboardingStepsResponse? {
+        if (phase.locked) return null
         val ordered = phase.steps.sortedBy { it.position }.filterNot { it.locked }
         return ordered.firstOrNull { it.status == StepStatus.IN_PROGRESS }
             ?: ordered.firstOrNull { it.status == StepStatus.WAITING }
@@ -136,6 +248,16 @@ class BuddyPathTools(
             appendLine("Onboarding path:")
             if (current.isOpen()) {
                 appendLine("They are in phase ${currentIndex + 1} of ${phases.size}: ${quoted(current.title)}.")
+                // First, when there is one: a step whose checklist is done but that was never closed
+                // is what a greeting can usefully open on, because it is what is quietly holding
+                // everything after it.
+                readyToClose(current, checklistsOf(current)).firstOrNull()?.let {
+                    appendLine(
+                        "Every line of the checklist of ${quoted(it.title)} is ticked, but the step " +
+                            "itself is still open, so what comes after it has not unlocked. It is " +
+                            "worth asking whether they are done with it.",
+                    )
+                }
                 nextItem(phases)?.let { appendLine("The next thing waiting for them is ${it.plain}.") }
             } else {
                 appendLine("They have finished every phase of their path.")
@@ -256,7 +378,7 @@ class BuddyPathTools(
                 "Knowledge questions. They count like steps, so a phase whose steps are done and " +
                     "whose questions are unanswered is still the phase they are standing in:",
             )
-            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, numbers, titles) }
+            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, numbers, titles) }
             if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
         }
     }
@@ -325,6 +447,7 @@ class BuddyPathTools(
      */
     private fun StringBuilder.appendQuestion(
         question: GetOnboardingQuestionForUserResponse,
+        phase: GetOnboardingPhaseForUserResponse,
         numbers: Map<UUID, Int>,
         titles: Map<UUID, String>,
     ) {
@@ -343,6 +466,17 @@ class BuddyPathTools(
             appendLine("    · the options they see: " + options.joinToString("; ") { it.label })
         }
         appendBlockers(question.status == QuestionStatus.LOCKED, question.blockerIds, numbers, titles)
+        // A wrong answer is the clearest signal on the whole path that a step did not land. Teaching
+        // the material in the conversation comes first; a refresher step is for when what they
+        // missed is more than one explanation, so it is still there tomorrow.
+        if (question.status == QuestionStatus.RETRY) {
+            appendLine(
+                "    · they got this wrong before, so the material behind it did not land. Go through it " +
+                    "with them first. If what they missed is bigger than one explanation, offer " +
+                    "add_path_step for one short refresher step in this phase " +
+                    "[phase_id: ${phase.id}] that says what to revisit and where -- never the answer.",
+            )
+        }
     }
 
     /**
@@ -386,9 +520,12 @@ class BuddyPathTools(
      * hire's own path a moment ago: the resolution in [findStep] is what proves it is theirs, and
      * doing it twice would not make it truer.
      */
-    private fun StringBuilder.appendCurrentTasks(step: GetOnboardingStepsResponse?) {
+    private fun StringBuilder.appendCurrentTasks(
+        step: GetOnboardingStepsResponse?,
+        checklists: Map<UUID, List<GetOnboardingTaskResponse>>,
+    ) {
         if (step == null) return
-        val tasks = onboardingTaskService.getOnboardingTasksByStepId(step.id).sortedBy { it.position }
+        val tasks = checklists[step.id].orEmpty()
         if (tasks.isEmpty()) return
 
         append(NEWLINE)
@@ -462,6 +599,10 @@ class BuddyPathTools(
                 "phase stops being empty.",
         )
     }
+
+    /** Whether a step can still be finished: not locked, and neither finished nor skipped. */
+    private fun GetOnboardingStepsResponse.isFinishable(): Boolean =
+        !locked && (status == StepStatus.WAITING || status == StepStatus.IN_PROGRESS)
 
     /** Whether a phase still has anything open: an unfinished step, or an unpassed question. */
     private fun GetOnboardingPhaseForUserResponse.isOpen(): Boolean {
@@ -551,11 +692,15 @@ class BuddyPathTools(
          * renders an app-relative link as an in-app navigation, so "want to take the check?" arrives
          * as something clickable rather than as directions.
          *
+         * All three land on the onboarding page rather than on a step's own page: the page opens the
+         * item's phase, scrolls to the card and lights it up, and starting it stays the hire's click.
+         * A link in a conversation is for finding something, not for doing it.
+         *
          * They are a contract with the router, which is why they are named here and asserted in
          * `BuddyPathToolsTest`: a route rename that forgets this file produces links that 404, and a
          * mentor has no way to notice.
          */
-        const val STEP_LINK = "/onboarding/"
+        const val STEP_LINK = "/onboarding?step="
         const val QUESTION_LINK = "/onboarding?question="
         const val PHASE_LINK = "/onboarding?phase="
 
