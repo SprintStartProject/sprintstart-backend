@@ -351,7 +351,12 @@ class BuddyBoardTools(
                 "which part mattered, so ask about that part rather than about the whole card. " +
                 "It only looks: it puts no card on their board and takes none off, so do not use " +
                 "it to claim you have done something, and do not read the list back to them, " +
-                "because they are looking at the page.",
+                "because they are looking at the page. " +
+                "Look even when you already know the answer. A hire saying they have finished part " +
+                "of something, or asking what comes next, is talking about a card that is in front " +
+                "of them — and the conversation is not the board: what you remember telling them is " +
+                "not proof of what they kept. This is also the only place card ids come from, so " +
+                "adding to a list of theirs starts here.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {}

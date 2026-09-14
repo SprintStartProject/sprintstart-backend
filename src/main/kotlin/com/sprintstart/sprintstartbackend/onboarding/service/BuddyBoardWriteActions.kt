@@ -449,10 +449,14 @@ class BuddyBoardWriteActions(
         val AMEND_CHECKLIST_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.AMEND_CHECKLIST.toolName,
             description = "Offer to add steps to a checklist the hire ALREADY has, instead of " +
-                "making a second card beside it. Use it when they have worked through part of a " +
-                "list and ask what comes next, or when something you have just explained is the " +
-                "next step on a list they are already ticking. Read read_board first and pass that " +
-                "card's id. Pass ONLY the new lines — never the ones already on the card. You " +
+                "making a second card beside it. WHENEVER you answer what comes next, check " +
+                "whether it belongs on a list they already have — it usually does. 'I have done " +
+                "the first two, what now?' is this tool, every time: answering in prose alone " +
+                "leaves them holding something that is gone by tomorrow, beside a card that still " +
+                "says seven things and gives no hint which. Having the list in this conversation " +
+                "is not the same as it being on their board, and is never a reason to skip the " +
+                "board — read read_board first and pass that card's id. " +
+                "Pass ONLY the new lines — never the ones already on the card. You " +
                 "cannot reword, re-order or remove what is there, and you should not try: those " +
                 "lines are the hire's, even the ones you suggested, and the card is what they are " +
                 "working from. This does NOT write anything by itself; they see a confirm button " +
