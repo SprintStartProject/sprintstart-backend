@@ -54,6 +54,7 @@ class BuddyTeamService(
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
     private val onboardingAiClient: OnboardingAiClient,
     private val buddyTeamTools: BuddyTeamTools,
+    private val buddyProposalService: BuddyProposalService,
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
     private val applicationScope: CoroutineScope,
@@ -207,8 +208,12 @@ class BuddyTeamService(
     }
 
     /**
-     * Runs one tool the AI asked for in team mode. `open_area` changes what later hops mount; every
-     * other tool is executed by [BuddyTeamTools], which refuses anything not mounted on this hop.
+     * Runs one tool the AI asked for in team mode.
+     *
+     * A mounted action never runs here: it becomes a stored proposal and an `action_proposal` event the
+     * manager confirms or dismisses, and the model is told it was offered, not done. `open_area` changes
+     * what later hops mount. Every other tool is executed by [BuddyTeamTools], which refuses anything not
+     * mounted on this hop — an action name that was not mounted ends up there too, and is refused.
      */
     private suspend fun FlowCollector<BuddyStreamEvent>.runToolCall(
         call: BuddyToolCallDto,
@@ -216,6 +221,22 @@ class BuddyTeamService(
         mountedToolNames: Set<String>,
         openedAreas: MutableSet<TeamArea>,
     ): String {
+        if (call.name in mountedToolNames && buddyProposalService.isAction(call.name)) {
+            val outcome = buddyProposalService.propose(call, context)
+            outcome.proposal?.let { proposal ->
+                emit(
+                    BuddyStreamEvent(
+                        type = "action_proposal",
+                        action = proposal.action,
+                        label = proposal.label,
+                        proposalId = proposal.id.toString(),
+                        preview = proposal.preview,
+                        risk = proposal.risk.name,
+                    ),
+                )
+            }
+            return outcome.toolResult
+        }
         emit(BuddyStreamEvent(type = "tool_use", name = call.name, kind = "tool"))
         if (call.name == BuddyTeamTools.OPEN_AREA && call.name in mountedToolNames) {
             val outcome = buddyTeamTools.openArea(call)

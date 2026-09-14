@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
@@ -29,13 +30,22 @@ class BuddyTeamToolsTest {
     private val arrivalStepService: ArrivalStepService = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val areaToolsProvider: ObjectProvider<TeamAreaTools> = mockk()
+    private val buddyProposalService: BuddyProposalService = mockk()
 
     private val projectId = UUID.randomUUID()
     private val memberId = UUID.randomUUID()
     private val context = TeamToolContext(userId = UUID.randomUUID(), authId = "auth|pm", projectId = projectId)
 
-    private fun tools(vararg areas: TeamAreaTools): BuddyTeamTools {
+    private fun tools(
+        vararg areas: TeamAreaTools,
+        actions: List<TeamActionHandler> = emptyList(),
+    ): BuddyTeamTools {
         every { areaToolsProvider.orderedStream() } answers { areas.toList().stream() }
+        every { buddyProposalService.actionAreas() } answers { actions.map { it.area }.toSet() }
+        every { buddyProposalService.actionSpecs(any()) } answers {
+            val opened = firstArg<Set<TeamArea>>()
+            actions.filter { it.area in opened }.map { it.spec }
+        }
         return BuddyTeamTools(
             projectAttentionService,
             onboardingMetricsService,
@@ -43,8 +53,22 @@ class BuddyTeamToolsTest {
             arrivalStepService,
             projectMembershipApi,
             areaToolsProvider,
+            buddyProposalService,
         )
     }
+
+    private fun action(name: String, area: TeamArea) =
+        object : TeamActionHandler {
+            override val area = area
+            override val risk = BuddyProposalRisk.STANDARD
+            override val spec = spec(name)
+
+            override fun draft(call: BuddyToolCallDto, context: TeamToolContext) = TeamActionDraft.Refused("unused")
+
+            override fun recheck(params: JsonObject, context: TeamToolContext): String? = null
+
+            override fun perform(params: JsonObject, context: TeamToolContext) = "unused"
+        }
 
     private fun spec(name: String) =
         BuddyToolSpecDto(name = name, description = "", parameters = JsonObject(emptyMap()))
@@ -319,5 +343,16 @@ class BuddyTeamToolsTest {
             .contains("GitHub account (we confirmed this)")
             .contains("Read the handbook (they told us)")
             .doesNotContain(" of ")
+    }
+
+    /** An area whose only tools are actions still has something behind it, so it can be opened. */
+    @Test
+    fun `an area with only actions can be opened, and its actions are mounted only after opening`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        assertThat(readNames(tools)).contains(BuddyTeamTools.OPEN_AREA).doesNotContain("answer_escalation")
+        assertThat(tools.openArea(call(BuddyTeamTools.OPEN_AREA, "area" to "knowledge")).area)
+            .isEqualTo(TeamArea.KNOWLEDGE)
+        assertThat(readNames(tools, setOf(TeamArea.KNOWLEDGE))).contains("answer_escalation")
     }
 }

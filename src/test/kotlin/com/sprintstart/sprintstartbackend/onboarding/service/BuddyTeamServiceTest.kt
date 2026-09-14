@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentResponse
@@ -9,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenReq
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyActionProposal
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -39,6 +42,7 @@ class BuddyTeamServiceTest {
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk()
     private val onboardingAiClient: OnboardingAiClient = mockk()
     private val buddyTeamTools: BuddyTeamTools = mockk()
+    private val buddyProposalService: BuddyProposalService = mockk()
     private val userApi: UserApi = mockk()
     private val buddyCompactionService: BuddyCompactionService = mockk(relaxed = true)
 
@@ -47,6 +51,7 @@ class BuddyTeamServiceTest {
         buddyTeamMessageRepository,
         onboardingAiClient,
         buddyTeamTools,
+        buddyProposalService,
         userApi,
         buddyCompactionService,
         CoroutineScope(Dispatchers.Unconfined),
@@ -70,6 +75,7 @@ class BuddyTeamServiceTest {
         every { buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns emptyList()
         every { buddyTeamMessageRepository.save(any()) } answers { firstArg() }
         every { buddyTeamTools.toolSpecs(any()) } returns listOf(spec(BuddyTeamTools.GET_TEAM_ATTENTION))
+        every { buddyProposalService.isAction(any()) } returns false
     }
 
     /**
@@ -281,5 +287,48 @@ class BuddyTeamServiceTest {
         val messages = service.getMessagesForMe(authId, projectId)
 
         assertThat(messages.map { it.content }).containsExactly("Hello.", "who is stuck?")
+    }
+
+    /**
+     * The one rule that makes team actions safe: a call proposes, it never performs. The manager sees a
+     * card for the stored proposal, the model is told it was offered, and no tool ran.
+     */
+    @Test
+    fun `an action call becomes a stored proposal event and never runs as a tool`() = runTest {
+        every { buddyTeamTools.toolSpecs(any()) } returns listOf(spec("dismiss_escalation"))
+        every { buddyProposalService.isAction("dismiss_escalation") } returns true
+        val proposal = BuddyActionProposal(
+            userId = userId,
+            projectId = projectId,
+            action = "dismiss_escalation",
+            params = "{}",
+            label = "Dismiss: how do we deploy?",
+            preview = "The question disappears from the inbox.",
+            risk = BuddyProposalRisk.DESTRUCTIVE,
+            createdAt = Instant.now(),
+            expiresAt = Instant.now().plusSeconds(60),
+        )
+        every { buddyProposalService.propose(any(), any()) } returns
+            BuddyProposalService.ProposeOutcome(toolResult = "Proposed to the manager.", proposal = proposal)
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = false,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                pendingToolCalls = listOf(BuddyToolCallDto(id = "c1", name = "dismiss_escalation")),
+            ),
+            finalReply("I can dismiss it — confirm below."),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "dismiss that question").toList()
+
+        val card = events.single { it.type == "action_proposal" }
+        assertThat(card.proposalId).isEqualTo(proposal.id.toString())
+        assertThat(card.preview).isEqualTo("The question disappears from the inbox.")
+        assertThat(card.risk).isEqualTo("DESTRUCTIVE")
+        assertThat(events.none { it.type == "tool_use" }).isTrue()
+        val toolResult = requests.last().messages.last()
+        assertThat(toolResult.content).isEqualTo("Proposed to the manager.")
+        verify(exactly = 0) { buddyTeamTools.execute(any(), any(), any()) }
     }
 }
