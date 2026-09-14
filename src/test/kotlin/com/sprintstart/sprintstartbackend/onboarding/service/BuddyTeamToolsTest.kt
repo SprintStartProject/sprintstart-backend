@@ -17,6 +17,9 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
@@ -354,5 +357,21 @@ class BuddyTeamToolsTest {
         assertThat(tools.openArea(call(BuddyTeamTools.OPEN_AREA, "area" to "knowledge")).area)
             .isEqualTo(TeamArea.KNOWLEDGE)
         assertThat(readNames(tools, setOf(TeamArea.KNOWLEDGE))).contains("answer_escalation")
+    }
+
+    /**
+     * The model is held to the enum in open_area's definition. An area left out of it cannot be opened,
+     * however openArea itself would answer — so the enum must list action-only areas too.
+     */
+    @Test
+    fun `open_area's definition offers an area whose only tools are actions`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        val openArea = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }
+        val properties = openArea.parameters.getValue("properties").jsonObject
+        val area = properties.getValue("area").jsonObject
+        val offered = area.getValue("enum").jsonArray
+
+        assertThat(offered.map { it.jsonPrimitive.content }).containsExactly("knowledge")
     }
 }

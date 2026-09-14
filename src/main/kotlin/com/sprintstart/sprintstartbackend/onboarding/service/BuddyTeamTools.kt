@@ -285,7 +285,10 @@ class BuddyTeamTools(
                 putJsonObject("properties") {
                     putJsonObject("area") {
                         put("type", "string")
-                        putJsonArray("enum") { areaTools.keys.sorted().forEach { add(it.name.lowercase()) } }
+                        // The same set toolSpecs and openArea use. Listing only areas with read tools
+                        // would mount open_area and still forbid the model from opening an area whose
+                        // tools are all actions.
+                        putJsonArray("enum") { openableAreas().sorted().forEach { add(it.name.lowercase()) } }
                         put("description", "The area to open.")
                     }
                 }
