@@ -28,5 +28,23 @@ interface BuddyActionProposalRepository : JpaRepository<BuddyActionProposal, UUI
     )
     fun transition(id: UUID, from: BuddyProposalStatus, to: BuddyProposalStatus, at: Instant): Int
 
+    /**
+     * Records how a claimed proposal ended: moves it out of [from] to [to] with the line shown to the
+     * manager, only if it is still in [from].
+     *
+     * One statement rather than load-and-save, so recording an outcome cannot lose an optimistic-lock
+     * race after the action itself has already committed.
+     *
+     * @return 1 when recorded, 0 when the proposal was no longer in [from].
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(
+        """UPDATE BuddyActionProposal p
+           SET p.status = :to, p.decidedAt = :at, p.resultMessage = :message, p.version = p.version + 1
+           WHERE p.id = :id AND p.status = :from""",
+    )
+    fun finish(id: UUID, from: BuddyProposalStatus, to: BuddyProposalStatus, at: Instant, message: String): Int
+
     fun deleteAllByUserId(userId: UUID)
 }

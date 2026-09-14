@@ -77,6 +77,34 @@ class BuddyActionProposalRepositoryTest {
     }
 
     @Test
+    fun `finishing records the outcome only for a proposal that is still confirming`() {
+        val confirming = repository.saveAndFlush(proposal())
+        claim(confirming.id)
+        val dismissed = repository.saveAndFlush(proposal())
+        repository.transition(dismissed.id, BuddyProposalStatus.PROPOSED, BuddyProposalStatus.DISMISSED, now)
+
+        val recorded = finish(confirming.id)
+        val ignored = finish(dismissed.id)
+
+        assertThat(recorded).isEqualTo(1)
+        assertThat(ignored).isEqualTo(0)
+        entityManager.clear()
+        val done = repository.findById(confirming.id).orElseThrow()
+        assertThat(done.status).isEqualTo(BuddyProposalStatus.CONFIRMED)
+        assertThat(done.resultMessage).isEqualTo("Dismissed the question.")
+        assertThat(repository.findById(dismissed.id).orElseThrow().status).isEqualTo(BuddyProposalStatus.DISMISSED)
+    }
+
+    private fun finish(id: UUID): Int =
+        repository.finish(
+            id,
+            BuddyProposalStatus.CONFIRMING,
+            BuddyProposalStatus.CONFIRMED,
+            now,
+            "Dismissed the question.",
+        )
+
+    @Test
     fun `deleting one user's proposals leaves everybody else's`() {
         val leaving = UUID.randomUUID()
         repository.saveAndFlush(proposal(userId = leaving))

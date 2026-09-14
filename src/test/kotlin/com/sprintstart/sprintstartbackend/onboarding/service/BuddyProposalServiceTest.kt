@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
@@ -71,6 +72,9 @@ class BuddyProposalServiceTest {
 
     private val action = FakeAction()
 
+    /** Every outcome recorded through `finish`, as (status it ended in, message shown). */
+    private val recorded = mutableListOf<Pair<BuddyProposalStatus, String>>()
+
     private fun service() = BuddyProposalService(repository, userApi, handlersProvider, clock)
 
     @BeforeEach
@@ -79,6 +83,10 @@ class BuddyProposalServiceTest {
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
         every { userApi.canManageProject(authId, projectId) } returns true
         every { repository.save(any()) } answers { firstArg() }
+        every { repository.finish(any(), BuddyProposalStatus.CONFIRMING, any(), any(), any()) } answers {
+            recorded.add(thirdArg<BuddyProposalStatus>() to arg<String>(4))
+            1
+        }
     }
 
     private fun stored(
@@ -161,9 +169,7 @@ class BuddyProposalServiceTest {
         assertThat(response.message).isEqualTo("Dismissed the question.")
         val performedWith = action.performed.single()["request_id"] as JsonPrimitive
         assertThat(performedWith.contentOrNull).isEqualTo("r-1")
-        assertThat(proposal.status).isEqualTo(BuddyProposalStatus.CONFIRMED)
-        assertThat(proposal.resultMessage).isEqualTo("Dismissed the question.")
-        assertThat(proposal.decidedAt).isEqualTo(now)
+        assertThat(recorded).containsExactly(BuddyProposalStatus.CONFIRMED to "Dismissed the question.")
     }
 
     /** A proposal id says nothing about whether somebody else's proposal exists. */
@@ -214,7 +220,7 @@ class BuddyProposalServiceTest {
 
         assertThat(response.ok).isFalse()
         assertThat(action.performed).isEmpty()
-        verify(exactly = 0) { repository.save(any()) }
+        assertThat(recorded).isEmpty()
     }
 
     @Test
@@ -228,7 +234,7 @@ class BuddyProposalServiceTest {
         assertThat(response.ok).isFalse()
         assertThat(response.message).contains("no longer manage")
         assertThat(action.performed).isEmpty()
-        assertThat(proposal.status).isEqualTo(BuddyProposalStatus.FAILED)
+        assertThat(recorded.single().first).isEqualTo(BuddyProposalStatus.FAILED)
     }
 
     @Test
@@ -242,7 +248,7 @@ class BuddyProposalServiceTest {
         assertThat(response.ok).isFalse()
         assertThat(response.message).isEqualTo("Somebody already answered that question.")
         assertThat(action.performed).isEmpty()
-        assertThat(proposal.status).isEqualTo(BuddyProposalStatus.FAILED)
+        assertThat(recorded.single().first).isEqualTo(BuddyProposalStatus.FAILED)
     }
 
     @Test
@@ -255,7 +261,7 @@ class BuddyProposalServiceTest {
 
         assertThat(response.ok).isFalse()
         assertThat(response.message).isEqualTo("That question is gone.")
-        assertThat(proposal.status).isEqualTo(BuddyProposalStatus.FAILED)
+        assertThat(recorded.single().first).isEqualTo(BuddyProposalStatus.FAILED)
     }
 
     /** A claimed proposal never stays in CONFIRMING, whatever the action throws. */
@@ -267,7 +273,7 @@ class BuddyProposalServiceTest {
 
         assertThrows<IllegalStateException> { service().confirm(authId, proposal.id) }
 
-        assertThat(proposal.status).isEqualTo(BuddyProposalStatus.FAILED)
+        assertThat(recorded.single().first).isEqualTo(BuddyProposalStatus.FAILED)
     }
 
     @Test
@@ -300,5 +306,43 @@ class BuddyProposalServiceTest {
 
         assertThrows<ResponseStatusException> { service().dismiss(authId, proposal.id) }
             .also { assertThat(it.statusCode).isEqualTo(HttpStatus.NOT_FOUND) }
+    }
+
+    /**
+     * By the time the outcome is recorded, the change may already be committed. A database refusing to
+     * record it must not turn that into an error: the manager would be told a change failed that happened.
+     */
+    @Test
+    fun `a failure to record the outcome still returns what actually happened`() {
+        val proposal = stored()
+        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+        every { repository.finish(any(), any(), any(), any(), any()) } throws
+            DataAccessResourceFailureException("connection lost")
+
+        val response = service().confirm(authId, proposal.id)
+
+        assertThat(response.ok).isTrue()
+        assertThat(response.message).isEqualTo("Dismissed the question.")
+        assertThat(action.performed).hasSize(1)
+    }
+
+    /** Recording is one conditional update, so it cannot lose an optimistic-lock race to a stale entity. */
+    @Test
+    fun `the outcome is recorded with a conditional update, not by saving the loaded proposal`() {
+        val proposal = stored()
+        every { repository.transition(proposal.id, any(), BuddyProposalStatus.CONFIRMING, any()) } returns 1
+
+        service().confirm(authId, proposal.id)
+
+        verify {
+            repository.finish(
+                proposal.id,
+                BuddyProposalStatus.CONFIRMING,
+                BuddyProposalStatus.CONFIRMED,
+                now,
+                "Dismissed the question.",
+            )
+        }
+        verify(exactly = 0) { repository.save(any()) }
     }
 }

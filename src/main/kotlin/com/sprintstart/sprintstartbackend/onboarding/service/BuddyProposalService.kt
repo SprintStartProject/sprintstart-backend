@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -33,8 +34,10 @@ import java.util.UUID
  * 5. **Still valid**, through the action's [TeamActionHandler.recheck].
  * 6. **Perform**, then record `CONFIRMED` or `FAILED` with the line shown to the manager.
  *
- * A claimed proposal always ends in `CONFIRMED` or `FAILED`, even when the action throws something
- * unexpected, so none is left stuck in `CONFIRMING`.
+ * The outcome is recorded with a second conditional update, from `CONFIRMING`, even when the action
+ * throws something unexpected — so a claimed proposal ends in `CONFIRMED` or `FAILED`. The one way it
+ * can stay `CONFIRMING` is the database refusing that write; then the failure is logged, and the
+ * manager is still told what actually happened rather than shown an error for a change that was made.
  */
 @Service
 class BuddyProposalService(
@@ -154,8 +157,8 @@ class BuddyProposalService(
             outcome = Outcome(ok = false, message = e.reason ?: "That did not go through.")
         } finally {
             // Also reached when the action throws something unexpected: the proposal is recorded as
-            // failed rather than left claimed forever, and the exception still propagates.
-            record(proposal.id, outcome)
+            // failed rather than left claimed, and the exception still propagates.
+            recordOutcome(proposal.id, outcome)
         }
         return BuddyActionResponse(ok = outcome.ok, message = outcome.message)
     }
@@ -172,16 +175,29 @@ class BuddyProposalService(
         return Outcome(ok = true, message = handler.perform(params, context))
     }
 
-    private fun record(proposalId: UUID, outcome: Outcome) {
-        val proposal = buddyActionProposalRepository.findById(proposalId).orElse(null)
-        if (proposal == null) {
-            logger.warn("Confirmed proposal {} disappeared before its outcome was recorded", proposalId)
+    /**
+     * Records how a claimed proposal ended, without ever replacing the real result with an error.
+     *
+     * By the time this runs the action may have committed its change. A failure to *record* that must
+     * not surface as a failed request — the manager would be told a change failed that in fact happened —
+     * so it is logged, and the caller returns the real outcome.
+     */
+    private fun recordOutcome(proposalId: UUID, outcome: Outcome) {
+        val recorded = try {
+            buddyActionProposalRepository.finish(
+                proposalId,
+                BuddyProposalStatus.CONFIRMING,
+                if (outcome.ok) BuddyProposalStatus.CONFIRMED else BuddyProposalStatus.FAILED,
+                clock.instant(),
+                outcome.message,
+            )
+        } catch (e: DataAccessException) {
+            logger.error("Could not record the outcome of proposal {}; it stays CONFIRMING", proposalId, e)
             return
         }
-        proposal.status = if (outcome.ok) BuddyProposalStatus.CONFIRMED else BuddyProposalStatus.FAILED
-        proposal.decidedAt = clock.instant()
-        proposal.resultMessage = outcome.message
-        buddyActionProposalRepository.save(proposal)
+        if (recorded == 0) {
+            logger.warn("Proposal {} had left CONFIRMING before its outcome was recorded", proposalId)
+        }
     }
 
     private fun ownProposal(authId: String, proposalId: UUID): BuddyActionProposal {
