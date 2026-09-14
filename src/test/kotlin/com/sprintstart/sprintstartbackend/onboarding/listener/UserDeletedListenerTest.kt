@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.listener
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.ArrivalStepStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
@@ -10,6 +11,8 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
@@ -27,6 +30,8 @@ import java.util.UUID
 class UserDeletedListenerTest {
     private val buddySessionRepository: BuddySessionRepository = mockk(relaxed = true)
     private val buddyMessageRepository: BuddyMessageRepository = mockk(relaxed = true)
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository = mockk(relaxed = true)
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk(relaxed = true)
     private val userCompetencyStateRepository: UserCompetencyStateRepository = mockk(relaxed = true)
     private val arrivalStepStateRepository: ArrivalStepStateRepository = mockk(relaxed = true)
     private val boardRepository: BoardRepository = mockk(relaxed = true)
@@ -42,6 +47,8 @@ class UserDeletedListenerTest {
     private val listener = UserDeletedListener(
         buddySessionRepository,
         buddyMessageRepository,
+        buddyTeamSessionRepository,
+        buddyTeamMessageRepository,
         userCompetencyStateRepository,
         arrivalStepStateRepository,
         boardRepository,
@@ -78,6 +85,26 @@ class UserDeletedListenerTest {
 
         verify { buddyMessageRepository.deleteAllBySessionId(any()) }
         verify { buddySessionRepository.deleteAllByUserId(userId) }
+    }
+
+    /**
+     * A manager's team conversations are as much theirs as their own buddy: what they asked about
+     * their team on each project, and the note the model kept of it.
+     */
+    @Test
+    fun `deleting a user erases their team conversations on every project, messages first`() {
+        hasConversationAndBoard()
+        val alpha = BuddyTeamSession(userId = userId, projectId = UUID.randomUUID())
+        val beta = BuddyTeamSession(userId = userId, projectId = UUID.randomUUID())
+        every { buddyTeamSessionRepository.findAllByUserId(userId) } returns listOf(alpha, beta)
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verifyOrder {
+            buddyTeamMessageRepository.deleteAllBySessionId(alpha.id)
+            buddyTeamMessageRepository.deleteAllBySessionId(beta.id)
+            buddyTeamSessionRepository.deleteAllByUserId(userId)
+        }
     }
 
     @Test
@@ -148,11 +175,13 @@ class UserDeletedListenerTest {
     @Test
     fun `a user who never opened the buddy is erased without a session to erase`() {
         every { buddySessionRepository.findByUserId(userId) } returns null
+        every { buddyTeamSessionRepository.findAllByUserId(userId) } returns emptyList()
         every { boardRepository.findAllByUserId(userId) } returns emptyList()
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verify(exactly = 0) { buddyMessageRepository.deleteAllBySessionId(any()) }
+        verify(exactly = 0) { buddyTeamMessageRepository.deleteAllBySessionId(any()) }
         // Nothing is asked to delete the arrangements of no boards: an empty `IN ()` is a query
         // some databases refuse outright and the rest run for nothing.
         verify(exactly = 0) { boardStructureRepository.deleteAllByBoardIdIn(any()) }

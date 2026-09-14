@@ -8,6 +8,8 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
@@ -43,6 +45,8 @@ import java.util.UUID
 class UserDeletedListener(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository,
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
     private val userCompetencyStateRepository: UserCompetencyStateRepository,
     private val arrivalStepStateRepository: ArrivalStepStateRepository,
     private val boardRepository: BoardRepository,
@@ -80,6 +84,13 @@ class UserDeletedListener(
             buddyMessageRepository.deleteAllBySessionId(it.id)
         }
         buddySessionRepository.deleteAllByUserId(userId)
+
+        // A manager's team conversations are theirs too: what they asked about their team, and the
+        // note the model kept about those conversations. They go with the account.
+        buddyTeamSessionRepository.findAllByUserId(userId).forEach {
+            buddyTeamMessageRepository.deleteAllBySessionId(it.id)
+        }
+        buddyTeamSessionRepository.deleteAllByUserId(userId)
     }
 
     private fun eraseBoards(userId: UUID) {
