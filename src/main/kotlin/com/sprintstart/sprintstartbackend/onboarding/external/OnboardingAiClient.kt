@@ -53,14 +53,20 @@ class OnboardingAiClient(
      */
     suspend fun assembleDiagram(
         subject: String,
+        projectIds: List<UUID>,
         lastFingerprint: String? = null,
     ): DiagramOutcome =
         try {
             webClient
                 .post()
                 .uri(uri("/api/v1/onboarding/diagram"))
-                .body(AssembleDiagramRequest(subject = subject, lastFingerprint = lastFingerprint))
-                .sync()
+                .body(
+                    AssembleDiagramRequest(
+                        projectIds = projectIds.map { it.toString() },
+                        subject = subject,
+                        lastFingerprint = lastFingerprint,
+                    ),
+                ).sync()
                 .perform<DiagramOutcome>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             val msg = "Failed to assemble diagram (HTTP ${e.statusCode}): ${e.body}"
@@ -83,6 +89,7 @@ class OnboardingAiClient(
      */
     suspend fun assembleOrientation(
         taskTitle: String,
+        projectIds: List<UUID>,
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -94,6 +101,7 @@ class OnboardingAiClient(
                 .uri(uri("/api/v1/onboarding/orientation"))
                 .body(
                     AssembleOrientationRequest(
+                        projectIds = projectIds.map { it.toString() },
                         taskTitle = taskTitle,
                         taskBody = taskBody,
                         labels = labels,
@@ -183,6 +191,7 @@ class OnboardingAiClient(
      * non-2xx response is wrapped in an [OnboardingAiException] carrying the upstream status/body.
      */
     suspend fun proposeStarterWork(
+        projectIds: List<UUID>,
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): StarterWorkOutcome =
@@ -192,6 +201,7 @@ class OnboardingAiClient(
                 .uri(uri("/api/v1/onboarding/starter-work/mine"))
                 .body(
                     MineStarterWorkRequest(
+                        projectIds = projectIds.map { it.toString() },
                         activeSourceIds = activeSourceIds,
                         activeCompetencyKeys = activeCompetencyKeys,
                     ),
@@ -213,6 +223,7 @@ class OnboardingAiClient(
      */
     fun streamOrientation(
         taskTitle: String,
+        projectIds: List<UUID>,
         taskBody: String = "",
         labels: List<String> = emptyList(),
         touchedPaths: List<String> = emptyList(),
@@ -221,6 +232,7 @@ class OnboardingAiClient(
         streamProgress(
             "/api/v1/onboarding/orientation/stream",
             AssembleOrientationRequest(
+                projectIds = projectIds.map { it.toString() },
                 taskTitle = taskTitle,
                 taskBody = taskBody,
                 labels = labels,
@@ -237,12 +249,14 @@ class OnboardingAiClient(
      * backend persists.
      */
     fun streamStarterWork(
+        projectIds: List<UUID>,
         activeSourceIds: List<String> = emptyList(),
         activeCompetencyKeys: List<String> = emptyList(),
     ): Flow<AiProgressEvent> =
         streamProgress(
             "/api/v1/onboarding/starter-work/mine/stream",
             MineStarterWorkRequest(
+                projectIds = projectIds.map { it.toString() },
                 activeSourceIds = activeSourceIds,
                 activeCompetencyKeys = activeCompetencyKeys,
             ),
