@@ -357,6 +357,46 @@ class BoardService(
     }
 
     /**
+     * Ticks lines the hire says they have done, and can do nothing else to the card.
+     *
+     * Matched by their **words**, not by an id, for the reason marks are (`marks/cardMarks.ts`):
+     * making this work by id would mean putting every item's id in the mentor's prompt, and the
+     * mentor would then be one slip away from reading one out. A line the text does not match is
+     * simply not ticked, and the caller is told how many were — silence would let a typo look like
+     * success.
+     *
+     * **It only ever sets done, never clears it.** Un-ticking is the hire saying they were wrong
+     * about their own work, which is not something anybody should be able to do on their behalf;
+     * the checkbox on the card is right there. Nothing else moves either: no text changes, no
+     * re-ordering, no lines added or dropped.
+     *
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when the card
+     * holds no checklist.
+     */
+    fun tickChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): Int {
+        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = card.checklistOrThrow()
+        val wanted = lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+
+        var ticked = 0
+        val items = existing.items.map { item ->
+            if (!item.done && item.text.trim().lowercase() in wanted) {
+                ticked++
+                item.copy(done = true)
+            } else {
+                item
+            }
+        }
+        if (ticked == 0) return 0
+
+        card.payload = json.encodeToString<BoardCardPayload>(existing.copy(items = items))
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        return ticked
+    }
+
+    /**
      * Puts the hire's cards in the order they asked for.
      *
      * Takes the whole order, not a from/to pair. Ids not on this board are ignored, not rejected.

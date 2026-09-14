@@ -26,6 +26,15 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteCo
  */
 object BoardReading {
     /**
+     * How many lines of one checklist the mentor is shown.
+     *
+     * Enough to work with a real list, and a cap because a board of ten checklists would otherwise
+     * put a few hundred lines in every prompt. What is left out is counted rather than dropped
+     * silently, so the mentor can say it does not have the whole list instead of assuming it does.
+     */
+    private const val LINES_PER_CARD = 12
+
+    /**
      * The hire's own checklists, named with the ids `amend_checklist` needs, or "" when they have
      * none.
      *
@@ -46,10 +55,39 @@ object BoardReading {
         if (amendable.isEmpty()) return ""
 
         return buildString {
-            append("\n\nChecklists of theirs you can add steps to with amend_checklist, rather ")
-            append("than making a second card beside one. The id is for the tool only — never say ")
+            append("\n\nChecklists of theirs, with what is on them. Add steps with amend_checklist ")
+            append("rather than making a second card beside one, and tick lines off with ")
+            append("tick_checklist_items when they say they have done them — both match by the ")
+            append("words below, so quote them exactly. The id is for the tools only — never say ")
             append("it to the hire:")
-            amendable.forEach { append("\n- " + nameOf(it) + " (id: " + it.id + ")") }
+            amendable.forEach { card ->
+                append("\n- " + nameOf(card) + " (id: " + card.id + ")")
+                append(lines(card))
+            }
+        }
+    }
+
+    /**
+     * One checklist's lines, ticked or not, capped.
+     *
+     * The lines and not only a count, because both write tools match on the words: a mentor that
+     * knows a list has seven things but not what they say can neither add the eighth without
+     * repeating one nor tick the second.
+     *
+     * Capped per card rather than only across the board — one runaway list would otherwise fill
+     * the prompt on its own — and open lines first, since those are the ones anything is going to
+     * be done to.
+     */
+    private fun lines(card: BoardCardResponse): String {
+        val content = card.content as? ChecklistContent ?: return ""
+        val ordered = content.items.sortedBy { it.done }
+
+        return buildString {
+            ordered.take(LINES_PER_CARD).forEach { item ->
+                append("\n    " + (if (item.done) "[x] " else "[ ] ") + item.text)
+            }
+            val hidden = ordered.size - LINES_PER_CARD
+            if (hidden > 0) append("\n    (" + hidden + " more, not listed)")
         }
     }
 

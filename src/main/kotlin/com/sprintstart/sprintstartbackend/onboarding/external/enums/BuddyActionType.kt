@@ -88,6 +88,20 @@ enum class BuddyActionType(
      * worth having tomorrow, rather than waiting to be asked.
      */
     PLACE_NOTE("place_note", "Keep this as a note"),
+
+    /**
+     * Ticks lines on a checklist the hire says they have finished.
+     *
+     * The hire's own statement about their own work, written to their own card, behind the same
+     * confirm as everything else here — which is what makes it theirs rather than the mentor's
+     * verdict. It is offered when they *say* they have done something, never concluded from the
+     * conversation: a board that ticks itself because a model read something into a sentence is a
+     * board nobody can trust the state of.
+     *
+     * Setting only. Un-ticking would be somebody else deciding the hire was wrong about their own
+     * work, and the checkbox on the card is right there.
+     */
+    TICK_CHECKLIST_ITEMS("tick_checklist_items", "Tick these off"),
     ;
 
     companion object {

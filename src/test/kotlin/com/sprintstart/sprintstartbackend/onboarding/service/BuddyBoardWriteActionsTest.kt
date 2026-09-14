@@ -325,4 +325,80 @@ class BuddyBoardWriteActionsTest {
         verify { boardService.addAuthoredCard(userId, projectId, capture(request)) }
         assertThat((request.captured as NoteCardRequest).text).isEqualTo(text)
     }
+
+    // -- tick_checklist_items ----------------------------------------------------------------------
+
+    /**
+     * The hire's own statement about their own work. Offered when they say it, never concluded —
+     * the tool description carries that half; this asserts the mechanics under it.
+     */
+    @Test
+    fun `proposes ticks carrying the card and the lines as written`() {
+        onOneProject()
+        val cardId = UUID.randomUUID()
+
+        val outcome = service.propose(
+            BuddyToolCallDto(
+                id = "c0",
+                name = "tick_checklist_items",
+                arguments = buildJsonObject {
+                    put("card_id", cardId.toString())
+                    putJsonArray("items") {
+                        add("Reproduce it locally")
+                        add("Add a failing test")
+                    }
+                },
+            ),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.cardId).isEqualTo(cardId)
+        assertThat(outcome.proposal?.checklistItems)
+            .containsExactly("Reproduce it locally", "Add a failing test")
+        verify(exactly = 0) { boardService.tickChecklistItems(any(), any(), any()) }
+    }
+
+    @Test
+    fun `confirming ticks the named lines and says how many`() = runTest {
+        asHire()
+        onOneProject()
+        val cardId = UUID.randomUUID()
+        every { boardService.tickChecklistItems(userId, cardId, listOf("Reproduce it locally")) } returns 1
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "tick_checklist_items",
+                cardId = cardId,
+                checklistItems = listOf("Reproduce it locally"),
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(result.message).contains("1")
+    }
+
+    /**
+     * Silence would let a line the mentor paraphrased look like a line it ticked, and the hire
+     * would find out by looking at a card that had not changed.
+     */
+    @Test
+    fun `a line that matches nothing comes back as nothing changed`() = runTest {
+        asHire()
+        onOneProject()
+        val cardId = UUID.randomUUID()
+        every { boardService.tickChecklistItems(any(), any(), any()) } returns 0
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "tick_checklist_items",
+                cardId = cardId,
+                checklistItems = listOf("something it made up"),
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("Nothing changed")
+    }
 }

@@ -49,7 +49,13 @@ class BuddyBoardWriteActions(
 ) {
     /** The four tools, offered by [BuddyActionService] alongside its own. */
     fun specs(): List<BuddyToolSpecDto> =
-        listOf(PLACE_CHECKLIST_SPEC, AMEND_CHECKLIST_SPEC, PLACE_LINK_SPEC, PLACE_NOTE_SPEC)
+        listOf(
+            PLACE_CHECKLIST_SPEC,
+            AMEND_CHECKLIST_SPEC,
+            TICK_CHECKLIST_SPEC,
+            PLACE_LINK_SPEC,
+            PLACE_NOTE_SPEC,
+        )
 
     /** Whether this is one of ours, so the caller's dispatch need not know the four names. */
     fun handles(type: BuddyActionType): Boolean = type in HANDLED
@@ -60,6 +66,7 @@ class BuddyBoardWriteActions(
             BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, projectName)
             BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, projectName)
             BuddyActionType.PLACE_LINK -> proposeLink(call, type, projectName)
+            BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, projectName)
             else -> proposeNote(call, type, projectName)
         }
 
@@ -74,6 +81,8 @@ class BuddyBoardWriteActions(
             placeChecklist(userId, projectId, payload.checklistTitle, payload.checklistItems)
         BuddyActionType.AMEND_CHECKLIST -> amendChecklist(userId, payload.cardId, payload.checklistItems)
         BuddyActionType.PLACE_LINK -> placeLink(userId, projectId, payload.linkUrl, payload.linkLabel)
+        BuddyActionType.TICK_CHECKLIST_ITEMS ->
+            tickItems(userId, payload.cardId, payload.checklistItems)
         else -> placeNote(userId, projectId, payload.noteText)
     }
 
@@ -193,6 +202,68 @@ class BuddyBoardWriteActions(
                 cardId = cardId,
                 checklistItems = items.take(MAX_CHECKLIST_ITEMS),
             )
+        }
+    }
+
+    /**
+     * Offers to tick lines the hire has said they finished.
+     *
+     * Same shape as an amendment and the same refusals, because it is the same card and the same
+     * risk of naming one that is not theirs. What differs is where the lines come from: an
+     * amendment's are the mentor's, these are the hire's own — quoted back from the card so they
+     * can see which ones before agreeing.
+     */
+    private fun proposeTicks(
+        call: BuddyToolCallDto,
+        type: BuddyActionType,
+        projectName: String,
+    ): ProposeOutcome {
+        val cardId = call.uuidArg("card_id")
+        val items = call.stringListArg("items")
+        return when {
+            cardId == null ->
+                ProposeOutcome(
+                    "No card_id was provided. Read read_board to find the checklist you mean, and " +
+                        "pass its id.",
+                    null,
+                )
+            items.isEmpty() ->
+                ProposeOutcome("No lines were named to tick off.", null)
+            else -> offer(
+                type,
+                projectName,
+                cardId = cardId,
+                checklistItems = items.take(MAX_CHECKLIST_ITEMS),
+            )
+        }
+    }
+
+    /** Ticks the named lines, and can do nothing else to the card. */
+    private fun tickItems(userId: UUID, cardId: UUID?, items: List<String>?): BuddyActionResponse {
+        if (cardId == null) {
+            return BuddyActionResponse(ok = false, message = "No card was proposed to tick off.")
+        }
+        val lines = items.orEmpty().map { it.trim() }.filter { it.isNotBlank() }
+        if (lines.isEmpty()) {
+            return BuddyActionResponse(ok = false, message = "There was nothing left to tick off.")
+        }
+
+        return try {
+            when (val ticked = boardService.tickChecklistItems(userId, cardId, lines)) {
+                0 -> BuddyActionResponse(
+                    ok = false,
+                    // Says which of the two it was, because they need different answers: one is
+                    // "you already did that", the other is "I named the wrong line".
+                    message = "Nothing changed — either those lines are already ticked, or they " +
+                        "are not the ones on that card.",
+                )
+                else -> BuddyActionResponse(
+                    ok = true,
+                    message = "Ticked $ticked off. Nothing else on the list changed.",
+                )
+            }
+        } catch (ex: ResponseStatusException) {
+            BuddyActionResponse(ok = false, message = ex.reason ?: "That list could not be ticked.")
         }
     }
 
@@ -368,6 +439,7 @@ class BuddyBoardWriteActions(
             BuddyActionType.AMEND_CHECKLIST,
             BuddyActionType.PLACE_LINK,
             BuddyActionType.PLACE_NOTE,
+            BuddyActionType.TICK_CHECKLIST_ITEMS,
         )
 
         /**
@@ -471,6 +543,42 @@ class BuddyBoardWriteActions(
                     putJsonObject("items") {
                         put("type", "array")
                         put("description", "Only the new lines, in the order they should be done.")
+                        putJsonObject("items") { put("type", "string") }
+                    }
+                }
+                putJsonArray("required") {
+                    add("card_id")
+                    add("items")
+                }
+            },
+        )
+
+        val TICK_CHECKLIST_SPEC = BuddyToolSpecDto(
+            name = BuddyActionType.TICK_CHECKLIST_ITEMS.toolName,
+            description = "Offer to tick lines off a checklist of theirs, when the hire SAYS they " +
+                "have done them. 'I have done the first two' is this tool. Read read_board for the " +
+                "card's id and the exact lines, and pass the lines back word for word — they are " +
+                "matched by their words, so a paraphrase ticks nothing. " +
+                "Only ever when they tell you. Never conclude from the conversation that a step " +
+                "looks done, never tick something as a side effect of answering, and never tick " +
+                "the last line to tidy a list up: a board that ticks itself because a model read " +
+                "something into a sentence is a board whose state nobody can trust. It cannot " +
+                "un-tick, so if they say they were wrong, tell them the checkbox on the card is " +
+                "theirs to click. This does NOT change anything by itself; they see a confirm " +
+                "button naming the lines.",
+            parameters = buildJsonObject {
+                put("type", "object")
+                putJsonObject("properties") {
+                    putJsonObject("card_id") {
+                        put("type", "string")
+                        put("description", "The checklist card's id, exactly as read_board gave it.")
+                    }
+                    putJsonObject("items") {
+                        put("type", "array")
+                        put(
+                            "description",
+                            "The lines to tick, word for word as read_board shows them on the card.",
+                        )
                         putJsonObject("items") { put("type", "string") }
                     }
                 }
