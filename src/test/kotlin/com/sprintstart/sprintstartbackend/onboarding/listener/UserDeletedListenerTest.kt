@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMileston
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyActionProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
@@ -32,6 +33,7 @@ class UserDeletedListenerTest {
     private val buddyMessageRepository: BuddyMessageRepository = mockk(relaxed = true)
     private val buddyTeamSessionRepository: BuddyTeamSessionRepository = mockk(relaxed = true)
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk(relaxed = true)
+    private val buddyActionProposalRepository: BuddyActionProposalRepository = mockk(relaxed = true)
     private val userCompetencyStateRepository: UserCompetencyStateRepository = mockk(relaxed = true)
     private val arrivalStepStateRepository: ArrivalStepStateRepository = mockk(relaxed = true)
     private val boardRepository: BoardRepository = mockk(relaxed = true)
@@ -49,6 +51,7 @@ class UserDeletedListenerTest {
         buddyMessageRepository,
         buddyTeamSessionRepository,
         buddyTeamMessageRepository,
+        buddyActionProposalRepository,
         userCompetencyStateRepository,
         arrivalStepStateRepository,
         boardRepository,
@@ -186,5 +189,15 @@ class UserDeletedListenerTest {
         // some databases refuse outright and the rest run for nothing.
         verify(exactly = 0) { boardStructureRepository.deleteAllByBoardIdIn(any()) }
         verify { userCompetencyStateRepository.deleteAllByUserId(userId) }
+    }
+
+    /** What the buddy offered a manager, and what they decided, is theirs and goes with the account. */
+    @Test
+    fun `deleting a user erases the proposals the buddy made them`() {
+        hasConversationAndBoard()
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verify { buddyActionProposalRepository.deleteAllByUserId(userId) }
     }
 }
