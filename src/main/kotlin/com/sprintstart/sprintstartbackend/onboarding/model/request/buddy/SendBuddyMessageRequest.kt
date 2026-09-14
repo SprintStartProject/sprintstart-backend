@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.request.buddy
 
+import java.util.UUID
+
 /**
  * One thing a hire says to their buddy.
  *
@@ -17,4 +19,12 @@ data class SendBuddyMessageRequest(
     val content: String,
     /** Defaults to the full mentor, so a client that has never heard of the switch is unaffected. */
     val capabilitiesEnabled: Boolean = true,
+    /**
+     * Present to speak in team mode about this project; absent for the caller's own onboarding.
+     *
+     * A different conversation, not a flag on the same one: team talk has its own transcript and
+     * memory per project. The caller must manage the project, which is checked on every turn — this
+     * field names the project, it never authorises anything.
+     */
+    val teamProjectId: UUID? = null,
 )
