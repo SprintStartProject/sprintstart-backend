@@ -613,6 +613,9 @@ class BuddyActionService(
         val description: String? = null,
         /** The reason `request_skip` would send to the PM. */
         val reason: String? = null,
+        /** Where `add_path_step` would put the step in its phase's graph. */
+        val waitsOnIds: List<UUID> = emptyList(),
+        val unlocksIds: List<UUID> = emptyList(),
     )
 
     private sealed interface ProjectResolution {

@@ -416,6 +416,8 @@ class BuddyService(
                         answer = proposal.answer,
                         description = proposal.description,
                         reason = proposal.reason,
+                        waitsOnIds = proposal.waitsOnIds.takeIf { it.isNotEmpty() }?.map { it.toString() },
+                        unlocksIds = proposal.unlocksIds.takeIf { it.isNotEmpty() }?.map { it.toString() },
                     ),
                 )
             }

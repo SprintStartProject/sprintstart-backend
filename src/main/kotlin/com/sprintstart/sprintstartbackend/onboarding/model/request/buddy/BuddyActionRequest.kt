@@ -59,4 +59,10 @@ data class BuddyActionRequest(
     val description: String? = null,
     /** The reason `request_skip` sends to the PM, in the words the hire confirmed. */
     val reason: String? = null,
+    /**
+     * Where `add_path_step` puts the new step in its phase's graph: the items it waits on, and the
+     * items that will wait on it instead. Re-checked against the caller's own path at confirm time.
+     */
+    val waitsOnIds: List<UUID> = emptyList(),
+    val unlocksIds: List<UUID> = emptyList(),
 )

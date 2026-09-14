@@ -228,7 +228,9 @@ class BuddyPathToolsTest {
         val text = tools.execute(userId)
 
         assertThat(text).contains("LOCKED, cannot be started yet")
-        assertThat(text).contains("waits on #1 “Install the toolchain”")
+        assertThat(text).contains("comes after #1 “Install the toolchain”, which is not finished yet")
+        // And the edge the other way round, so the mentor knows what finishing #1 opens.
+        assertThat(text).contains("· opens: #2")
         assertThat(text).contains("Do not offer to start it")
     }
 
@@ -294,7 +296,10 @@ class BuddyPathToolsTest {
         assertThat(text).contains("READY TO CLOSE")
         assertThat(text).contains("#1 “Clone the repository” [step_id: ${done.id}]")
         assertThat(text).contains("it is what #2 “Run the tests” waits on")
-        assertThat(text).contains("call complete_step for it in the same reply")
+        assertThat(text).contains("call complete_step for it in that same reply")
+        // Where they are first, then what it opens, then the question: never the button first.
+        assertThat(text).contains("do not lead with the button")
+        assertThat(text).contains("The next thing waiting for them: finishing the step “Clone the repository”")
     }
 
     @Test
@@ -350,6 +355,58 @@ class BuddyPathToolsTest {
         assertThat(text).contains("they got this wrong before")
         assertThat(text).contains("add_path_step for one short refresher step in this phase [phase_id: ${setup.id}]")
         assertThat(text).contains("never the answer")
+    }
+
+    @Test
+    fun `the phase is described as a graph, with what each item opens and what is open now`() {
+        // Told only about locks, the mentor read the numbers as a sequence -- "after #6 comes #7" --
+        // about items that did not depend on each other at all.
+        val first = step("Install the toolchain", StepStatus.FINISHED)
+        val left = step("Run the tests", StepStatus.WAITING, blockers = setOf(first.id))
+        val right = step("Read the style guide", StepStatus.WAITING, blockers = setOf(first.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(first, left, right)))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("dependency graph, not a list")
+        assertThat(text).contains("· opens: #2, #3")
+        assertThat(text).contains("Open right now: #2, #3")
+    }
+
+    @Test
+    fun `the next thing follows the page's rule, a step before a question`() {
+        // Steps and questions carry separate positions; mixing them by position named a question as
+        // next while the page's own button pointed at a step.
+        val question = question("Who runs the retro?", QuestionStatus.RETRY)
+        val step = step("Clone the repository", StepStatus.WAITING).copy(position = 500)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(step), questions = listOf(question)))
+
+        assertThat(tools.execute(userId)).contains("The next thing waiting for them: the step “Clone the repository”")
+    }
+
+    @Test
+    fun `a refresher for a missed question is placed in front of that question`() {
+        val before = step("Read the retro guide", StepStatus.FINISHED)
+        val missed = question("Who runs the retro?", QuestionStatus.RETRY).copy(blockerIds = setOf(before.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", steps = listOf(before), questions = listOf(missed)))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("unlocks = [${missed.id}], waits_on = [${before.id}]")
+    }
+
+    @Test
+    fun `the options of a question are never narrowed down`() {
+        val q = question("Which meeting sets the scope?", QuestionStatus.RETRY, options = listOf("Planning", "Retro"))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", questions = listOf(q)))
+
+        // It told a hire one option "matches the title of #1 word for word": no answer stated, and the
+        // question given away all the same.
+        assertThat(tools.execute(userId)).contains("never narrow these down for them")
     }
 
     @Test

@@ -97,7 +97,7 @@ class BuddyPathTools(
             appendCurrentPhase(current, currentIndex, phases)
             appendReadyToClose(current, phases, checklists)
             appendCurrentTasks(stepTheyAreOn(current), checklists)
-            appendNextItem(phases)
+            appendNextItem(phases, readyToClose(current, checklists).firstOrNull())
             appendAhead(phases, currentIndex)
             appendEmptyPhases(path)
             append(NEWLINE + CLOSING)
@@ -204,11 +204,13 @@ class BuddyPathTools(
             )
         }
         appendLine(
-            "Bring this up yourself: first thing when they ask what is next, where they are or why " +
-                "something is locked, and otherwise in a sentence at the end of your answer. Say the " +
-                "checklist looks done, name what it is holding up, and call complete_step for it in " +
-                "the same reply so the button is there. Ask whether they are finished -- a ticked " +
-                "checklist is a very good sign, not proof. Once is enough: if they say not yet, leave it.",
+            "This step is where they actually are, and it comes before anything else that is open. " +
+                "When they ask what is next, where they are or why something is locked, answer in this " +
+                "order: (1) they are on this step, and its checklist is all ticked; (2) what finishing " +
+                "it opens, by number; (3) ask whether they are done with it -- and call complete_step " +
+                "for it in that same reply so the button is there. Keep it light: do not lead with the " +
+                "button, and do not lecture them about being sure. Otherwise mention it in a sentence at " +
+                "the end of your answer. Once is enough: if they say not yet, leave it.",
         )
     }
 
@@ -368,10 +370,13 @@ class BuddyPathTools(
 
         val numbers = numbering(steps, questions)
         val titles = titlesIn(phase)
+        val graph = PhaseGraph(numbers, titles, opensIn(phase))
+
+        appendGraphIntro(phase, steps, questions, numbers)
 
         if (steps.isNotEmpty()) {
-            appendLine("Steps, in the order the path puts them:")
-            steps.take(ITEMS_SHOWN).forEach { appendStep(it, numbers, titles) }
+            appendLine("Steps, numbered as their page shows them:")
+            steps.take(ITEMS_SHOWN).forEach { appendStep(it, graph) }
             if (steps.size > ITEMS_SHOWN) appendLine("- and ${steps.size - ITEMS_SHOWN} more")
         }
 
@@ -380,7 +385,7 @@ class BuddyPathTools(
                 "Knowledge questions. They count like steps, so a phase whose steps are done and " +
                     "whose questions are unanswered is still the phase they are standing in:",
             )
-            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, numbers, titles) }
+            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, graph) }
             if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
         }
     }
@@ -402,6 +407,45 @@ class BuddyPathTools(
             .withIndex()
             .associate { (index, id) -> id to index + 1 }
 
+    /** How to read the phase's items as a graph, and which of them are open right now. */
+    private fun StringBuilder.appendGraphIntro(
+        phase: GetOnboardingPhaseForUserResponse,
+        steps: List<GetOnboardingStepsResponse>,
+        questions: List<GetOnboardingQuestionForUserResponse>,
+        numbers: Map<UUID, Int>,
+    ) {
+        appendLine(
+            "The items of a phase form a dependency graph, not a list: an item opens once everything " +
+                "it comes after is done, several can be open at the same time, and finishing one can " +
+                "open several at once. Each item below says what it comes after and what it opens. " +
+                "Talk about it that way -- never \"after #6 comes #7\" unless #7 really comes after #6.",
+        )
+        val openNow = steps.filter { it.isFinishable() && !it.hasPendingSkip() }.map { it.id } +
+            questions.filter { it.status == QuestionStatus.OPEN || it.status == QuestionStatus.RETRY }.map { it.id }
+        if (!phase.locked && openNow.isNotEmpty()) {
+            appendLine("Open right now: " + openNow.joinToString(", ") { "#${numbers[it]}" })
+        }
+    }
+
+    /**
+     * For every item of [phase], the items that come directly after it -- the edges the graph view
+     * draws, read the other way round, because "finishing this opens #3 and #4" is the sentence a
+     * hire can act on and the data only stores "#3 comes after this".
+     */
+    private fun opensIn(phase: GetOnboardingPhaseForUserResponse): Map<UUID, List<UUID>> {
+        val edges = phase.steps.map { it.id to it.blockerIds } + phase.questions.map { it.id to it.blockerIds }
+        return edges
+            .flatMap { (item, blockers) -> blockers.map { it to item } }
+            .groupBy({ it.first }, { it.second })
+    }
+
+    /** What every line of the current phase needs to name its neighbours. */
+    private data class PhaseGraph(
+        val numbers: Map<UUID, Int>,
+        val titles: Map<UUID, String>,
+        val opens: Map<UUID, List<UUID>>,
+    )
+
     /** Every item of a phase by id, so a blocker can be named rather than counted. */
     private fun titlesIn(phase: GetOnboardingPhaseForUserResponse): Map<UUID, String> =
         phase.steps.associate { it.id to it.title } + phase.questions.associate { it.id to it.question }
@@ -409,9 +453,9 @@ class BuddyPathTools(
     /** One step: what it is, where it stands, and the ids and link an action or a reply needs. */
     private fun StringBuilder.appendStep(
         step: GetOnboardingStepsResponse,
-        numbers: Map<UUID, Int>,
-        titles: Map<UUID, String>,
+        graph: PhaseGraph,
     ) {
+        val numbers = graph.numbers
         val state = when {
             step.status == StepStatus.FINISHED -> "done"
             step.status == StepStatus.SKIPPED -> "skipped"
@@ -428,7 +472,7 @@ class BuddyPathTools(
         step.expectedOutcomes.take(OUTCOMES_SHOWN).forEach {
             appendLine("    · should leave them able to: $it")
         }
-        appendBlockers(step.locked, step.blockerIds, numbers, titles)
+        appendEdges(step.id, step.locked, step.blockerIds, graph)
         appendSkip(step)
     }
 
@@ -473,9 +517,9 @@ class BuddyPathTools(
     private fun StringBuilder.appendQuestion(
         question: GetOnboardingQuestionForUserResponse,
         phase: GetOnboardingPhaseForUserResponse,
-        numbers: Map<UUID, Int>,
-        titles: Map<UUID, String>,
+        graph: PhaseGraph,
     ) {
+        val numbers = graph.numbers
         val state = when (question.status) {
             QuestionStatus.PASSED -> "passed"
             QuestionStatus.RETRY -> "answered wrong before, still open"
@@ -489,49 +533,62 @@ class BuddyPathTools(
         val options = question.options.sortedBy { it.position }
         if (options.isNotEmpty()) {
             appendLine("    · the options they see: " + options.joinToString("; ") { it.label })
+            // Hinting is answering. Testing had the mentor say one option "matches the title of #1
+            // word for word" -- no answer stated, and the question given away all the same.
+            appendLine(
+                "    · never narrow these down for them: not by pointing at an option that matches a " +
+                    "title or wording elsewhere, not by ruling any out, and not by saying how close a " +
+                    "wrong answer was -- you do not know.",
+            )
         }
-        appendBlockers(question.status == QuestionStatus.LOCKED, question.blockerIds, numbers, titles)
+        appendEdges(question.id, question.status == QuestionStatus.LOCKED, question.blockerIds, graph)
         // A wrong answer is the clearest signal on the whole path that a step did not land. Teaching
         // the material in the conversation comes first; a refresher step is for when what they
         // missed is more than one explanation, so it is still there tomorrow.
         if (question.status == QuestionStatus.RETRY) {
+            // Placed before the question, so the refresher is what opens it: waits_on takes over
+            // whatever the question waits on now, and the question waits on the refresher instead.
+            val waitsOn = question.blockerIds.joinToString(", ")
             appendLine(
                 "    · they got this wrong before, so the material behind it did not land. Go through it " +
                     "with them first. If what they missed is bigger than one explanation, offer " +
-                    "add_path_step for one short refresher step in this phase " +
-                    "[phase_id: ${phase.id}] that says what to revisit and where -- never the answer.",
+                    "add_path_step for one short refresher step in this phase [phase_id: ${phase.id}] " +
+                    "that says what to revisit and where -- never the answer. Put it in front of this " +
+                    "question: unlocks = [${question.id}], waits_on = [$waitsOn].",
             )
         }
     }
 
     /**
-     * What a locked item is waiting on, named.
+     * Where an item sits in its phase's graph: what it comes after, whether that has locked it, and
+     * what finishing it opens.
      *
-     * The fix for the thing a mentor cannot get right from a flag alone: told only "locked", it
-     * agreed a hire could go ahead with a step their page refuses to open. A blocker inside the phase
-     * can be named and numbered, because the map covers the whole phase; a lock that comes from the
-     * phase itself is stated above and says so here rather than repeating the phase's own blockers on
-     * every line.
+     * Every item, not only locked ones. Told only about locks, the mentor read the numbers as a
+     * sequence and told a hire "after #6 comes #7" about items that do not depend on each other at all
+     * -- and could not place a new step anywhere but the end, because it had never seen an edge.
+     * A lock that comes from the phase itself is stated once above and said so here, rather than
+     * repeating the phase's own blockers on every line.
      */
-    private fun StringBuilder.appendBlockers(
+    private fun StringBuilder.appendEdges(
+        id: UUID,
         locked: Boolean,
         blockerIds: Set<UUID>,
-        numbers: Map<UUID, Int>,
-        titles: Map<UUID, String>,
+        graph: PhaseGraph,
     ) {
-        if (!locked) return
-
-        val named = blockerIds.mapNotNull { id ->
-            titles[id]?.let { title -> "#${numbers[id]} " + quoted(title) }
+        val named = blockerIds.mapNotNull { blocker ->
+            graph.titles[blocker]?.let { title -> "#${graph.numbers[blocker]} " + quoted(title) }
         }
-        appendLine(
-            if (named.isEmpty()) {
-                "    · locked by this phase, not by anything inside it. Do not offer to start it."
-            } else {
-                "    · waits on ${named.joinToString(", ")} being finished first. Do not offer to " +
-                    "start it before then."
-            },
-        )
+        when {
+            named.isNotEmpty() && locked ->
+                appendLine(
+                    "    · comes after ${named.joinToString(", ")}, which is not finished yet -- so it is " +
+                        "locked. Do not offer to start it before then.",
+                )
+            named.isNotEmpty() -> appendLine("    · comes after ${named.joinToString(", ")}")
+            locked -> appendLine("    · locked by this phase, not by anything inside it. Do not offer to start it.")
+        }
+        val opens = graph.opens[id].orEmpty().mapNotNull { next -> graph.numbers[next]?.let { "#$it" } }
+        if (opens.isNotEmpty()) appendLine("    · opens: ${opens.joinToString(", ")}")
     }
 
     /**
@@ -569,9 +626,24 @@ class BuddyPathTools(
         )
     }
 
-    /** The one thing to talk about next, named here rather than left to the model to pick. */
-    private fun StringBuilder.appendNextItem(phases: List<GetOnboardingPhaseForUserResponse>) {
+    /**
+     * The one thing to talk about next, named here rather than left to the model to pick.
+     *
+     * A step whose checklist is done but that was never closed comes first: it is where they
+     * actually are, and whatever the page calls next is often locked behind it.
+     */
+    private fun StringBuilder.appendNextItem(
+        phases: List<GetOnboardingPhaseForUserResponse>,
+        ready: GetOnboardingStepsResponse?,
+    ) {
         append(NEWLINE)
+        if (ready != null) {
+            appendLine(
+                "The next thing waiting for them: finishing the step ${quoted(ready.title)} " +
+                    "[step_id: ${ready.id}] [link: $STEP_LINK${ready.id}], whose checklist is already done.",
+            )
+            return
+        }
         when (val next = nextItem(phases)) {
             null -> appendLine("Nothing on their path is open right now.")
             else -> appendLine("The next thing waiting for them: ${next.withIds}.")
@@ -639,11 +711,14 @@ class BuddyPathTools(
     }
 
     /**
-     * The first open, unlocked item on the path, mixing steps and questions by position.
+     * The first open, unlocked item on the path, by the rule the hire's own page uses.
      *
-     * The same rule the hire's own page uses to pick its "next" button: phases in order, locked
-     * phases skipped entirely, then position order inside the phase, whichever kind of item comes
-     * first. Written here against the hire-facing shape rather than reusing
+     * The page's "next" button (`resolveNextAction`): phases in order, locked phases skipped
+     * entirely, then the first open unlocked *step* by position, and only when there is none, the
+     * first open *question*. Steps and questions carry separate positions, so mixing them by position
+     * -- which this used to do -- named a question as next while the page pointed at a step.
+     *
+     * Written here against the hire-facing shape rather than reusing
      * [OnboardingPositionReader], which predates questions being first-class and still walks steps
      * only -- a mentor using that would send a hire past the question their phase is actually
      * waiting on. Two answers to one question is a thing to reconcile, and this comment is where the
@@ -666,7 +741,7 @@ class BuddyPathTools(
                 .sortedBy { it.position }
                 .firstOrNull { it.status == QuestionStatus.OPEN || it.status == QuestionStatus.RETRY }
 
-            if (step != null && (question == null || step.position <= question.position)) {
+            if (step != null) {
                 return NextItem(
                     plain = "the step ${quoted(step.title)}",
                     withIds = "the step ${quoted(step.title)} [step_id: ${step.id}] " +

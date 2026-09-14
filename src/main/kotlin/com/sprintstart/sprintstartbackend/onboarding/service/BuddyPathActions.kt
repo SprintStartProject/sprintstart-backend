@@ -18,6 +18,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.question.Get
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -58,6 +59,7 @@ import java.util.UUID
 class BuddyPathActions(
     private val buddyPathTools: BuddyPathTools,
     private val onboardingStepService: OnboardingStepService,
+    private val onboardingStepPlacementService: OnboardingStepPlacementService,
     private val onboardingTaskService: OnboardingTaskService,
     private val questionAttemptService: QuestionAttemptService,
     private val onboardingSkipService: OnboardingSkipService,
@@ -122,7 +124,7 @@ class BuddyPathActions(
             BuddyActionType.COMPLETE_TASK -> completeTask(authId, request.onboardingTaskId)
             BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request.questionId, request.answer)
             BuddyActionType.REQUEST_SKIP -> requestSkip(authId, request.stepId, request.reason)
-            else -> addPathStep(authId, request.phaseId, request.title, request.description)
+            else -> addPathStep(authId, request)
         }
 
     /**
@@ -375,6 +377,7 @@ class BuddyPathActions(
             )
         val title = call.stringArg("title").trim()
         val description = call.stringArg("description").trim()
+        val placement = PathStepPlacement(phase, call.uuidListArg("waits_on"), call.uuidListArg("unlocks"))
 
         val refusal = when {
             title.isBlank() -> "No title was provided. Say what the step is, in a few words."
@@ -384,23 +387,41 @@ class BuddyPathActions(
             phase.steps.any { it.title.trim().equals(title, ignoreCase = true) } ->
                 "“$title” is already a step of “${phase.title}”, so nothing needs adding. Point them " +
                     "at the one that is there."
-            else -> null
+            else -> placement.problem()
         }
         if (refusal != null) return refused(refusal)
+
+        val where = placement.describe()
+        val connection = if (placement.isConnected) {
+            " It goes $where in the phase's graph: it opens once what it waits on is done, and what " +
+                "it unlocks now waits on it."
+        } else {
+            " It is not connected to anything, so it is open straight away and is never what comes " +
+                "next — if it belongs somewhere in their path, pass waits_on and unlocks."
+        }
+        val relocks = placement
+            .relocksStarted()
+            .takeIf { it.isNotEmpty() }
+            ?.let {
+                " ${it.joinToString(", ")} is already started and will lock again until this step is " +
+                    "done — say so before they click."
+            }.orEmpty()
 
         return BuddyActionService.ProposeOutcome(
             toolResult = "Proposed to the hire: add the step “$title” to the phase " +
                 "“${phase.title}” of their own path. They see a confirm button; nothing is added " +
                 "unless they click it. This changes their copy only — their PM's blueprint is " +
                 "untouched — and they can edit or remove it afterwards. Say what the step is for " +
-                "before you offer it.",
+                "and where it goes before you offer it.$connection$relocks",
             proposal = BuddyActionService.BuddyActionProposal(
                 action = type.toolName,
-                label = "Add “$title” to your path",
+                label = if (where.isEmpty()) "Add “$title” to your path" else "Add “$title” $where",
                 question = null,
                 phaseId = phase.id,
                 title = title,
                 description = description,
+                waitsOnIds = placement.waitsOn.toList(),
+                unlocksIds = placement.unlocks.toList(),
             ),
         )
     }
@@ -575,27 +596,34 @@ class BuddyPathActions(
         )
     }
 
-    private fun addPathStep(
-        authId: String,
-        phaseId: UUID?,
-        title: String?,
-        description: String?,
-    ): BuddyActionResponse {
+    private fun addPathStep(authId: String, request: BuddyActionRequest): BuddyActionResponse {
+        val phaseId = request.phaseId
+        val title = request.title
         if (phaseId == null || title.isNullOrBlank()) {
             return BuddyActionResponse(ok = false, message = "No step was proposed to add.")
         }
         val phase = buddyPathTools.findPhase(resolveUserId(authId), phaseId)
             ?: return BuddyActionResponse(ok = false, message = "That phase isn't on your path.")
 
-        val created = onboardingStepService.createOnboardingStepForMe(
-            authId,
-            phaseId,
-            CreateOnboardingStepRequest(
-                // At the end of the phase. Where a step the conversation produced belongs in
-                // somebody else's sequence is not something this can know, and the hire can drag it.
-                position = phase.steps.size,
+        // Checked again: the path can change between the button and the click, and a placement
+        // that was sound then can be a loop or point at something finished now.
+        val placement = PathStepPlacement(phase, request.waitsOnIds.toSet(), request.unlocksIds.toSet())
+        if (placement.problem() != null) {
+            return BuddyActionResponse(
+                ok = false,
+                message = "Your path changed since this was suggested, so the step wasn't added — ask me again.",
+            )
+        }
+
+        val created = onboardingStepPlacementService.createConnectedStepForMe(
+            authId = authId,
+            phaseId = phaseId,
+            request = CreateOnboardingStepRequest(
+                // Next to what it waits on (or in front of what it unlocks), so the list reads in the
+                // order the graph opens it. The end, when it is connected to nothing.
+                position = placement.position(),
                 title = title,
-                description = description.orEmpty(),
+                description = request.description.orEmpty(),
                 type = StepType.TASK,
                 estimatedMinutes = ADDED_STEP_MINUTES,
                 // Left empty on purpose: an expected outcome is a promise about what doing the step
@@ -606,11 +634,13 @@ class BuddyPathActions(
             // labelled "Custom step by PM" -- a thing their team requires -- when it was something
             // they agreed to in a chat.
             origin = StepOrigin.BUDDY,
+            waitsOn = placement.waitsOn,
+            unlocks = placement.unlocks,
         )
         return BuddyActionResponse(
             ok = true,
             message = "Added “${created.title}” to “${phase.title}”. It is on your path now, and it " +
-                "is yours — edit it, reorder it or delete it there like any other step.",
+                "is yours — edit it or delete it there like any other step.",
         )
     }
 
@@ -661,6 +691,20 @@ class BuddyPathActions(
     /** Reads a string argument the model passed to a tool, or "" when it is missing/non-text. */
     private fun BuddyToolCallDto.stringArg(name: String): String =
         (arguments[name] as? JsonPrimitive)?.contentOrNull.orEmpty()
+
+    /**
+     * Reads a list of UUIDs the model passed, tolerating a single string where a list was asked for.
+     * Anything that is not a UUID is dropped here and caught by the placement check as "not in this
+     * phase" only if it parsed -- an unparseable id is simply not a placement.
+     */
+    private fun BuddyToolCallDto.uuidListArg(name: String): Set<UUID> {
+        val raw = when (val value = arguments[name]) {
+            is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            is JsonPrimitive -> listOfNotNull(value.contentOrNull)
+            else -> emptyList()
+        }
+        return raw.mapNotNull { runCatching { UUID.fromString(it.trim()) }.getOrNull() }.toSet()
+    }
 
     /** Reads a UUID argument the model passed to a tool, or null when it is missing/unparseable. */
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
@@ -820,7 +864,16 @@ class BuddyPathActions(
                 "Offer it; do not add one after every wrong answer. Give a title " +
                 "of a few words and a description saying what doing it involves. Do not offer a " +
                 "step for something already on their path, do not add several at once, and do not " +
-                "add one just to have added something.",
+                "add one just to have added something.\n" +
+                "WHERE IT GOES. A phase is a dependency graph, not a list: an item opens once " +
+                "everything it waits on is done. A step added with no connections is open at once, " +
+                "floats unconnected in their graph view and is never what comes next. So place it: " +
+                "waits_on = the ids it should open after, unlocks = the ids that should wait on it. " +
+                "To put it in as the NEXT thing, waits_on is the item they are on or just finished, " +
+                "and unlocks is what currently waits on that item (the path read lists it under " +
+                "\"opens\"). A refresher for a question they missed goes before that question: " +
+                "unlocks = [that question_id]. Leave both empty only for a step that genuinely " +
+                "depends on nothing and holds nothing up.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -837,6 +890,24 @@ class BuddyPathActions(
                         put(
                             "description",
                             "What doing it involves, in one or two sentences the hire can act on.",
+                        )
+                    }
+                    putJsonObject("waits_on") {
+                        put("type", "array")
+                        putJsonObject("items") { put("type", "string") }
+                        put(
+                            "description",
+                            "step_id/question_id values in the same phase that must be done before " +
+                                "this step opens.",
+                        )
+                    }
+                    putJsonObject("unlocks") {
+                        put("type", "array")
+                        putJsonObject("items") { put("type", "string") }
+                        put(
+                            "description",
+                            "step_id/question_id values in the same phase that should wait on this " +
+                                "step. They stop waiting directly on anything in waits_on.",
                         )
                     }
                 }

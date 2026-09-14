@@ -55,4 +55,7 @@ data class BuddyStreamEvent(
     val description: String? = null,
     /** `request_skip` confirm payload: the reason that goes to the PM. */
     val reason: String? = null,
+    /** `add_path_step` confirm payload: where the step goes in its phase's graph. */
+    @SerialName("waits_on_ids") val waitsOnIds: List<String>? = null,
+    @SerialName("unlocks_ids") val unlocksIds: List<String>? = null,
 )
