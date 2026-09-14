@@ -62,6 +62,7 @@ class GithubConnectorServiceTest {
     private val githubClient = mockk<GithubClient>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val userApi = mockk<UserApi>()
+    private val visibilityService = mockk<GithubRepositoryVisibilityService>(relaxed = true)
 
     private lateinit var service: GithubConnectorService
 
@@ -85,6 +86,7 @@ class GithubConnectorServiceTest {
             githubClient = githubClient,
             eventPublisher = eventPublisher,
             userApi = userApi,
+            visibilityService = visibilityService,
         )
     }
 
@@ -160,9 +162,17 @@ class GithubConnectorServiceTest {
                 // re-fetch of everything already stored.
                 verify(exactly = 0) { repoConfigRepository.save(any()) }
                 coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
-                // GitHub *is* consulted now, but only to prove the caller can see the repository --
-                // never to fetch it again.
-                coVerify(exactly = 1) { githubClient.repositoryExists(any()) }
+                // The visibility check is its own service now; from here the reuse path
+                // must simply delegate to it and never fetch the repository again.
+                coVerify(exactly = 1) {
+                    visibilityService.requireCallerCanSeeRepository(
+                        "auth-id",
+                        connectRequest().tokenName,
+                        "owner",
+                        "repo",
+                    )
+                }
+                coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
             }
 
         @Test
@@ -210,7 +220,7 @@ class GithubConnectorServiceTest {
         }
 
         @Test
-        fun `reuse refuses a caller whose PAT cannot see the repository`() = testScope.runTest {
+        fun `reuse stops when the visibility check refuses the caller`() = testScope.runTest {
             val existing = GithubRepositoryConnection(
                 owner = "owner",
                 name = "repo",
@@ -218,38 +228,16 @@ class GithubConnectorServiceTest {
                 projectIdsInternal = mutableSetOf(UUID.randomUUID()),
             )
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
-            stubCallerCanSeeRepository()
-            coEvery { githubClient.repositoryExists(any()) } returns false
+            coEvery {
+                visibilityService.requireCallerCanSeeRepository(any(), any(), any(), any())
+            } throws RepositoryNotFoundException("owner", "repo")
 
-            // Access to the target project is the caller's own business; reaching into a private
-            // repository somebody else connected is not. Without this, any PM who knows an
-            // owner/name could pull another team's code into their project on that team's PAT --
-            // and the propagation would make all of it answerable in their chat.
             assertFailsWith<RepositoryNotFoundException> {
                 service.connectRepositoryIfNecessary("auth-id", connectRequest())
             }
 
             verify(exactly = 0) { repoConnectionRepository.save(any()) }
             assertThat(existing.projectIds).doesNotContain(testProjectId)
-        }
-
-        @Test
-        fun `reuse refuses a caller with no PAT of their own`() = testScope.runTest {
-            val existing = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(GithubUserPat("other-pm", "their-pat"), token = "their-token"),
-                projectIdsInternal = mutableSetOf(UUID.randomUUID()),
-            )
-            every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
-            every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
-            every { githubUserRepository.findById(any()) } returns Optional.empty()
-
-            assertFailsWith<GithubUserPatNotFoundException> {
-                service.connectRepositoryIfNecessary("auth-id", connectRequest())
-            }
-
-            verify(exactly = 0) { repoConnectionRepository.save(any()) }
         }
 
         @Test
@@ -265,7 +253,6 @@ class GithubConnectorServiceTest {
             )
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
             every { repoConnectionRepository.save(any()) } answers { firstArg() }
-            stubCallerCanSeeRepository()
 
             val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
 
@@ -363,8 +350,7 @@ class GithubConnectorServiceTest {
 
             assertThat(transactionId).isNotNull()
             assertThat(repository.projectIds).contains(testProjectId)
-            // Consulted once for the visibility check, and for nothing else.
-            coVerify(exactly = 1) { githubClient.repositoryExists(any()) }
+            coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
             coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
             coVerify(exactly = 0) { commitsService.fetchAndIngestAllCommits(any(), any()) }
             coVerify(exactly = 0) { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
