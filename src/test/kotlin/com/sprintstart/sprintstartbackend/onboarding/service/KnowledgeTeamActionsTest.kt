@@ -159,7 +159,15 @@ class KnowledgeTeamActionsTest {
 
         val result = answer.perform(proposed.params, context)
 
-        verify { knowledgeBaseService.answer("auth|pm", open.id, "Merge to dev.", "How do we deploy to staging?") }
+        verify {
+            knowledgeBaseService.answerOpenOn(
+                "auth|pm",
+                projectId,
+                open.id,
+                "Merge to dev.",
+                "How do we deploy to staging?",
+            )
+        }
         assertThat(result).contains("canonical answer")
     }
 
@@ -191,7 +199,7 @@ class KnowledgeTeamActionsTest {
 
         dismiss.perform(proposed.params, context)
 
-        verify { knowledgeBaseService.dismiss(open.id) }
+        verify { knowledgeBaseService.dismissOpenOn(projectId, open.id) }
     }
 
     // --- edit_canonical_answer ----------------------------------------------------------------------
@@ -261,7 +269,16 @@ class KnowledgeTeamActionsTest {
         assertThat(edit.recheck(proposed.params, context)).isNull()
         edit.perform(proposed.params, context)
 
-        verify { knowledgeBaseService.editAnswer("auth|pm", stored.id, "How do we deploy?", "Tag a release.") }
+        verify {
+            knowledgeBaseService.editAnswerIfUnchanged(
+                "auth|pm",
+                projectId,
+                stored.id,
+                "How do we deploy?",
+                "Tag a release.",
+                stored.updatedAt,
+            )
+        }
     }
 
     // --- refreshes ----------------------------------------------------------------------------------

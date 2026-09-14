@@ -25,6 +25,10 @@ import java.util.UUID
  * `KnowledgeBaseService.answer` and `dismiss` load a request by id and never check its project — the
  * REST routes in front of them only check the PM role. So every action here resolves its target
  * against the turn's project itself, when drafting and again when the manager confirms.
+ *
+ * The recheck alone is not enough: another confirm, or the inbox, can close the same question between
+ * the recheck and the write. So the writes go through the service's conditional variants, whose
+ * condition is part of the update, and a lost race comes back as a refusal the manager can read.
  */
 
 /** The request [requestId] names, if it is still open and on [projectId]. */
@@ -116,8 +120,9 @@ class AnswerEscalationAction(
         GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.uuid("request_id"), context.projectId) == null }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        knowledgeBaseService.answer(
+        knowledgeBaseService.answerOpenOn(
             pmAuthId = context.authId,
+            projectId = context.projectId,
             requestId = requireNotNull(params.uuid("request_id")),
             answerText = params.text("answer"),
             questionOverride = params.text("question"),
@@ -160,7 +165,7 @@ class DismissEscalationAction(
         GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.uuid("request_id"), context.projectId) == null }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        knowledgeBaseService.dismiss(requireNotNull(params.uuid("request_id")))
+        knowledgeBaseService.dismissOpenOn(context.projectId, requireNotNull(params.uuid("request_id")))
         return "Dismissed. The question left the inbox without an answer."
     }
 }
@@ -228,11 +233,13 @@ class EditCanonicalAnswerAction(
     }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        knowledgeBaseService.editAnswer(
+        knowledgeBaseService.editAnswerIfUnchanged(
             pmAuthId = context.authId,
+            projectId = context.projectId,
             answerId = requireNotNull(params.uuid("answer_id")),
             question = params.text("question"),
             answer = params.text("answer"),
+            seenUpdatedAt = Instant.parse(params.text("seen_updated_at")),
         )
         return "Updated the canonical answer. The buddy quotes the new wording from now on."
     }
