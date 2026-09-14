@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
@@ -9,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyAc
 import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.CreateOnboardingSkipRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.CreateOnboardingSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingStepSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.CreateOnboardingStepResponse
@@ -309,6 +312,44 @@ class BuddyPathStepActionTest {
     }
 
     @Test
+    fun `a step given only what it unlocks takes over that item's way in`() {
+        // Testing: the hire finished #1 and asked for a step next; the mentor passed only unlocks, and
+        // the new step was locked-in behind nothing -- open from the start, no edge into it.
+        val current = step("Read the runbook", StepStatus.FINISHED)
+        val question = question("What does the runbook cover?", QuestionStatus.OPEN)
+            .copy(blockerIds = setOf(current.id))
+        val phase = phase("Deployment", steps = listOf(current)).copy(questions = listOf(question))
+        every { buddyPathTools.findPhase(userId, phase.id) } returns phase
+
+        val outcome = service.propose(
+            placedCall(phase.id, "Refresher", waitsOn = emptyList(), unlocks = listOf(question.id)),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.waitsOnIds).containsExactly(current.id)
+        assertThat(outcome.proposal?.label).contains("after “Read the runbook”")
+        assertThat(outcome.toolResult).contains("You passed no waits_on")
+    }
+
+    @Test
+    fun `a step in front of an item nothing leads into opens after where the hire is`() {
+        // The question had no edge in, so there is nothing to take over: "as the next thing" means
+        // after the step they just finished.
+        val finished = step("Read the runbook", StepStatus.FINISHED).copy(completedAt = Instant.EPOCH)
+        val question = question("What does the runbook cover?", QuestionStatus.OPEN)
+        val phase = phase("Deployment", steps = listOf(finished)).copy(questions = listOf(question))
+        every { buddyPathTools.findPhase(userId, phase.id) } returns phase
+
+        val outcome = service.propose(
+            placedCall(phase.id, "Refresher", waitsOn = emptyList(), unlocks = listOf(question.id)),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.waitsOnIds).containsExactly(finished.id)
+        assertThat(outcome.proposal?.unlocksIds).containsExactly(question.id)
+    }
+
+    @Test
     fun `a placement in front of something already done is refused`() {
         val done = step("Read the runbook", StepStatus.FINISHED)
         val phase = phase("Deployment", steps = listOf(done))
@@ -407,6 +448,16 @@ class BuddyPathStepActionTest {
             locked = false,
             steps = steps,
         )
+
+    private fun question(text: String, status: QuestionStatus) = GetOnboardingQuestionForUserResponse(
+        id = UUID.randomUUID(),
+        phaseId = UUID.randomUUID(),
+        position = 0,
+        type = CheckQuestionType.SHORT_TEXT,
+        question = text,
+        options = emptyList(),
+        status = status,
+    )
 
     private fun step(title: String, status: StepStatus, locked: Boolean = false) =
         GetOnboardingStepsResponse(

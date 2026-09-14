@@ -399,6 +399,29 @@ class BuddyPathToolsTest {
     }
 
     @Test
+    fun `adding a step as the next thing is spelled out with both halves`() {
+        // Told how to place a step, the mentor passed what it unlocks and left out what it comes
+        // after. So the path read hands over both, worked out from where the hire is.
+        val current = step("Read the runbook", StepStatus.IN_PROGRESS)
+        val next = step("Deploy to staging", StepStatus.WAITING, locked = true, blockers = setOf(current.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Deployment", steps = listOf(current, next)))
+
+        assertThat(tools.execute(userId))
+            .contains("pass BOTH waits_on = [${current.id}] and unlocks = [${next.id}]")
+    }
+
+    @Test
+    fun `a refresher in front of a question nothing leads into opens after where the hire is`() {
+        val finished = step("Read the retro guide", StepStatus.FINISHED).copy(completedAt = Instant.EPOCH)
+        val missed = question("Who runs the retro?", QuestionStatus.RETRY)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", steps = listOf(finished), questions = listOf(missed)))
+
+        assertThat(tools.execute(userId)).contains("unlocks = [${missed.id}], waits_on = [${finished.id}]")
+    }
+
+    @Test
     fun `the options of a question are never narrowed down`() {
         val q = question("Which meeting sets the scope?", QuestionStatus.RETRY, options = listOf("Planning", "Retro"))
         every { onboardingPathService.findPathForUserId(userId) } returns

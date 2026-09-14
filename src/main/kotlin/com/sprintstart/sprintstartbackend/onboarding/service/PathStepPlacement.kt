@@ -20,6 +20,8 @@ internal class PathStepPlacement(
     private val phase: GetOnboardingPhaseForUserResponse,
     val waitsOn: Set<UUID>,
     val unlocks: Set<UUID>,
+    /** Whether [waitsOn] was worked out here rather than passed by the mentor. See [inferred]. */
+    val entryInferred: Boolean = false,
 ) {
     private val stepsById = phase.steps.associateBy { it.id }
     private val questionsById = phase.questions.associateBy { it.id }
@@ -90,4 +92,55 @@ internal class PathStepPlacement(
 
     private fun titleOf(id: UUID): String =
         "“" + (stepsById[id]?.title ?: questionsById[id]?.question ?: id.toString()) + "”"
+
+    companion object {
+        /**
+         * A placement with its entry filled in when the mentor left it out.
+         *
+         * Testing had the mentor pass only `unlocks` for a step the hire asked to do next: the
+         * question after it was locked behind the new step, but nothing led *into* the new step, so
+         * it sat open from the start with no edge in -- a graph that no longer reads as one. The
+         * entry is not something to leave to a model that reliably fills in half of a pair, so when
+         * [waitsOn] is empty it is worked out, in this order:
+         *
+         * 1. **What the unlocked items waited on until now.** Putting a step in front of B means
+         *    taking over B's incoming edges: A → B becomes A → new → B.
+         * 2. **Where the hire is**: the step they have started, or else the one they finished most
+         *    recently. An item with no edges in (the first of a phase) has nothing to take over, and
+         *    "as the next thing" means after what they are doing.
+         *
+         * Nothing at all only when neither exists, or when using it would make a loop -- a phase the
+         * hire has not touched, where a step really can stand at the start. The button names what it
+         * comes after either way, so an inference the hire did not mean is visible before the click.
+         */
+        fun inferred(
+            phase: GetOnboardingPhaseForUserResponse,
+            waitsOn: Set<UUID>,
+            unlocks: Set<UUID>,
+        ): PathStepPlacement {
+            if (waitsOn.isNotEmpty()) return PathStepPlacement(phase, waitsOn, unlocks)
+
+            val items = phase.steps.map { it.id to it.blockerIds } + phase.questions.map { it.id to it.blockerIds }
+            val inPhase = items.map { it.first }.toSet()
+            val inherited = items
+                .filter { it.first in unlocks }
+                .flatMap { it.second }
+                .filter { it in inPhase && it !in unlocks }
+                .toSet()
+            if (inherited.isNotEmpty()) return PathStepPlacement(phase, inherited, unlocks, entryInferred = true)
+
+            val anchor = anchorOf(phase)?.takeIf { it !in unlocks }
+                ?: return PathStepPlacement(phase, emptySet(), unlocks)
+            val anchored = PathStepPlacement(phase, setOf(anchor), unlocks, entryInferred = true)
+            return if (anchored.problem() == null) anchored else PathStepPlacement(phase, emptySet(), unlocks)
+        }
+
+        /** The step the hire is on: the one started, else the one finished most recently. */
+        fun anchorOf(phase: GetOnboardingPhaseForUserResponse): UUID? =
+            phase.steps.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.id
+                ?: phase.steps
+                    .filter { it.status == StepStatus.FINISHED && it.completedAt != null }
+                    .maxByOrNull { it.completedAt!! }
+                    ?.id
+    }
 }

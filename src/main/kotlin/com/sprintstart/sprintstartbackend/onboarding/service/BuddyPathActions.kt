@@ -377,7 +377,7 @@ class BuddyPathActions(
             )
         val title = call.stringArg("title").trim()
         val description = call.stringArg("description").trim()
-        val placement = PathStepPlacement(phase, call.uuidListArg("waits_on"), call.uuidListArg("unlocks"))
+        val placement = PathStepPlacement.inferred(phase, call.uuidListArg("waits_on"), call.uuidListArg("unlocks"))
 
         val refusal = when {
             title.isBlank() -> "No title was provided. Say what the step is, in a few words."
@@ -399,6 +399,12 @@ class BuddyPathActions(
             " It is not connected to anything, so it is open straight away and is never what comes " +
                 "next — if it belongs somewhere in their path, pass waits_on and unlocks."
         }
+        val entry = if (placement.entryInferred) {
+            " You passed no waits_on, so it opens after what the path says it should (the button " +
+                "names it) -- if that is not where they meant, offer it again with waits_on."
+        } else {
+            ""
+        }
         val relocks = placement
             .relocksStarted()
             .takeIf { it.isNotEmpty() }
@@ -412,7 +418,7 @@ class BuddyPathActions(
                 "“${phase.title}” of their own path. They see a confirm button; nothing is added " +
                 "unless they click it. This changes their copy only — their PM's blueprint is " +
                 "untouched — and they can edit or remove it afterwards. Say what the step is for " +
-                "and where it goes before you offer it.$connection$relocks",
+                "and where it goes before you offer it.$connection$entry$relocks",
             proposal = BuddyActionService.BuddyActionProposal(
                 action = type.toolName,
                 label = if (where.isEmpty()) "Add “$title” to your path" else "Add “$title” $where",

@@ -425,6 +425,19 @@ class BuddyPathTools(
         if (!phase.locked && openNow.isNotEmpty()) {
             appendLine("Open right now: " + openNow.joinToString(", ") { "#${numbers[it]}" })
         }
+        // The two halves of "add a step as the next thing", worked out rather than described: told
+        // how to place a step, the mentor passed what it unlocks and left out what it comes after.
+        PathStepPlacement.anchorOf(phase)?.let { anchor ->
+            val done = steps
+                .filter { it.status == StepStatus.FINISHED || it.status == StepStatus.SKIPPED }
+                .map { it.id }
+                .toSet() + questions.filter { it.status == QuestionStatus.PASSED }.map { it.id }
+            val after = opensIn(phase)[anchor].orEmpty().filterNot { it in done }
+            appendLine(
+                "To add a step as the next thing after #${numbers[anchor]}, where they are: pass BOTH " +
+                    "waits_on = [$anchor] and unlocks = [${after.joinToString(", ")}].",
+            )
+        }
     }
 
     /**
@@ -546,9 +559,10 @@ class BuddyPathTools(
         // the material in the conversation comes first; a refresher step is for when what they
         // missed is more than one explanation, so it is still there tomorrow.
         if (question.status == QuestionStatus.RETRY) {
-            // Placed before the question, so the refresher is what opens it: waits_on takes over
-            // whatever the question waits on now, and the question waits on the refresher instead.
-            val waitsOn = question.blockerIds.joinToString(", ")
+            // Placed before the question, so the refresher is what opens it, and after what the
+            // question waits on now -- or, when that is nothing, after where the hire is. The same
+            // inference the action applies, spelled out so the mentor passes both halves.
+            val waitsOn = PathStepPlacement.inferred(phase, emptySet(), setOf(question.id)).waitsOn.joinToString(", ")
             appendLine(
                 "    · they got this wrong before, so the material behind it did not land. Go through it " +
                     "with them first. If what they missed is bigger than one explanation, offer " +
