@@ -198,7 +198,7 @@ class BuddyTeamToolsTest {
         assertThat(result).contains("not on this project")
         verify(exactly = 0) { onboardingMetricsService.getHireTimeline(any(), any()) }
         verify(exactly = 0) { myCompetencyService.getCompetenciesForUser(any()) }
-        verify(exactly = 0) { arrivalStepService.forHire(any()) }
+        verify(exactly = 0) { arrivalStepService.forHireOn(any(), any()) }
     }
 
     @Test
@@ -213,16 +213,16 @@ class BuddyTeamToolsTest {
     }
 
     /**
-     * A member on two projects has arrival steps on both. The manager of this one sees this one's and
-     * the company-wide ones, never the other project's.
+     * A member on two projects has arrival steps on both. The tool asks the service for this project's
+     * list rather than filtering the member's full one: the full list lets the other project override a
+     * company step, and filtering it afterwards would hide a step that still applies here.
      */
     @Test
-    fun `member progress shows this project's arrival steps and never another project's`() {
+    fun `member progress reads this project's arrival steps, never the member's full list`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member(memberId, "Sam"))
-        every { arrivalStepService.forHire(memberId) } returns listOf(
+        every { arrivalStepService.forHireOn(memberId, projectId) } returns listOf(
             outstandingStep(title = "Get staging access", stepProjectId = projectId),
             outstandingStep(title = "Sign the handbook", stepProjectId = null),
-            outstandingStep(title = "Other project's VPN", stepProjectId = UUID.randomUUID()),
         )
         every { onboardingMetricsService.getHireTimeline(memberId, projectId) } returns null
         every { myCompetencyService.getCompetenciesForUser(memberId) } returns emptyList()
@@ -233,16 +233,14 @@ class BuddyTeamToolsTest {
             setOf(BuddyTeamTools.GET_MEMBER_PROGRESS),
         )
 
-        assertThat(result)
-            .contains("Get staging access")
-            .contains("Sign the handbook")
-            .doesNotContain("Other project's VPN")
+        assertThat(result).contains("Get staging access").contains("Sign the handbook")
+        verify(exactly = 0) { arrivalStepService.forHire(any()) }
     }
 
     @Test
     fun `member progress reports contributions and demonstrated competencies on this project`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member(memberId, "Sam"))
-        every { arrivalStepService.forHire(memberId) } returns emptyList()
+        every { arrivalStepService.forHireOn(memberId, projectId) } returns emptyList()
         every { onboardingMetricsService.getHireTimeline(memberId, projectId) } returns mockk<HireTimelineResponse> {
             every { openContributionCount } returns 1
             every { acceptedContributionCount } returns 2
@@ -304,7 +302,7 @@ class BuddyTeamToolsTest {
     @Test
     fun `member progress says how each settled step was settled, and never totals them`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member(memberId, "Sam"))
-        every { arrivalStepService.forHire(memberId) } returns listOf(
+        every { arrivalStepService.forHireOn(memberId, projectId) } returns listOf(
             settledStep(title = "GitHub account", stepProjectId = null, rigor = Rigor.OBSERVED),
             settledStep(title = "Read the handbook", stepProjectId = projectId, rigor = Rigor.DECLARED),
         )

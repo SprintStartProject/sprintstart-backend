@@ -40,6 +40,12 @@ import java.util.UUID
  *
  * The competency catalogue, the starter-work pool and canonical answers are the team's, not the
  * user's, and are untouched.
+ *
+ * A manager's team conversations that *mention* the deleted user stay too. They are the manager's
+ * record — what they asked about their team and what they were told, like notes they took — and
+ * the deleted user's own team conversations, which are theirs, are erased below. This is a decision,
+ * not an oversight: the event carries only the user id and their memberships are already gone, so
+ * finding those mentions would mean erasing every manager's whole conversation on those projects.
  */
 @Component
 class UserDeletedListener(

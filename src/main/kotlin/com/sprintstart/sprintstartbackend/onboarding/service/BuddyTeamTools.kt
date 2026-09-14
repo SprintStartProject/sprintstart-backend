@@ -196,13 +196,13 @@ class BuddyTeamTools(
     /**
      * The member's arrival steps that apply on this project, outstanding and settled.
      *
-     * Company-wide steps are included because they apply here too; another project's steps are not.
-     * Same two refusals as the hire's own tool: no total, and nothing described as blocking.
+     * Read with [ArrivalStepService.forHireOn], never by filtering the member's full list: that list
+     * lets another of their projects override a company step, and narrowing it afterwards would hide
+     * a step that still applies here. Same two refusals as the hire's own tool: no total, and nothing
+     * described as blocking.
      */
     private fun arrivalFor(memberId: UUID, projectId: UUID): String {
-        val steps = arrivalStepService
-            .forHire(memberId)
-            .filter { it.step.projectId == null || it.step.projectId == projectId }
+        val steps = arrivalStepService.forHireOn(memberId, projectId)
         if (steps.isEmpty()) {
             return "No arrival steps apply to them on this project."
         }
