@@ -101,14 +101,12 @@ class AdminProjectService(
         val name = validatedName(request.name)
         ensureProjectNameAvailable(name)
 
-        val project = projectRepository.save(
-            Project(
-                name = name,
-                description = request.description,
-                industry = request.industry,
-                industryConfidence = request.industryConfidence,
-            ),
-        )
+        val project = Project(name = name, description = request.description)
+        val industry = request.industry?.trim()
+        if (!industry.isNullOrBlank()) {
+            ProjectIndustryService.applyCustomIndustry(project, industry)
+        }
+        projectRepository.save(project)
 
         return project.toAdminDetailResponse(
             sources = emptyList(),
@@ -137,8 +135,12 @@ class AdminProjectService(
             project.name = name
         }
         request.description?.let { project.description = it }
-        request.industry?.let { project.industry = it }
-        request.industryConfidence?.let { project.industryConfidence = it }
+        request.industry?.let { requestedIndustry ->
+            val trimmed = requestedIndustry.trim()
+            if (trimmed != project.industry) {
+                ProjectIndustryService.applyCustomIndustry(project, trimmed)
+            }
+        }
 
         return project.toAdminDetailResponse(
             sources = projectSourceApi.findSourcesByProjectId(project.id),

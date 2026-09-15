@@ -4,12 +4,15 @@ import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryAiClient
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
+import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
@@ -53,11 +56,31 @@ class ProjectIndustryService(
                 val project = findProject(projectId)
                 project.industry = response.industry
                 project.industryConfidence = response.confidence
+                project.industryCustom = false
                 projectRepository.save(project)
             }
         }
 
         return response
+    }
+
+    /**
+     * Manually sets the industry for a project, marking it as custom rather than AI-evaluated.
+     *
+     * Clears any previously stored confidence, since it described an AI evaluation that this value
+     * no longer represents. A later [evaluateIndustry] call overwrites this custom value.
+     *
+     * @param projectId Unique identifier of the project.
+     * @param industry The industry to set, persisted trimmed.
+     * @return The project's industry, confidence, and custom flag after the update.
+     * @throws ResponseStatusException 404 when no project exists for [projectId].
+     */
+    @Transactional
+    @Tracked("Setting project industry")
+    fun setCustomIndustry(projectId: UUID, industry: String): ProjectIndustryResponse {
+        val project = findProject(projectId)
+        applyCustomIndustry(project, industry)
+        return project.toIndustryResponse()
     }
 
     /**
@@ -71,5 +94,18 @@ class ProjectIndustryService(
         return projectRepository
             .findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project with id $id not found") }
+    }
+
+    companion object {
+        /**
+         * Applies a manually-set industry to [project]: the confidence is cleared because it is
+         * meaningless for a value that did not come from the AI, and [Project.industryCustom] is
+         * marked so callers (and the frontend) can tell it apart from an AI evaluation.
+         */
+        internal fun applyCustomIndustry(project: Project, industry: String) {
+            project.industry = industry.trim()
+            project.industryCustom = true
+            project.industryConfidence = null
+        }
     }
 }

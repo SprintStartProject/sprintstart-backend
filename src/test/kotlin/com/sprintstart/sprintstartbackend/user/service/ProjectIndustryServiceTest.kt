@@ -51,6 +51,7 @@ class ProjectIndustryServiceTest {
         assertEquals(listOf("Payment gateway", "Ledger service"), result.evidence)
         assertEquals("Fintech / Banking", project.industry)
         assertEquals("high", project.industryConfidence)
+        assertEquals(false, project.industryCustom)
 
         verify(exactly = 1) {
             projectRepository.save(match { it.industry == "Fintech / Banking" && it.industryConfidence == "high" })
@@ -86,6 +87,28 @@ class ProjectIndustryServiceTest {
     }
 
     @Test
+    fun `evaluate resets a previously custom industry`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Custom Industry",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "E-Commerce",
+            confidence = "medium",
+            evidence = emptyList(),
+        )
+
+        service.evaluateIndustry(projectId)
+
+        assertEquals(false, project.industryCustom)
+    }
+
+    @Test
     fun `throws 404 when project does not exist`() = runTest {
         every { projectRepository.findById(projectId) } returns Optional.empty()
 
@@ -96,6 +119,37 @@ class ProjectIndustryServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
         coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
         verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `setCustomIndustry sets industry, marks it custom and clears confidence`() {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Old Industry",
+            industryConfidence = "high",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.setCustomIndustry(projectId, "  Healthcare  ")
+
+        assertEquals("Healthcare", result.industry)
+        assertEquals(null, result.industryConfidence)
+        assertEquals(true, result.industryCustom)
+        assertEquals("Healthcare", project.industry)
+        assertEquals(null, project.industryConfidence)
+        assertEquals(true, project.industryCustom)
+    }
+
+    @Test
+    fun `setCustomIndustry throws 404 when project does not exist`() {
+        every { projectRepository.findById(projectId) } returns Optional.empty()
+
+        val exception = assertThrows<ResponseStatusException> {
+            service.setCustomIndustry(projectId, "Healthcare")
+        }
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
     }
 
     @Test
