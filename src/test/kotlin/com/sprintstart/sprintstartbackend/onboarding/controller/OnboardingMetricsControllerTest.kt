@@ -65,7 +65,6 @@ class OnboardingMetricsControllerTest(
             displayName = "Ada",
             githubLogin = "ada",
             joinedAt = null,
-            taskZeroAssignedAt = null,
             firstTaskClaimedAt = null,
             firstContributionOpenedAt = null,
             firstResponseAt = null,
@@ -77,7 +76,6 @@ class OnboardingMetricsControllerTest(
             longestOpenWaitHours = 72,
             stalled = true,
             stalledReason = "Waiting on a review for 3 days",
-            autonomyReachedAt = null,
             returnedContributionCount = 0,
         )
 

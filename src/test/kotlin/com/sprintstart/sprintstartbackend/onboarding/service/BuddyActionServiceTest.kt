@@ -2,18 +2,16 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.goal.GoalView
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.MyTaskZeroResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkTaskProposalResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -25,12 +23,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.server.ResponseStatusException
-import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
 class BuddyActionServiceTest {
-    private val taskZeroService: TaskZeroService = mockk()
     private val taskOrientationService: TaskOrientationService = mockk()
     private val knowledgeBaseService: KnowledgeBaseService = mockk(relaxed = true)
     private val userGoalService: UserGoalService = mockk()
@@ -51,7 +47,6 @@ class BuddyActionServiceTest {
         every { handles(any()) } returns false
     }
     private val service = BuddyActionService(
-        taskZeroService,
         taskOrientationService,
         knowledgeBaseService,
         userGoalService,
@@ -95,25 +90,6 @@ class BuddyActionServiceTest {
         arguments = buildJsonObject { args.forEach { (k, v) -> put(k, v) } },
     )
 
-    private fun taskZero(title: String?) = MyTaskZeroResponse(
-        task = title?.let {
-            StarterWorkTaskProposalResponse(
-                id = UUID.randomUUID(),
-                sourceId = "src",
-                title = it,
-                summary = null,
-                rationale = null,
-                sourceUrl = null,
-                competencyKeys = emptyList(),
-                status = ProposalStatus.LIVE,
-                taskZeroEligible = true,
-            )
-        },
-        assignedAt = title?.let { Instant.EPOCH },
-        noneAvailable = title == null,
-        loopProven = false,
-    )
-
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
@@ -122,7 +98,6 @@ class BuddyActionServiceTest {
 
         assertThat(service.actionSpecs(userId).map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
-            "claim_task_zero",
             "open_orientation",
             "claim_goal",
             "request_attestation",
@@ -142,23 +117,23 @@ class BuddyActionServiceTest {
 
     @Test
     fun `recognises action tools and rejects read tools`() {
-        assertThat(service.isAction("claim_task_zero")).isTrue()
+        assertThat(service.isAction("open_orientation")).isTrue()
         assertThat(service.isAction("get_my_metrics")).isFalse()
     }
 
     // -- propose (must never mutate) --------------------------------------------------------------
 
     @Test
-    fun `proposes claim Task 0 with its confirm label and no mutation`() {
+    fun `proposes opening the task packet with its confirm label and no work done`() {
         onOneProject()
 
-        val outcome = service.propose(call("claim_task_zero"), userId)
+        val outcome = service.propose(call("open_orientation"), userId)
 
-        assertThat(outcome.proposal?.action).isEqualTo("claim_task_zero")
-        assertThat(outcome.proposal?.label).isEqualTo("Start Task 0")
+        assertThat(outcome.proposal?.action).isEqualTo("open_orientation")
+        assertThat(outcome.proposal?.label).isEqualTo("Open the task packet")
         assertThat(outcome.toolResult).contains("confirm")
-        // Proposing must not touch the assignment.
-        verify(exactly = 0) { taskZeroService.getForHire(any(), any()) }
+        // Proposing must not assemble anything.
+        coVerify(exactly = 0) { taskOrientationService.getForHire(any(), any()) }
     }
 
     @Test
@@ -188,7 +163,7 @@ class BuddyActionServiceTest {
     fun `does not propose an action when the hire is on no project`() {
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
 
-        val outcome = service.propose(call("claim_task_zero"), userId)
+        val outcome = service.propose(call("open_orientation"), userId)
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("not on a project")
@@ -457,30 +432,6 @@ class BuddyActionServiceTest {
     // -- perform (the confirm round-trip) ---------------------------------------------------------
 
     @Test
-    fun `claiming Task 0 assigns it and reports the title`() = runTest {
-        asHire()
-        onOneProject()
-        every { taskZeroService.getForHire(userId, projectId) } returns taskZero("Fix the login redirect")
-
-        val result = service.perform(BuddyActionRequest(action = "claim_task_zero"), jwt)
-
-        assertThat(result.ok).isTrue()
-        assertThat(result.message).contains("Fix the login redirect")
-    }
-
-    @Test
-    fun `claiming Task 0 legibly reports when none is eligible`() = runTest {
-        asHire()
-        onOneProject()
-        every { taskZeroService.getForHire(userId, projectId) } returns taskZero(null)
-
-        val result = service.perform(BuddyActionRequest(action = "claim_task_zero"), jwt)
-
-        assertThat(result.ok).isFalse()
-        assertThat(result.message).contains("no eligible Task 0")
-    }
-
-    @Test
     fun `flagging to the PM escalates the question`() = runTest {
         asHire()
         onOneProject()
@@ -607,10 +558,10 @@ class BuddyActionServiceTest {
     fun `a precondition failure downstream comes back as a legible reason`() = runTest {
         asHire()
         onOneProject()
-        every { taskZeroService.getForHire(userId, projectId) } throws
+        coEvery { taskOrientationService.getForHire(userId, projectId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project.")
 
-        val result = service.perform(BuddyActionRequest(action = "claim_task_zero"), jwt)
+        val result = service.perform(BuddyActionRequest(action = "open_orientation"), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("not a member")

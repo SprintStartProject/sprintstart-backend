@@ -151,7 +151,7 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `the mentor cannot place a card the board already keeps by itself`() {
-        val result = tools.execute(placeCall("PATH_TO_FIRST_CONTRIBUTION"), userId)
+        val result = tools.execute(placeCall("ARRIVAL_STEPS"), userId)
 
         // Offering a baseline kind would only let the model take credit for a card that was there
         // anyway.
@@ -320,6 +320,6 @@ class BuddyBoardToolsTest {
         assertThat(spec.name).isEqualTo("place_card")
         assertThat(spec.description).contains("CURRENT_TASK", "SUGGESTED_TASKS")
         // The description must not offer a baseline card as something to place.
-        assertThat(spec.description).doesNotContain("PATH_TO_FIRST_CONTRIBUTION")
+        assertThat(spec.description).doesNotContain("ARRIVAL_STEPS")
     }
 }

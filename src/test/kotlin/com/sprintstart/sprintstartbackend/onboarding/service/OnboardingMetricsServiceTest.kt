@@ -32,13 +32,6 @@ class OnboardingMetricsServiceTest {
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val userGoalRepository: UserGoalRepository = mockk()
 
-    // Task-0 assignment is exercised in TaskZeroServiceTest; here it defaults to "none assigned".
-    private val taskZeroService: TaskZeroService = mockk(relaxed = true)
-
-    // Autonomy is exercised in RampServiceTest; here it defaults to "not reached". This read must
-    // never write -- a PM opening the dashboard cannot be what grants somebody autonomy.
-    private val rampService: RampService = mockk(relaxed = true)
-
     // Engineering unless a test says otherwise: these assert numbers, and the track only decides
     // the words around them -- except in the stall tests, where it decides whether a hire whose
     // work nothing observes can be seen at all.
@@ -53,8 +46,6 @@ class OnboardingMetricsServiceTest {
         // that swapping pull requests for contributions did not move any of them.
         ContributionService(listOf(PullRequestEvidenceProvider(artifactIngestionApi))),
         userGoalRepository,
-        taskZeroService,
-        rampService,
         Clock.fixed(now, ZoneOffset.UTC),
     )
 

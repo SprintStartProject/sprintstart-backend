@@ -16,17 +16,9 @@ enum class BoardCardKind(
     val placement: Placement,
 ) {
     /**
-     * The moments between joining and a first accepted piece of work, and which have happened.
-     *
-     * Composed from contributions, not pull requests, so the wording the board carries is what
-     * names one unit of accepted work.
-     */
-    PATH_TO_FIRST_CONTRIBUTION(Placement.BASELINE),
-
-    /**
      * What still has to be true before this hire can work: accounts, access, a machine that builds.
      *
-     * Baseline rather than mentor-placed for the same reason the path card is: nobody should depend
+     * Baseline rather than mentor-placed: nobody should depend
      * on a model noticing that somebody has been unable to clone the repository for a week. It is
      * ensured on every board read and is the one card that is *most* useful on day one, when the
      * board is otherwise thin.
@@ -58,7 +50,7 @@ enum class BoardCardKind(
      * The task the hire is on, and where it came from.
      *
      * Not part of the baseline, because it is only true some of the time — somebody with no claimed
-     * goal and no Task 0 is not "between tasks", they simply have no task, and a card about nothing
+     * goal is not "between tasks", they simply have no task, and a card about nothing
      * is worse than no card. The mentor places it, and confirming `claim_goal` places it too.
      */
     CURRENT_TASK(Placement.MENTOR),

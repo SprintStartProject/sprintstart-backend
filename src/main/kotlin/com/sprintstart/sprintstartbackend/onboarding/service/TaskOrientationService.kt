@@ -19,7 +19,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.
 import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.OrientationPacketResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.TaskOrientationPacketRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -55,8 +54,8 @@ import java.util.UUID
  * Nothing is ever fabricated. "No packet" is an ordinary returned state carrying the reason —
  * never an empty packet, never an error.
  *
- * Reading orientation never assigns anything: the hire's current task is read straight from the
- * assignment table, not through [TaskZeroService.getForHire], which assigns on read.
+ * Reading orientation never assigns anything: the task is the one the hire claimed, read through
+ * [CurrentTaskReader] -- the same read the board's current-task card uses.
  *
  * A human-authored packet is pinned [OrientationOrigin.HUMAN] and every cache rule above is
  * switched off for it: [getForHire] serves it as-is and never calls the AI, so it is never
@@ -66,7 +65,7 @@ import java.util.UUID
 @Suppress("TooManyFunctions")
 class TaskOrientationService(
     private val taskOrientationPacketRepository: TaskOrientationPacketRepository,
-    private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository,
+    private val currentTaskReader: CurrentTaskReader,
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository,
     private val projectMembershipApi: ProjectMembershipApi,
     private val artifactIngestionApi: ArtifactIngestionApi,
@@ -341,14 +340,11 @@ class TaskOrientationService(
 
     private fun resolveCurrentTaskProposal(hireId: UUID, projectId: UUID): StarterWorkTaskProposal {
         requireMember(hireId, projectId)
-        val assignment = taskZeroAssignmentRepository.findByHireIdAndProjectId(hireId, projectId)
+        return currentTaskReader.currentTaskFor(hireId, projectId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "You have no current task to orient on project $projectId",
             )
-        return starterWorkTaskProposalRepository.findById(assignment.proposalId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "No starter-work task found for your assignment")
-        }
     }
 
     private fun apply(context: TaskContext, outcome: OrientationOutcome): MyOrientationResponse {
@@ -441,8 +437,7 @@ class TaskOrientationService(
     private fun loadContext(hireId: UUID, projectId: UUID): TaskContext? {
         requireMember(hireId, projectId)
 
-        val assignment = taskZeroAssignmentRepository.findByHireIdAndProjectId(hireId, projectId) ?: return null
-        val proposal = starterWorkTaskProposalRepository.findById(assignment.proposalId).orElse(null) ?: return null
+        val proposal = currentTaskReader.currentTaskFor(hireId, projectId) ?: return null
 
         // The task's own words, not the one-line summary mining wrote about it -- when the issue it
         // was mined from is still ingested.

@@ -17,14 +17,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTas
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationPacket
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationSection
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskZeroAssignment
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationCitationRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationSectionRequest
 import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.TaskOrientationPacketRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import io.mockk.coEvery
@@ -57,7 +55,7 @@ import kotlin.test.assertTrue
 
 class TaskOrientationServiceTest {
     private val packetRepository: TaskOrientationPacketRepository = mockk(relaxed = true)
-    private val assignmentRepository: TaskZeroAssignmentRepository = mockk(relaxed = true)
+    private val currentTaskReader: CurrentTaskReader = mockk()
     private val proposalRepository: StarterWorkTaskProposalRepository = mockk(relaxed = true)
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
@@ -71,7 +69,7 @@ class TaskOrientationServiceTest {
 
     private val service = TaskOrientationService(
         packetRepository,
-        assignmentRepository,
+        currentTaskReader,
         proposalRepository,
         projectMembershipApi,
         artifactIngestionApi,
@@ -87,7 +85,6 @@ class TaskOrientationServiceTest {
         summary = "The header is computed once at boot.",
         sourceUrl = "https://github.com/org/repo/issues/7",
         status = ProposalStatus.LIVE,
-        taskZeroEligible = true,
     )
 
     private fun isMember() {
@@ -97,8 +94,7 @@ class TaskOrientationServiceTest {
 
     private fun hasTask(cached: TaskOrientationPacket? = null) {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns
-            TaskZeroAssignment(hireId = hireId, projectId = projectId, proposalId = proposal.id, assignedAt = now)
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns proposal
         every { proposalRepository.findById(proposal.id) } returns Optional.of(proposal)
         every { artifactIngestionApi.getTaskSource(proposal.sourceId) } returns null
         every { packetRepository.findByTaskProposalIdAndProjectId(proposal.id, projectId) } returns cached
@@ -267,7 +263,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `no current task is a handled state and calls no AI`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val result = service.getForHire(hireId, projectId)
 
@@ -313,17 +309,6 @@ class TaskOrientationServiceTest {
 
         assertEquals("Fix the stale cache header", title.captured)
         assertEquals("The header is computed once at boot.", body.captured)
-    }
-
-    @Test
-    fun `reading orientation never assigns a task`() = runTest {
-        hasTask()
-        coEvery { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any()) } returns
-            assembled(section("SET_UP"))
-
-        service.getForHire(hireId, projectId)
-
-        verify(exactly = 0) { assignmentRepository.save(any()) }
     }
 
     @Test
@@ -526,7 +511,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `authorForHire 404s when the hire has no current task`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val error = assertThrows<ResponseStatusException> {
             service.authorForHire(hireId, projectId, authorRequest())
@@ -618,7 +603,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `no current task streams a single done and calls no AI`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val events = service.streamForHire(hireId, projectId).toList()
 

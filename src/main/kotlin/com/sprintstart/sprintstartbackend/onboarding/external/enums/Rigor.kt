@@ -21,6 +21,6 @@ enum class Rigor {
     /** A named accountable person, never the hire, confirmed the work happened and met the bar. */
     ATTESTED,
 
-    /** The hire said so, with nothing behind it. Never counts toward autonomy. */
+    /** The hire said so, with nothing behind it. Never counts as evidence of the work. */
     DECLARED,
 }

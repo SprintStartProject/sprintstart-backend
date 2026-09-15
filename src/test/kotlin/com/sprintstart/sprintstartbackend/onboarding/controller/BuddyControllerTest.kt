@@ -271,14 +271,14 @@ class BuddyControllerTest(
     @Test
     fun `performAction should return 200 with the outcome`() {
         coEvery { buddyActionService.perform(any(), any()) } returns
-            BuddyActionResponse(ok = true, message = "Task 0 is yours.")
+            BuddyActionResponse(ok = true, message = "You are now working toward it.")
 
         val asyncResult = mockMvc
             .perform(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -286,7 +286,7 @@ class BuddyControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.message").value("Task 0 is yours."))
+            .andExpect(jsonPath("$.message").value("You are now working toward it."))
     }
 
     @Test
@@ -296,7 +296,7 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 

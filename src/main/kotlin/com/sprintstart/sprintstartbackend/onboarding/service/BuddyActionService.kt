@@ -40,7 +40,6 @@ import java.util.UUID
 @Service
 @Suppress("TooManyFunctions") // Nine wrapped actions, each with a propose + a perform helper.
 class BuddyActionService(
-    private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
     private val knowledgeBaseService: KnowledgeBaseService,
     private val userGoalService: UserGoalService,
@@ -60,7 +59,6 @@ class BuddyActionService(
     fun actionSpecs(userId: UUID): List<BuddyToolSpecDto> =
         listOf(
             FLAG_TO_PM_SPEC,
-            CLAIM_TASK_ZERO_SPEC,
             OPEN_ORIENTATION_SPEC,
             CLAIM_GOAL_SPEC,
             REQUEST_ATTESTATION_SPEC,
@@ -302,7 +300,7 @@ class BuddyActionService(
     /**
      * Runs a confirmed action on behalf of [jwt]'s user, scoped to their re-resolved project.
      *
-     * Never throws for a handled outcome: an expected precondition failure ("no eligible Task 0",
+     * Never throws for a handled outcome: an expected precondition failure ("no current task",
      * "not a member") comes back as `ok = false` with a legible message, so the buddy always has a
      * line to relay. Only a genuinely unexpected failure propagates. Blocking work runs on the IO
      * dispatcher; opening orientation is itself suspend and manages its own transactions.
@@ -375,7 +373,6 @@ class BuddyActionService(
             BuddyActionType.OPEN_ORIENTATION -> openOrientation(resolved.userId, resolved.projectId)
             else -> withContext(Dispatchers.IO) {
                 when (type) {
-                    BuddyActionType.CLAIM_TASK_ZERO -> claimTaskZero(resolved.userId, resolved.projectId)
                     BuddyActionType.FLAG_TO_PM -> flagToPm(authId, resolved.projectId, request.question)
                     BuddyActionType.CLAIM_GOAL ->
                         claimGoal(resolved.userId, authId, resolved.projectId, request.taskId)
@@ -395,22 +392,6 @@ class BuddyActionService(
                 }
             }
         }
-
-    private fun claimTaskZero(userId: UUID, projectId: UUID): BuddyActionResponse {
-        val result = taskZeroService.getForHire(userId, projectId)
-        val task = result.task
-        return if (task != null) {
-            BuddyActionResponse(
-                ok = true,
-                message = "Task 0 is yours: “${task.title}”. Open the task packet when you're ready to start.",
-            )
-        } else {
-            BuddyActionResponse(
-                ok = false,
-                message = "There's no eligible Task 0 to start yet — your PM marks a starter task as Task 0.",
-            )
-        }
-    }
 
     private suspend fun openOrientation(userId: UUID, projectId: UUID): BuddyActionResponse {
         val orientation = taskOrientationService.getForHire(userId, projectId)
@@ -475,7 +456,7 @@ class BuddyActionService(
             BuddyActionResponse(
                 ok = true,
                 message = "Asked them to confirm “${attestation.title}”. " +
-                    "It counts once they do — you will see it on your ramp.",
+                    "It counts once they do — you will see it in what you have shown.",
             )
         } catch (e: ResponseStatusException) {
             // A handled precondition ("not on this project", "that is you") is a sentence the buddy
@@ -555,11 +536,10 @@ class BuddyActionService(
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
         runCatching { UUID.fromString(stringArg(name)) }.getOrNull()
 
-    /** A verb phrase for the reason lines, e.g. "start Task 0", "flag this to a PM". */
+    /** A verb phrase for the reason lines, e.g. "claim a goal", "flag this to a PM". */
     private fun BuddyActionType.gerund(): String =
         when (this) {
             BuddyActionType.FLAG_TO_PM -> "flag this to a PM"
-            BuddyActionType.CLAIM_TASK_ZERO -> "start Task 0"
             BuddyActionType.OPEN_ORIENTATION -> "open a task packet"
             BuddyActionType.CLAIM_GOAL -> "claim a goal"
             BuddyActionType.REQUEST_ATTESTATION -> "ask somebody to confirm your work"
@@ -665,17 +645,9 @@ class BuddyActionService(
             },
         )
 
-        val CLAIM_TASK_ZERO_SPEC = BuddyToolSpecDto(
-            name = BuddyActionType.CLAIM_TASK_ZERO.toolName,
-            description = "Offer to start the hire's Task 0 — their first assigned starter task. This does NOT " +
-                "assign anything by itself; it shows the hire a confirm button and runs only if they click. Use " +
-                "when the hire is ready to begin their first piece of real work. Takes no arguments.",
-            parameters = noArgs(),
-        )
-
         val OPEN_ORIENTATION_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.OPEN_ORIENTATION.toolName,
-            description = "Offer to assemble the task orientation packet for the hire's current task — a " +
+            description = "Offer to assemble the task orientation packet for the task the hire claimed — a " +
                 "step-by-step, cited guide to setting up, finding the code, making the change, and opening the " +
                 "PR. Proposes only; the hire confirms. Use when they ask how to start the task they have. Takes " +
                 "no arguments.",

@@ -13,7 +13,6 @@ enum class BuddyActionType(
     val label: String,
 ) {
     FLAG_TO_PM("flag_to_pm", "Flag this to your PM"),
-    CLAIM_TASK_ZERO("claim_task_zero", "Start Task 0"),
     OPEN_ORIENTATION("open_orientation", "Open the task packet"),
     CLAIM_GOAL("claim_goal", "Work toward this task"),
     REQUEST_ATTESTATION("request_attestation", "Ask them to confirm this"),

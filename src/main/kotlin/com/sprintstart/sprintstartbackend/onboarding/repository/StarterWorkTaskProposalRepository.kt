@@ -26,9 +26,6 @@ interface StarterWorkTaskProposalRepository : JpaRepository<StarterWorkTaskPropo
      */
     fun findBySourceId(sourceId: String): StarterWorkTaskProposal?
 
-    /** The Task-0-eligible pool: approved tasks a PM flagged as suitable for a hire's first task. */
-    fun findAllByStatusAndTaskZeroEligibleTrue(status: ProposalStatus): List<StarterWorkTaskProposal>
-
     /**
      * Records that reconciliation looked at these rows and found nothing to change.
      *

@@ -67,10 +67,13 @@ class StarterWorkTaskProposal(
     @Column(nullable = false)
     var reviewed: Boolean = false,
     /**
-     * Whether a PM has flagged this task as suitable for Task 0 — the trivial first
-     * task a new hire is auto-assigned once their environment is ready, to walk the
-     * branch → PR → review → merge loop once while the stakes are nil. A deliberate PM
-     * choice, not a default.
+     * Retired: Task 0, the first task a hire was handed automatically, is gone -- onboarding is the
+     * path their PM's blueprint prescribes (#311). Nothing reads or writes this any more.
+     *
+     * Still mapped only because databases created before then hold it as a NOT NULL column with no
+     * default, and `ddl-auto: update` never drops a column: without the field every new proposal
+     * would fail to insert. `V19__retire_legacy_onboarding.sql` gives the column a default; once that
+     * has run everywhere, delete this field and drop the column.
      */
     @Column(name = "task_zero_eligible", nullable = false)
     var taskZeroEligible: Boolean = false,

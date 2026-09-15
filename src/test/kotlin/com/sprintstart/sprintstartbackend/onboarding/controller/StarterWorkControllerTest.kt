@@ -84,7 +84,6 @@ class StarterWorkControllerTest(
             sourceUrl = "https://github.com/org/repo/issues/1",
             competencyKeys = listOf("docs"),
             status = ProposalStatus.LIVE,
-            taskZeroEligible = false,
         )
 
     @Test

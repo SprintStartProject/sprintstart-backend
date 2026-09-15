@@ -14,22 +14,21 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * How long onboarding is actually taking, derived from what the system already records.
+ * How a project's people get their work in: from joining to a first accepted contribution, and
+ * where it waits on somebody.
  *
- * Derived on read, never emitted. There is no onboarding event table: every fact here
- * already exists somewhere durable, and a second log would be a version of the same truth that
- * drifts.
+ * Not onboarding progress. Onboarding is the path a PM's blueprint prescribes, and how far a hire
+ * is along it is read from that path. These are the contribution numbers beside it -- a hire can
+ * finish their path without having shipped anything, and ship long before they finish.
  *
- * Nothing here reports a percentage of anything completed. The measure is
- * time-to-first-accepted-contribution and time-to-autonomy.
+ * Derived on read, never emitted. Every fact here already exists somewhere durable, and a second log
+ * would be a version of the same truth that drifts.
  */
 @Service
 class OnboardingMetricsService(
     private val projectMembershipApi: ProjectMembershipApi,
     private val contributionService: ContributionService,
     private val userGoalRepository: UserGoalRepository,
-    private val taskZeroService: TaskZeroService,
-    private val rampService: RampService,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     /**
@@ -103,7 +102,6 @@ class OnboardingMetricsService(
             displayName = member.displayName,
             githubLogin = login,
             joinedAt = member.joinedAt,
-            taskZeroAssignedAt = taskZeroService.assignedAtFor(member.userId, projectId),
             firstTaskClaimedAt = goalClaimedAt,
             firstContributionOpenedAt = opened,
             firstResponseAt = firstContribution?.firstResponseAt,
@@ -117,9 +115,6 @@ class OnboardingMetricsService(
             longestOpenWaitHours = longestOpenWait,
             stalled = stalledReason != null,
             stalledReason = stalledReason,
-            // The end of onboarding belongs next to the other numbers about how onboarding is
-            // going. Read-only here: a PM opening the dashboard must never be what grants it.
-            autonomyReachedAt = rampService.autonomyReachedAtFor(member.userId, projectId),
             // R7's own measure, on our data: whether a suggested task was claimed, and whether it
             // came back sent-for-rework. Both derived, so history is covered without a backfill.
             returnedContributionCount = contributions.count { it.returnedCount > 0 },
@@ -153,7 +148,7 @@ class OnboardingMetricsService(
             return "A ${ContributionWording.NOUN} has been waiting $days days for a first response"
         }
 
-        // Something accepted already: onboarding is moving, whatever else is open.
+        // Something accepted already: their work is moving, whatever else is open.
         if (firstAcceptedAt != null) {
             return null
         }

@@ -33,7 +33,7 @@ class BuddySuggestionServiceTest {
         )
 
         assertThat(service.forHire(userId).map { it.label })
-            .containsExactly("How am I doing?", "What should I work on?")
+            .containsExactly("How's my work going?", "What should I work on?")
     }
 
     @Test
@@ -98,20 +98,35 @@ class BuddySuggestionServiceTest {
     }
 
     /**
-     * Arrival is first in the spec list because what has to be true before somebody can work comes
-     * before how their work is going. Chips inherit that ordering rather than having an opinion of
-     * their own — two orderings would eventually disagree.
+     * The path is first in the spec list because it is the onboarding, and setup comes before how
+     * their work is going. Chips inherit that ordering rather than having an opinion of their own —
+     * two orderings would eventually disagree.
      */
     @Test
     fun `keeps the order the tools are mounted in`() {
         mounted(
+            BuddyPathTools.READ_MY_PATH,
             BuddyToolExecutor.GET_ARRIVAL_STEPS,
             BuddyToolExecutor.GET_MY_METRICS,
             BuddyToolExecutor.GET_SUGGESTED_TASKS,
         )
 
-        assertThat(service.forHire(userId).map { it.label })
-            .containsExactly("What do I still need?", "How am I doing?", "What should I work on?")
+        assertThat(service.forHire(userId).map { it.label }).containsExactly(
+            "Where am I on my path?",
+            "What do I still need?",
+            "How's my work going?",
+            "What should I work on?",
+        )
+    }
+
+    /** "How is my onboarding going?" belongs to the path; the metrics chip must not ask it. */
+    @Test
+    fun `the metrics chip asks about work, not onboarding`() {
+        mounted(BuddyToolExecutor.GET_MY_METRICS)
+
+        assertThat(service.forHire(userId)).singleElement().satisfies({
+            assertThat((it.label + " " + it.question).lowercase()).doesNotContain("onboarding")
+        })
     }
 
     /**

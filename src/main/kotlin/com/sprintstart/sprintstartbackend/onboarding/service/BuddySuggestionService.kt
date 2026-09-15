@@ -18,7 +18,7 @@ import java.util.UUID
  * [BuddyToolExecutor.toolSpecs] applies. Deriving rather than listing is what makes the two
  * incapable of disagreeing, and a chip is louder than a tool because the hire sees it.
  *
- * Order follows the spec list, so arrival comes first.
+ * Order follows the spec list, so the onboarding path comes first.
  *
  * No action tools. `claim_goal`, `request_attestation` and the rest are proposed by the
  * mentor and confirmed by the hire; a chip naming one would read as a button that does it. A chip
@@ -62,10 +62,6 @@ class BuddySuggestionService(
          * question it writes would be putting words in the hire's mouth.
          */
         val CATALOG: Map<String, BuddySuggestionResponse> = mapOf(
-            BuddyToolExecutor.GET_ARRIVAL_STEPS to BuddySuggestionResponse(
-                label = "What do I still need?",
-                question = "What do I still need to get set up?",
-            ),
             // Mounted only for a hire who has an onboarding path, so the chip can talk about one
             // without checking. Asks where they are rather than for the plan: the mentor answers
             // with the phase they are standing in and one next thing, which is what a hire looking
@@ -73,6 +69,10 @@ class BuddySuggestionService(
             BuddyPathTools.READ_MY_PATH to BuddySuggestionResponse(
                 label = "Where am I on my path?",
                 question = "Where am I in my onboarding path, and what should I do next?",
+            ),
+            BuddyToolExecutor.GET_ARRIVAL_STEPS to BuddySuggestionResponse(
+                label = "What do I still need?",
+                question = "What do I still need to get set up?",
             ),
             BuddyToolExecutor.GET_SUGGESTED_TASKS to BuddySuggestionResponse(
                 label = "What should I work on?",
@@ -82,9 +82,12 @@ class BuddySuggestionService(
                 label = "Is my PR stuck?",
                 question = "Are any of my pull requests stuck waiting on a review?",
             ),
+            // About their work, not their onboarding: the metrics are contributions and reviews, and a
+            // chip asking how onboarding is going would send that question here instead of to the
+            // path, which is the one that can answer it.
             BuddyToolExecutor.GET_MY_METRICS to BuddySuggestionResponse(
-                label = "How am I doing?",
-                question = "How is my onboarding going so far?",
+                label = "How's my work going?",
+                question = "How is my work going so far — is anything waiting on someone?",
             ),
             // Not "Where do I stand?" any more. Next to the path chip that reads "Where am I on my
             // path?" the two were a coin toss, and they lead to different halves of the product: this
