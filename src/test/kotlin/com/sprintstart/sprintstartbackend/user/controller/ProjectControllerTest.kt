@@ -7,8 +7,10 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.exceptions.ProjectIndustryAiException
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
+import com.sprintstart.sprintstartbackend.user.model.request.project.SetProjectIndustryRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
 import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
@@ -36,6 +38,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.async
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
@@ -384,6 +387,107 @@ class ProjectControllerTest(
             .andExpect(jsonPath("$.message").value(expectedMessage))
 
         coVerify(exactly = 1) { projectIndustryService.evaluateIndustry(managedProjectId) }
+    }
+
+    @Test
+    fun `setIndustry sets the industry for a managed project`() {
+        val request = SetProjectIndustryRequest(industry = "Healthcare")
+        every { projectIndustryService.setCustomIndustry(managedProjectId, "Healthcare") } returns
+            ProjectIndustryResponse(industry = "Healthcare", industryConfidence = null, industryCustom = true)
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$managedProjectId/industry")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.industry").value("Healthcare"))
+            .andExpect(jsonPath("$.industryConfidence").doesNotExist())
+            .andExpect(jsonPath("$.industryCustom").value(true))
+
+        verify(exactly = 1) { projectIndustryService.setCustomIndustry(managedProjectId, "Healthcare") }
+    }
+
+    @Test
+    fun `setIndustry succeeds for admin on any project`() {
+        every { projectAuth.canManageProject(any(), foreignProjectId) } returns true
+        val request = SetProjectIndustryRequest(industry = "Healthcare")
+        every { projectIndustryService.setCustomIndustry(foreignProjectId, "Healthcare") } returns
+            ProjectIndustryResponse(industry = "Healthcare", industryConfidence = null, industryCustom = true)
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$foreignProjectId/industry")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+
+        verify(exactly = 1) { projectIndustryService.setCustomIndustry(foreignProjectId, "Healthcare") }
+    }
+
+    @Test
+    fun `setIndustry rejects project the caller does not manage`() {
+        val request = SetProjectIndustryRequest(industry = "Healthcare")
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$foreignProjectId/industry")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectIndustryService.setCustomIndustry(any(), any()) }
+    }
+
+    @Test
+    fun `setIndustry rejects unprivileged users`() {
+        every { projectAuth.canManageProject(any(), managedProjectId) } returns false
+        val request = SetProjectIndustryRequest(industry = "Healthcare")
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$managedProjectId/industry")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectIndustryService.setCustomIndustry(any(), any()) }
+    }
+
+    @Test
+    fun `setIndustry returns 400 when industry is blank`() {
+        val request = SetProjectIndustryRequest(industry = "   ")
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$managedProjectId/industry")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { projectIndustryService.setCustomIndustry(any(), any()) }
+    }
+
+    @Test
+    fun `setIndustry returns 404 when project does not exist`() {
+        val request = SetProjectIndustryRequest(industry = "Healthcare")
+        every { projectIndustryService.setCustomIndustry(managedProjectId, "Healthcare") } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Project with id $managedProjectId not found")
+
+        mockMvc
+            .perform(
+                put("/api/v1/projects/$managedProjectId/industry")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
+
+        verify(exactly = 1) { projectIndustryService.setCustomIndustry(managedProjectId, "Healthcare") }
     }
 
     private fun managedProjectResponse() = ManagedProjectResponse(

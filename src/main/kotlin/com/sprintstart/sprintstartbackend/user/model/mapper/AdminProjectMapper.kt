@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectListResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectManagerResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectSourceResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
@@ -96,6 +97,14 @@ fun ProjectUserAssignment.toProjectUserResponse(): ProjectUserResponse {
             .map { ProjectRoleSummary(id = it.id, name = it.name) }
             .sortedBy { it.name },
         enabled = user.enabled,
+    )
+}
+
+fun Project.toIndustryResponse(): ProjectIndustryResponse {
+    return ProjectIndustryResponse(
+        industry = industry,
+        industryConfidence = industryConfidence,
+        industryCustom = industryCustom,
     )
 }
 

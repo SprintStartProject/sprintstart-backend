@@ -89,3 +89,9 @@ data class DeleteProjectResponse(
     val id: UUID,
     val deleted: Boolean = true,
 )
+
+data class ProjectIndustryResponse(
+    val industry: String?,
+    val industryConfidence: String?,
+    val industryCustom: Boolean,
+)

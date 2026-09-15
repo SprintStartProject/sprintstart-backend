@@ -122,6 +122,37 @@ class ProjectIndustryServiceTest {
     }
 
     @Test
+    fun `setCustomIndustry sets industry, marks it custom and clears confidence`() {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Old Industry",
+            industryConfidence = "high",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.setCustomIndustry(projectId, "  Healthcare  ")
+
+        assertEquals("Healthcare", result.industry)
+        assertEquals(null, result.industryConfidence)
+        assertEquals(true, result.industryCustom)
+        assertEquals("Healthcare", project.industry)
+        assertEquals(null, project.industryConfidence)
+        assertEquals(true, project.industryCustom)
+    }
+
+    @Test
+    fun `setCustomIndustry throws 404 when project does not exist`() {
+        every { projectRepository.findById(projectId) } returns Optional.empty()
+
+        val exception = assertThrows<ResponseStatusException> {
+            service.setCustomIndustry(projectId, "Healthcare")
+        }
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
+    }
+
+    @Test
     fun `propagates ProjectIndustryAiException when AI client fails`() = runTest {
         val project = Project(id = projectId, name = "Test Project")
         every { projectRepository.findById(projectId) } returns Optional.of(project)

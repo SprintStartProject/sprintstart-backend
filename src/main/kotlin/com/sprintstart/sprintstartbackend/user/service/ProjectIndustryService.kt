@@ -4,12 +4,15 @@ import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryAiClient
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
+import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
@@ -59,6 +62,25 @@ class ProjectIndustryService(
         }
 
         return response
+    }
+
+    /**
+     * Manually sets the industry for a project, marking it as custom rather than AI-evaluated.
+     *
+     * Clears any previously stored confidence, since it described an AI evaluation that this value
+     * no longer represents. A later [evaluateIndustry] call overwrites this custom value.
+     *
+     * @param projectId Unique identifier of the project.
+     * @param industry The industry to set, persisted trimmed.
+     * @return The project's industry, confidence, and custom flag after the update.
+     * @throws ResponseStatusException 404 when no project exists for [projectId].
+     */
+    @Transactional
+    @Tracked("Setting project industry")
+    fun setCustomIndustry(projectId: UUID, industry: String): ProjectIndustryResponse {
+        val project = findProject(projectId)
+        applyCustomIndustry(project, industry)
+        return project.toIndustryResponse()
     }
 
     /**
