@@ -57,9 +57,40 @@ class OnboardingStepPlacementService(
         unlocks: Set<UUID>,
     ): CreateOnboardingStepResponse {
         val created = onboardingStepService.createOnboardingStepForMe(authId, phaseId, request, origin)
+        return connect(created.id, waitsOn, unlocks, pinnedAt = null)
+    }
+
+    /**
+     * The PM's version of [createConnectedStepForMe]: creates a step on anybody's phase and connects
+     * it the same way. [graphX]/[graphY], when both are given, is where the PM dropped the step on the
+     * canvas and wins over the position worked out from its neighbours.
+     */
+    @Transactional
+    @Tracked("Creating a connected onboarding step")
+    fun createConnectedStepForPhase(
+        phaseId: UUID,
+        request: CreateOnboardingStepRequest,
+        waitsOn: Set<UUID>,
+        unlocks: Set<UUID>,
+        graphX: Double?,
+        graphY: Double?,
+    ): CreateOnboardingStepResponse {
+        val created = onboardingStepService.createOnboardingStepForPhaseId(phaseId, request)
+        val pinnedAt = graphX?.takeIf { it.isFinite() }?.let { x ->
+            graphY?.takeIf { it.isFinite() }?.let { y -> x to y }
+        }
+        return connect(created.id, waitsOn, unlocks, pinnedAt)
+    }
+
+    private fun connect(
+        stepId: UUID,
+        waitsOn: Set<UUID>,
+        unlocks: Set<UUID>,
+        pinnedAt: Pair<Double, Double>?,
+    ): CreateOnboardingStepResponse {
         val step = onboardingStepRepository
-            .findById(created.id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: ${created.id}") }
+            .findById(stepId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
         val phase = step.phase
         val nodes: Map<UUID, OnboardingSubGraphNode> =
@@ -82,7 +113,12 @@ class OnboardingStepPlacementService(
             node.blockedBy.removeIf { it.id in waitsOn }
             node.blockedBy += step
         }
-        placeOnCanvas(step, before, after)
+        if (pinnedAt != null) {
+            step.graphX = pinnedAt.first
+            step.graphY = pinnedAt.second
+        } else {
+            placeOnCanvas(step, before, after)
+        }
 
         return step.toCreateResponse()
     }

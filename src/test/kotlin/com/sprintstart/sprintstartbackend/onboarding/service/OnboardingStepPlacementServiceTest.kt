@@ -116,6 +116,40 @@ class OnboardingStepPlacementServiceTest {
         }.isInstanceOf(ResponseStatusException::class.java)
     }
 
+    @Test
+    fun `a PM's step lands where it was dropped and is connected like the hire's`() {
+        val current = step(0, graphX = 0.0, graphY = 0.0)
+        val later = step(1, graphX = 0.0, graphY = 400.0).also { it.blockedBy += current }
+        val added = step(1, title = "Refresher")
+        every { onboardingStepService.createOnboardingStepForPhaseId(phase.id, any()) } returns
+            CreateOnboardingStepResponse(
+                id = added.id,
+                phaseId = phase.id,
+                position = 1,
+                title = added.title,
+                description = "",
+                type = StepType.TASK,
+                estimatedMinutes = 15,
+                isAiAssisted = false,
+                expectedOutcome = "",
+                status = StepStatus.WAITING,
+            )
+        every { onboardingStepRepository.findById(added.id) } returns Optional.of(added)
+
+        service.createConnectedStepForPhase(
+            phase.id,
+            request(1),
+            waitsOn = setOf(current.id),
+            unlocks = setOf(later.id),
+            graphX = 320.0,
+            graphY = 180.0,
+        )
+
+        assertThat(later.blockedBy.map { it.id }).containsExactly(added.id)
+        assertThat(added.graphX).isEqualTo(320.0)
+        assertThat(added.graphY).isEqualTo(180.0)
+    }
+
     /** Stubs the plain creation to hand back a real entity in [phase], the way the repository would. */
     private fun arrange(position: Int): OnboardingStep {
         val added = step(position, title = "Refresher")
