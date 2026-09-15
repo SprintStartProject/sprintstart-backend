@@ -3,10 +3,13 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCompactRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMemory
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import org.slf4j.LoggerFactory
 import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
@@ -25,15 +28,20 @@ import java.util.UUID
  * guards catch different races:
  *
  * - The cursor comparison catches a fold that committed while the model was thinking.
- * - [com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession.version] catches
- *   one committing *between* the re-read and the flush. A re-check alone is not a lock.
+ * - The session's `@Version` catches one committing *between* the re-read and the flush. A re-check
+ *   alone is not a lock.
  *
  * Losing either race discards this fold and leaves the cursor alone; the next turn retries.
+ *
+ * The hire's own conversation and a manager's team conversation are folded by exactly these rules.
+ * They differ only in where the session and its transcript are stored, which is all [Store] captures.
  */
 @Service
 class BuddyCompactionService(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository,
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
     private val onboardingAiClient: OnboardingAiClient,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -42,7 +50,7 @@ class BuddyCompactionService(
     private val writeTxTemplate = TransactionTemplate(transactionManager)
 
     /**
-     * Folds this session's backlog into its memory note, if it has one.
+     * Folds this hire's backlog into their memory note, if it has one.
      *
      * Safe to call after every turn: a conversation whose active window still fits does nothing and
      * costs one query. Never throws — the caller is a fire-and-forget launch.
@@ -50,7 +58,45 @@ class BuddyCompactionService(
      * @param userId The hire whose session to compact.
      */
     suspend fun compactIfNeeded(userId: UUID) {
-        val plan = readTxTemplate.execute { planFor(userId) } ?: return
+        compact(
+            Store(
+                label = "user $userId",
+                find = { buddySessionRepository.findByUserId(userId) },
+                findById = { buddySessionRepository.findById(it).orElse(null) },
+                transcript = { sessionId ->
+                    buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId).map { it.toAgentMessage() }
+                },
+                save = { buddySessionRepository.save(it) },
+            ),
+        )
+    }
+
+    /**
+     * Folds a manager's team conversation about one project, if it has a backlog.
+     *
+     * Same guarantees as [compactIfNeeded]: a no-op while the window fits, and never throws.
+     *
+     * @param userId The manager whose team conversation to compact.
+     * @param projectId The project the conversation is about.
+     */
+    suspend fun compactTeamIfNeeded(userId: UUID, projectId: UUID) {
+        compact(
+            Store(
+                label = "user $userId on project $projectId",
+                find = { buddyTeamSessionRepository.findByUserIdAndProjectId(userId, projectId) },
+                findById = { buddyTeamSessionRepository.findById(it).orElse(null) },
+                transcript = { sessionId ->
+                    buddyTeamMessageRepository
+                        .findAllBySessionIdOrderByCreatedAtAsc(sessionId)
+                        .map { it.toAgentMessage() }
+                },
+                save = { buddyTeamSessionRepository.save(it) },
+            ),
+        )
+    }
+
+    private suspend fun <S : BuddyMemory> compact(store: Store<S>) {
+        val plan = readTxTemplate.execute { planFor(store) } ?: return
 
         val request = BuddyCompactRequest(priorSummary = plan.priorSummary, folded = plan.folded)
         val memory = try {
@@ -58,16 +104,16 @@ class BuddyCompactionService(
         } catch (@Suppress("SwallowedException") e: OnboardingAiException) {
             // The note shapes the prompt and is not the record, so a failed fold costs only a
             // longer prompt next turn. Warned, not retried.
-            logger.warn("Buddy compaction skipped for user {}: {}", userId, e.message)
+            logger.warn("Buddy compaction skipped for {}: {}", store.label, e.message)
             return
         }
 
-        applyFold(plan, memory)
+        applyFold(store, plan, memory)
     }
 
-    private fun planFor(userId: UUID): FoldPlan? {
-        val session = buddySessionRepository.findByUserId(userId) ?: return null
-        val messages = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
+    private fun <S : BuddyMemory> planFor(store: Store<S>): FoldPlan? {
+        val session = store.find() ?: return null
+        val messages = store.transcript(session.id)
         // Folds whatever it takes to bring the active window back to WINDOW, not a fixed slice, so
         // a pass that missed its turn catches up in one call.
         val foldCount = messages.size - session.summarizedCount - BuddyService.WINDOW
@@ -78,16 +124,14 @@ class BuddyCompactionService(
             priorSummary = session.summary,
             folded = messages
                 .drop(session.summarizedCount)
-                .take(foldCount)
-                .map { it.toAgentMessage() },
+                .take(foldCount),
         )
     }
 
-    private fun applyFold(plan: FoldPlan, memory: String) {
+    private fun <S : BuddyMemory> applyFold(store: Store<S>, plan: FoldPlan, memory: String) {
         try {
             writeTxTemplate.execute {
-                val session = buddySessionRepository.findById(plan.sessionId).orElse(null)
-                    ?: return@execute
+                val session = store.findById(plan.sessionId) ?: return@execute
                 if (session.summarizedCount != plan.cursor) {
                     // A fold committed while the model was thinking. Applying this one would move
                     // the cursor past messages the other pass's note does not cover.
@@ -101,7 +145,7 @@ class BuddyCompactionService(
                 }
                 session.summary = memory
                 session.summarizedCount = plan.cursor + plan.folded.size
-                buddySessionRepository.save(session)
+                store.save(session)
             }
         } catch (@Suppress("SwallowedException") e: ObjectOptimisticLockingFailureException) {
             // A concurrent fold committed between the re-read and the flush. Same outcome as a
@@ -109,6 +153,18 @@ class BuddyCompactionService(
             logger.debug("Buddy fold for session {} lost the swap: {}", plan.sessionId, e.message)
         }
     }
+
+    /**
+     * Where one kind of conversation is stored: its session, looked up for planning and again by id
+     * for the swap, its transcript in order, and how a changed session is written back.
+     */
+    private class Store<S : BuddyMemory>(
+        val label: String,
+        val find: () -> S?,
+        val findById: (UUID) -> S?,
+        val transcript: (UUID) -> List<BuddyAgentMessageDto>,
+        val save: (S) -> Unit,
+    )
 
     /**
      * One fold, decided under a read transaction and applied under a write one.

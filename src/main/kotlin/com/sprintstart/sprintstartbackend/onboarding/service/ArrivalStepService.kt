@@ -92,9 +92,28 @@ class ArrivalStepService(
      * Empty when nobody has authored any steps, which is a real answer and not an error.
      */
     @Transactional(readOnly = true)
-    fun forHire(userId: UUID): List<ResolvedArrivalStep> {
-        val projectNames = projectNamesFor(userId)
+    fun forHire(userId: UUID): List<ResolvedArrivalStep> = resolve(userId, projectNamesFor(userId))
 
+    /**
+     * The arrival steps that apply to [userId] on one project: company-wide steps plus [projectId]'s
+     * own, with [projectId]'s definition winning a shared key.
+     *
+     * Not a filter over [forHire]. That list lets *any* of the hire's projects override a company
+     * step, so narrowing it to one project afterwards drops a company step another project overrode,
+     * and a reader of this project is told a step that applies here does not.
+     *
+     * @return The steps for that project, company-scoped first. Only company-wide steps when the hire
+     * is not on [projectId].
+     */
+    @Transactional(readOnly = true)
+    fun forHireOn(userId: UUID, projectId: UUID): List<ResolvedArrivalStep> =
+        resolve(userId, projectNamesFor(userId).filterKeys { it == projectId })
+
+    /**
+     * Company-wide steps plus the steps of the projects in [projectNames], with a project-scoped
+     * definition winning the key, each carrying whether [userId] has settled it.
+     */
+    private fun resolve(userId: UUID, projectNames: Map<UUID, String>): List<ResolvedArrivalStep> {
         val companySteps = arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc()
         val projectSteps =
             if (projectNames.isEmpty()) {

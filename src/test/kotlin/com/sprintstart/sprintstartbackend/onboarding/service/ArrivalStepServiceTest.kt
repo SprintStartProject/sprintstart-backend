@@ -282,6 +282,52 @@ class ArrivalStepServiceTest {
         verify(exactly = 0) { arrivalStepStateRepository.deleteAll(any()) }
     }
 
+    /**
+     * A reader of one project must see the company steps that apply there, even when another of
+     * the hire's projects overrides one of them. Filtering [ArrivalStepService.forHire] down to one
+     * project loses exactly this step, which is why the one-project list is resolved on its own.
+     */
+    @Test
+    fun `the list for one project keeps a company step another of the hire's projects overrides`() {
+        val otherProject = UUID.randomUUID()
+        onProjects(projectId, otherProject)
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("vpn", title = "Company VPN"))
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            emptyList()
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(otherProject)) } returns
+            listOf(step("vpn", projectId = otherProject, title = "Other team's VPN"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("Company VPN"), steps.map { it.step.title })
+    }
+
+    @Test
+    fun `the list for one project lets that project's own definition win the key`() {
+        onProjects(projectId, UUID.randomUUID())
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("vpn", title = "Company VPN"))
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(step("vpn", projectId = projectId, title = "Team VPN"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("Team VPN"), steps.map { it.step.title })
+    }
+
+    @Test
+    fun `the list for a project the hire is not on has only the company steps`() {
+        onProjects(UUID.randomUUID())
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("github-account"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("github-account"), steps.map { it.step.key })
+        verify(exactly = 0) { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(any()) }
+    }
+
     private fun onProjects(vararg ids: UUID) = onNamedProjects(*ids.map { it to "P" }.toTypedArray())
 
     private fun onNamedProjects(vararg named: Pair<UUID, String>) {
