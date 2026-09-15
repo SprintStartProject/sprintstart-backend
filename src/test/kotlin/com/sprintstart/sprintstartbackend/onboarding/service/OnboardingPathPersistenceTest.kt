@@ -6,8 +6,11 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
 import com.sprintstart.sprintstartbackend.shared.crypto.CryptoConfiguration
 import jakarta.persistence.EntityManager
+import io.mockk.mockk
 import jakarta.persistence.PersistenceContext
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -16,6 +19,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.test.context.ActiveProfiles
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 @DataJpaTest
 @ActiveProfiles("test")
@@ -24,8 +28,44 @@ class OnboardingPathPersistenceTest {
     @Autowired
     private lateinit var onboardingPathRepository: OnboardingPathRepository
 
+    @Autowired
+    private lateinit var onboardingPhaseRepository: OnboardingPhaseRepository
+
+    @Autowired
+    private lateinit var onboardingStepRepository: OnboardingStepRepository
+
     @PersistenceContext
     private lateinit var entityManager: EntityManager
+
+    @Test
+    fun `a deleted step is really gone, and what waited on it waits on its blockers`() {
+        // The delete used to report success while the phase's cascading collection kept the step.
+        val userId = UUID.randomUUID()
+        val path = OnboardingPath(userId = userId)
+        val phase = OnboardingPhase(path = path, position = 0, title = "Setup", description = "")
+        val first = step(phase, position = 0, title = "A")
+        val middle = step(phase, position = 1, title = "X").also { it.blockedBy += first }
+        val last = step(phase, position = 2, title = "B").also { it.blockedBy += middle }
+        phase.steps += listOf(first, middle, last)
+        path.phases += phase
+        entityManager.persist(path)
+        entityManager.flush()
+        entityManager.clear()
+
+        val service = OnboardingStepService(
+            onboardingPhaseRepository = onboardingPhaseRepository,
+            onboardingStepRepository = onboardingStepRepository,
+            onboardingCompletionService = mockk(relaxed = true),
+            userApi = mockk(relaxed = true),
+        )
+        service.deleteOnboardingStepById(middle.id)
+        entityManager.flush()
+        entityManager.clear()
+
+        assertFalse(onboardingStepRepository.existsById(middle.id))
+        val remaining = onboardingStepRepository.findById(last.id).orElseThrow()
+        assertEquals(setOf(first.id), remaining.blockedBy.map { it.id }.toSet())
+    }
 
     @Test
     fun `replaces a path containing dependencies between newly created nodes`() {

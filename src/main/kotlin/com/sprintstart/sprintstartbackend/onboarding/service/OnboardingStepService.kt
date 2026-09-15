@@ -443,6 +443,11 @@ class OnboardingStepService(
             node.blockedBy += step.blockedBy.filter { it.id != node.id }
         }
         step.blockedBy.clear()
+        // Loading the siblings above put the step's phase collection in play, and that collection
+        // cascades: while it still holds the step, Hibernate quietly un-schedules the delete at flush,
+        // and the request "succeeds" with the step still there. Out of the collection, orphan removal
+        // and the delete agree.
+        phase.steps.removeIf { it.id == step.id }
     }
 
     /**
