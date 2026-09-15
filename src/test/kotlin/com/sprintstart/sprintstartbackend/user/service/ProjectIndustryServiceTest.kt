@@ -51,6 +51,7 @@ class ProjectIndustryServiceTest {
         assertEquals(listOf("Payment gateway", "Ledger service"), result.evidence)
         assertEquals("Fintech / Banking", project.industry)
         assertEquals("high", project.industryConfidence)
+        assertEquals(false, project.industryCustom)
 
         verify(exactly = 1) {
             projectRepository.save(match { it.industry == "Fintech / Banking" && it.industryConfidence == "high" })
@@ -83,6 +84,28 @@ class ProjectIndustryServiceTest {
         verify(exactly = 1) {
             projectRepository.save(match { it.industry == "E-Commerce" && it.industryConfidence == "low" })
         }
+    }
+
+    @Test
+    fun `evaluate resets a previously custom industry`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Custom Industry",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "E-Commerce",
+            confidence = "medium",
+            evidence = emptyList(),
+        )
+
+        service.evaluateIndustry(projectId)
+
+        assertEquals(false, project.industryCustom)
     }
 
     @Test

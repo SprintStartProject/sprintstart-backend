@@ -53,6 +53,7 @@ class ProjectIndustryService(
                 val project = findProject(projectId)
                 project.industry = response.industry
                 project.industryConfidence = response.confidence
+                project.industryCustom = false
                 projectRepository.save(project)
             }
         }
@@ -71,5 +72,18 @@ class ProjectIndustryService(
         return projectRepository
             .findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Project with id $id not found") }
+    }
+
+    companion object {
+        /**
+         * Applies a manually-set industry to [project]: the confidence is cleared because it is
+         * meaningless for a value that did not come from the AI, and [Project.industryCustom] is
+         * marked so callers (and the frontend) can tell it apart from an AI evaluation.
+         */
+        internal fun applyCustomIndustry(project: Project, industry: String) {
+            project.industry = industry.trim()
+            project.industryCustom = true
+            project.industryConfidence = null
+        }
     }
 }

@@ -23,6 +23,7 @@ fun Project.toAdminListResponse(
         description = description,
         industry = industry,
         industryConfidence = industryConfidence,
+        industryCustom = industryCustom,
         manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.user.toSummaryResponse() },
@@ -41,6 +42,7 @@ fun Project.toManagedResponse(memberCount: Int): ManagedProjectResponse {
         description = description,
         industry = industry,
         industryConfidence = industryConfidence,
+        industryCustom = industryCustom,
         memberCount = memberCount,
     )
 }
@@ -65,6 +67,7 @@ fun Project.toAdminDetailResponse(
         description = description,
         industry = industry,
         industryConfidence = industryConfidence,
+        industryCustom = industryCustom,
         manager = manager?.toManagerResponse(),
         sources = sources.map { it.toResponse() },
         users = assignments.map { it.toProjectUserResponse() },
