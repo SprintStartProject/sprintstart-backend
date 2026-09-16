@@ -1,55 +1,43 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
-import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
-import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
-import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.external.events.ArtifactsIndexedEvent
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
-import org.springframework.transaction.event.TransactionPhase
-import org.springframework.transaction.event.TransactionalEventListener
-import java.util.UUID
 
 /**
- * Triggers automatic project industry evaluation upon completion of an ingestion run.
+ * Triggers automatic project industry evaluation upon completion of artifact indexing in the AI service.
  *
- * Runs asynchronously after the transaction that completed the ingestion run has committed
- * (AFTER_COMMIT). Resolves all affected projects from the run's artifacts and requests an
- * industry re-evaluation for each. Evaluation failures are logged and never break or roll back
- * the ingestion flow.
+ * Runs asynchronously on [applicationScope] when [ArtifactsIndexedEvent] is received. Requests an
+ * industry re-evaluation for each project associated with the indexed artifacts. Evaluation failures
+ * are caught and logged per project so that one failure never prevents the remaining projects from
+ * being processed or breaks the ingestion flow.
  */
 @Component
 class IngestionIndustryEventListener(
     private val projectIndustryApi: ProjectIndustryApi,
-    private val artifactRepository: ArtifactRepository,
-    private val ingestionRunRepository: IngestionRunRepository,
     private val applicationScope: CoroutineScope,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    fun handleRunFinished(event: RunFinishedEvent) {
+    @EventListener
+    fun handleArtifactsIndexed(event: ArtifactsIndexedEvent) {
         applicationScope.launch {
-            try {
-                val projectIds = resolveProjectIds(event.runId)
-                for (projectId in projectIds) {
+            for (projectId in event.projectIds) {
+                try {
                     projectIndustryApi.evaluateIndustryAutomatically(projectId)
+                } catch (e: Exception) {
+                    logger.warn(
+                        "Failed to auto-evaluate industry for project {} after run {}",
+                        projectId,
+                        event.runId,
+                        e,
+                    )
                 }
-            } catch (e: Exception) {
-                logger.warn("Failed to trigger industry auto-evaluation for run {}", event.runId, e)
             }
         }
-    }
-
-    private fun resolveProjectIds(runId: UUID): Set<UUID> {
-        val reingested: Set<UUID> = ingestionRunRepository
-            .findWithAiSyncArtifactIdsById(runId)
-            .map { it.artifactIdsToReingest.toSet() }
-            .orElse(emptySet())
-
-        return artifactRepository.findProjectIdsByIngestionRunId(runId) +
-            if (reingested.isEmpty()) emptySet() else artifactRepository.findProjectIdsByArtifactIdIn(reingested)
     }
 }

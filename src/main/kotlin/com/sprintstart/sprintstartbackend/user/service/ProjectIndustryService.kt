@@ -104,18 +104,22 @@ class ProjectIndustryService(
             val response = projectIndustryAiClient.evaluateIndustry(projectId)
             if (isEligibleConfidence(response.confidence) && response.industry.isNotBlank()) {
                 withContext(Dispatchers.IO) {
-                    txTemplate.executeWithoutResult {
-                        val project = findProject(projectId)
+                    txTemplate.execute {
+                        val project = projectRepository
+                            .findByIdForUpdate(projectId)
+                            .orElse(null) ?: return@execute null
                         val shouldUpdate = project.industry.isNullOrBlank() ||
                             isHigherConfidence(response.confidence, project.industryConfidence)
                         if (shouldUpdate) {
                             project.industry = response.industry
                             project.industryConfidence = response.confidence
                             projectRepository.save(project)
+                            response.industry
+                        } else {
+                            project.industry
                         }
                     }
                 }
-                response.industry
             } else {
                 logger.debug(
                     "Lazy industry evaluation for project {} discarded due to low confidence: {}",
@@ -157,7 +161,9 @@ class ProjectIndustryService(
 
             withContext(Dispatchers.IO) {
                 txTemplate.executeWithoutResult {
-                    val project = findProject(projectId)
+                    val project = projectRepository
+                        .findByIdForUpdate(projectId)
+                        .orElse(null) ?: return@executeWithoutResult
                     val shouldUpdate = project.industry.isNullOrBlank() ||
                         isHigherConfidence(response.confidence, project.industryConfidence)
                     if (shouldUpdate) {

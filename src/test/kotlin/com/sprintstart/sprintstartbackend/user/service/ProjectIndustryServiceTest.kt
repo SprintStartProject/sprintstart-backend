@@ -197,6 +197,7 @@ class ProjectIndustryServiceTest {
     fun `getOrEvaluateIndustry evaluates and persists when industry is unset and confidence is medium`() = runTest {
         val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
         every { projectRepository.save(any()) } answers { firstArg() }
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Automotive",
@@ -213,6 +214,35 @@ class ProjectIndustryServiceTest {
             projectRepository.save(match { it.industry == "Automotive" && it.industryConfidence == "medium" })
         }
     }
+
+    @Test
+    fun `getOrEvaluateIndustry returns winning industry when concurrent evaluation persisted during AI call`() =
+        runTest {
+            val initialProject = Project(
+                id = projectId,
+                name = "Test Project",
+                industry = null,
+                industryConfidence = null,
+            )
+            val concurrentlyUpdatedProject = Project(
+                id = projectId,
+                name = "Test Project",
+                industry = "Healthcare",
+                industryConfidence = "high",
+            )
+            every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+            every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(concurrentlyUpdatedProject)
+            coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+                industry = "Automotive",
+                confidence = "medium",
+                evidence = listOf("CAN bus"),
+            )
+
+            val result = service.getOrEvaluateIndustry(projectId)
+
+            assertEquals("Healthcare", result)
+            verify(exactly = 0) { projectRepository.save(any()) }
+        }
 
     @Test
     fun `getOrEvaluateIndustry discards low confidence result and returns null without persisting`() = runTest {
@@ -263,6 +293,7 @@ class ProjectIndustryServiceTest {
     fun `evaluateIndustryAutomatically persists when industry is unset and confidence is high`() = runTest {
         val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
         every { projectRepository.save(any()) } answers { firstArg() }
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Quantum Computing",
@@ -305,6 +336,7 @@ class ProjectIndustryServiceTest {
             industryConfidence = "medium",
         )
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
         every { projectRepository.save(any()) } answers { firstArg() }
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Refined Domain",
@@ -330,6 +362,7 @@ class ProjectIndustryServiceTest {
             industryConfidence = "high",
         )
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Worse Guess",
             confidence = "medium",
@@ -352,6 +385,7 @@ class ProjectIndustryServiceTest {
             industryConfidence = "medium",
         )
         every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
         coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
             industry = "Another Medium",
             confidence = "medium",
