@@ -148,7 +148,7 @@ class StarterWorkTaskProposalServiceTest {
 
         @Test
         fun `sends the project id, pooled source ids and the live competency keys`() = runTest {
-            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED)
+            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE)
             every { starterWorkTaskProposalRepository.findAllByStatusIn(pooledStatuses) } returns
                 listOf(
                     StarterWorkTaskProposal(sourceId = "s1", title = "t1", status = ProposalStatus.LIVE),
