@@ -137,7 +137,7 @@ class AdminProjectService(
         request.description?.let { project.description = it }
         request.industry?.let { requestedIndustry ->
             val trimmed = requestedIndustry.trim()
-            if (trimmed != project.industry) {
+            if (trimmed.isNotBlank() && trimmed != project.industry) {
                 ProjectIndustryService.applyCustomIndustry(project, trimmed)
             }
         }

@@ -271,6 +271,26 @@ class AdminProjectServiceTest {
     }
 
     @Test
+    fun `patchProject ignores blank industry instead of storing an empty custom value`() {
+        val project = project(name = "SprintStart Frontend").apply {
+            industry = "Fintech"
+            industryConfidence = "high"
+            industryCustom = false
+        }
+        val request = PatchAdminProjectRequest(industry = "   ")
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+
+        service.patchProject(project.id, request)
+
+        assertThat(project.industry).isEqualTo("Fintech")
+        assertThat(project.industryConfidence).isEqualTo("high")
+        assertThat(project.industryCustom).isFalse()
+    }
+
+    @Test
     fun `createProject marks industry custom when industry is provided`() {
         val request = CreateAdminProjectRequest(name = "SprintStart Frontend", industry = "Fintech")
         every { projectRepository.findByName("SprintStart Frontend") } returns null

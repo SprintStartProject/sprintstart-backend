@@ -16,6 +16,7 @@ data class CreateAdminProjectRequest(
 data class PatchAdminProjectRequest(
     val name: String? = null,
     val description: String? = null,
+    @field:Size(max = 255)
     val industry: String? = null,
 )
 
