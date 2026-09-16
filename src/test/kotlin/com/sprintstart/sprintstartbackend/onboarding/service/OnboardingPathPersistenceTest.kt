@@ -9,8 +9,8 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRe
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPhaseRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRepository
 import com.sprintstart.sprintstartbackend.shared.crypto.CryptoConfiguration
-import jakarta.persistence.EntityManager
 import io.mockk.mockk
+import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
