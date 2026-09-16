@@ -262,8 +262,8 @@ class PromoteCandidateAction(
 /**
  * Offers to flag a task as a Task 0 candidate, or to take the flag off.
  *
- * Task 0 is picked from every flagged task, whichever project the hire is on — the preview says so,
- * because that reaches further than the repositories this manager's project is linked to.
+ * A flagged task can become the Task 0 of a hire on any project its repository is linked to, not only
+ * this one — the preview says so.
  */
 @Component
 class SetTaskZeroEligibleAction(
@@ -319,8 +319,8 @@ class SetTaskZeroEligibleAction(
             label = (if (eligible) "Flag for Task 0: " else "Unflag Task 0: ") + task.title.forLabel(),
             preview = if (eligible) {
                 "Flag ${task.named()} as a Task 0 candidate.\n\nA new hire without a Task 0 can be assigned it " +
-                    "automatically as their first task. Task 0 is picked from every flagged task, so that hire " +
-                    "may be on any project, not only this one."
+                    "automatically as their first task. That hire may be on any project linked to " +
+                    "${githubRepositoryOf(task.sourceId)}, not only this one."
             } else {
                 "Take the Task 0 flag off ${task.named()}.\n\nNo new hire is assigned it from now on; a hire who " +
                     "already has it as their Task 0 keeps it."

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredPullRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
@@ -34,6 +35,11 @@ class TaskZeroServiceTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
 
+    // Unless a test links one, no repository is connected, so every task is in the shared pool.
+    private val githubRepositoryApi: GithubRepositoryApi = mockk {
+        every { getRepositoryIdByOwnerAndName(any(), any()) } returns null
+    }
+
     private val now: Instant = Instant.parse("2026-07-20T12:00:00Z")
     private val hireId: UUID = UUID.randomUUID()
     private val projectId: UUID = UUID.randomUUID()
@@ -46,6 +52,7 @@ class TaskZeroServiceTest {
         // tests assert the numbers this service reports, and the point of the refactor is
         // that swapping pull requests for contributions did not move any of them.
         ContributionService(listOf(PullRequestEvidenceProvider(artifactIngestionApi))),
+        StarterWorkScope(githubRepositoryApi),
         Clock.fixed(now, ZoneOffset.UTC),
     )
 
@@ -60,9 +67,9 @@ class TaskZeroServiceTest {
         every { artifactIngestionApi.getAuthoredPullRequests(projectId, "hire") } returns emptyList()
     }
 
-    private fun task(eligible: Boolean = true, createdDaysAgo: Long = 1) =
+    private fun task(eligible: Boolean = true, createdDaysAgo: Long = 1, repository: String = "org/repo") =
         StarterWorkTaskProposal(
-            sourceId = "github:org/repo:ISSUE:${UUID.randomUUID()}",
+            sourceId = "github:$repository:ISSUE:${UUID.randomUUID()}",
             title = "Fix a typo",
             status = ProposalStatus.LIVE,
             taskZeroEligible = eligible,
@@ -114,6 +121,29 @@ class TaskZeroServiceTest {
         assertFalse(result.noneAvailable)
         // The oldest eligible task is handed out first.
         assertEquals(older.id, saved.captured.proposalId)
+    }
+
+    /** A task flagged by a manager of another project must not become this hire's first task. */
+    @Test
+    fun `getForHire skips a flagged task that belongs only to other projects`() {
+        isMember()
+        noAuthoredPrs()
+        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { assignmentRepository.findAllAssignedProposalIds() } returns emptyList()
+        val repositoryId = UUID.randomUUID()
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "other") } returns repositoryId
+        every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(UUID.randomUUID())
+        val elsewhere = task(createdDaysAgo = 5, repository = "acme/other")
+        val shared = task(createdDaysAgo = 1)
+        every { proposalRepository.findAllByStatusAndTaskZeroEligibleTrue(ProposalStatus.LIVE) } returns
+            listOf(elsewhere, shared)
+        val saved = slot<TaskZeroAssignment>()
+        every { assignmentRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.getForHire(hireId, projectId)
+
+        // Older, but another project's: the shared task is handed out instead.
+        assertEquals(shared.id, saved.captured.proposalId)
     }
 
     @Test

@@ -39,6 +39,7 @@ class TaskZeroService(
     private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository,
     private val projectMembershipApi: ProjectMembershipApi,
     private val contributionService: ContributionService,
+    private val starterWorkScope: StarterWorkScope,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     /**
@@ -80,7 +81,7 @@ class TaskZeroService(
             return existing.toResponse(loopProven)
         }
 
-        val candidate = nextEligibleTask()
+        val candidate = nextEligibleTask(projectId)
             ?: return MyTaskZeroResponse(
                 task = null,
                 assignedAt = null,
@@ -118,12 +119,13 @@ class TaskZeroService(
     fun assignedAtFor(hireId: UUID, projectId: UUID): Instant? =
         taskZeroAssignmentRepository.findByHireIdAndProjectId(hireId, projectId)?.assignedAt
 
-    private fun nextEligibleTask(): StarterWorkTaskProposal? {
+    /** The oldest free flagged task a hire on [projectId] may be given (see [StarterWorkScope.forHiresOn]). */
+    private fun nextEligibleTask(projectId: UUID): StarterWorkTaskProposal? {
         val taken = taskZeroAssignmentRepository.findAllAssignedProposalIds().toSet()
-        return starterWorkTaskProposalRepository
+        val free = starterWorkTaskProposalRepository
             .findAllByStatusAndTaskZeroEligibleTrue(ProposalStatus.LIVE)
             .filter { it.id !in taken }
-            .minByOrNull { it.createdAt }
+        return starterWorkScope.forHiresOn(free, projectId) { it.sourceId }.minByOrNull { it.createdAt }
     }
 
     /**

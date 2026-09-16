@@ -289,9 +289,9 @@ class StarterWorkTeamActionsTest {
         ).contains("already a Task 0 candidate")
     }
 
-    /** Task 0 is picked from every flagged task, whichever project the hire is on. */
+    /** Task 0 is picked for a hire on any project the task's repository is linked to. */
     @Test
-    fun `flagging for Task 0 says a hire on any project may be given it`() = runTest {
+    fun `flagging for Task 0 says a hire on any linked project may be given it`() = runTest {
         val open = task()
         val proposed = taskZero
             .draft(
@@ -299,7 +299,7 @@ class StarterWorkTeamActionsTest {
                 context,
             ).proposed()
 
-        assertThat(proposed.preview).contains("may be on any project")
+        assertThat(proposed.preview).contains("may be on any project linked to")
         taskZero.perform(proposed.params, context)
         verify { taskZeroService.setEligibility(open.id, true) }
     }

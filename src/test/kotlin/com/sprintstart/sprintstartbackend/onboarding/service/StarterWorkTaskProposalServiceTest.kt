@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.RepositoryResponsiveness
@@ -60,6 +61,11 @@ class StarterWorkTaskProposalServiceTest {
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val projectId = UUID.randomUUID()
+
+    // Unless a test links one, no repository is connected, so every task is in the shared pool.
+    private val githubRepositoryApi: GithubRepositoryApi = mockk {
+        every { getRepositoryIdByOwnerAndName(any(), any()) } returns null
+    }
     private val service = StarterWorkTaskProposalService(
         onboardingAiClient,
         competencyRepository,
@@ -69,6 +75,7 @@ class StarterWorkTaskProposalServiceTest {
         artifactIngestionApi,
         userApi,
         projectMembershipApi,
+        StarterWorkScope(githubRepositoryApi),
         json,
         transactionManager,
     )
@@ -831,6 +838,27 @@ class StarterWorkTaskProposalServiceTest {
             // Still present -- a stale owner is a signal to a PM, not a reason to bury real work.
             assertEquals(1, result.size)
             assertContains(result[0].reasons.joinToString(), "reviews here take")
+        }
+
+        /** A task a manager of another project added must not reach this project's hires. */
+        @Test
+        fun `leaves out work that belongs only to other projects`() {
+            val repositoryId = UUID.randomUUID()
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "other") } returns repositoryId
+            every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(UUID.randomUUID())
+            every { userApi.getUserIdByAuthId("auth-1") } returns Optional.of(userId)
+            every { userCompetencyStateRepository.findAllByUserId(userId) } returns emptyList()
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
+                listOf(
+                    pooledTask("github:acme/other:ISSUE:1", "Another project's task"),
+                    pooledTask("github:acme/api:ISSUE:2", "Unlinked repository"),
+                    pooledTask("authored:${UUID.randomUUID()}", "Hand-authored"),
+                )
+            noHistory()
+
+            val result = service.matchForUser("auth-1", projectId)
+
+            assertEquals(setOf("Unlinked repository", "Hand-authored"), result.map { it.task.title }.toSet())
         }
 
         @Test
