@@ -85,4 +85,34 @@ class StarterWorkScopeTest {
         assertThat(onProject).containsExactly("github:acme/shop:ISSUE:1", "github:acme/shop:ISSUE:3")
         verify(exactly = 1) { githubRepositoryApi.getRepositoryProjectIdsById(shop) }
     }
+
+    /** Hires keep the shared pool; only work that belongs to other projects alone is left out. */
+    @Test
+    fun `gives a hire everything but work that belongs only to other projects`() {
+        linked("acme", "shop", projectId, UUID.randomUUID())
+        val billing = linked("acme", "billing", UUID.randomUUID())
+        linked("acme", "unlinked")
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "gone") } returns null
+        val authored = "authored:${UUID.randomUUID()}"
+        val sources = listOf(
+            "github:acme/shop:ISSUE:1",
+            "github:acme/billing:ISSUE:2",
+            "github:acme/billing:ISSUE:3",
+            "github:acme/unlinked:ISSUE:4",
+            "github:acme/gone:ISSUE:5",
+            authored,
+            "jira:SHOP-6",
+        )
+
+        val forHires = scope.forHiresOn(sources, projectId) { it }
+
+        assertThat(forHires).containsExactly(
+            "github:acme/shop:ISSUE:1",
+            "github:acme/unlinked:ISSUE:4",
+            "github:acme/gone:ISSUE:5",
+            authored,
+            "jira:SHOP-6",
+        )
+        verify(exactly = 1) { githubRepositoryApi.getRepositoryProjectIdsById(billing) }
+    }
 }
