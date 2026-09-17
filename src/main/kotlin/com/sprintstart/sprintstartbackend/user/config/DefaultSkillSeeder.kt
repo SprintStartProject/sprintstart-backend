@@ -31,7 +31,7 @@ class DefaultSkillSeeder(
     private val objectMapper = jacksonObjectMapper()
 
     /**
-     * Maps the default skills from the resource file to skill objects.
+     * Maps the default skills from the resource file to skill objects and persists them in the DB.
      *
      * Skills already present in the skill pool get skipped; skills which are set to RETIRED remain
      * in this state and do not get reactivated to ACTIVE.
