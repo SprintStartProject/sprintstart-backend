@@ -86,33 +86,59 @@ class StarterWorkScopeTest {
         verify(exactly = 1) { githubRepositoryApi.getRepositoryProjectIdsById(shop) }
     }
 
-    /** Hires keep the shared pool; only work that belongs to other projects alone is left out. */
+    /** Hires keep the shared pool of work that never had a repository, plus their own project's. */
     @Test
-    fun `gives a hire everything but work that belongs only to other projects`() {
+    fun `gives a hire this project's work and the sources that have no repository`() {
         linked("acme", "shop", projectId, UUID.randomUUID())
         val billing = linked("acme", "billing", UUID.randomUUID())
-        linked("acme", "unlinked")
-        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "gone") } returns null
         val authored = "authored:${UUID.randomUUID()}"
         val sources = listOf(
             "github:acme/shop:ISSUE:1",
             "github:acme/billing:ISSUE:2",
             "github:acme/billing:ISSUE:3",
-            "github:acme/unlinked:ISSUE:4",
-            "github:acme/gone:ISSUE:5",
             authored,
-            "jira:SHOP-6",
+            "jira:SHOP-4",
         )
 
         val forHires = scope.forHiresOn(sources, projectId) { it }
 
-        assertThat(forHires).containsExactly(
-            "github:acme/shop:ISSUE:1",
-            "github:acme/unlinked:ISSUE:4",
-            "github:acme/gone:ISSUE:5",
-            authored,
-            "jira:SHOP-6",
-        )
+        assertThat(forHires).containsExactly("github:acme/shop:ISSUE:1", authored, "jira:SHOP-4")
         verify(exactly = 1) { githubRepositoryApi.getRepositoryProjectIdsById(billing) }
+    }
+
+    /**
+     * A repository unlinked after one of its issues was promoted must not fall back to the shared
+     * pool, or that issue would reach hires on unrelated projects.
+     */
+    @Test
+    fun `keeps a GitHub task from every hire when its repository has no project`() {
+        linked("acme", "unlinked")
+
+        assertThat(scope.forHiresOn(listOf("github:acme/unlinked:ISSUE:1"), projectId) { it }).isEmpty()
+    }
+
+    @Test
+    fun `keeps a GitHub task from every hire when its repository is not connected`() {
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "gone") } returns null
+
+        assertThat(scope.forHiresOn(listOf("github:acme/gone:ISSUE:1"), projectId) { it }).isEmpty()
+    }
+
+    @Test
+    fun `keeps a GitHub task from every hire when its repository disconnects mid-read`() {
+        val repositoryId = UUID.randomUUID()
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "shop") } returns repositoryId
+        every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } throws NoSuchElementException()
+
+        assertThat(scope.forHiresOn(listOf("github:acme/shop:ISSUE:1"), projectId) { it }).isEmpty()
+    }
+
+    @Test
+    fun `keeps a malformed GitHub source from every hire, without looking anything up`() {
+        val malformed = listOf("github:acme:ISSUE:1", "github:acme/shop", "github:/shop:ISSUE:2")
+
+        assertThat(scope.forHiresOn(malformed, projectId) { it }).isEmpty()
+
+        verify(exactly = 0) { githubRepositoryApi.getRepositoryIdByOwnerAndName(any(), any()) }
     }
 }

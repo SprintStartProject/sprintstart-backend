@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -61,7 +62,7 @@ class StarterWorkTaskProposalServiceTest {
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
 
-    // Unless a test links one, no repository is connected, so every task is in the shared pool.
+    // Only hire-facing ranking scopes by project; every other path here leaves repositories alone.
     private val githubRepositoryApi: GithubRepositoryApi = mockk {
         every { getRepositoryIdByOwnerAndName(any(), any()) } returns null
     }
@@ -657,6 +658,14 @@ class StarterWorkTaskProposalServiceTest {
     inner class MatchForUser {
         private val userId = UUID.randomUUID()
         private val projectId = UUID.randomUUID()
+        private val hereId = UUID.randomUUID()
+
+        /** Unless a test links one elsewhere, a task's repository is linked to this hire's project. */
+        @BeforeEach
+        fun linkRepositoriesHere() {
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName(any(), any()) } returns hereId
+            every { githubRepositoryApi.getRepositoryProjectIdsById(hereId) } returns setOf(projectId)
+        }
 
         private fun heldCompetency(key: String, level: Int = 3) =
             UserCompetencyState(
@@ -806,14 +815,35 @@ class StarterWorkTaskProposalServiceTest {
             every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
                 listOf(
                     pooledTask("github:acme/other:ISSUE:1", "Another project's task"),
-                    pooledTask("github:acme/api:ISSUE:2", "Unlinked repository"),
+                    pooledTask("github:acme/api:ISSUE:2", "This project's task"),
                     pooledTask("authored:${UUID.randomUUID()}", "Hand-authored"),
                 )
             noHistory()
 
             val result = service.matchForUser("auth-1", projectId)
 
-            assertEquals(setOf("Unlinked repository", "Hand-authored"), result.map { it.task.title }.toSet())
+            assertEquals(setOf("This project's task", "Hand-authored"), result.map { it.task.title }.toSet())
+        }
+
+        /**
+         * A repository can lose its projects after one of its issues was promoted. That issue then
+         * belongs to no project, and must not drop back into the pool every hire is ranked against.
+         */
+        @Test
+        fun `leaves out a GitHub task whose repository is linked to no project`() {
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "unlinked") } returns null
+            every { userApi.getUserIdByAuthId("auth-1") } returns Optional.of(userId)
+            every { userCompetencyStateRepository.findAllByUserId(userId) } returns emptyList()
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
+                listOf(
+                    pooledTask("github:acme/unlinked:ISSUE:1", "Unlinked repository"),
+                    pooledTask("jira:SHOP-2", "A Jira issue"),
+                )
+            noHistory()
+
+            val result = service.matchForUser("auth-1", projectId)
+
+            assertEquals(listOf("A Jira issue"), result.map { it.task.title })
         }
 
         @Test
