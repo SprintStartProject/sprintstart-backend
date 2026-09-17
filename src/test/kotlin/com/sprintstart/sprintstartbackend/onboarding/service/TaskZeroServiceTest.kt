@@ -35,14 +35,16 @@ class TaskZeroServiceTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
 
-    // Unless a test links one, no repository is connected, so every task is in the shared pool.
-    private val githubRepositoryApi: GithubRepositoryApi = mockk {
-        every { getRepositoryIdByOwnerAndName(any(), any()) } returns null
-    }
-
     private val now: Instant = Instant.parse("2026-07-20T12:00:00Z")
     private val hireId: UUID = UUID.randomUUID()
     private val projectId: UUID = UUID.randomUUID()
+
+    // Unless a test links one elsewhere, a task's repository is linked to this hire's project.
+    private val hereId: UUID = UUID.randomUUID()
+    private val githubRepositoryApi: GithubRepositoryApi = mockk {
+        every { getRepositoryIdByOwnerAndName(any(), any()) } returns hereId
+        every { getRepositoryProjectIdsById(hereId) } returns setOf(projectId)
+    }
 
     private val service = TaskZeroService(
         proposalRepository,
@@ -134,16 +136,36 @@ class TaskZeroServiceTest {
         every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "other") } returns repositoryId
         every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(UUID.randomUUID())
         val elsewhere = task(createdDaysAgo = 5, repository = "acme/other")
-        val shared = task(createdDaysAgo = 1)
+        val here = task(createdDaysAgo = 1)
         every { proposalRepository.findAllByStatusAndTaskZeroEligibleTrue(ProposalStatus.LIVE) } returns
-            listOf(elsewhere, shared)
+            listOf(elsewhere, here)
         val saved = slot<TaskZeroAssignment>()
         every { assignmentRepository.save(capture(saved)) } answers { firstArg() }
 
         service.getForHire(hireId, projectId)
 
-        // Older, but another project's: the shared task is handed out instead.
-        assertEquals(shared.id, saved.captured.proposalId)
+        // Older, but another project's: this project's task is handed out instead.
+        assertEquals(here.id, saved.captured.proposalId)
+    }
+
+    /**
+     * A task whose repository was unlinked after it was flagged belongs to no project any more, so
+     * it must reach no hire rather than fall back to the shared pool.
+     */
+    @Test
+    fun `getForHire skips a flagged task whose repository is linked to no project`() {
+        isMember()
+        noAuthoredPrs()
+        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { assignmentRepository.findAllAssignedProposalIds() } returns emptyList()
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "unlinked") } returns null
+        every { proposalRepository.findAllByStatusAndTaskZeroEligibleTrue(ProposalStatus.LIVE) } returns
+            listOf(task(createdDaysAgo = 5, repository = "acme/unlinked"))
+
+        val result = service.getForHire(hireId, projectId)
+
+        assertTrue(result.noneAvailable)
+        verify(exactly = 0) { assignmentRepository.save(any()) }
     }
 
     @Test

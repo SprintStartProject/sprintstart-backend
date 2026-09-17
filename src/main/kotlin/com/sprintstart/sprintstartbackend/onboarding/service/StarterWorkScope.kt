@@ -65,23 +65,26 @@ class StarterWorkScope(
     }
 
     /**
-     * The [items] a hire on [projectId] may be given: everything except work that belongs to other
-     * projects only.
+     * The [items] a hire on [projectId] may be given: the shared pool, plus this project's own work.
      *
-     * Wider than [onProject] on purpose. A hand-authored task, a Jira issue, or an issue in a
-     * repository linked to no project belongs to no project, so it stays in the shared pool an admin
-     * curates, as it always has. What a manager adds or flags always belongs to their project (see
-     * [covers]), so it never reaches a hire on an unrelated one.
+     * Wider than [onProject] in one way only. A hand-authored task (`authored:`) or a Jira issue has
+     * no repository to scope it by and never had one, so it stays in the shared pool an admin
+     * curates, as it always has.
+     *
+     * Every GitHub source is scoped exactly as [onProject] scopes it, and so fails closed: a task
+     * whose repository is malformed, unknown, disconnected mid-read, or linked to no project reaches
+     * no hire at all. It must, because a repository can lose its projects after a manager promoted
+     * one of its issues — falling back to the shared pool there would hand that issue to hires on
+     * unrelated projects, which is the leak this scope exists to close.
      */
     @Transactional(readOnly = true)
     fun <T> forHiresOn(items: List<T>, projectId: UUID, sourceIdOf: (T) -> String): List<T> {
         val visible = mutableMapOf<GithubRepositoryName, Boolean>()
         return items.filter { item ->
-            val repository = githubRepositoryOf(sourceIdOf(item)) ?: return@filter true
-            visible.getOrPut(repository) {
-                val projects = projectsOf(repository)
-                projects.isEmpty() || projectId in projects
-            }
+            val sourceId = sourceIdOf(item)
+            val repository = githubRepositoryOf(sourceId)
+                ?: return@filter !sourceId.startsWith(GITHUB_SOURCE_PREFIX)
+            visible.getOrPut(repository) { projectId in projectsOf(repository) }
         }
     }
 
