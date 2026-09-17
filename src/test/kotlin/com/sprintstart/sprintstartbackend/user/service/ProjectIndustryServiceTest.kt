@@ -285,9 +285,147 @@ class ProjectIndustryServiceTest {
         coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
     }
 
+    @Test
+    fun `getOrEvaluateIndustry returns custom industry without AI call`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Healthcare",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Healthcare", result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry returns null for blank custom industry without AI call`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "   ",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry keeps custom value when set mid-flight`() = runTest {
+        val initialProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = null,
+            industryConfidence = null,
+            industryCustom = false,
+        )
+        val customProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Manual Fintech",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(customProject)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Automotive",
+            confidence = "high",
+            evidence = listOf("CAN bus"),
+        )
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Manual Fintech", result)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry rethrows CancellationException`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            kotlinx.coroutines.CancellationException("Job cancelled")
+
+        assertThrows<kotlinx.coroutines.CancellationException> {
+            service.getOrEvaluateIndustry(projectId)
+        }
+    }
+
     // ==========================================
     // evaluateIndustryAutomatically (monotonicity & threshold)
     // ==========================================
+
+    @Test
+    fun `evaluateIndustryAutomatically skips custom industry entirely`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Healthcare",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically does not overwrite when industry becomes custom mid-flight`() = runTest {
+        val initialProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = null,
+            industryConfidence = null,
+            industryCustom = false,
+        )
+        val customProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Manual Set",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(customProject)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "AI Guess",
+            confidence = "high",
+            evidence = listOf("evidence"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        coVerify(exactly = 1) { projectIndustryAiClient.evaluateIndustry(projectId) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+        assertEquals("Manual Set", customProject.industry)
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically rethrows CancellationException`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            kotlinx.coroutines.CancellationException("Job cancelled")
+
+        assertThrows<kotlinx.coroutines.CancellationException> {
+            service.evaluateIndustryAutomatically(projectId)
+        }
+    }
 
     @Test
     fun `evaluateIndustryAutomatically persists when industry is unset and confidence is high`() = runTest {

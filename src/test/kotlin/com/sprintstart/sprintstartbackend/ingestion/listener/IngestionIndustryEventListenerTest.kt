@@ -70,4 +70,15 @@ class IngestionIndustryEventListenerTest {
 
         coVerify(exactly = 1) { projectIndustryApi.evaluateIndustryAutomatically(project1) }
     }
+
+    @Test
+    fun `handleArtifactsIndexed rethrows CancellationException`() {
+        coEvery { projectIndustryApi.evaluateIndustryAutomatically(project1) } throws
+            kotlinx.coroutines.CancellationException("Job cancelled")
+
+        listener.handleArtifactsIndexed(ArtifactsIndexedEvent(runId = runId, projectIds = setOf(project1)))
+        testScope.advanceUntilIdle()
+
+        coVerify(exactly = 1) { projectIndustryApi.evaluateIndustryAutomatically(project1) }
+    }
 }

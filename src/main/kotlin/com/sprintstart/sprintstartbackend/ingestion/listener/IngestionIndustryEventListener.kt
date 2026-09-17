@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.external.events.ArtifactsIndexedEvent
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -29,6 +30,8 @@ class IngestionIndustryEventListener(
             for (projectId in event.projectIds) {
                 try {
                     projectIndustryApi.evaluateIndustryAutomatically(projectId)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.warn(
                         "Failed to auto-evaluate industry for project {} after run {}",

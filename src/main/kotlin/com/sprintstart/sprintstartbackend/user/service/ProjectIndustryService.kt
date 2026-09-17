@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -24,7 +25,8 @@ import java.util.UUID
  *
  * Coordinates industry evaluation with the AI service and persists the result on the project.
  * Manual evaluation triggers always persist the evaluated industry and confidence, overriding
- * any previous values. Automatic and lazy triggers enforce threshold and monotonicity rules.
+ * any previous values. Automatic and lazy triggers enforce threshold and monotonicity rules,
+ * and skip projects with manually set industries.
  */
 @Service
 class ProjectIndustryService(
@@ -43,6 +45,7 @@ class ProjectIndustryService(
      *
      * Validates project existence before the AI call, runs the suspending AI evaluation outside
      * any transaction, and persists the result inside a transaction block with [TransactionTemplate].
+     * Resets [Project.industryCustom] to `false`.
      *
      * @param projectId Unique identifier of the project.
      * @return The AI evaluation response containing detected industry, confidence, and evidence.
@@ -91,11 +94,15 @@ class ProjectIndustryService(
      * Retrieves the persisted industry if present; otherwise queries the AI service lazily once.
      *
      * Persists only if the evaluated confidence is at least `medium`. Returns null on low confidence
-     * or when evaluation fails, without throwing.
+     * or when evaluation fails, without throwing. Manually configured industries are returned without
+     * querying the AI service.
      */
     @Tracked("Getting or lazily evaluating project industry")
     override suspend fun getOrEvaluateIndustry(projectId: UUID): String? {
         val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: return null
+        if (existingProject.industryCustom) {
+            return existingProject.industry?.takeIf { it.isNotBlank() }
+        }
         if (!existingProject.industry.isNullOrBlank()) {
             return existingProject.industry
         }
@@ -108,6 +115,9 @@ class ProjectIndustryService(
                         val project = projectRepository
                             .findByIdForUpdate(projectId)
                             .orElse(null) ?: return@execute null
+                        if (project.industryCustom) {
+                            return@execute project.industry
+                        }
                         val shouldUpdate = project.industry.isNullOrBlank() ||
                             isHigherConfidence(response.confidence, project.industryConfidence)
                         if (shouldUpdate) {
@@ -128,6 +138,8 @@ class ProjectIndustryService(
                 )
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.warn("Lazy industry evaluation failed for project {}: {}", projectId, e.message)
             null
@@ -138,6 +150,7 @@ class ProjectIndustryService(
      * Evaluates the project industry automatically (e.g. after an ingestion run) and persists
      * it only if confidence is at least `medium` and strictly higher than the current confidence.
      *
+     * Projects with manually set industries ([Project.industryCustom] is `true`) are skipped.
      * Failures are caught and logged so ingestion sync is never broken.
      */
     @Tracked("Evaluating project industry automatically")
@@ -145,6 +158,13 @@ class ProjectIndustryService(
         try {
             val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: run {
                 logger.warn("Cannot auto-evaluate industry for non-existent project {}", projectId)
+                return
+            }
+            if (existingProject.industryCustom && !existingProject.industry.isNullOrBlank()) {
+                logger.debug(
+                    "Skipping auto industry evaluation for project {}: industry was set manually",
+                    projectId,
+                )
                 return
             }
 
@@ -164,6 +184,14 @@ class ProjectIndustryService(
                     val project = projectRepository
                         .findByIdForUpdate(projectId)
                         .orElse(null) ?: return@executeWithoutResult
+                    if (project.industryCustom) {
+                        logger.debug(
+                            "Auto industry evaluation for project {} aborted: " +
+                                "industry became custom during evaluation",
+                            projectId,
+                        )
+                        return@executeWithoutResult
+                    }
                     val shouldUpdate = project.industry.isNullOrBlank() ||
                         isHigherConfidence(response.confidence, project.industryConfidence)
                     if (shouldUpdate) {
@@ -189,6 +217,8 @@ class ProjectIndustryService(
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.warn("Automatic industry evaluation failed for project {}: {}", projectId, e.message)
         }
