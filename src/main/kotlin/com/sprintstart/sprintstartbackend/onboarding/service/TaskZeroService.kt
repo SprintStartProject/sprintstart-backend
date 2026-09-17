@@ -119,7 +119,10 @@ class TaskZeroService(
     fun assignedAtFor(hireId: UUID, projectId: UUID): Instant? =
         taskZeroAssignmentRepository.findByHireIdAndProjectId(hireId, projectId)?.assignedAt
 
-    /** The oldest free flagged task a hire on [projectId] may be given (see [StarterWorkScope.forHiresOn]). */
+    /**
+     * The oldest free flagged task a hire on [projectId] may be given: this project's work, or a task
+     * that never had a repository to scope it by (see [StarterWorkScope.forHiresOn]).
+     */
     private fun nextEligibleTask(projectId: UUID): StarterWorkTaskProposal? {
         val taken = taskZeroAssignmentRepository.findAllAssignedProposalIds().toSet()
         val free = starterWorkTaskProposalRepository
