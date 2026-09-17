@@ -71,6 +71,7 @@ class SkillService(
                 Skill(
                     name = request.name,
                     projectRoles = roles,
+                    category = request.category,
                 ),
             ).toCreateResponse()
     }

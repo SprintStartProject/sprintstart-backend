@@ -245,7 +245,7 @@ class ProjectRoleServiceTest {
     fun `getSkillsForRole returns skills linked to the role`() {
         val roleId = UUID.randomUUID()
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
-        val skill = Skill(name = "Kotlin", projectRoles = mutableSetOf(role))
+        val skill = Skill(name = "Kotlin", projectRoles = mutableSetOf(role), category = "Languages & Paradigms")
 
         every { projectRoleRepository.existsById(roleId) } returns true
         every { skillRepository.findAllByProjectRolesId(roleId) } returns listOf(skill)
@@ -271,9 +271,21 @@ class ProjectRoleServiceTest {
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
         val otherRole = ProjectRole(id = UUID.randomUUID(), name = "QA", description = "Test")
 
-        val keptSkill = Skill(name = "Kotlin", projectRoles = mutableSetOf(role, otherRole))
-        val removedSkill = Skill(name = "Java", projectRoles = mutableSetOf(role, otherRole))
-        val addedSkill = Skill(name = "Docker", projectRoles = mutableSetOf())
+        val keptSkill = Skill(
+            name = "Kotlin",
+            projectRoles = mutableSetOf(role, otherRole),
+            category = "Languages & Paradigms",
+        )
+        val removedSkill = Skill(
+            name = "Java",
+            projectRoles = mutableSetOf(role, otherRole),
+            category = "Languages & Paradigms",
+        )
+        val addedSkill = Skill(
+            name = "Docker",
+            projectRoles = mutableSetOf(),
+            category = "DevOps, Infrastructure & Cloud",
+        )
 
         val request = UpdateRoleSkillsRequest(skillIds = listOf(keptSkill.id, addedSkill.id))
 
@@ -319,7 +331,7 @@ class ProjectRoleServiceTest {
     fun `setSkillsForRole throws 400 when unassigning would leave a skill with no roles`() {
         val roleId = UUID.randomUUID()
         val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
-        val orphanedSkill = Skill(name = "Java", projectRoles = mutableSetOf(role))
+        val orphanedSkill = Skill(name = "Java", projectRoles = mutableSetOf(role), category = "Languages & Paradigms")
         val request = UpdateRoleSkillsRequest(skillIds = emptyList())
 
         every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
