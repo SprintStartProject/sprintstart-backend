@@ -58,6 +58,7 @@ class StarterWorkTaskProposalService(
     private val artifactIngestionApi: ArtifactIngestionApi,
     private val userApi: UserApi,
     private val projectMembershipApi: ProjectMembershipApi,
+    private val starterWorkScope: StarterWorkScope,
     private val json: Json,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -467,11 +468,15 @@ class StarterWorkTaskProposalService(
      * project.
      *
      * The user-id counterpart of [matchForUser], for callers that hold a user id rather than an
-     * auth subject (e.g. the buddy agent ranking tasks for the caller).
+     * auth subject (e.g. the buddy agent ranking tasks for the caller). Only this project's work and
+     * the shared pool are ranked (see [StarterWorkScope.forHiresOn]).
      */
     @Transactional(readOnly = true)
     fun matchForUserId(userId: UUID, projectId: UUID): List<RankedStarterWorkTaskResponse> {
-        val pool = starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE)
+        val pool = starterWorkScope.forHiresOn(
+            starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE),
+            projectId,
+        ) { it.sourceId }
         if (pool.isEmpty()) return emptyList()
 
         val profile = buildProfile(userId)
