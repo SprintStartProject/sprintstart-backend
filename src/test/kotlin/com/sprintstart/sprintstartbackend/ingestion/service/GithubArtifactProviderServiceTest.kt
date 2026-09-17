@@ -46,6 +46,7 @@ class GithubArtifactProviderServiceTest {
     fun setUp() {
         every { artifactRepository.save(any()) } answers { firstArg() }
         every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(projectId)
+        every { githubRepositoryApi.getProjectIdsByOwner(any()) } returns setOf(projectId)
         every { artifactMetadataJsonMapper.toJson(any()) } returns """{"repositoryFullName":"owner/repo"}"""
     }
 
@@ -448,29 +449,84 @@ class GithubArtifactProviderServiceTest {
     }
 
     @Test
-    fun `persistArtifact saves new org metadata artifact without project ids`() {
+    fun `persistArtifact saves new org metadata artifact with project ids from owner repositories`() {
         val run = ingestionRun()
         val savedArtifact = slot<Artifact>()
         every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId("octocat") } returns null
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
         every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
 
         service.persistArtifact(orgMetadataCommand())
 
         assertThat(savedArtifact.captured.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
         assertThat(savedArtifact.captured.sourceId).isEqualTo("octocat")
-        assertThat(savedArtifact.captured.projectIds).isEmpty()
+        assertThat(savedArtifact.captured.projectIds).containsExactly(projectId)
         assertThat(run.ingestedCount).isEqualTo(1)
     }
 
     @Test
     fun `persistArtifact ignores duplicate org metadata source id`() {
-        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null)
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
 
         service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
 
         verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact marks an unchanged org metadata that gained a project for re-ingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        val secondProject = UUID.randomUUID()
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId, secondProject)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
+
+        assertThat(existing.projectIds).containsExactlyInAnyOrder(projectId, secondProject)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(run.updatedCount).isZero()
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects adds new project ids to existing org artifact and marks it for reingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        val secondProject = UUID.randomUUID()
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId, secondProject)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        assertThat(existing.projectIds).containsExactlyInAnyOrder(projectId, secondProject)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects does nothing when org artifact does not exist`() {
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns null
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { githubRepositoryApi.getProjectIdsByOwner(any()) }
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects does nothing when project ids are already linked`() {
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
     }
 
     private fun orgMetadataCommand(

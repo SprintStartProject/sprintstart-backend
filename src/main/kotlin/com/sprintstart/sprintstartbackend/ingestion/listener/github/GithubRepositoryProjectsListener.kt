@@ -45,6 +45,7 @@ internal class GithubRepositoryProjectsListener(
                     event.projectId,
                     event.linked,
                 )
+                artifactProjectService.syncGithubOrgArtifact(event.owner)
             } catch (e: Exception) {
                 logger.error(
                     "Failed to propagate project {} ({}) for repository {}/{} to the AI index",

@@ -52,6 +52,7 @@ class ProjectLinkPropagationTest {
     @BeforeEach
     fun setUp() {
         coJustRun { artifactProjectService.applyProjectLink(any(), any(), any()) }
+        coJustRun { artifactProjectService.syncGithubOrgArtifact(any()) }
     }
 
     @Test
@@ -71,6 +72,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 true,
             )
+            artifactProjectService.syncGithubOrgArtifact("acme")
         }
     }
 
@@ -91,6 +93,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 false,
             )
+            artifactProjectService.syncGithubOrgArtifact("acme")
         }
     }
 

@@ -47,6 +47,15 @@ class GithubRepositoryApiServiceTest {
     }
 
     @Test
+    fun `getProjectIdsByOwner returns all project ids across repositories with given owner`() {
+        val owner = "octocat"
+        val projectIds = setOf(UUID.randomUUID(), UUID.randomUUID())
+        every { githubRepositoryConnectionRepository.findProjectIdsByOwner(owner) } returns projectIds
+
+        assertThat(service.getProjectIdsByOwner(owner)).isEqualTo(projectIds)
+    }
+
+    @Test
     fun `getRepositoryIdByOwnerAndName returns the connection id`() {
         val repositoryId = UUID.randomUUID()
         every { githubRepositoryConnectionRepository.findByOwnerAndName("owner", "repo") } returns

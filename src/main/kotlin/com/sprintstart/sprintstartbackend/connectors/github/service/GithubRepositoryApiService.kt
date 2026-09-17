@@ -30,6 +30,10 @@ class GithubRepositoryApiService(
         return repo.projectIds
     }
 
+    override fun getProjectIdsByOwner(owner: String): Set<UUID> {
+        return githubRepositoryConnectionRepository.findProjectIdsByOwner(owner)
+    }
+
     override fun getRepositoryIdByOwnerAndName(owner: String, name: String): UUID? =
         githubRepositoryConnectionRepository.findByOwnerAndName(owner, name)?.id
 
