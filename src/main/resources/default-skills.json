@@ -1,0 +1,800 @@
+[
+  {
+    "name": "Java",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Kotlin",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Python",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "TypeScript",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "JavaScript",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Go",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "C#",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "SQL",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Rust",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "C++",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Bash/Shell",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "Scala",
+    "category": "Languages & Paradigms"
+  },
+  {
+    "name": "React",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Angular",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Vue.js",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Next.js",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Nuxt.js",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "SvelteKit",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "HTML/CSS",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Tailwind CSS",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Responsive Design",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Accessibility (a11y)",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Web Performance Optimization",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "State Management",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Design System (Storybook)",
+    "category": "Frontend & UI"
+  },
+  {
+    "name": "Spring Boot",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "Node.js",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "REST API",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "GraphQL",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "gRPC/Protobuf",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "Microservices",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "Event-Driven Architecture",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "Kafka",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "RabbitMQ",
+    "category": "Backend & APIs"
+  },
+  {
+    "name": "HTTP/1.1",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "HTTP/2",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "HTTP/3 (QUIC)",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "HTTPS",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "TLS/SSL",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "WebSockets",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "SSE",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "WebRTC",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "TCP/IP",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "UDP",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "DNS",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "Load Balancing",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "SSH",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "SMTP/IMAP",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "MQTT",
+    "category": "Network & Protocols"
+  },
+  {
+    "name": "PostgreSQL",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "SQL",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "MongoDB",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Redis",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Pinecone",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Qdrant",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "pgvector",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Elastisearch/OpenSearch",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Snowflake",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "BigQuery",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Database Design",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Liquibase",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Flyway",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Prisma Migrate",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Alembic",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "golang-migrate",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "EF Migrations",
+    "category": "Data & Databases"
+  },
+  {
+    "name": "Docker",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Kubernetes",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Gitlab CI",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "GitHub Actions",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Git",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "AWS",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Azure",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "GCP",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Terraform",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "GitOps (ArgoCD)",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Prometheus",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Grafana",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "Datadog",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "OpenTelemetry",
+    "category": "DevOps, Infrastructure & Cloud"
+  },
+  {
+    "name": "OAuth2",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "OpenID Connect",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "JWT",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "RBAC",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "OWASP Top 10",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "CORS",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "CSP",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Input Validation",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "HashiCorp Vault",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "AWS Secrets Manager",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Azure Key Vault",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Trivy",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Clair",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Network Policies",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Zero Trust",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Encryption at Rest/Transit",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "KMS",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "SAST/DAST (SonarQube)",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Threat Modeling (STRIDE)",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "DevSecOps",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Rate Limiting",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "WAF",
+    "category": "Security & AppSec"
+  },
+  {
+    "name": "Unit Testing",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Integration Testing",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "E2E Testing",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "API Testing",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Playwright",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Cypress",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Selenium",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Postman",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "RestAssured",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "k6",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "JMeter",
+    "category": "Quality Assurance & Testing"
+  },
+  {
+    "name": "Agile/Scrum",
+    "category": "Processes, Methods & Architecture",
+    "universal": true
+  },
+  {
+    "name": "Kanban",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Extreme Programming (XP)",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "SAFe",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "LeSS",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Nexus",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Code Review",
+    "category": "Processes, Methods & Architecture",
+    "universal": true
+  },
+  {
+    "name": "Pair Programming",
+    "category": "Processes, Methods & Architecture",
+    "universal": true
+  },
+  {
+    "name": "Technical Documentation",
+    "category": "Processes, Methods & Architecture",
+    "universal": true
+  },
+  {
+    "name": "Domain-Driven Design (DDD)",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "API-First Design",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "System Design",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Shift-Left Testing",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "BPMN 2.0",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "UML",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "User Story Mapping",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "MoSCoW",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Kano",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "RICE",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "User Research",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Customer Journey Mapping",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Roadmapping",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "OKRs",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "KPIs",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "Definition of Ready/Done",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "User Stores/Epics/Features",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "A/B-Testing",
+    "category": "Processes, Methods & Architecture"
+  },
+  {
+    "name": "RAG",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "MCP (Model Context Protocol)",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Agentic Workflows",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Tool Use/Function Calling",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "LangChain",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "LlamaIndex",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "LangGraph",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "CrewAI",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "AutoGen",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "OpenAI",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Anthropic",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "AWS Bedrock",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Azure OpenAI",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Vertex AI",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Ollama",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "vLLM",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "llama.cpp",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Embedding Models",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Advanced Chunking Strategies",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Semantic Search",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "LangSmith",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "RAGAS",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "TruLens",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Guardrails & Prompt Injection Defense (NeMo Guardrails)",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Prompt Engineering",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "System Prompt Design",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "LoRA",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "QLoRA",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "PyTorch/TensorFlow",
+    "category": "Artificial Intelligence (AI/GenAI)"
+  },
+  {
+    "name": "Jira",
+    "category": "Tools"
+  },
+  {
+    "name": "Confluence",
+    "category": "Tools"
+  },
+  {
+    "name": "Azure DevOps",
+    "category": "Tools"
+  },
+  {
+    "name": "Linear",
+    "category": "Tools"
+  },
+  {
+    "name": "Trello",
+    "category": "Tools"
+  },
+  {
+    "name": "Productboard",
+    "category": "Tools"
+  },
+  {
+    "name": "Aha!",
+    "category": "Tools"
+  },
+  {
+    "name": "Figma",
+    "category": "Tools"
+  },
+  {
+    "name": "Miro",
+    "category": "Tools"
+  },
+  {
+    "name": "Mural",
+    "category": "Tools"
+  },
+  {
+    "name": "Mixpanel",
+    "category": "Tools"
+  },
+  {
+    "name": "Google Analytics",
+    "category": "Tools"
+  },
+  {
+    "name": "Communication",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Empathy & Emotional Intelligence",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Negotiation & Conflict Management",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Decisiveness",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Stakeholder Management",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Servant Leadership",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Coaching & Mentoring",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Mediation",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Conflict Resolution",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Psychological Safety",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Facilitation & Moderation",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Workshop Moderation",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Impediment Management",
+    "category": "Soft Skills",
+    "universal": true
+  },
+  {
+    "name": "Velocity/Burndown Metrics",
+    "category": "Soft Skills",
+    "universal": true
+  }
+]

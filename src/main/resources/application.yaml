@@ -43,6 +43,8 @@ sprintstart:
     knowledge-gaps:
       auto-refresh: ${SPRINTSTART_KNOWLEDGE_GAPS_AUTO_REFRESH:true}
       debounce-seconds: 60
+  default-skills:
+    enabled: true
 
 spring:
   config:
