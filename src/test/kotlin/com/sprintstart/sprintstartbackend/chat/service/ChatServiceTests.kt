@@ -24,6 +24,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.server.ResponseStatusException
+import java.time.Clock
 import java.time.OffsetDateTime
 import java.util.Optional
 import java.util.UUID
@@ -36,12 +37,14 @@ class ChatServiceTests {
     private val citationRepository: CitationRepository = mockk()
     private val userApi: UserApi = mockk()
     private val chatAuthService: ChatAuthService = mockk()
+    private val clock = mockk<Clock>()
     private val chatService = ChatService(
         chatRepository,
         chatMessageRepository,
         citationRepository,
         userApi,
         chatAuthService,
+        clock,
     )
 
     private val userId = UUID.randomUUID()
@@ -127,7 +130,7 @@ class ChatServiceTests {
             val request = GetChatsRequest(limit = 5)
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every {
-                chatRepository.findAllByUserId(userId, any<Pageable>())
+                chatRepository.findAllActiveByUserId(userId, any<Pageable>())
             } returns PageImpl(allChats)
             every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
 
@@ -135,7 +138,7 @@ class ChatServiceTests {
 
             assertEquals(5, result.chats.size)
             assertEquals(allChats[0].toChatResponse(), result.chats[0])
-            verify(exactly = 1) { chatRepository.findAllByUserId(userId, any<Pageable>()) }
+            verify(exactly = 1) { chatRepository.findAllActiveByUserId(userId, any<Pageable>()) }
         }
 
         @Test
@@ -154,7 +157,7 @@ class ChatServiceTests {
             }
 
             assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
-            verify(exactly = 0) { chatRepository.findAllByUserId(any(), any<Pageable>()) }
+            verify(exactly = 0) { chatRepository.findAllActiveByUserId(any(), any<Pageable>()) }
         }
     }
 

@@ -140,7 +140,7 @@ class ChatControllerUnitTest {
         @Test
         fun `delegates to service with correct chat id`() {
             every { chatService.deleteChat(chatId) } returns Unit
-            controller.deleteChat(chatId)
+            controller.binChat(chatId)
 
             verify(exactly = 1) {
                 chatService.deleteChat(chatId)
@@ -156,7 +156,7 @@ class ChatControllerUnitTest {
             every { jwt.subject } returns authId
             every { chatService.deleteChatForCurrentUser(authId, chatId) } returns Unit
 
-            controller.deleteMyChat(chatId, jwt)
+            controller.binMyChat(chatId, jwt)
 
             verify(exactly = 1) {
                 chatService.deleteChatForCurrentUser(authId, chatId)
