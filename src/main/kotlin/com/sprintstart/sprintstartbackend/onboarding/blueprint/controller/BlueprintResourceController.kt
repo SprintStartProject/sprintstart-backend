@@ -260,8 +260,9 @@ class BlueprintResourceAdminController(
 /**
  * Exposes project-scoped blueprint resource endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
@@ -300,7 +301,7 @@ class BlueprintResourceController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/step/{stepId}/resources")
     fun getBlueprintResourcesForStep(
         @PathVariable projectId: UUID,
@@ -345,7 +346,7 @@ class BlueprintResourceController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/resources/{resourceId}")
     fun getBlueprintResource(
         @PathVariable projectId: UUID,
@@ -399,7 +400,7 @@ class BlueprintResourceController(
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/step/{stepId}/resources")
     fun createBlueprintResource(
         @PathVariable projectId: UUID,
@@ -455,7 +456,7 @@ class BlueprintResourceController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/resources/{resourceId}")
     fun updateBlueprintResourceById(
         @PathVariable projectId: UUID,
@@ -510,7 +511,7 @@ class BlueprintResourceController(
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/resources/{resourceId}")
     fun deleteBlueprintResourceById(
         @PathVariable projectId: UUID,

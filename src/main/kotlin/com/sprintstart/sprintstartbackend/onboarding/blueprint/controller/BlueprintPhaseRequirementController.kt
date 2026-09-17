@@ -147,8 +147,9 @@ class BlueprintPhaseRequirementAdminController(
 /**
  * Exposes project-scoped blueprint phase requirement endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("api/v1/projects/{projectId}/onboarding/blueprints/")
@@ -201,7 +202,7 @@ class BlueprintPhaseRequirementController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/phases/{phaseId}/requirements")
     fun addRequirementList(
         @PathVariable projectId: UUID,
@@ -261,7 +262,7 @@ class BlueprintPhaseRequirementController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/phases/{phaseId}/requirements")
     fun deleteRequirementList(
         @PathVariable projectId: UUID,

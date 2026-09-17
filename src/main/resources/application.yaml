@@ -6,8 +6,11 @@ sprintstart:
     # Bounded parallel AI phase assembly during personalization. A phase that
     # exceeds phase-timeout-seconds is persisted as TIMED_OUT while siblings
     # continue; total-timeout-seconds caps the whole run (queued phases included).
-    phase-timeout-seconds: ${SPRINTSTART_ONBOARDING_PHASE_TIMEOUT_SECONDS:240}
-    total-timeout-seconds: ${SPRINTSTART_ONBOARDING_TOTAL_TIMEOUT_SECONDS:900}
+    # The phase timeout covers two full AI calls (the AI service's LLM timeout of
+    # 600s, plus a possible JSON-correction retry) plus headroom; the total timeout
+    # covers four sequential phase batches (16 seeded phases at concurrency 4).
+    phase-timeout-seconds: ${SPRINTSTART_ONBOARDING_PHASE_TIMEOUT_SECONDS:1300}
+    total-timeout-seconds: ${SPRINTSTART_ONBOARDING_TOTAL_TIMEOUT_SECONDS:5400}
     phase-concurrency: ${SPRINTSTART_ONBOARDING_PHASE_CONCURRENCY:4}
   ingestion:
     # Incremental AI sync: artifacts are embedded in small batches while a crawl is still

@@ -28,12 +28,7 @@ class BlueprintEventListenerTest {
     private val projectId = UUID.randomUUID()
     private val event = ProjectCreatedEvent(projectId = projectId)
 
-    @Test
-    fun `copies every global blueprint into the new project as active version zero`() {
-        val globalPath1 = BlueprintPath(blueprintKey = UUID.randomUUID(), title = "Global 1")
-        val globalPath2 = BlueprintPath(blueprintKey = UUID.randomUUID(), title = "Global 2")
-        every { blueprintPathRepository.findAllByProjectIdIsNull() } returns listOf(globalPath1, globalPath2)
-
+    private fun stubCopyFactory() {
         every {
             blueprintPathCopyFactory.createCopyFrom(any(), any(), any(), any(), any())
         } answers {
@@ -45,6 +40,24 @@ class BlueprintEventListenerTest {
                 version = arg(4),
             )
         }
+    }
+
+    @Test
+    fun `copies every active global blueprint into the new project as active version zero`() {
+        val globalPath1 = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            title = "Global 1",
+            status = BlueprintStatus.ACTIVE,
+        )
+        val globalPath2 = BlueprintPath(
+            blueprintKey = UUID.randomUUID(),
+            title = "Global 2",
+            status = BlueprintStatus.ACTIVE,
+        )
+        every {
+            blueprintPathRepository.findAllByProjectIdIsNullAndStatus(BlueprintStatus.ACTIVE)
+        } returns listOf(globalPath1, globalPath2)
+        stubCopyFactory()
 
         listener.handleProjectCreatedEvent(event)
 
@@ -68,11 +81,46 @@ class BlueprintEventListenerTest {
     }
 
     @Test
-    fun `does nothing when no global blueprints exist`() {
-        every { blueprintPathRepository.findAllByProjectIdIsNull() } returns emptyList()
+    fun `copies only the latest version when a blueprint key has several active rows`() {
+        val blueprintKey = UUID.randomUUID()
+        val oldActive = BlueprintPath(
+            blueprintKey = blueprintKey,
+            title = "Old active",
+            version = 0,
+            status = BlueprintStatus.ACTIVE,
+        )
+        val latestActive = BlueprintPath(
+            blueprintKey = blueprintKey,
+            title = "Latest active",
+            version = 1,
+            status = BlueprintStatus.ACTIVE,
+        )
+        every {
+            blueprintPathRepository.findAllByProjectIdIsNullAndStatus(BlueprintStatus.ACTIVE)
+        } returns listOf(oldActive, latestActive)
+        stubCopyFactory()
 
         listener.handleProjectCreatedEvent(event)
 
+        verify(exactly = 0) {
+            blueprintPathCopyFactory.createCopyFrom(oldActive, any(), any(), any(), any())
+        }
+        verify(exactly = 1) {
+            blueprintPathCopyFactory.createCopyFrom(latestActive, any(), projectId, BlueprintStatus.ACTIVE, 0)
+        }
+        verify(exactly = 1) { entityManager.persist(any()) }
+    }
+
+    @Test
+    fun `queries only active global blueprints so drafts and archived versions are never copied`() {
+        every {
+            blueprintPathRepository.findAllByProjectIdIsNullAndStatus(BlueprintStatus.ACTIVE)
+        } returns emptyList()
+
+        listener.handleProjectCreatedEvent(event)
+
+        verify(exactly = 1) { blueprintPathRepository.findAllByProjectIdIsNullAndStatus(BlueprintStatus.ACTIVE) }
+        verify(exactly = 0) { blueprintPathRepository.findAllByProjectIdIsNull() }
         verify(exactly = 0) { blueprintPathCopyFactory.createCopyFrom(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { entityManager.persist(any()) }
     }

@@ -340,8 +340,9 @@ class BlueprintCheckQuestionAdminController(
 /**
  * Exposes project-scoped blueprint check question endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints/")
@@ -380,7 +381,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/phase/{phaseId}/checks/questions")
     fun getBlueprintCheckQuestionsForPhase(
         @PathVariable projectId: UUID,
@@ -428,7 +429,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/checks/questions/{questionId}")
     fun getBlueprintCheckQuestionById(
         @PathVariable projectId: UUID,
@@ -486,7 +487,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/phase/{phaseId}/checks/questions")
     fun createBlueprintCheckQuestionForPhase(
         @PathVariable projectId: UUID,
@@ -546,7 +547,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/checks/question/{questionId}")
     fun updateBlueprintCheckQuestionById(
         @PathVariable projectId: UUID,
@@ -606,7 +607,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/checks/question/{questionId}/position")
     fun updateBlueprintCheckQuestionPositionById(
         @PathVariable projectId: UUID,
@@ -662,7 +663,7 @@ class BlueprintCheckQuestionController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/checks/question/{questionId}")
     fun deleteBlueprintCheckQuestionById(
         @PathVariable projectId: UUID,

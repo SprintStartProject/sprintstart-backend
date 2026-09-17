@@ -17,6 +17,9 @@ import java.util.UUID
  * the phases, and marks the path as [BlueprintStatus.ACTIVE]. The blueprint is
  * global (no project ID), so it serves as a template that is copied into projects
  * when they are created.
+ *
+ * Seeding intentionally runs in every environment, including production: the global
+ * template is the baseline every new project starts from, not dev-only demo data.
  */
 @Component
 class BlueprintSeeder(
@@ -26,9 +29,10 @@ class BlueprintSeeder(
      * Seeds the default global blueprint path if none exists yet.
      *
      * The seeding is idempotent: if any global blueprint path (project ID is `null`)
-     * is already present, the method returns without doing anything. The phase
-     * blocker graph is hardcoded by index against [BlueprintSeedData.phases], so
-     * changing the seed list requires adjusting the blocker wiring accordingly.
+     * is already present, the method returns without doing anything. The blocker
+     * graph is wired by phase title against [BlueprintSeedData.phases] and fails
+     * fast with a clear message when a referenced title is missing, so changing
+     * the seed list only requires adjusting the affected edges.
      */
     fun seed() {
         if (blueprintPathRepository.findAllByProjectIdIsNull().isNotEmpty()) {
@@ -61,31 +65,33 @@ class BlueprintSeeder(
             )
         }
 
-        path.blueprintPhases[1].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[2].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[3].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[4].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[5].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[6].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[7].blockedBy.add(path.blueprintPhases[0])
-        path.blueprintPhases[8].blockedBy.add(path.blueprintPhases[0])
+        val phasesByTitle = path.blueprintPhases.associateBy { it.title }
 
-        path.blueprintPhases[9].blockedBy.add(path.blueprintPhases[6])
-        path.blueprintPhases[9].blockedBy.add(path.blueprintPhases[7])
+        fun blockedBy(title: String, vararg blockers: String) {
+            val phase = requireNotNull(phasesByTitle[title]) { "Seed phase '$title' is missing" }
+            blockers.forEach { blocker ->
+                phase.blockedBy.add(requireNotNull(phasesByTitle[blocker]) { "Seed phase '$blocker' is missing" })
+            }
+        }
 
-        path.blueprintPhases[10].blockedBy.add(path.blueprintPhases[9])
+        listOf(
+            "Environment Setup",
+            "Meetings",
+            "Working Agreements",
+            "Time Tracking",
+            "Definition of Done / Ready",
+            "Industry Context",
+            "Domain Vocabulary",
+            "Requirements & Epics",
+        ).forEach { blockedBy(it, "Project Overview") }
 
-        path.blueprintPhases[11].blockedBy.add(path.blueprintPhases[10])
-        path.blueprintPhases[12].blockedBy.add(path.blueprintPhases[10])
-
-        path.blueprintPhases[13].blockedBy.add(path.blueprintPhases[11])
-        path.blueprintPhases[13].blockedBy.add(path.blueprintPhases[12])
-
-        path.blueprintPhases[14].blockedBy.add(path.blueprintPhases[13])
-        path.blueprintPhases[14].blockedBy.add(path.blueprintPhases[8])
-
-        path.blueprintPhases[15].blockedBy.add(path.blueprintPhases[13])
-        path.blueprintPhases[15].blockedBy.add(path.blueprintPhases[8])
+        blockedBy("Architecture", "Industry Context", "Domain Vocabulary")
+        blockedBy("Technical Debt", "Architecture")
+        blockedBy("Deployment", "Technical Debt")
+        blockedBy("Release Planning", "Technical Debt")
+        blockedBy("Guidelines", "Deployment", "Release Planning")
+        blockedBy("Role-Specific Onboarding Task 1", "Guidelines", "Requirements & Epics")
+        blockedBy("Role-Specific Onboarding Task 2", "Guidelines", "Requirements & Epics")
 
         blueprintPathRepository.save(path)
     }

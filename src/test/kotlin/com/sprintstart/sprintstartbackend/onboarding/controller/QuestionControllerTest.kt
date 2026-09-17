@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.question.Que
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionForAdminResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForAdminResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.SubmitQuestionAttemptResponse
+import com.sprintstart.sprintstartbackend.onboarding.security.OnboardingAuthorization
 import com.sprintstart.sprintstartbackend.onboarding.service.QuestionAttemptService
 import io.mockk.every
 import io.mockk.verify
@@ -50,6 +51,9 @@ class QuestionControllerTest(
 
     @MockkBean
     private lateinit var questionAttemptService: QuestionAttemptService
+
+    @MockkBean(name = "onboardingAuth")
+    private lateinit var onboardingAuth: OnboardingAuthorization
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -227,6 +231,7 @@ class QuestionControllerTest(
 
     @Test
     fun `getPhaseQuestions should return 200 and the questions with correct answers`() {
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns true
         every { questionAttemptService.getPhaseQuestions(phaseId) } returns buildPhaseQuestionsResponse()
 
         mockMvc
@@ -248,7 +253,9 @@ class QuestionControllerTest(
     }
 
     @Test
-    fun `getPhaseQuestions should return 403 when authenticated without an admin role`() {
+    fun `getPhaseQuestions should return 403 when the caller may not manage the project`() {
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns false
+
         mockMvc
             .perform(get("/api/v1/onboarding/phases/$phaseId/questions").with(userJwt))
             .andExpect(status().isForbidden)
@@ -256,6 +263,7 @@ class QuestionControllerTest(
 
     @Test
     fun `getPhaseQuestions should return 404 when the phase does not exist`() {
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns true
         every { questionAttemptService.getPhaseQuestions(phaseId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 
@@ -269,6 +277,7 @@ class QuestionControllerTest(
     @Test
     fun `replacePhaseQuestions should return 200 and the stored questions`() {
         val request = buildReplaceRequest()
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns true
         every { questionAttemptService.replacePhaseQuestions(phaseId, request) } returns
             buildPhaseQuestionsResponse()
 
@@ -288,6 +297,7 @@ class QuestionControllerTest(
     @Test
     fun `replacePhaseQuestions should return 400 when a question is invalid for its type`() {
         val request = buildReplaceRequest()
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns true
         every { questionAttemptService.replacePhaseQuestions(phaseId, request) } throws
             ResponseStatusException(HttpStatus.BAD_REQUEST)
 
@@ -315,8 +325,9 @@ class QuestionControllerTest(
     }
 
     @Test
-    fun `replacePhaseQuestions should return 403 when authenticated without an admin role`() {
+    fun `replacePhaseQuestions should return 403 when the caller may not manage the project`() {
         val request = buildReplaceRequest()
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns false
 
         mockMvc
             .perform(
@@ -330,6 +341,7 @@ class QuestionControllerTest(
     @Test
     fun `replacePhaseQuestions should return 404 when the phase does not exist`() {
         val request = buildReplaceRequest()
+        every { onboardingAuth.canManagePhase(any(), phaseId) } returns true
         every { questionAttemptService.replacePhaseQuestions(phaseId, request) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 
@@ -346,6 +358,7 @@ class QuestionControllerTest(
 
     @Test
     fun `getQuestionAttemptsForUser should return 200 and the user's attempts`() {
+        every { onboardingAuth.canManageQuestion(any(), questionId) } returns true
         every { questionAttemptService.getQuestionAttemptsForUser(userId, questionId) } returns
             buildAttemptsResponse()
 
@@ -370,7 +383,9 @@ class QuestionControllerTest(
     }
 
     @Test
-    fun `getQuestionAttemptsForUser should return 403 when authenticated without an admin role`() {
+    fun `getQuestionAttemptsForUser should return 403 when the caller may not manage the project`() {
+        every { onboardingAuth.canManageQuestion(any(), questionId) } returns false
+
         mockMvc
             .perform(
                 get("/api/v1/onboarding/users/$userId/questions/$questionId/attempts")
@@ -380,6 +395,7 @@ class QuestionControllerTest(
 
     @Test
     fun `getQuestionAttemptsForUser should return 404 when the user or question does not exist`() {
+        every { onboardingAuth.canManageQuestion(any(), questionId) } returns true
         every { questionAttemptService.getQuestionAttemptsForUser(userId, questionId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 

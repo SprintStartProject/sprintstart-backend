@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
 import com.sprintstart.sprintstartbackend.user.service.ProjectIndustryService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService

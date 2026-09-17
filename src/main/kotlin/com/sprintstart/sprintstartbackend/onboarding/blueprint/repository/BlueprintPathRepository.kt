@@ -75,4 +75,6 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
     fun findLatestVersionForEachBlueprintKeyAndProjectIdIsNull(): List<BlueprintPath>
 
     fun findAllByProjectIdIsNull(): List<BlueprintPath>
+
+    fun findAllByProjectIdIsNullAndStatus(status: BlueprintStatus): List<BlueprintPath>
 }

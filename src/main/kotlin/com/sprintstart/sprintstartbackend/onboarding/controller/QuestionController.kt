@@ -108,13 +108,13 @@ class QuestionController(
         value = [
             ApiResponse(responseCode = "200", description = "Questions returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access these questions"),
+            ApiResponse(responseCode = "403", description = "Caller may not manage the project this phase belongs to"),
             ApiResponse(responseCode = "404", description = "No phase found with the given ID"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/phases/{phaseId}/questions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@onboardingAuth.canManagePhase(authentication, #phaseId)")
     fun getPhaseQuestions(
         @Parameter(description = "UUID of the phase whose questions should be returned")
         @PathVariable phaseId: UUID,
@@ -148,13 +148,13 @@ class QuestionController(
             ApiResponse(responseCode = "200", description = "Questions replaced successfully"),
             ApiResponse(responseCode = "400", description = "A question is invalid for its type"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to edit these questions"),
+            ApiResponse(responseCode = "403", description = "Caller may not manage the project this phase belongs to"),
             ApiResponse(responseCode = "404", description = "No phase found with the given ID"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
     @PutMapping("/phases/{phaseId}/questions")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@onboardingAuth.canManagePhase(authentication, #phaseId)")
     fun replacePhaseQuestions(
         @Parameter(description = "UUID of the phase whose questions should be replaced")
         @PathVariable phaseId: UUID,
@@ -166,8 +166,8 @@ class QuestionController(
     /**
      * Returns every attempt a user made on one question.
      *
-     * Allows admins, PMs, and HR to review how a user arrived at their answer, including the
-     * wrong tries that came before a pass.
+     * Allows the manager of the project the question belongs to (or an admin) to review how a
+     * user arrived at their answer, including the wrong tries that came before a pass.
      *
      * @param userId Identifier of the user whose attempts should be returned.
      * @param questionId Identifier of the question whose attempts should be returned.
@@ -176,13 +176,16 @@ class QuestionController(
     @Operation(
         summary = "Get a user's attempts on a question",
         description = "Returns every attempt the user submitted for the question, newest first, " +
-            "so admins, PMs, or HR can review the answers.",
+            "for the manager of the project the question belongs to (or an admin) to review.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Attempts returned successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to access these attempts"),
+            ApiResponse(
+                responseCode = "403",
+                description = "Caller may not manage the project this question belongs to",
+            ),
             ApiResponse(
                 responseCode = "404",
                 description = "No user found, or the question is not part of that user's path",
@@ -191,7 +194,7 @@ class QuestionController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/users/{userId}/questions/{questionId}/attempts")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@onboardingAuth.canManageQuestion(authentication, #questionId)")
     fun getQuestionAttemptsForUser(
         @Parameter(description = "UUID of the user whose attempts should be returned")
         @PathVariable userId: UUID,

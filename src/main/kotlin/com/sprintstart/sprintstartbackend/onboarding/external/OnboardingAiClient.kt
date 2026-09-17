@@ -248,8 +248,8 @@ class OnboardingAiClient(
      *
      * The phase carries an author's prompt rather than a fixed step list; this fills it: grounded
      * steps (with tasks and resources) plus a small knowledge check, scoped to [AssemblePhaseRequest.projectId].
-     * [AssemblePhaseRequest.lastFingerprint] can short-circuit an unchanged corpus; otherwise keep
-     * passing it so a re-assembly of the same phase is served from cache rather than regenerated.
+     * Every assembly retrieves and generates from scratch — the backend persists no provenance
+     * fingerprint for phases, so the AI's `unchanged` short-circuit does not apply here.
      *
      * `skipped` with no content is a real answer and must reach the hire as an honest empty phase —
      * never a fabricated one. A non-2xx response is wrapped in an [OnboardingAiException] carrying
