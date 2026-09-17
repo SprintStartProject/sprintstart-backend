@@ -15,7 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkPoolReconciler
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkTaskProposalService
 import com.sprintstart.sprintstartbackend.onboarding.service.UserGoalService
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.flow.flowOf

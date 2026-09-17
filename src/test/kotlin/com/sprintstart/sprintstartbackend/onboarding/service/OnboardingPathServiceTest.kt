@@ -30,7 +30,9 @@ class OnboardingPathServiceTest {
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
     private val questionAttemptRepository: QuestionAttemptRepository = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi)
+    private val onboardingPositionReader: OnboardingPositionReader = mockk(relaxed = true)
+    private val service =
+        OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi, onboardingPositionReader)
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()

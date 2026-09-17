@@ -17,7 +17,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.api.respons
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.connectors.overview.service.ConnectorConfigurationService
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
 import org.junit.jupiter.api.Nested
