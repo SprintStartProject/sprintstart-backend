@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.jira
 
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredential
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.runBlocking
@@ -43,7 +42,7 @@ class JiraClientTest {
     @Test
     fun `searchIssues sends Basic auth header`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
+        val credential = AtlassianCredentialSecret("user@example.com", "secret")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -65,7 +64,7 @@ class JiraClientTest {
     @Test
     fun `searchIssues uses nextPageToken for pagination`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
+        val credential = AtlassianCredentialSecret("user@example.com", "secret")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -111,7 +110,7 @@ class JiraClientTest {
     @Test
     fun `searchProjects does not follow redirects to avoid dropping Authorization header`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
+        val credential = AtlassianCredentialSecret("user@example.com", "secret")
 
         mockWebServer.enqueue(
             MockResponse()
@@ -129,7 +128,7 @@ class JiraClientTest {
     @Test
     fun `searchProjects sends Basic auth and paginates`() {
         val baseUrl = mockWebServer.url("/").toString().trimEnd('/')
-        val credential = JiraCredential(JiraCredentialsId("auth-id", "token"), "secret", "user@example.com")
+        val credential = AtlassianCredentialSecret("user@example.com", "secret")
 
         mockWebServer.enqueue(
             MockResponse()

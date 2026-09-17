@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepos
 import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
@@ -30,6 +31,7 @@ class UserDeletedListenerTest {
     private val arrivalStepStateRepository: ArrivalStepStateRepository = mockk(relaxed = true)
     private val boardRepository: BoardRepository = mockk(relaxed = true)
     private val boardCardRepository: BoardCardRepository = mockk(relaxed = true)
+    private val boardStructureRepository: BoardStructureRepository = mockk(relaxed = true)
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
     private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository = mockk(relaxed = true)
     private val autonomyMilestoneRepository: AutonomyMilestoneRepository = mockk(relaxed = true)
@@ -44,6 +46,7 @@ class UserDeletedListenerTest {
         arrivalStepStateRepository,
         boardRepository,
         boardCardRepository,
+        boardStructureRepository,
         userGoalRepository,
         taskZeroAssignmentRepository,
         autonomyMilestoneRepository,
@@ -106,8 +109,23 @@ class UserDeletedListenerTest {
         }
         verifyOrder {
             boardCardRepository.deleteAllByBoardId(board.id)
+            boardStructureRepository.deleteAllByBoardIdIn(listOf(board.id))
             boardRepository.deleteAllByUserId(userId)
         }
+    }
+
+    /**
+     * How this person arranged their board is a description of them, not a stray preference: it
+     * holds what they called the parts of it and which sentences they marked as mattering. It goes
+     * when the board it describes goes.
+     */
+    @Test
+    fun `the arrangement goes with the board it describes`() {
+        val board = hasConversationAndBoard()
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verify { boardStructureRepository.deleteAllByBoardIdIn(listOf(board.id)) }
     }
 
     /**
@@ -135,6 +153,9 @@ class UserDeletedListenerTest {
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verify(exactly = 0) { buddyMessageRepository.deleteAllBySessionId(any()) }
+        // Nothing is asked to delete the arrangements of no boards: an empty `IN ()` is a query
+        // some databases refuse outright and the rest run for nothing.
+        verify(exactly = 0) { boardStructureRepository.deleteAllByBoardIdIn(any()) }
         verify { userCompetencyStateRepository.deleteAllByUserId(userId) }
     }
 }

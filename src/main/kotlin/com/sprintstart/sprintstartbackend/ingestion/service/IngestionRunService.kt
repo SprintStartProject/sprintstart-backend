@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -36,6 +37,7 @@ class IngestionRunService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
+    private val confluenceConnectionApi: ConfluenceConnectionApi,
 ) {
     /**
      * Returns the newest ingestion runs first.
@@ -78,8 +80,8 @@ class IngestionRunService(
      * @param sourceSystem Optional source-system filter (e.g. GITHUB, JIRA).
      * @param repositoryId Optional GitHub repository filter.
      * @param sourceRef Optional connector-neutral source reference filter (for Jira the instance URL).
-     * @param projectId Optional project filter, resolved via the project's connected repositories and
-     * Jira instances.
+     * @param projectId Optional project filter, resolved via the project's connected repositories,
+     * Jira instances, Confluence connections, and uploaded artifacts.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -139,10 +141,18 @@ class IngestionRunService(
         val sources = projectSources ?: resolveProjectSources(projectId)
         val matches = buildList {
             if (sources.repositoryIds.isNotEmpty()) {
-                add(root.get<UUID>("sourceInstanceId").`in`(sources.repositoryIds))
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.GITHUB, sources.repositoryIds))
             }
             if (sources.jiraRefs.isNotEmpty()) {
-                add(root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs))
+                add(
+                    cb.and(
+                        cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.JIRA),
+                        root.get<String>("sourceInstanceRef").`in`(sources.jiraRefs),
+                    ),
+                )
+            }
+            if (sources.confluenceConnectionIds.isNotEmpty()) {
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.CONFLUENCE, sources.confluenceConnectionIds))
             }
             add(
                 cb.and(
@@ -162,11 +172,25 @@ class IngestionRunService(
         ProjectSources(
             repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
             jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
+            confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
         )
+
+    private fun sourceInstanceIdPredicate(
+        root: Root<IngestionRun>,
+        cb: CriteriaBuilder,
+        sourceSystem: SourceSystem,
+        sourceInstanceIds: List<UUID>,
+    ): Predicate {
+        return cb.and(
+            cb.equal(root.get<SourceSystem>("sourceSystem"), sourceSystem),
+            root.get<UUID>("sourceInstanceId").`in`(sourceInstanceIds),
+        )
+    }
 
     private data class ProjectSources(
         val repositoryIds: List<UUID>,
         val jiraRefs: List<String>,
+        val confluenceConnectionIds: List<UUID>,
     )
 }
 

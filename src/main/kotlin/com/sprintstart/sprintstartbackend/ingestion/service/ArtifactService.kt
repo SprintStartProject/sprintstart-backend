@@ -81,6 +81,7 @@ class ArtifactService(
 
             SourceSystem.GITHUB,
             SourceSystem.JIRA,
+            SourceSystem.CONFLUENCE,
             -> {
                 artifact.sourceUrl?.let {
                     return ArtifactContentRedirectResponse(it)

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceA
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminDetailResponse
@@ -43,6 +44,7 @@ class AdminProjectService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceApi: JiraInstanceApi,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -155,6 +157,10 @@ class AdminProjectService(
      * the project link is removed from all GitHub repository connections and Jira instances (via the
      * respective module APIs) so no connection keeps referencing a project that no longer exists.
      *
+     * The same id also sits on every artifact of those sources and on every indexed chunk, where
+     * nothing else would ever clear it. That cleanup is announced with a [ProjectDeletedEvent]
+     * rather than performed here, because the ingestion module already depends on this one.
+     *
      * @param id Project identifier.
      * @return Deletion confirmation DTO.
      * @throws ResponseStatusException When no project exists for [id].
@@ -168,6 +174,7 @@ class AdminProjectService(
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
         jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
+        eventPublisher.publishEvent(ProjectDeletedEvent(project.id))
 
         return DeleteProjectResponse(id = id)
     }

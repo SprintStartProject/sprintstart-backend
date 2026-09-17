@@ -137,7 +137,10 @@ class ConnectorController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and " +
+            "(#projectId == null or @projectAuth.canManageProject(authentication, #projectId))",
+    )
     @GetMapping("/{id}/sources")
     fun getSourcesOfConnector(
         @Pattern(regexp = ID_PATTERN) @PathVariable id: String,
@@ -171,12 +174,16 @@ class ConnectorController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and " +
+            "(#projectId == null or @projectAuth.canManageProject(authentication, #projectId))",
+    )
     @PatchMapping("/{id}/sources/status")
     suspend fun patchSourcesOfConnector(
         @Pattern(regexp = ID_PATTERN) @PathVariable id: String,
+        @RequestParam(required = false) projectId: UUID?,
         @Valid @RequestBody request: PatchSourcesRequest,
     ): ResponseEntity<PatchSourcesOfConnectorResponse> {
-        return ResponseEntity.ok(connectorConfigurationService.patchSourcesIfConnectorExists(id, request))
+        return ResponseEntity.ok(connectorConfigurationService.patchSourcesIfConnectorExists(id, request, projectId))
     }
 }

@@ -105,6 +105,7 @@ class BoardDiagramService(
         val outcome = try {
             onboardingAiClient.assembleDiagram(
                 subject = context.subject,
+                projectIds = listOf(context.projectId),
                 lastFingerprint = context.fingerprint,
             )
         } catch (e: OnboardingAiException) {
@@ -217,6 +218,7 @@ class BoardDiagramService(
         val cached = boardDiagramRepository.findById(cardId).orElse(null)
         return DiagramContext(
             cardId = cardId,
+            projectId = board.projectId,
             subject = subject,
             // A cache that will not decode must not be revalidated as if it were current, or an
             // unchanged corpus would answer `unchanged` and leave the card permanently empty.
@@ -246,6 +248,7 @@ class BoardDiagramService(
 
     private data class DiagramContext(
         val cardId: UUID,
+        val projectId: UUID,
         val subject: String,
         val fingerprint: String?,
         val cached: BoardDiagram?,

@@ -1,8 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.jira
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredential
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
@@ -52,13 +51,10 @@ internal fun jiraInstanceConfig(
     return config
 }
 
-internal fun jiraCredential(
-    authId: String = "auth-id",
+internal fun atlassianCredentialSecret(
     userEmail: String = "user@example.com",
-    name: String = "token",
-    authToken: String = "secret",
-): JiraCredential = JiraCredential(
-    id = JiraCredentialsId(authId, name),
-    authToken = authToken,
+    apiToken: String = "secret",
+): AtlassianCredentialSecret = AtlassianCredentialSecret(
     userEmail = userEmail,
+    apiToken = apiToken,
 )

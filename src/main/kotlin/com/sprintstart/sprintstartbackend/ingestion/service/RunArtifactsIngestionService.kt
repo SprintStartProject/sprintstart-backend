@@ -2,11 +2,14 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_STATUS_FAILED
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.RunArtifactsIngestResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ingestion.ArtifactAiMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -58,10 +61,19 @@ class RunArtifactsIngestionService(
         val request = withContext(Dispatchers.IO) {
             readTxTemplate.execute {
                 val run = ingestionRunRepository
-                    .findWithArtifactIdsToDeindexById(runId)
+                    .findWithAiSyncArtifactIdsById(runId)
                     .getOrElse { throw IngestionRunNotFoundException(runId) }
 
-                val artifactsToIngest = artifactRepository.findAllByIngestionRunId(runId)
+                val storedByThisRun = artifactRepository.findAllByIngestionRunId(runId)
+                // Artifacts an earlier run stored and this one changed keep pointing at that
+                // earlier run, so the query above cannot see them. Without them a content update
+                // or a newly linked project would never reach the index.
+                val alreadyListed = storedByThisRun.mapTo(mutableSetOf()) { it.id }
+                val touchedAgain = artifactRepository.findAllById(
+                    run.artifactIdsToReingest.filterNot { it in alreadyListed },
+                )
+
+                val artifactsToIngest = storedByThisRun + touchedAgain
                 val artifactsToDeindex = run.artifactIdsToDeindex
 
                 if (artifactsToIngest.isEmpty() && artifactsToDeindex.isEmpty()) {
@@ -71,7 +83,7 @@ class RunArtifactsIngestionService(
 
                 RunArtifactsAiSyncRequest(
                     artifactsToIngest = artifactsToIngest.map { artifactAiMapper.toIngestRequest(it) },
-                    artifactsToDeindex = run.artifactIdsToDeindex,
+                    artifactsToDeindex = artifactsToDeindex,
                 )
             }
         } ?: return
@@ -82,7 +94,35 @@ class RunArtifactsIngestionService(
             request.artifactsToIngest.size,
             request.artifactsToDeindex.size,
         )
-        artifactIngestionClient.ingest(request)
+        val response = artifactIngestionClient.ingest(request)
+        requireEveryEntrySucceeded(runId, response)
         logger.info("AI sync confirmed for run {}", runId)
+    }
+
+    /**
+     * Rejects a batch the AI service accepted but did not fully apply.
+     *
+     * The request answers `200` even when individual artifacts failed to index or failed to be
+     * removed, so reading the status code alone would mark the run `SUCCEEDED` while its content is
+     * missing from chat -- or, for a failed deindex, still answerable from deleted content. Throwing
+     * lets the caller record the run as `FAILED` with a reason instead.
+     *
+     * @param runId The run the batch belongs to, for the failure message.
+     * @param response The AI service's per-entry result.
+     * @throws IngestionResponseException when any artifact or deindex entry failed.
+     */
+    private fun requireEveryEntrySucceeded(runId: UUID, response: RunArtifactsIngestResponse) {
+        val failedArtifacts = response.artifacts.filter { it.status == AI_SYNC_STATUS_FAILED }
+        val failedDeindexes = response.deindexed.filter { it.status == AI_SYNC_STATUS_FAILED }
+
+        if (failedArtifacts.isEmpty() && failedDeindexes.isEmpty()) return
+
+        val firstReason = failedDeindexes.firstNotNullOfOrNull { it.errorMessage }
+        throw IngestionResponseException(
+            "AI sync for run $runId did not fully apply: " +
+                "${failedArtifacts.size} artifact(s) failed to index, " +
+                "${failedDeindexes.size} failed to be removed" +
+                (firstReason?.let { " (first reported cause: $it)" } ?: ""),
+        )
     }
 }

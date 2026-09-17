@@ -3,6 +3,8 @@ package com.sprintstart.sprintstartbackend.connectors.overview.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.confluence.controller.ConfluenceExceptionHandler
+import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.overview.external.models.ConnectorDto
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.request.ConfigureConnectorRequest
@@ -13,7 +15,9 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.api.respons
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.response.PatchSourcesOfConnectorResponse
 import com.sprintstart.sprintstartbackend.connectors.overview.models.api.response.PatchedSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.connectors.overview.service.ConnectorConfigurationService
+import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
 import org.junit.jupiter.api.Nested
@@ -38,7 +42,7 @@ import java.util.UUID
 
 @WebMvcTest(controllers = [ConnectorController::class])
 @AutoConfigureMockMvc
-@Import(ConnectorOverviewExceptionHandler::class, SecurityConfig::class)
+@Import(ConnectorOverviewExceptionHandler::class, ConfluenceExceptionHandler::class, SecurityConfig::class)
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConnectorControllerTest {
     @Autowired
@@ -46,6 +50,9 @@ class ConnectorControllerTest {
 
     @MockkBean
     private lateinit var connectorConfigurationService: ConnectorConfigurationService
+
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuthorization: ProjectAuthorization
 
     private val objectMapper = jacksonObjectMapper()
 
@@ -307,6 +314,7 @@ class ConnectorControllerTest {
         @Test
         fun `should pass project id when provided`() {
             val projectId = UUID.randomUUID()
+            every { projectAuthorization.canManageProject(any(), projectId) } returns true
             every { connectorConfigurationService.getSourcesOfConnector(githubId, projectId) } returns
                 GetSourcesOfConnectorResponse(githubId, sources)
 
@@ -317,6 +325,19 @@ class ConnectorControllerTest {
                         .with(pmJwt),
                 ).andExpect(status().isOk)
                 .andExpect(jsonPath("$.sources[0].id").value("spring-projects/spring-boot"))
+        }
+
+        @Test
+        fun `project scoped discovery requires project management permission`() {
+            val projectId = UUID.randomUUID()
+            every { projectAuthorization.canManageProject(any(), projectId) } returns false
+
+            mockMvc
+                .perform(
+                    get("/api/v1/connectors/{id}/sources", "confluence")
+                        .param("projectId", projectId.toString())
+                        .with(pmJwt),
+                ).andExpect(status().isForbidden)
         }
 
         @Test
@@ -370,7 +391,7 @@ class ConnectorControllerTest {
                 sources = listOf(PatchSourceRequest(sourceId = "spring-projects/spring-boot", enabled = true)),
             )
             coEvery {
-                connectorConfigurationService.patchSourcesIfConnectorExists(githubId, request)
+                connectorConfigurationService.patchSourcesIfConnectorExists(githubId, request, null)
             } returns PatchSourcesOfConnectorResponse(githubId, patchedSources)
 
             val asyncResult = mockMvc
@@ -396,7 +417,7 @@ class ConnectorControllerTest {
                 sources = listOf(PatchSourceRequest(sourceId = "spring-projects/spring-boot", enabled = true)),
             )
             coEvery {
-                connectorConfigurationService.patchSourcesIfConnectorExists(githubId, request)
+                connectorConfigurationService.patchSourcesIfConnectorExists(githubId, request, null)
             } returns PatchSourcesOfConnectorResponse(githubId, patchedSources)
 
             val asyncResult = mockMvc
@@ -420,7 +441,7 @@ class ConnectorControllerTest {
                 sources = listOf(PatchSourceRequest(sourceId = "spring-projects/spring-boot", enabled = true)),
             )
             coEvery {
-                connectorConfigurationService.patchSourcesIfConnectorExists(id, request)
+                connectorConfigurationService.patchSourcesIfConnectorExists(id, request, null)
             } throws ConnectorNotFoundException("Unable to find connector with id $id")
 
             val asyncResult = mockMvc
@@ -449,6 +470,120 @@ class ConnectorControllerTest {
                         .content(objectMapper.writeValueAsString(request))
                         .with(adminJwt),
                 ).andExpect(status().isBadRequest)
+        }
+
+        @Test
+        fun `project scoped patch requires project management permission`() {
+            val projectId = UUID.randomUUID()
+            val request = PatchSourcesRequest(
+                sources = listOf(PatchSourceRequest(sourceId = UUID.randomUUID().toString(), enabled = true)),
+            )
+            every { projectAuthorization.canManageProject(any(), projectId) } returns false
+
+            val asyncResult =
+                mockMvc
+                    .perform(
+                        patch("/api/v1/connectors/{id}/sources/status", "confluence")
+                            .param("projectId", projectId.toString())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request))
+                            .with(pmJwt),
+                    ).andExpect(request().asyncStarted())
+                    .andReturn()
+
+            mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isForbidden)
+        }
+
+        @Test
+        fun `project scoped patch preserves requested response order`() {
+            val projectId = UUID.randomUUID()
+            val firstId = UUID.randomUUID().toString()
+            val secondId = UUID.randomUUID().toString()
+            val request = PatchSourcesRequest(
+                sources = listOf(
+                    PatchSourceRequest(sourceId = firstId, enabled = false),
+                    PatchSourceRequest(sourceId = secondId, enabled = true),
+                ),
+            )
+            every { projectAuthorization.canManageProject(any(), projectId) } returns true
+            coEvery {
+                connectorConfigurationService.patchSourcesIfConnectorExists("confluence", request, projectId)
+            } returns PatchSourcesOfConnectorResponse(
+                connectorId = "confluence",
+                sources = listOf(
+                    PatchedSource(firstId, "First", "https://tenant.invalid/first", false),
+                    PatchedSource(secondId, "Second", "https://tenant.invalid/second", true),
+                ),
+            )
+
+            val asyncResult = mockMvc
+                .perform(
+                    patch("/api/v1/connectors/{id}/sources/status", "confluence")
+                        .param("projectId", projectId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.sources[0].id").value(firstId))
+                .andExpect(jsonPath("$.sources[1].id").value(secondId))
+        }
+
+        @Test
+        fun `project scoped patch maps foreign source to not found`() {
+            val projectId = UUID.randomUUID()
+            val sourceId = UUID.randomUUID()
+            val request = PatchSourcesRequest(
+                sources = listOf(PatchSourceRequest(sourceId = sourceId.toString(), enabled = true)),
+            )
+            every { projectAuthorization.canManageProject(any(), projectId) } returns true
+            coEvery {
+                connectorConfigurationService.patchSourcesIfConnectorExists("confluence", request, projectId)
+            } throws ConfluenceConnectionNotFoundException(sourceId, projectId)
+
+            val asyncResult = mockMvc
+                .perform(
+                    patch("/api/v1/connectors/{id}/sources/status", "confluence")
+                        .param("projectId", projectId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isNotFound)
+        }
+
+        @Test
+        fun `project scoped patch maps duplicate identifiers to bad request`() {
+            val projectId = UUID.randomUUID()
+            val sourceId = UUID.randomUUID().toString()
+            val request = PatchSourcesRequest(
+                sources = listOf(
+                    PatchSourceRequest(sourceId = sourceId, enabled = true),
+                    PatchSourceRequest(sourceId = sourceId, enabled = false),
+                ),
+            )
+            every { projectAuthorization.canManageProject(any(), projectId) } returns true
+            coEvery {
+                connectorConfigurationService.patchSourcesIfConnectorExists("confluence", request, projectId)
+            } throws SourcePatchValidationException("Connector source IDs must be unique")
+
+            val asyncResult = mockMvc
+                .perform(
+                    patch("/api/v1/connectors/{id}/sources/status", "confluence")
+                        .param("projectId", projectId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isBadRequest)
         }
     }
 }

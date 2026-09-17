@@ -50,9 +50,10 @@ internal class GithubFileListener(
     fun on(
         event: GithubFilesFetchFailedEvent,
     ) {
-        githubIngestionRunService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFailed(
             event.transactionId,
             finishedType = FinishedTypes.FILES,
+            reason = event.reason,
         )
     }
 

@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
@@ -79,6 +80,23 @@ class BoardService(
     private val boardDiagramService: BoardDiagramService,
     private val arrivalStepService: ArrivalStepService,
 ) {
+    /**
+     * Whether this hire has a board on this project at all.
+     *
+     * For the callers that must not bring one into existence by asking about it. [getBoard] creates
+     * the board and seeds it, which is what a hire opening the page should get and not what
+     * something merely looking at the board should cause — a board is a thing the hire has, and it
+     * should start existing because they went to it.
+     *
+     * @param userId The hire.
+     * @param projectId The project the board would belong to.
+     * @return Whether a board row exists. Says nothing about membership, and nothing about whether
+     * there is anything on it.
+     */
+    @Transactional(readOnly = true)
+    fun hasBoard(userId: UUID, projectId: UUID): Boolean =
+        boardRepository.existsByUserIdAndProjectId(userId, projectId)
+
     /**
      * This hire's board on this project, cards hydrated.
      *
@@ -485,6 +503,9 @@ class BoardService(
             url = task?.sourceUrl,
             // True for a goal the hire claimed, false for a Task 0 they were handed.
             chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
+            // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
+            // card can say so without a lookup of its own.
+            closedAtSource = task?.status == ProposalStatus.STALE,
         )
     }
 

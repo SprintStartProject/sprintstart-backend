@@ -21,6 +21,7 @@ data class ArtifactDto(
     val ingestedAt: Instant?,
     val ingestionRunId: UUID?,
     val hash: String?,
+    val sourceVersion: String? = null,
 )
 
 fun Artifact.toDto() = ArtifactDto(
@@ -39,4 +40,5 @@ fun Artifact.toDto() = ArtifactDto(
     ingestedAt = ingestedAt,
     ingestionRunId = ingestionRun.id,
     hash = hash,
+    sourceVersion = sourceVersion,
 )

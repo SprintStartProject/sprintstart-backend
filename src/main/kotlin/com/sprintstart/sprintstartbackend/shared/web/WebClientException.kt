@@ -14,4 +14,5 @@ class WebClientException(
     val statusCode: Int,
     val body: String,
     message: String,
+    val retryAfter: String? = null,
 ) : RuntimeException(message)

@@ -210,10 +210,11 @@ internal class JiraController(
     @DeleteMapping("/instances/project")
     @PreAuthorize("hasRole('PM') or hasRole('ADMIN')")
     fun removeInstanceFromProject(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @RequestParam instanceUrl: String,
         @RequestParam projectId: UUID,
     ): ResponseEntity<Unit> {
-        service.removeInstanceFromProject(instanceUrl, projectId)
+        service.removeInstanceFromProject(jwt.subject, instanceUrl, projectId)
         return ResponseEntity.noContent().build()
     }
 }

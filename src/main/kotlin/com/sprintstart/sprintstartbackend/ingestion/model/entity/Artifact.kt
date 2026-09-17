@@ -24,7 +24,9 @@ class Artifact(
     @Column(name = "source_id", nullable = false)
     val sourceId: String,
     @Column(name = "source_url", length = 2048)
-    val sourceUrl: String?,
+    var sourceUrl: String?,
+    @Column(name = "source_version")
+    var sourceVersion: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(name = "artifact_type", nullable = false)
     val artifactType: ArtifactType,
@@ -32,7 +34,8 @@ class Artifact(
     var title: String?,
     @Column(columnDefinition = "TEXT")
     var content: String?,
-    val mime: String?,
+    // Mutable because a connector can change how it represents a source
+    var mime: String?,
     val language: String?,
     // Whether an issue is still open at its source: `"OPEN"` / `"CLOSED"`, null for anything that is not an issue.
     var state: String? = null,
@@ -64,9 +67,15 @@ class Artifact(
     var updatedAtSource: Instant?,
     @Column(name = "ingested_at", nullable = false)
     val ingestedAt: Instant = Instant.now(),
+    // When ingestion last saw this artifact's content actually change. Null while it still matches
+    // what was first imported. Deliberately our own observation rather than a timestamp from the
+    // source: not every connector reports one, and `ingestedAt` cannot carry it -- that is the
+    // first-import time, which `findFirstIngestedAt` depends on staying put.
+    @Column(name = "last_changed_at")
+    var lastChangedAt: Instant? = null,
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "ingestion_run_id")
-    val ingestionRun: IngestionRun,
+    var ingestionRun: IngestionRun,
     @Column(name = "content_hash", length = 64)
     var hash: String?,
     /**
@@ -98,11 +107,30 @@ class Artifact(
     val projectIds: Set<UUID>
         get() = projectIdsInternal.toSet()
 
-    fun addProjectIds(projectIds: Set<UUID>) {
-        projectIdsInternal.addAll(projectIds)
-    }
+    /**
+     * Links the artifact to further projects.
+     *
+     * @return `true` when at least one project id was new. Callers use this to decide whether the
+     * artifact has to be re-sent to the AI service: membership lives on the indexed chunks too, and
+     * a link that never reaches them leaves the artifact invisible to the project that just gained
+     * it.
+     */
+    fun addProjectIds(projectIds: Set<UUID>): Boolean = projectIdsInternal.addAll(projectIds)
 
-    fun addProjectId(projectId: UUID) {
-        projectIdsInternal.add(projectId)
-    }
+    /**
+     * Links the artifact to one further project.
+     *
+     * @return `true` when the project id was new, see [addProjectIds].
+     */
+    fun addProjectId(projectId: UUID): Boolean = projectIdsInternal.add(projectId)
+
+    /**
+     * Unlinks the artifact from one project.
+     *
+     * The artifact itself is kept -- it usually belongs to other projects too -- it merely stops
+     * being reachable from this one.
+     *
+     * @return `true` when the project was linked before.
+     */
+    fun removeProjectId(projectId: UUID): Boolean = projectIdsInternal.remove(projectId)
 }

@@ -16,6 +16,8 @@ class ArtifactMapper {
             metadata = artifact.metadata,
             artifactType = artifact.artifactType,
             ingestedAt = artifact.ingestedAt,
+            lastChangedAt = artifact.lastChangedAt,
+            sourceVersion = artifact.sourceVersion,
         )
     }
 }

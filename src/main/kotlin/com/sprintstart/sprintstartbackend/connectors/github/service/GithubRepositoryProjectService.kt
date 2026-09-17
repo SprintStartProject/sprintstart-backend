@@ -1,10 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -16,11 +18,16 @@ import java.util.UUID
  * (`projectIdsInternal` is a set), so this only adds the project id to an existing connection. It
  * performs no fetching or re-ingestion: the repository's artifacts are shared across the projects it
  * is linked to.
+ *
+ * The stored artifacts and their indexed chunks carry the same membership, and retrieval is
+ * fail-closed on it, so each change is announced with a
+ * [GithubRepositoryProjectLinkChangedEvent] for the ingestion module to follow.
  */
 @Service
 class GithubRepositoryProjectService(
     private val githubRepositoryConnectionRepository: GithubRepositoryConnectionRepository,
     private val userApi: UserApi,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     /**
      * Adds a project to an already-connected repository, without fetching or re-ingesting anything.
@@ -48,6 +55,17 @@ class GithubRepositoryProjectService(
 
         connection.projectIdsInternal.add(projectId)
         githubRepositoryConnectionRepository.save(connection)
+        // Published unconditionally, not only when the set changed: the repository's artifacts and
+        // their indexed chunks carry the same membership, and repeating the link is how a caller
+        // repairs a propagation that failed earlier.
+        eventPublisher.publishEvent(
+            GithubRepositoryProjectLinkChangedEvent(
+                owner = connection.owner,
+                name = connection.name,
+                projectId = projectId,
+                linked = true,
+            ),
+        )
         return connection.projectIds
     }
 
@@ -78,6 +96,14 @@ class GithubRepositoryProjectService(
 
         connection.projectIdsInternal.remove(projectId)
         githubRepositoryConnectionRepository.save(connection)
+        eventPublisher.publishEvent(
+            GithubRepositoryProjectLinkChangedEvent(
+                owner = connection.owner,
+                name = connection.name,
+                projectId = projectId,
+                linked = false,
+            ),
+        )
         return connection.projectIds
     }
 }

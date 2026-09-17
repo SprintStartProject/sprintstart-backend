@@ -18,10 +18,39 @@ data class CanonicalAnswerResponse(
 )
 
 /**
+ * How many questions are waiting on a person, for a badge.
+ *
+ * An object rather than a bare number so the endpoint has somewhere to grow -- a naked scalar body
+ * is the one shape that cannot gain a field without breaking every caller.
+ */
+data class OpenEscalationCountResponse(
+    val open: Long,
+)
+
+/**
+ * Who asked, and where they are — so a PM can answer without going to look them up.
+ *
+ * Served on the PM queue only. A hire reading their own escalations already knows who they are, and
+ * this carries a name and a progress figure that nobody outside the project has any business seeing.
+ */
+data class EscalationHireResponse(
+    val userId: UUID,
+    val displayName: String,
+    val profileIcon: String?,
+    val currentPhase: String?,
+    val currentStep: String?,
+    val progressPercentage: Double,
+)
+
+/**
  * One escalated question, for the PM inbox and for the hire's own view.
  *
  * Carries the resolved [answer] inline when the request has been answered, so a hire sees the reply
  * where they asked and a PM sees the queue and its resolutions in one read.
+ *
+ * [hire] is populated for the PM inbox and left null everywhere else. Null is also the answer when
+ * the asker's user record can no longer be resolved: a question whose author has left the system is
+ * still a question somebody is waiting on, and dropping it from the queue would hide real work.
  */
 data class KnowledgeRequestResponse(
     val id: UUID,
@@ -32,6 +61,7 @@ data class KnowledgeRequestResponse(
     val createdAt: Instant,
     val answeredAt: Instant?,
     val answer: CanonicalAnswerResponse?,
+    val hire: EscalationHireResponse? = null,
 )
 
 fun CanonicalAnswer.toResponse(): CanonicalAnswerResponse =
@@ -45,7 +75,10 @@ fun CanonicalAnswer.toResponse(): CanonicalAnswerResponse =
         updatedAt = updatedAt,
     )
 
-fun KnowledgeRequest.toResponse(answer: CanonicalAnswer?): KnowledgeRequestResponse =
+fun KnowledgeRequest.toResponse(
+    answer: CanonicalAnswer?,
+    hire: EscalationHireResponse? = null,
+): KnowledgeRequestResponse =
     KnowledgeRequestResponse(
         id = id,
         projectId = projectId,
@@ -55,4 +88,5 @@ fun KnowledgeRequest.toResponse(answer: CanonicalAnswer?): KnowledgeRequestRespo
         createdAt = createdAt,
         answeredAt = answeredAt,
         answer = answer?.toResponse(),
+        hire = hire,
     )

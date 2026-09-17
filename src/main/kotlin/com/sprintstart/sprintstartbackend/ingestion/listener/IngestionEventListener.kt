@@ -81,7 +81,20 @@ class IngestionEventListener(
      */
     private fun announceIndexed(runId: UUID) {
         try {
-            val projectIds = artifactRepository.findProjectIdsByIngestionRunId(runId)
+            // Two sets, because a run reaches the AI index by two routes. `ingestion_run_id` names
+            // the run that *stored* an artifact, so the run-scoped query sees only newly stored
+            // rows -- while `artifactIdsToReingest` holds artifacts an earlier run stored that this
+            // one re-scoped or whose tracking fields moved. An incremental run is usually made up
+            // entirely of the second kind, and announcing only the first left it looking empty:
+            // the sync ran, the content became searchable, and nothing downstream was told, so
+            // knowledge gaps never refreshed for exactly the content that had just changed.
+            val reingested: Set<UUID> = ingestionRunRepository
+                .findWithAiSyncArtifactIdsById(runId)
+                .map { it.artifactIdsToReingest.toSet() }
+                .orElse(emptySet())
+            val projectIds = artifactRepository.findProjectIdsByIngestionRunId(runId) +
+                if (reingested.isEmpty()) emptySet() else artifactRepository.findProjectIdsByArtifactIdIn(reingested)
+
             if (projectIds.isEmpty()) return
             publisher.publishEvent(ArtifactsIndexedEvent(runId = runId, projectIds = projectIds))
         } catch (e: Exception) {

@@ -1,26 +1,29 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.toDto
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -32,7 +35,7 @@ import java.util.UUID
 
 @Service
 internal class JiraService(
-    private val credentialsRepository: JiraCredentialsRepository,
+    private val atlassianCredentialApi: AtlassianCredentialApi,
     private val instanceRepository: JiraInstanceRepository,
     private val configRepository: JiraInstanceConfigRepository,
     private val jiraClient: JiraClient,
@@ -40,6 +43,7 @@ internal class JiraService(
     private val jiraIssueService: JiraIssueService,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceConfigService: JiraInstanceConfigService,
+    private val userApi: UserApi,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -86,18 +90,29 @@ internal class JiraService(
      * stops appearing among that project's sources. Removing the last project leaves the instance
      * connected but unassigned rather than deleting it (avoiding a destructive cascade).
      *
+     * @param authId The authenticated caller subject, used to authorize access to the target project.
      * @param instanceUrl The URL of the Jira instance to unlink.
      * @param projectId The project whose association should be removed.
+     * @throws JiraProjectAccessDeniedException when the caller does not manage the target project.
      * @throws JiraInstanceNotConnectedException when the instance is unknown.
      */
     @Transactional
     @Tracked("Removing a project from a Jira instance")
-    fun removeInstanceFromProject(instanceUrl: String, projectId: UUID) {
+    fun removeInstanceFromProject(authId: String, instanceUrl: String, projectId: UUID) {
+        requireAccessToProject(authId, projectId)
+
         val instance = instanceRepository.findById(instanceUrl).orElseThrow {
             JiraInstanceNotConnectedException(instanceUrl)
         }
         instance.projectIds.remove(projectId)
         instanceRepository.save(instance)
+        eventPublisher.publishEvent(
+            JiraInstanceProjectLinkChangedEvent(
+                instanceUrl = instance.instanceUrl,
+                projectId = projectId,
+                linked = false,
+            ),
+        )
     }
 
     /**
@@ -112,6 +127,8 @@ internal class JiraService(
     @Transactional
     @Tracked("Connecting Jira Cloud instance if not already connected")
     suspend fun connectInstanceIfNeeded(authId: String, request: ConnectJiraInstanceRequest): UUID {
+        requireAccessToProject(authId, request.projectId)
+
         val transactionId = UUID.randomUUID()
         eventPublisher.publishEvent(
             JiraInstanceConnectionInitiatedEvent(transactionId, request.displayName, request.url),
@@ -130,6 +147,23 @@ internal class JiraService(
     }
 
     /**
+     * Rejects a caller acting on a project they do not manage.
+     *
+     * The endpoints are role-gated to PM and ADMIN, but a PM only manages their own projects, so
+     * the role check alone would let any PM attach an instance to -- or detach it from -- a project
+     * belonging to someone else. Mirrors the GitHub connector's check.
+     *
+     * @param authId The authenticated caller subject.
+     * @param projectId The project being linked or unlinked.
+     * @throws JiraProjectAccessDeniedException when the caller has no access to the project.
+     */
+    private fun requireAccessToProject(authId: String, projectId: UUID) {
+        if (!userApi.userHasAccessToProject(authId, projectId)) {
+            throw JiraProjectAccessDeniedException(projectId)
+        }
+    }
+
+    /**
      * Adds a project ID to the given Jira instance if it is not already present.
      *
      * @param instance The JiraInstance to which the project ID should be added.
@@ -140,6 +174,16 @@ internal class JiraService(
             instance.projectIds.add(projectId)
             instanceRepository.save(instance)
         }
+        // Announced even when the instance already carried the project: the membership also lives
+        // on the instance's artifacts and their indexed chunks, and reconnecting is how a PM
+        // repairs a propagation that failed earlier.
+        eventPublisher.publishEvent(
+            JiraInstanceProjectLinkChangedEvent(
+                instanceUrl = instance.instanceUrl,
+                projectId = projectId,
+                linked = true,
+            ),
+        )
     }
 
     /**
@@ -151,7 +195,7 @@ internal class JiraService(
      *                such as URL, display name, user email, and token name.
      * @param transactionId A unique identifier for tracking the current transaction.
      * @return The transaction ID associated with the connection process.
-     * @throws JiraCredentialNotFoundException If the provided credentials are not found.
+     * @throws AtlassianCredentialNotFoundException If the provided credentials are not found.
      * @throws JiraInstanceUnavailableException If the specified Jira instance is not reachable.
      * @throws Exception If an error occurs during retrieval of project details or subsequent steps.
      */
@@ -160,14 +204,7 @@ internal class JiraService(
         request: ConnectJiraInstanceRequest,
         transactionId: UUID,
     ): UUID {
-        val credentials = credentialsRepository
-            .findById(JiraCredentialsId(authId, request.tokenName))
-            .orElseThrow {
-                eventPublisher.publishEvent(
-                    JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
-                )
-                JiraCredentialNotFoundException(request.userEmail, request.tokenName)
-            }
+        val credentials = resolveCredentials(authId, request, transactionId)
 
         if (!jiraClient.checkInstanceCapabilities(request.url)) {
             eventPublisher.publishEvent(
@@ -208,12 +245,31 @@ internal class JiraService(
         applicationScope.launch {
             jiraIssueService.searchAndIngestAllIssuesOfProjects(
                 instance,
-                JiraCredentialsId(authId, request.tokenName),
+                authId,
+                request.tokenName,
                 transactionId,
             )
         }
 
         return transactionId
+    }
+
+    /**
+     * Resolves the Atlassian credential to authenticate the new instance with.
+     *
+     * @throws AtlassianCredentialNotFoundException when no credential matches [ConnectJiraInstanceRequest.tokenName].
+     */
+    private fun resolveCredentials(
+        authId: String,
+        request: ConnectJiraInstanceRequest,
+        transactionId: UUID,
+    ): AtlassianCredentialSecret {
+        return atlassianCredentialApi.findSecret(authId, request.tokenName) ?: run {
+            eventPublisher.publishEvent(
+                JiraInstanceConnectionInitiationFailedEvent(transactionId, "Invalid credentials", request.url),
+            )
+            throw AtlassianCredentialNotFoundException(request.userEmail, request.tokenName)
+        }
     }
 
     /**

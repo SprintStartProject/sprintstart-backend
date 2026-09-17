@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.connectors.jira
 
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraServerCapabilitiesResponse
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredential
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraAuthException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
@@ -36,7 +36,7 @@ internal class JiraClient(
      */
     suspend fun searchIssues(
         baseUrl: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
         jql: String,
         fields: List<String> = DEFAULT_FIELDS,
         expand: List<String> = DEFAULT_EXPAND,
@@ -63,7 +63,7 @@ internal class JiraClient(
      */
     suspend fun searchProjects(
         baseUrl: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
     ): List<JiraProjectResponse> = fetchProjectPages(baseUrl, credentials).flatMap { it.values }
 
     /**
@@ -106,7 +106,7 @@ internal class JiraClient(
      */
     private suspend fun fetchIssuePages(
         baseUrl: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
         jql: String,
         fields: String,
         expand: String,
@@ -143,7 +143,7 @@ internal class JiraClient(
      */
     private suspend fun fetchProjectPages(
         baseUrl: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
     ): List<PaginatedProjectsSearchResponse> {
         val results = mutableListOf<PaginatedProjectsSearchResponse>()
         var startAt = 0
@@ -183,7 +183,7 @@ internal class JiraClient(
      */
     private suspend inline fun <reified T> performGet(
         uri: String,
-        credentials: JiraCredential,
+        credentials: AtlassianCredentialSecret,
     ): T = try {
         webClient
             .get()
@@ -227,13 +227,13 @@ internal class JiraClient(
     /**
      * Constructs a Basic Authorization header value using the encoded credentials of the Jira user.
      *
-     * The method combines the user's email and authentication token from the JiraCredential instance,
+     * The method combines the user's email and authentication token from the AtlassianCredentialSecret instance,
      * encodes the combination in Base64, and formats it as a Basic Authorization header.
      *
      * @return A string representation of the Basic Authorization header.
      */
-    private fun JiraCredential.basicAuthorizationHeader(): String {
-        val credentials = "${this.userEmail.trim()}:${this.authToken.trim()}"
+    private fun AtlassianCredentialSecret.basicAuthorizationHeader(): String {
+        val credentials = "${this.userEmail.trim()}:${this.apiToken.trim()}"
         val encoded = Base64.getEncoder().encodeToString(credentials.toByteArray(Charsets.UTF_8))
         return "Basic $encoded"
     }
