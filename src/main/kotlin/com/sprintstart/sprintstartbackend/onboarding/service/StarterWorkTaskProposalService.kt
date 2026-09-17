@@ -468,8 +468,8 @@ class StarterWorkTaskProposalService(
      * project.
      *
      * The user-id counterpart of [matchForUser], for callers that hold a user id rather than an
-     * auth subject (e.g. the buddy agent ranking tasks for the caller). Work that belongs only to
-     * other projects is left out (see [StarterWorkScope.forHiresOn]).
+     * auth subject (e.g. the buddy agent ranking tasks for the caller). Only this project's work and
+     * the shared pool are ranked (see [StarterWorkScope.forHiresOn]).
      */
     @Transactional(readOnly = true)
     fun matchForUserId(userId: UUID, projectId: UUID): List<RankedStarterWorkTaskResponse> {
