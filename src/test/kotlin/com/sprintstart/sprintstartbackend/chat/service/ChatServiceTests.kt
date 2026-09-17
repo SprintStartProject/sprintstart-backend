@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.chat.service
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
+import com.sprintstart.sprintstartbackend.chat.models.ChatStatus
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
@@ -25,6 +26,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.Optional
 import java.util.UUID
@@ -352,28 +354,43 @@ class ChatServiceTests {
     }
 
     @Nested
-    inner class DeleteChat {
+    inner class BinChat {
         @Test
-        fun `deletes chat, all its citations and messages`() {
+        fun `bins chat`() {
             val chatId = UUID.randomUUID()
-            val chat = mockk<Chat>()
+            val chat = Chat(
+                UUID.randomUUID(),
+                "chat",
+                userId,
+                OffsetDateTime.now(),
+                projectId,
+            )
+            val now = Instant.parse("2026-09-17T10:00:00Z")
 
             every { chatRepository.findById(chatId) } returns Optional.of(chat)
-            every { citationRepository.deleteAllByMessageChatId(chatId) } returns Unit
-            every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
-            every { chatRepository.delete(chat) } returns Unit
+            every { chatRepository.save(chat) } returns chat
+            every { clock.instant() } returns now
 
-            chatService.deleteChat(chatId)
+            chatService.binChat(chatId)
 
             verify(exactly = 1) {
-                citationRepository.deleteAllByMessageChatId(chatId)
+                chatRepository.save(chat)
             }
-            verify(exactly = 1) {
-                chatMessageRepository.deleteAllByChatId(chatId)
+
+            verify(exactly = 0) {
+                chatRepository.delete(any())
             }
-            verify(exactly = 1) {
-                chatRepository.delete(chat)
+
+            verify(exactly = 0) {
+                citationRepository.deleteAllByMessageChatId(any())
             }
+
+            verify(exactly = 0) {
+                chatMessageRepository.deleteAllByChatId(any())
+            }
+
+            assertEquals(ChatStatus.BINNED, chat.status)
+            assertEquals(now, chat.binnedAt)
         }
 
         @Test
@@ -383,55 +400,77 @@ class ChatServiceTests {
             every { chatRepository.findById(chatId) } returns Optional.empty()
 
             assertThrows<ResponseStatusException> {
-                chatService.deleteChat(chatId)
+                chatService.binChat(chatId)
             }
 
-            verify(exactly = 0) { chatRepository.delete(any()) }
-            verify(exactly = 0) { chatMessageRepository.deleteAllByChatId(any()) }
+            verify(exactly = 0) { chatRepository.save(any()) }
         }
 
         @Test
-        fun `deletes chat and all its citations and messages for current user`() {
+        fun `bins chat for current user`() {
             val chatId = UUID.randomUUID()
-            val chat = mockk<Chat>()
+            val chat = Chat(
+                UUID.randomUUID(),
+                "chat",
+                userId,
+                OffsetDateTime.now(),
+                projectId,
+            )
+            val now = Instant.parse("2026-09-17T10:00:00Z")
 
-            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
-            every { chatAuthService.findOwnedChat(chatId, userId) } returns chat
-            every { citationRepository.deleteAllByMessageChatId(chatId) } returns Unit
-            every { chatMessageRepository.deleteAllByChatId(chatId) } returns Unit
-            every { chatRepository.delete(chat) } returns Unit
+            every {
+                chatAuthService.resolveCurrentUserId(userApi, authId)
+            } returns userId
 
-            chatService.deleteChatForCurrentUser(authId, chatId)
+            every {
+                chatAuthService.findOwnedChat(chatId, userId)
+            } returns chat
+
+            every {
+                clock.instant()
+            } returns now
+
+            every {
+                chatRepository.save(chat)
+            } returns chat
+
+            chatService.binChatForCurrentUser(authId, chatId)
 
             verify(exactly = 1) {
                 chatAuthService.resolveCurrentUserId(userApi, authId)
             }
+
             verify(exactly = 1) {
                 chatAuthService.findOwnedChat(chatId, userId)
             }
+
             verify(exactly = 1) {
-                citationRepository.deleteAllByMessageChatId(chatId)
+                chatRepository.save(chat)
             }
-            verify(exactly = 1) {
-                chatMessageRepository.deleteAllByChatId(chatId)
-            }
-            verify(exactly = 1) {
-                chatRepository.delete(chat)
-            }
+
+            assertEquals(ChatStatus.BINNED, chat.status)
+            assertEquals(now, chat.binnedAt)
         }
 
         @Test
         fun `throws not found when current user does not own chat`() {
             val chatId = UUID.randomUUID()
 
-            every { chatAuthService.resolveCurrentUserId(userApi, authId) } returns userId
-            every { chatAuthService.findOwnedChat(chatId, userId) } throws ResponseStatusException(HttpStatus.NOT_FOUND)
+            every {
+                chatAuthService.resolveCurrentUserId(userApi, authId)
+            } returns userId
 
-            assertThrows<ResponseStatusException> { chatService.deleteChatForCurrentUser(authId, chatId) }
+            every {
+                chatAuthService.findOwnedChat(chatId, userId)
+            } throws ResponseStatusException(HttpStatus.NOT_FOUND)
 
-            verify(exactly = 0) { chatRepository.delete(any()) }
+            assertThrows<ResponseStatusException> {
+                chatService.binChatForCurrentUser(authId, chatId)
+            }
 
-            verify(exactly = 0) { chatMessageRepository.deleteAllByChatId(any()) }
+            verify(exactly = 0) {
+                chatRepository.save(any())
+            }
         }
     }
 

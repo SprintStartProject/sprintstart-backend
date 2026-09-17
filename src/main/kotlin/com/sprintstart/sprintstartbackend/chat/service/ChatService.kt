@@ -187,47 +187,6 @@ internal class ChatService(
     }
 
     /**
-     * Deletes an existing chat.
-     *
-     * This function deletes a specific chat (by id) and all its contained messages, meaning all messages linked to
-     * the specified chat.
-     *
-     * @param chatId The ID of the chat to be deleted.
-     * @throws ResponseStatusException '404' when the specified chat does not exist.
-     */
-    @Transactional
-    @Tracked("Deleting existing chat")
-    fun deleteChat(chatId: UUID) {
-        val chat = chatRepository.findById(chatId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "Chat with id $chatId not found")
-        }
-        citationRepository.deleteAllByMessageChatId(chatId)
-        messageRepository.deleteAllByChatId(chatId)
-        chatRepository.delete(chat)
-    }
-
-    /**
-     * Deletes an existing chat created by the current user.
-     *
-     * This function deletes both the chat and all its contained messages. Only works for chats owned by the current
-     * user, e.g., chats that were created by the current user.
-     *
-     * @param authId ID used for verifying the current user.
-     * @param chatId The ID of the chat to be deleted.
-     * @throws ResponseStatusException '404' when the specified chat does not exist or does not belong to the
-     * authenticated user.
-     */
-    @Transactional
-    @Tracked("Deleting existing chat created by the current user")
-    fun deleteChatForCurrentUser(authId: String, chatId: UUID) {
-        val userId = chatAuthService.resolveCurrentUserId(userApi, authId)
-        val chat = chatAuthService.findOwnedChat(chatId, userId)
-        citationRepository.deleteAllByMessageChatId(chatId)
-        messageRepository.deleteAllByChatId(chatId)
-        chatRepository.delete(chat)
-    }
-
-    /**
      * Soft-deletes an existing chat.
      *
      * Binned chats are nonvisible to the owner, but remain persisted in the DB.
