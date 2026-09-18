@@ -257,6 +257,21 @@ class UserApiService(
             .orElse(false)
     }
 
+    @Transactional(readOnly = true)
+    @Tracked("Checking if user manages project")
+    override fun canManageProject(authId: String, projectId: UUID): Boolean {
+        val user = userRepository.findByAuthId(authId).orElse(null)
+            ?: return false
+        if (Role.ADMIN in user.roles) {
+            return true
+        }
+
+        return projectRepository
+            .findManagerAuthId(projectId)
+            .map { it == authId }
+            .orElse(false)
+    }
+
     /**
      * Marks the given user's onboarding as completed.
      *
