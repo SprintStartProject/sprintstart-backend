@@ -53,6 +53,9 @@ sprintstart:
     knowledge-gaps:
       auto-refresh: ${SPRINTSTART_KNOWLEDGE_GAPS_AUTO_REFRESH:true}
       debounce-seconds: 60
+  chat:
+    cleanup:
+      cron: "0 0 3 * * *"
 
 spring:
   config:
