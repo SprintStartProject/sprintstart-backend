@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -37,6 +38,18 @@ class GithubOrgListenerTest {
         listener.on(event)
 
         verify(exactly = 1) { githubArtifactProviderService.persistArtifact(command) }
+    }
+
+    @Test
+    fun `org metadata already connected event triggers syncOrgArtifactProjects`() {
+        val runId = UUID.randomUUID()
+        every { githubArtifactProviderService.syncOrgArtifactProjects(runId, "octocat") } just runs
+
+        listener.on(GithubOrgMetadataAlreadyConnectedEvent(runId, "octocat"))
+
+        verify(exactly = 1) {
+            githubArtifactProviderService.syncOrgArtifactProjects(runId, "octocat")
+        }
     }
 
     @Test
