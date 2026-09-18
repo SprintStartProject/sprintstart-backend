@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.github
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -16,6 +17,7 @@ import org.springframework.transaction.event.TransactionalEventListener
 @Component
 internal class GithubRepositoryProjectsListener(
     private val artifactProjectService: ArtifactProjectService,
+    private val githubOrgArtifactSyncService: GithubOrgArtifactSyncService,
     private val applicationScope: CoroutineScope,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -45,7 +47,7 @@ internal class GithubRepositoryProjectsListener(
                     event.projectId,
                     event.linked,
                 )
-                artifactProjectService.syncGithubOrgArtifact(event.owner)
+                githubOrgArtifactSyncService.syncOrgArtifact(event.owner)
             } catch (e: Exception) {
                 logger.error(
                     "Failed to propagate project {} ({}) for repository {}/{} to the AI index",

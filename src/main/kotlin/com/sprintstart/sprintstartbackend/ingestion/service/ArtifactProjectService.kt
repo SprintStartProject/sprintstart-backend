@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
@@ -10,7 +8,6 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_S
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
-import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +36,6 @@ class ArtifactProjectService(
     private val artifactProjectRepository: ArtifactProjectRepository,
     private val artifactIngestionClient: ArtifactIngestionClient,
     transactionManager: PlatformTransactionManager,
-    private val artifactRepository: ArtifactRepository,
-    private val githubRepositoryApi: GithubRepositoryApi,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -167,67 +162,6 @@ class ArtifactProjectService(
         throw IngestionResponseException(
             "Project $projectId was stored for $source but ${failed.size} artifact(s) " +
                 "kept their old membership in the AI index" +
-                (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" } ?: ""),
-        )
-    }
-
-    /**
-     * Reconciles project memberships of an organization metadata artifact with all currently connected
-     * repositories owned by that organization, then mirrors the result to the AI index.
-     *
-     * Organization metadata artifacts encompass all repositories under the same owner. When an individual
-     * repository is linked to or unlinked from a project, the organization artifact must reflect the union
-     * of all projects across all remaining connected repositories of that owner.
-     *
-     * @param owner The repository owner or organization login.
-     * @throws IngestionResponseException when the AI service rejects the batch or reports that part of it
-     * did not apply.
-     */
-    @Tracked("Reconciling GitHub org artifact project memberships")
-    suspend fun syncGithubOrgArtifact(owner: String) {
-        val (artifactId, targetProjectIds) = withContext(Dispatchers.IO) {
-            transactionTemplate.execute {
-                val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, owner)
-                    ?: return@execute null
-                val targetProjectIds = githubRepositoryApi.getProjectIdsByOwner(owner)
-                if (artifact.setProjectIds(targetProjectIds)) {
-                    artifactRepository.save(artifact)
-                    artifact.id to targetProjectIds
-                } else {
-                    null
-                }
-            }
-        } ?: return
-
-        logger.info(
-            "Syncing org artifact {} for owner {} with {} project(s) to AI index",
-            artifactId,
-            owner,
-            targetProjectIds.size,
-        )
-
-        val response = artifactIngestionClient.syncProjectMemberships(
-            ArtifactProjectsAiSyncRequest(
-                listOf(
-                    ArtifactProjectsAiRequest(
-                        artifactId = artifactId.toString(),
-                        projectIds = targetProjectIds.map(UUID::toString),
-                    ),
-                ),
-            ),
-        )
-        requireOrgArtifactSucceeded(owner, response)
-    }
-
-    private fun requireOrgArtifactSucceeded(
-        owner: String,
-        response: ArtifactProjectsAiSyncResponse,
-    ) {
-        val failed = response.artifacts.filter { it.status == AI_SYNC_STATUS_FAILED }
-        if (failed.isEmpty()) return
-
-        throw IngestionResponseException(
-            "Org artifact for $owner was updated locally but kept its old membership in the AI index" +
                 (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" } ?: ""),
         )
     }
