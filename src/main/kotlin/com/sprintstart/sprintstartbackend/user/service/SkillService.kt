@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.SkillsApi
+import com.sprintstart.sprintstartbackend.user.external.dto.SkillDto
 import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.entity.UserSkillAssessment
 import com.sprintstart.sprintstartbackend.user.model.mapper.toCreateResponse
+import com.sprintstart.sprintstartbackend.user.model.mapper.toDto
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateResponse
 import com.sprintstart.sprintstartbackend.user.model.request.skill.CreateSkillAssessmentRequest
@@ -32,7 +35,7 @@ class SkillService(
     private val projectRoleRepository: ProjectRoleRepository,
     private val userRepository: UserRepository,
     private val userSkillAssessmentRepository: UserSkillAssessmentRepository,
-) {
+) : SkillsApi {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all skills")
     fun getAllSkills(): List<GetSkillResponse> {
@@ -175,5 +178,25 @@ class SkillService(
 
         val savedAssessment = user.skillAssessments.first { it.skill.id == skill.id }
         return savedAssessment.toCreateResponse()
+    }
+
+    // Api methods
+
+    /**
+     * Returns the active skills matching the given ids.
+     *
+     * Implementation of the module-facing [SkillsApi]. Retired skills and unknown ids are
+     * silently omitted, so the result may be smaller than the requested id set — or empty.
+     *
+     * @param skillIds Ids of the skills to resolve.
+     * @return The matching skills in `ACTIVE` status, mapped to [SkillDto]s.
+     */
+    @Override
+    override fun getSkillsByIds(skillIds: Set<UUID>): Set<SkillDto> {
+        return skillRepository
+            .findAllById(skillIds)
+            .filter { it.status == SkillStatus.ACTIVE }
+            .map { it.toDto() }
+            .toSet()
     }
 }

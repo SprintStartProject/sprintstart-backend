@@ -1,0 +1,75 @@
+package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.mapper
+
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintStep
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.CreateBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.GetBlueprintStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepPositionResponse
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.response.step.UpdateBlueprintStepResponse
+
+fun BlueprintStep.toGetResponse(): GetBlueprintStepResponse {
+    return GetBlueprintStepResponse(
+        id = this.id,
+        blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        type = this.type,
+        aiAssisted = this.aiAssisted,
+        estimatedMinutes = this.estimatedMinutes,
+        expectedOutcome = this.expectedOutcome,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blueprintTasks = this.blueprintTasks.map { it.toGetResponse() },
+        blueprintResources = this.blueprintResources.map { it.toGetResponse() },
+    )
+}
+
+fun BlueprintStep.toCreateResponse(): CreateBlueprintStepResponse {
+    return CreateBlueprintStepResponse(
+        id = this.id,
+        blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision + 1,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        type = this.type,
+        aiAssisted = this.aiAssisted,
+        estimatedMinutes = this.estimatedMinutes,
+        expectedOutcome = this.expectedOutcome,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blueprintTasks = this.blueprintTasks.map { it.toGetResponse() },
+        blueprintResources = this.blueprintResources.map { it.toGetResponse() },
+    )
+}
+
+fun BlueprintStep.toUpdateResponse(): UpdateBlueprintStepResponse {
+    return UpdateBlueprintStepResponse(
+        id = this.id,
+        blueprintPhaseId = this.blueprintPhase.id,
+        revision = this.revision,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        type = this.type,
+        aiAssisted = this.aiAssisted,
+        estimatedMinutes = this.estimatedMinutes,
+        expectedOutcome = this.expectedOutcome,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blueprintTasks = this.blueprintTasks.map { it.toGetResponse() },
+        blueprintResources = this.blueprintResources.map { it.toGetResponse() },
+    )
+}
+
+fun BlueprintStep.toUpdatePositionResponse(): UpdateBlueprintStepPositionResponse {
+    return UpdateBlueprintStepPositionResponse(
+        id = this.id,
+        revision = this.revision,
+        position = this.position,
+    )
+}

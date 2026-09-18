@@ -20,4 +20,7 @@ data class UpdateOnboardingStepResponse(
     val completedAt: Instant?,
     val feedback: GetOnboardingFeedbackResponse? = null,
     val skip: GetOnboardingStepSkipResponse?,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )

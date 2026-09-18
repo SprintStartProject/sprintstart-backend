@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
@@ -41,8 +42,8 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
-    private val jiraInstanceApi: JiraInstanceApi,
     private val eventPublisher: ApplicationEventPublisher,
+    private val jiraInstanceApi: JiraInstanceApi,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -107,6 +108,8 @@ class AdminProjectService(
             ProjectIndustryService.applyCustomIndustry(project, industry)
         }
         projectRepository.save(project)
+
+        eventPublisher.publishEvent(ProjectCreatedEvent(project.id))
 
         return project.toAdminDetailResponse(
             sources = emptyList(),

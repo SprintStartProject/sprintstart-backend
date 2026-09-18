@@ -15,4 +15,7 @@ data class CreateOnboardingStepResponse(
     val isAiAssisted: Boolean,
     val expectedOutcome: String,
     val status: StepStatus,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
 )
