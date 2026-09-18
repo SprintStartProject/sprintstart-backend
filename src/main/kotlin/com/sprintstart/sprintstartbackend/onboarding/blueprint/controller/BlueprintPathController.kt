@@ -503,8 +503,9 @@ class BlueprintPathAdminController(
 /**
  * Exposes project-scoped blueprint path endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
@@ -545,7 +546,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping
     fun getBlueprints(
         @PathVariable projectId: UUID,
@@ -587,7 +588,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/{blueprintKey}")
     fun getBlueprintHistoryByBlueprintKey(
         @PathVariable projectId: UUID,
@@ -631,7 +632,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/paths")
     fun getBlueprintPaths(
         @PathVariable projectId: UUID,
@@ -671,7 +672,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("paths/{pathId}/graph")
     fun getBlueprintGraphByPathId(
         @PathVariable projectId: UUID,
@@ -716,7 +717,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/paths/{pathId}")
     fun getBlueprintPathById(
         @PathVariable projectId: UUID,
@@ -757,7 +758,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/paths")
     fun createBlueprintPath(
         @PathVariable projectId: UUID,
@@ -802,7 +803,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/{blueprintKey}/draft")
     fun editBlueprintPathById(
         @PathVariable projectId: UUID,
@@ -854,7 +855,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/paths/{pathId}/publish")
     fun publishBlueprintPathById(
         @PathVariable projectId: UUID,
@@ -909,7 +910,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/{blueprintKey}/rollBack/{rollbackVersion}")
     fun rollBackBlueprintPathByBlueprintKey(
         @PathVariable projectId: UUID,
@@ -965,7 +966,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/paths/{pathId}")
     fun updateBlueprintPathById(
         @PathVariable projectId: UUID,
@@ -1012,7 +1013,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/{blueprintKey}/archive")
     fun archiveBlueprintPathById(
         @PathVariable projectId: UUID,
@@ -1060,7 +1061,7 @@ class BlueprintPathController(
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/paths/{pathId}")
     fun deleteBlueprintDraftById(
         @PathVariable projectId: UUID,

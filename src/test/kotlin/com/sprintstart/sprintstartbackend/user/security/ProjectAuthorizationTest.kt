@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.security
 
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.User

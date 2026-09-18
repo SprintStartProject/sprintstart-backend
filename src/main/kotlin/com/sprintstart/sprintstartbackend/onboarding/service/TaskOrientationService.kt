@@ -99,6 +99,7 @@ class TaskOrientationService(
         val outcome = try {
             onboardingAiClient.assembleOrientation(
                 taskTitle = context.title,
+                projectIds = listOf(projectId),
                 taskBody = context.body,
                 labels = context.labels,
                 // Not knowable from an issue, so sent empty rather than guessed at.
@@ -141,6 +142,7 @@ class TaskOrientationService(
         return onboardingAiClient
             .streamOrientation(
                 taskTitle = context.title,
+                projectIds = listOf(projectId),
                 taskBody = context.body,
                 labels = context.labels,
                 touchedPaths = emptyList(),

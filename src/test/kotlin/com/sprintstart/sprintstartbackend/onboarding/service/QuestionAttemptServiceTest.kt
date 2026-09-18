@@ -28,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
@@ -39,10 +40,13 @@ import kotlin.test.assertTrue
 class QuestionAttemptServiceTest {
     private val onboardingPhaseRepository: OnboardingPhaseRepository = mockk()
     private val phaseCheckQuestionRepository: PhaseCheckQuestionRepository = mockk()
-    private val questionAttemptRepository: QuestionAttemptRepository = mockk()
+    private val questionAttemptRepository: QuestionAttemptRepository = mockk {
+        every { existsByQuestionIdAndUserIdAndCorrectTrue(any(), any()) } returns false
+    }
     private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: com.sprintstart.sprintstartbackend.user.external.UserApi = mockk()
     private val phaseCheckAiClient: PhaseCheckAiClient = mockk()
+    private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val service = QuestionAttemptService(
         onboardingPhaseRepository,
         phaseCheckQuestionRepository,
@@ -50,6 +54,7 @@ class QuestionAttemptServiceTest {
         onboardingCompletionService,
         userApi,
         phaseCheckAiClient,
+        transactionManager,
     )
 
     private val userId = UUID.randomUUID()
@@ -157,6 +162,29 @@ class QuestionAttemptServiceTest {
 
         assertTrue(correct.correct)
         assertFalse(wrong.correct)
+    }
+
+    @Test
+    fun `keeps the passed status when a wrong answer follows an earlier pass`() = runTest {
+        val question = addMcOptions(makeQuestion())
+        val wrongOption = question.options.first { !it.correct }
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { phaseCheckQuestionRepository.findById(question.id) } returns Optional.of(question)
+        every {
+            questionAttemptRepository.existsByQuestionIdAndUserIdAndCorrectTrue(question.id, userId)
+        } returns true
+        every { questionAttemptRepository.save(any()) } answers { firstArg() }
+
+        val result = service.submitQuestionAttemptForMe(
+            authId,
+            question.id,
+            SubmitQuestionAttemptRequest(selectedOptionIds = listOf(wrongOption.id)),
+        )
+
+        assertFalse(result.correct)
+        assertEquals(QuestionStatus.PASSED, result.status)
+        verify { questionAttemptRepository.save(match { !it.correct }) }
+        verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
     }
 
     @Test

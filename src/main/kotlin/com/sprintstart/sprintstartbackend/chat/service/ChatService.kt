@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.chat.models.Chat
+import com.sprintstart.sprintstartbackend.chat.models.ChatStatus
 import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatMessagesRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.GetChatsRequest
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.server.ResponseStatusException
+import java.time.Clock
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -36,6 +38,7 @@ internal class ChatService(
     private val citationRepository: CitationRepository,
     private val userApi: UserApi,
     private val chatAuthService: ChatAuthService,
+    private val clock: Clock,
 ) {
     /**
      * Retrieves the n latest chats without their messages. N is determined by `request.limit`.
@@ -80,8 +83,8 @@ internal class ChatService(
         // predating project scoping have no project and therefore appear in no list; they remain
         // readable through `GET /chats/me/{id}`.
         val chats = request.projectId
-            ?.let { chatRepository.findAllByUserIdAndProjectId(userId, it, pageable) }
-            ?: chatRepository.findAllByUserId(userId, pageable)
+            ?.let { chatRepository.findAllActiveByUserIdAndProjectId(userId, it, pageable) }
+            ?: chatRepository.findAllActiveByUserId(userId, pageable)
         val chatResponses: List<ChatResponse> = chats.stream().map { it.toChatResponse() }.toList()
         return GetChatsResponse(chatResponses)
     }
@@ -184,44 +187,42 @@ internal class ChatService(
     }
 
     /**
-     * Deletes an existing chat.
+     * Soft-deletes an existing chat.
      *
-     * This function deletes a specific chat (by id) and all its contained messages, meaning all messages linked to
-     * the specified chat.
+     * Binned chats are nonvisible to the owner, but remain persisted in the DB.
      *
-     * @param chatId The ID of the chat to be deleted.
+     * @param chatId The ID of the chat to be binned.
      * @throws ResponseStatusException '404' when the specified chat does not exist.
      */
     @Transactional
-    @Tracked("Deleting existing chat")
-    fun deleteChat(chatId: UUID) {
+    @Tracked("Binning existing chat")
+    fun binChat(chatId: UUID) {
         val chat = chatRepository.findById(chatId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "Chat with id $chatId not found")
         }
-        citationRepository.deleteAllByMessageChatId(chatId)
-        messageRepository.deleteAllByChatId(chatId)
-        chatRepository.delete(chat)
+        chat.status = ChatStatus.BINNED
+        chat.binnedAt = clock.instant()
+        chatRepository.save(chat)
     }
 
     /**
-     * Deletes an existing chat created by the current user.
+     * Soft-deletes an existing chat owned by the current user.
      *
-     * This function deletes both the chat and all its contained messages. Only works for chats owned by the current
-     * user, e.g., chats that were created by the current user.
+     * Binned chats are nonvisible to the owner, but remain persisted in the DB.
      *
      * @param authId ID used for verifying the current user.
-     * @param chatId The ID of the chat to be deleted.
+     * @param chatId The ID of the chat to be binned.
      * @throws ResponseStatusException '404' when the specified chat does not exist or does not belong to the
      * authenticated user.
      */
     @Transactional
-    @Tracked("Deleting existing chat created by the current user")
-    fun deleteChatForCurrentUser(authId: String, chatId: UUID) {
+    @Tracked("Binning existing chat owned by the current user")
+    fun binChatForCurrentUser(authId: String, chatId: UUID) {
         val userId = chatAuthService.resolveCurrentUserId(userApi, authId)
         val chat = chatAuthService.findOwnedChat(chatId, userId)
-        citationRepository.deleteAllByMessageChatId(chatId)
-        messageRepository.deleteAllByChatId(chatId)
-        chatRepository.delete(chat)
+        chat.status = ChatStatus.BINNED
+        chat.binnedAt = clock.instant()
+        chatRepository.save(chat)
     }
 
     /**

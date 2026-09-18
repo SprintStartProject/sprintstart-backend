@@ -407,7 +407,7 @@ class OnboardingPersonalizationServiceTest {
         expectBlueprint(blueprint)
         every { onboardingAiClient.streamPhase(any()) } answers {
             if (firstArg<AssemblePhaseRequest>().phaseTitle == "Slow") {
-                flow { delay(600_000L) }
+                flow { delay(1_400_000L) }
             } else {
                 flowOf(doneEvent())
             }
@@ -422,7 +422,7 @@ class OnboardingPersonalizationServiceTest {
         assertEquals(GenerationStatus.TIMED_OUT, issue?.status)
         assertTrue(
             events.any {
-                it.type == "stage" && it.name == "Slow" && it.detail == "Timed out after 240 seconds"
+                it.type == "stage" && it.name == "Slow" && it.detail == "Timed out after 1300 seconds"
             },
         )
         assertEquals(1, events.filter { it.type == "path" }.size)

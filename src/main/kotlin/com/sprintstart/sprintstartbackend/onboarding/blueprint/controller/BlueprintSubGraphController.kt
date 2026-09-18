@@ -260,8 +260,9 @@ class BlueprintSubGraphAdminController(
 /**
  * Exposes project-scoped blueprint sub graph endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("api/v1/projects/{projectId}/onboarding/blueprints/sub-graph-nodes/{nodeId}")
@@ -316,7 +317,7 @@ class BlueprintSubGraphController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/blockers/{blockerId}")
     fun addSubGraphNodeBlocker(
         @PathVariable projectId: UUID,
@@ -374,7 +375,7 @@ class BlueprintSubGraphController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/position")
     fun updateSubGraphNodePosition(
         @PathVariable projectId: UUID,
@@ -432,7 +433,7 @@ class BlueprintSubGraphController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/blockers/{blockerId}")
     fun removeSubGraphNodeBlocker(
         @PathVariable projectId: UUID,
@@ -490,7 +491,7 @@ class BlueprintSubGraphController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/position")
     fun removeSubGraphNodePosition(
         @PathVariable projectId: UUID,

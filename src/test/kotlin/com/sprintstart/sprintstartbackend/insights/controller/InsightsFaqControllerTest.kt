@@ -11,7 +11,7 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOvervie
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqQuestionResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshFaqResponse
 import com.sprintstart.sprintstartbackend.insights.service.InsightsFaqService
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubConnectorService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryConnectionOrchestrator
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryProjectService
+import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryVisibilityService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubUpdatesService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -50,6 +51,7 @@ internal class GithubConnectorController(
     private val githubUpdateService: GithubUpdatesService,
     private val connectionOrchestrator: GithubRepositoryConnectionOrchestrator,
     private val githubRepositoryProjectService: GithubRepositoryProjectService,
+    private val visibilityService: GithubRepositoryVisibilityService,
 ) {
     /**
      * Discovers the GitHub repositories of a specified organization.
@@ -329,11 +331,19 @@ internal class GithubConnectorController(
     @PostMapping("/connections/{repositoryId}/projects/{projectId}")
     @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
-    fun addRepositoryToProject(
+    suspend fun addRepositoryToProject(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @PathVariable repositoryId: UUID,
         @PathVariable projectId: UUID,
     ): ResponseEntity<AddRepositoryToProjectResponse> {
+        // Two separate questions, and the service below only answers the first: may the caller
+        // write to this project, and may they see this repository at all? Linking is how a
+        // repository's artifacts reach a project, so without the second check a connection id --
+        // which source-overview responses hand out -- would be enough to pull somebody else's
+        // private repository into a project of one's own. Runs before the transactional call
+        // because it suspends.
+        visibilityService.requireCallerCanSeeConnection(jwt.subject, repositoryId)
+
         val projectIds = githubRepositoryProjectService.addProjectToRepository(jwt.subject, repositoryId, projectId)
         return ResponseEntity.ok(AddRepositoryToProjectResponse(repositoryId, projectIds))
     }

@@ -9,7 +9,7 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeG
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.KnowledgeGapsOverviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.service.KnowledgeGapsService
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

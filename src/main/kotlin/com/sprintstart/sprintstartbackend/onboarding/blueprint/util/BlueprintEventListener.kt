@@ -23,21 +23,30 @@ class BlueprintEventListener(
     private val entityManager: EntityManager,
 ) {
     /**
-     * Copies all global blueprint paths into a newly created project.
+     * Copies the active global blueprint templates into a newly created project.
      *
-     * Every global blueprint (project ID is `null`) is deep-copied via
-     * [BlueprintPathCopyFactory] with a fresh blueprint key, status
-     * [BlueprintStatus.ACTIVE], and version 0, then persisted as a
-     * project-specific blueprint owned by the project from the event. Runs in a
-     * transaction so all copies are persisted atomically.
+     * Only [BlueprintStatus.ACTIVE] global blueprints (project ID is `null`) are templates:
+     * drafts and archived versions are authoring state and must not leak into new projects.
+     * Should a blueprint key ever hold several active rows, only the latest version is copied,
+     * so the new project receives at most one copy per key. Each copy is deep-copied via
+     * [BlueprintPathCopyFactory] with a fresh blueprint key, status [BlueprintStatus.ACTIVE],
+     * and version 0, then persisted as a project-specific blueprint owned by the project from
+     * the event. This matters beyond cleanliness: personalization requires exactly one active
+     * blueprint per project, so copying more than one row per key would break it with a 409.
+     * Runs in a transaction so all copies are persisted atomically.
      *
      * @param event the event carrying the ID of the newly created project.
      */
     @Transactional
     @EventListener
     fun handleProjectCreatedEvent(event: ProjectCreatedEvent) {
-        val projectPaths = blueprintPathRepository
-            .findAllByProjectIdIsNull()
+        val activeTemplates = blueprintPathRepository
+            .findAllByProjectIdIsNullAndStatus(BlueprintStatus.ACTIVE)
+            .groupBy { it.blueprintKey }
+            .values
+            .map { versions -> versions.maxBy { it.version } }
+
+        activeTemplates
             .map {
                 blueprintPathCopyFactory.createCopyFrom(
                     path = it,
@@ -46,8 +55,6 @@ class BlueprintEventListener(
                     status = BlueprintStatus.ACTIVE,
                     version = 0,
                 )
-            }
-
-        projectPaths.forEach(entityManager::persist)
+            }.forEach(entityManager::persist)
     }
 }

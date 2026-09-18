@@ -43,6 +43,15 @@ abstract class BlueprintControllerTestSupport {
     protected abstract val endpointCases: List<EndpointCase>
 
     /**
+     * When set, every endpoint must declare exactly this `@PreAuthorize` expression.
+     *
+     * Security expressions are not evaluated by the standalone MockMvc setup these tests use, so the
+     * access rule itself is asserted reflectively — this is what keeps e.g. the project-scoped
+     * controllers on `@projectAuth.canManageProject` instead of a global role check.
+     */
+    protected open val expectedPreAuthorize: String? = null
+
+    /**
      * Clears stubs and recorded invocations on the subclass's mocks.
      *
      * Called before every dynamic test so that stubbings from a previous case cannot leak into the next one.
@@ -133,7 +142,13 @@ abstract class BlueprintControllerTestSupport {
             assertNotNull(method.getAnnotation(Operation::class.java), "$endpointName must document its API")
             assertNotNull(method.getAnnotation(ApiResponses::class.java), "$endpointName must document its responses")
             assertNotNull(method.getAnnotation(ResponseStatus::class.java), "$endpointName must declare its status")
-            assertNotNull(method.getAnnotation(PreAuthorize::class.java), "$endpointName must declare its access rule")
+            val preAuthorize = assertNotNull(
+                method.getAnnotation(PreAuthorize::class.java),
+                "$endpointName must declare its access rule",
+            )
+            expectedPreAuthorize?.let {
+                kotlin.test.assertEquals(it, preAuthorize.value, "$endpointName must use the expected access rule")
+            }
             assertTrue(
                 mappingAnnotations.any { method.getAnnotation(it.java) != null },
                 "$endpointName must declare an HTTP mapping",
