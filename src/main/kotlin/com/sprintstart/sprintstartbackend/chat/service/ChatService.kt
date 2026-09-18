@@ -212,7 +212,7 @@ internal class ChatService(
      *
      * @param authId ID used for verifying the current user.
      * @param chatId The ID of the chat to be binned.
-     * @throws ResponseStatusException '404' when the specified chat does not exist or does ot belong to the
+     * @throws ResponseStatusException '404' when the specified chat does not exist or does not belong to the
      * authenticated user.
      */
     @Transactional
