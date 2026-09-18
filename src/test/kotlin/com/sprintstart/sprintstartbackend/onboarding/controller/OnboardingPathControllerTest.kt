@@ -3,7 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import io.mockk.Runs
@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delet
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
@@ -42,6 +43,9 @@ class OnboardingPathControllerTest(
 
     @MockkBean
     private lateinit var onboardingPersonalizationService: OnboardingPersonalizationService
+
+    @MockkBean
+    private lateinit var onboardingGenerationRegistry: OnboardingGenerationRegistry
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -180,8 +184,8 @@ class OnboardingPathControllerTest(
     // ========================== /me personalize (project-scoped) ==========================
 
     @Test
-    fun `personalizePath passes the selected project path variable to the service`() {
-        every { onboardingPersonalizationService.personalize(authId, projectId) } throws
+    fun `personalizePath passes the selected project path variable to the generation registry`() {
+        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
             ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
 
         mockMvc
@@ -191,8 +195,39 @@ class OnboardingPathControllerTest(
             ).andExpect(status().isBadRequest)
 
         verify(exactly = 1) {
-            onboardingPersonalizationService.personalize(authId, projectId)
+            onboardingGenerationRegistry.startOrAttach(authId, projectId)
         }
+    }
+
+    @Test
+    fun `getGenerationStatus reports a running generation and the project's blueprint`() {
+        val startedAt = Instant.parse("2026-09-15T10:00:00Z")
+        every { onboardingGenerationRegistry.status(authId) } returns
+            OnboardingGenerationRegistry.GenerationRun(projectId = projectId, startedAt = startedAt)
+        every { onboardingGenerationRegistry.hasActiveBlueprint(projectId) } returns true
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.running").value(true))
+            .andExpect(jsonPath("$.runningProjectId").value(projectId.toString()))
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(true))
+    }
+
+    @Test
+    fun `getGenerationStatus says nothing is running when no generation is`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { onboardingGenerationRegistry.hasActiveBlueprint(projectId) } returns false
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.running").value(false))
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(false))
     }
 
     @Test
@@ -215,8 +250,11 @@ class OnboardingPathControllerTest(
     // ========================== Admin endpoints ==========================
 
     @Test
-    fun `getOnboardingPathForUserId should return 200 and path overview`() {
-        val response = GetOnboardingPathResponse(
+    fun `getOnboardingPathForUserId should return 200 and the path as its owner has it`() {
+        // The hire-shaped response, not the summary: a reviewer looking at somebody's onboarding
+        // needs the phases' contents and the per-question status, and every client that tried to
+        // rebuild those from the summary shape got it wrong or crashed.
+        val response = GetOnboardingPathForUserResponse(
             id = pathId,
             userId = userId,
             createdAt = Instant.now(),

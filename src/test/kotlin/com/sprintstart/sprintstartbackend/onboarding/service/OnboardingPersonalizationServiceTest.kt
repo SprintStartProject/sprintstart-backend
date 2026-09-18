@@ -355,7 +355,7 @@ class OnboardingPersonalizationServiceTest {
     }
 
     @Test
-    fun `hides a failed AI phase and reports its generation issue`() = runTest {
+    fun `saves nothing when every phase failed, and says the AI service was the cause`() = runTest {
         val blueprint = aiEnhancedBlueprint()
         every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
         every {
@@ -368,13 +368,11 @@ class OnboardingPersonalizationServiceTest {
 
         val events = service.personalize(authId, projectId).toList()
 
-        val pathEvent = events.firstOrNull { it.type == "path" }
-        assertEquals(blueprint.id, pathEvent?.path?.blueprintId)
-        val phases = pathEvent?.path?.phases.orEmpty()
-        assertTrue(phases.isEmpty())
-        val issue = pathEvent?.path?.generationIssues?.single()
-        assertEquals("Project Overview", issue?.title)
-        assertEquals(GenerationStatus.FAILED, issue?.status)
+        assertTrue(events.none { it.type == "path" })
+        val error = events.single { it.type == "error" }
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.name)
+        // The path the hire already had is left alone.
+        verify(exactly = 0) { onboardingPathRepository.deleteByUserId(userId) }
     }
 
     @Test
@@ -442,19 +440,10 @@ class OnboardingPersonalizationServiceTest {
 
         val events = service.personalize(authId, projectId).toList()
 
-        val pathEvent = events.firstOrNull { it.type == "path" }
-        assertTrue(
-            pathEvent
-                ?.path
-                ?.phases
-                .orEmpty()
-                .isEmpty(),
-        )
-        val issues = pathEvent?.path?.generationIssues.orEmpty()
-        assertEquals(setOf("P0", "P1", "P2", "P3", "P4"), issues.map { it.title }.toSet())
-        assertTrue(issues.all { it.status == GenerationStatus.TIMED_OUT })
-        assertEquals(1, events.filter { it.type == "path" }.size)
-        assertEquals(1, events.filter { it.type == "done" }.size)
+        // Every phase timed out, so nothing is saved and the run ends on one error, not a path.
+        assertTrue(events.none { it.type == "path" || it.type == "done" })
+        val error = events.single { it.type == "error" }
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.name)
     }
 
     @Test

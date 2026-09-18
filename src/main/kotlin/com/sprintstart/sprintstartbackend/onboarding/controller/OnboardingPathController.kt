@@ -1,8 +1,9 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
+import com.sprintstart.sprintstartbackend.onboarding.model.response.graph.OnboardingGenerationStatusResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import io.swagger.v3.oas.annotations.Operation
@@ -140,7 +141,7 @@ class OnboardingPathController(
         @Parameter(
             description = "UUID of the user whose onboarding path should be returned",
         ) @PathVariable userId: UUID,
-    ): GetOnboardingPathResponse {
+    ): GetOnboardingPathForUserResponse {
         return onboardingPathService.getOnboardingPathByUserId(userId)
     }
 
@@ -189,7 +190,44 @@ class OnboardingPathController(
 )
 class ProjectOnboardingPathController(
     private val onboardingPersonalizationService: OnboardingPersonalizationService,
+    private val onboardingGenerationRegistry: OnboardingGenerationRegistry,
 ) {
+    /**
+     * Reports whether a generation is running for the authenticated user, and whether [projectId]
+     * has the active blueprint a new one needs.
+     *
+     * @param projectId The project the client would build from.
+     * @return The generation status.
+     */
+    @Operation(
+        summary = "Get onboarding path generation status",
+        description = "Whether a path generation is running for the authenticated user (e.g. started " +
+            "before a reload or in another tab), and whether the project has an active blueprint.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Generation status returned"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/me/path/generation")
+    @PreAuthorize("hasRole('USER')")
+    fun getGenerationStatus(
+        @Parameter(description = "UUID of the project the client would build from")
+        @PathVariable projectId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): OnboardingGenerationStatusResponse {
+        val run = onboardingGenerationRegistry.status(jwt.subject)
+        return OnboardingGenerationStatusResponse(
+            running = run != null,
+            runningProjectId = run?.projectId,
+            startedAt = run?.startedAt,
+            hasActiveBlueprint = onboardingGenerationRegistry.hasActiveBlueprint(projectId),
+        )
+    }
+
     /**
      * Creates an onboarding path from the selected project's active blueprint for the authenticated
      * user.
@@ -198,6 +236,10 @@ class ProjectOnboardingPathController(
      * [projectId] — the project the frontend currently has selected — and never from a global
      * template. The service rejects a project the user is not assigned to. Any existing path is
      * replaced. A project must have exactly one active blueprint.
+     *
+     * The generation runs detached from this request (see [OnboardingGenerationRegistry]): closing
+     * the stream does not cancel it, and a request while one is running watches that one instead of
+     * starting another.
      *
      * @param projectId The project whose active blueprint seeds the path.
      * @return A stream of progress events ending in the new path plus a `done` event.
@@ -233,6 +275,6 @@ class ProjectOnboardingPathController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<OnboardingSseEvent> {
-        return onboardingPersonalizationService.personalize(jwt.subject, projectId)
+        return onboardingGenerationRegistry.startOrAttach(jwt.subject, projectId)
     }
 }
