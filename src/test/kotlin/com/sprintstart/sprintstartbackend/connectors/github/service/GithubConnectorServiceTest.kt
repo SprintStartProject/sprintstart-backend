@@ -152,7 +152,6 @@ class GithubConnectorServiceTest {
                 )
                 every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
                 every { repoConnectionRepository.save(any()) } answers { firstArg() }
-                stubCallerCanSeeRepository()
 
                 val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
 
@@ -186,7 +185,6 @@ class GithubConnectorServiceTest {
             val event = slot<GithubRepositoryProjectLinkChangedEvent>()
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
             every { repoConnectionRepository.save(any()) } answers { firstArg() }
-            stubCallerCanSeeRepository()
             every { eventPublisher.publishEvent(capture(event)) } returns Unit
 
             service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -206,7 +204,6 @@ class GithubConnectorServiceTest {
             val events = mutableListOf<Any>()
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns existing
             every { repoConnectionRepository.save(any()) } answers { firstArg() }
-            stubCallerCanSeeRepository()
             every { eventPublisher.publishEvent(capture(events)) } returns Unit
 
             val outcome = service.connectRepositoryIfNecessary("auth-id", connectRequest())
@@ -344,7 +341,6 @@ class GithubConnectorServiceTest {
             )
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repository
             every { repoConnectionRepository.save(repository) } returns repository
-            stubCallerCanSeeRepository()
 
             val transactionId = service.connectRepositoryIfNecessary("auth-id", connectRequest())
 
@@ -595,18 +591,6 @@ class GithubConnectorServiceTest {
         name = name,
         user = user,
     )
-
-    /**
-     * The caller owns the named PAT and that PAT can see the repository -- what the reuse path now
-     * demands before it will link somebody else's connection into the caller's project.
-     */
-    private fun stubCallerCanSeeRepository() {
-        every { userApi.getUserIdByAuthId(any()) } returns Optional.of(UUID.randomUUID())
-        every { githubUserRepository.findById(any()) } returns Optional.of(
-            GithubUser(GithubUserPat("auth-id", "test-pat"), token = "their-token"),
-        )
-        coEvery { githubClient.repositoryExists(any()) } returns true
-    }
 
     private fun stubSuccessfulConnect() {
         every { repoConnectionRepository.findByOwnerAndName(any(), any()) } returns null

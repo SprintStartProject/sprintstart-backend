@@ -126,9 +126,13 @@ class GithubRepositoryVisibilityServiceTest {
         } returns Optional.of(callersPat)
         coEvery { githubClient.repositoryExists(any()) } returns false
 
-        assertFailsWith<RepositoryNotFoundException> {
+        val refusal = assertFailsWith<RepositoryNotFoundException> {
             service.requireCallerCanSeeConnection("caller", connection.id)
         }
+
+        // The 404 body is this message verbatim, so it must not hand over the very name the caller
+        // was just refused.
+        assertThat(refusal.message).doesNotContain("acme").doesNotContain("private-repo")
     }
 
     @Test
@@ -144,14 +148,27 @@ class GithubRepositoryVisibilityServiceTest {
 
     @Test
     fun `an unknown connection is refused the same way an invisible one is`() = runTest {
-        val unknown = UUID.randomUUID()
-        every { repoConnectionRepository.findById(unknown) } returns Optional.empty()
+        val connection = connection()
+        // First call: no such connection. Second call: it exists, but the caller cannot see it.
+        every {
+            repoConnectionRepository.findById(connection.id)
+        } returnsMany listOf(Optional.empty(), Optional.of(connection))
+        every { githubUserRepository.findAllByAuthId("caller") } returns listOf("my-pat")
+        every {
+            githubUserRepository.findById(GithubUserPat("caller", "my-pat"))
+        } returns Optional.of(callersPat)
+        coEvery { githubClient.repositoryExists(any()) } returns false
 
-        // Same exception either way, so a caller cannot use the response to find out whether a
-        // connection id exists at all.
-        assertFailsWith<RepositoryNotFoundException> {
-            service.requireCallerCanSeeConnection("caller", unknown)
+        val unknown = assertFailsWith<RepositoryNotFoundException> {
+            service.requireCallerCanSeeConnection("caller", connection.id)
         }
+        val invisible = assertFailsWith<RepositoryNotFoundException> {
+            service.requireCallerCanSeeConnection("caller", connection.id)
+        }
+
+        // Same exception *and* same message, since the message is the 404 body. Any difference
+        // between the two would let a caller find out whether a connection id exists at all.
+        assertThat(invisible.message).isEqualTo(unknown.message)
     }
 
     private fun connection() = GithubRepositoryConnection(

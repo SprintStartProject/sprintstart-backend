@@ -76,7 +76,14 @@ class GithubRepositoryVisibilityService(
      *
      * Used on the link endpoint, which identifies the repository by connection id and names no PAT.
      * Any of the caller's tokens will do: the question is whether *this person* can reach the
-     * repository, not which of their tokens proves it.
+     * repository, not which of their tokens proves it. The tokens are tried one after another and
+     * the first that sees the repository ends the search, so a caller only pays one GitHub call per
+     * stored PAT when none of them can.
+     *
+     * Both refusals carry the same message, and it names only the id the caller sent. The
+     * repository's `owner/name` must not appear in it: that is exactly what the caller is not
+     * allowed to learn, and a message that differed between the two cases would tell an unknown
+     * connection apart from an invisible one.
      *
      * @param authId The authenticated caller subject.
      * @param repositoryId The connection the caller wants to link.
@@ -88,7 +95,7 @@ class GithubRepositoryVisibilityService(
         val connection = withContext(Dispatchers.IO) {
             repoConnectionRepository.findById(repositoryId)
         }.orElseThrow {
-            RepositoryNotFoundException("", "", "Repository connection with id $repositoryId not found")
+            connectionNotFound(repositoryId)
         }
 
         val patNames = withContext(Dispatchers.IO) { githubUserRepository.findAllByAuthId(authId) }
@@ -100,9 +107,13 @@ class GithubRepositoryVisibilityService(
         }
 
         if (!visible) {
-            throw RepositoryNotFoundException(connection.owner, connection.name)
+            throw connectionNotFound(repositoryId)
         }
     }
+
+    /** The one refusal the link endpoint gives, whether the connection is unknown or invisible. */
+    private fun connectionNotFound(repositoryId: UUID) =
+        RepositoryNotFoundException("", "", "Repository connection with id $repositoryId not found")
 
     /**
      * Whether the given credentials can reach `owner/name` on GitHub.
