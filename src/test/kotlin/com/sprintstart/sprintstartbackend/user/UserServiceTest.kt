@@ -32,7 +32,6 @@ import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
-// Todo: update this test with error paths
 class UserServiceTest {
     private val userRepository: UserRepository = mockk()
     private val projectRepository: ProjectRepository = mockk()
@@ -323,6 +322,72 @@ class UserServiceTest {
         val ex = assertThrows<ResponseStatusException> { userService.getUserById(id) }
 
         assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+    }
+
+    @Test
+    fun `getUserById returns the mapped user when found`() {
+        val user = user(authId = "auth-1", username = "alice")
+        user.roles.add(Role.USER)
+        every { userRepository.findById(user.id) } returns Optional.of(user)
+
+        val result = userService.getUserById(user.id)
+
+        assertThat(result.id).isEqualTo(user.id)
+        assertThat(result.username).isEqualTo("alice")
+        assertThat(result.roles).containsExactly(Role.USER)
+    }
+
+    @Test
+    fun `patchMe throws NOT_FOUND without calling Keycloak when user missing`() {
+        every { userRepository.findByAuthId("missing") } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> {
+            userService.patchMe("missing", PatchMeRequest(projectsId = emptySet()))
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        verify(exactly = 0) { keycloakAdminClient.updateUserProfile(any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `patchAdminUserById throws NOT_FOUND without calling Keycloak when user missing`() {
+        val id = UUID.randomUUID()
+        every { userRepository.findById(id) } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> {
+            userService.patchAdminUserById(id, PatchUserRequest())
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        verify(exactly = 0) { keycloakAdminClient.updateUserProfile(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { keycloakAdminClient.setPermissionGroup(any(), any()) }
+    }
+
+    @Test
+    fun `updateUserEnabledById throws NOT_FOUND without calling Keycloak when user missing`() {
+        val id = UUID.randomUUID()
+        every { userRepository.findById(id) } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> {
+            userService.updateUserEnabledById(id, UpdateUserEnabledRequest(enabled = false))
+        }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        verify(exactly = 0) { keycloakAdminClient.setUserEnabled(any(), any()) }
+    }
+
+    @Test
+    fun `deleteAdminUserById throws NOT_FOUND without deleting anything when user missing`() {
+        val id = UUID.randomUUID()
+        every { userRepository.findAuthIdById(id) } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> { userService.deleteAdminUserById(id) }
+
+        assertThat(ex.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        verify(exactly = 0) { keycloakAdminClient.deleteUser(any()) }
+        verify(exactly = 0) { userRepository.deleteRolesByUserId(any()) }
+        verify(exactly = 0) { userRepository.deleteProjectionById(any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<UserDeletedEvent>()) }
     }
 
     private fun user(

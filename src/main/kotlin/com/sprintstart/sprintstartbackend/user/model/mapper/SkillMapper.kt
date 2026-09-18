@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.mapper
 
+import com.sprintstart.sprintstartbackend.user.external.dto.SkillDto
 import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.response.skill.CreateSkillResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
@@ -40,4 +41,9 @@ fun Skill.toUpdateRoleSkillsResponse() = UpdateRoleSkillsResponse(
     status = status,
     category = category,
     universal = universal,
+)
+
+fun Skill.toDto() = SkillDto(
+    id = this.id,
+    name = this.name,
 )

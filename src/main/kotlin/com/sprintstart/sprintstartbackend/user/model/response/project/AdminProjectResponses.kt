@@ -10,6 +10,7 @@ data class AdminProjectListResponse(
     val description: String?,
     val industry: String? = null,
     val industryConfidence: String? = null,
+    val industryCustom: Boolean = false,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserSummaryResponse>,
@@ -21,6 +22,7 @@ data class AdminProjectDetailResponse(
     val description: String?,
     val industry: String? = null,
     val industryConfidence: String? = null,
+    val industryCustom: Boolean = false,
     val manager: ProjectManagerResponse?,
     val sources: List<ProjectSourceResponse>,
     val users: List<ProjectUserResponse>,
@@ -46,6 +48,7 @@ data class ManagedProjectResponse(
     val description: String?,
     val industry: String? = null,
     val industryConfidence: String? = null,
+    val industryCustom: Boolean = false,
     val memberCount: Int,
 )
 
@@ -85,4 +88,10 @@ data class ProjectUserResponse(
 data class DeleteProjectResponse(
     val id: UUID,
     val deleted: Boolean = true,
+)
+
+data class ProjectIndustryResponse(
+    val industry: String?,
+    val industryConfidence: String?,
+    val industryCustom: Boolean,
 )

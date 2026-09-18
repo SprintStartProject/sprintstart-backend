@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRe
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -29,8 +30,14 @@ import kotlin.test.assertNull
 class OnboardingSkipServiceTest {
     private val onboardingSkipRepository: OnboardingSkipRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingSkipService(onboardingSkipRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingSkipService(
+        onboardingSkipRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val stepId = UUID.randomUUID()
@@ -228,6 +235,39 @@ class OnboardingSkipServiceTest {
             assertThrows<ResponseStatusException> {
                 service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
             }.also { assertEquals(400, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `accepting a skip triggers onboarding completion check for the path owner`() {
+            val step = makeStep()
+            makeSkip(step)
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.of(step.skips.first())
+
+            service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
+
+            verify(exactly = 1) { onboardingCompletionService.completeIfFinished(userId) }
+        }
+
+        @Test
+        fun `denying a skip does not trigger onboarding completion check`() {
+            val step = makeStep()
+            makeSkip(step)
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.of(step.skips.first())
+
+            service.denySkipById(skipId, ReviewOnboardingSkipRequest("No"))
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
+        }
+
+        @Test
+        fun `accepting an unknown skip throws 404 without triggering completion check`() {
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
+            }.also { assertEquals(404, it.statusCode.value()) }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
         }
     }
 

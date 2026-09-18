@@ -33,7 +33,9 @@ import java.util.UUID
  *
  * A pending skip request does not complete the step on its own. The step remains
  * waiting until an admin accepts or denies the request. Accepted skips mark the
- * step as skipped and completed; denied skips return it to waiting.
+ * step as skipped and completed; denied skips return it to waiting. Because a
+ * skipped step counts as done, accepting a skip also re-evaluates whether the
+ * user's onboarding is finished via [OnboardingCompletionService].
  *
  * The service enforces ownership checks for user-facing methods by resolving the
  * authenticated user through [UserApi] and then restricting step or skip lookups
@@ -46,6 +48,7 @@ import java.util.UUID
 class OnboardingSkipService(
     private val onboardingSkipRepository: OnboardingSkipRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -264,6 +267,8 @@ class OnboardingSkipService(
      *
      * Accepting a skip resolves the skip request, stores the admin review comment,
      * sets the step status to [StepStatus.SKIPPED], and records the completion timestamp.
+     * Onboarding completion is then re-evaluated for the path owner, because a skipped
+     * step counts as done.
      *
      * @param skipId Identifier of the skip to accept.
      * @param request Admin review payload.
@@ -286,6 +291,9 @@ class OnboardingSkipService(
         skip.resolvedAt = reviewedAt
         skip.step.status = StepStatus.SKIPPED
         skip.step.completedAt = reviewedAt
+
+        // A skipped step counts as done, so accepting the last open one can finish onboarding.
+        onboardingCompletionService.completeIfFinished(skip.step.phase.path.userId)
 
         return skip.toReviewResponse()
     }

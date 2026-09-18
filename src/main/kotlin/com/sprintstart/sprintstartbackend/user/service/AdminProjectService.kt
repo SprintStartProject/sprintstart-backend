@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
@@ -41,8 +42,8 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
-    private val jiraInstanceApi: JiraInstanceApi,
     private val eventPublisher: ApplicationEventPublisher,
+    private val jiraInstanceApi: JiraInstanceApi,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -101,14 +102,14 @@ class AdminProjectService(
         val name = validatedName(request.name)
         ensureProjectNameAvailable(name)
 
-        val project = projectRepository.save(
-            Project(
-                name = name,
-                description = request.description,
-                industry = request.industry,
-                industryConfidence = request.industryConfidence,
-            ),
-        )
+        val project = Project(name = name, description = request.description)
+        val industry = request.industry?.trim()
+        if (!industry.isNullOrBlank()) {
+            ProjectIndustryService.applyCustomIndustry(project, industry)
+        }
+        projectRepository.save(project)
+
+        eventPublisher.publishEvent(ProjectCreatedEvent(project.id))
 
         return project.toAdminDetailResponse(
             sources = emptyList(),
@@ -137,8 +138,12 @@ class AdminProjectService(
             project.name = name
         }
         request.description?.let { project.description = it }
-        request.industry?.let { project.industry = it }
-        request.industryConfidence?.let { project.industryConfidence = it }
+        request.industry?.let { requestedIndustry ->
+            val trimmed = requestedIndustry.trim()
+            if (trimmed.isNotBlank() && trimmed != project.industry) {
+                ProjectIndustryService.applyCustomIndustry(project, trimmed)
+            }
+        }
 
         return project.toAdminDetailResponse(
             sources = projectSourceApi.findSourcesByProjectId(project.id),

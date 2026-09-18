@@ -1,8 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
+import com.sprintstart.sprintstartbackend.user.model.mapper.toShortDto
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
@@ -25,7 +28,7 @@ class ProjectRoleService(
     private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
     private val skillRepository: SkillRepository,
     private val userRepository: UserRepository,
-) {
+) : ProjectRoleApi {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
     fun getAllRoles(): List<ProjectRole> {
@@ -205,5 +208,21 @@ class ProjectRoleService(
         skillRepository.saveAll(skillsToUnassign + skillsToAssign)
 
         return skillRepository.findAllByProjectRolesId(roleId).map { it.toUpdateRoleSkillsResponse() }
+    }
+
+    /**
+     * Returns the project roles matching the given ids.
+     *
+     * Implementation of the module-facing [ProjectRoleApi]. Unknown ids are silently omitted,
+     * so the result may be smaller than the requested id set — or empty.
+     *
+     * @param ids Ids of the project roles to resolve.
+     * @return The matching project roles, mapped to [ProjectRoleShortDto]s.
+     */
+    override fun getProjectRolesByIds(ids: Set<UUID>): Set<ProjectRoleShortDto> {
+        return projectRoleRepository
+            .findAllById(ids)
+            .map { it.toShortDto() }
+            .toSet()
     }
 }

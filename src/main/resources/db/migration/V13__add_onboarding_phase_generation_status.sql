@@ -1,0 +1,2 @@
+ALTER TABLE onboarding_phases
+    ADD COLUMN IF NOT EXISTS generation_status VARCHAR(32) NOT NULL DEFAULT 'NOT_APPLICABLE';

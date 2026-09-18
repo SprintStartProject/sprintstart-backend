@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDt
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -32,6 +33,7 @@ import java.util.UUID
 @Service
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
+    private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
     private val onboardingPositionReader: OnboardingPositionReader,
 ) {
@@ -41,9 +43,12 @@ class OnboardingPathService(
      * Returns the onboarding path for the authenticated user.
      *
      * The user is resolved from the external auth ID before the path lookup is performed.
+     * The response is enriched with the user's question attempt history: passed and
+     * attempted question IDs are loaded from [QuestionAttemptRepository] and drive the
+     * per-phase lock state and per-question status of the returned path.
      *
      * @param authId External authentication identifier.
-     * @return The authenticated user's onboarding path.
+     * @return The authenticated user's onboarding path, annotated with the user's attempt state.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
     @Transactional(readOnly = true)
@@ -53,10 +58,14 @@ class OnboardingPathService(
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
-        return onboardingPathRepository
+        val path = onboardingPathRepository
             .findOnboardingPathByUserId(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found for user with id: $userId") }
-            .toGetForUserResponse()
+
+        return path.toGetForUserResponse(
+            passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
+            attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
+        )
     }
 
     /**

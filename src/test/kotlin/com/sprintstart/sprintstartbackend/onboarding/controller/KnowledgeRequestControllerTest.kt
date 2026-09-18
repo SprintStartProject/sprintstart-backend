@@ -6,7 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.KnowledgeReq
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.EscalationHireResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.knowledge.KnowledgeRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.KnowledgeBaseService
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.every
 import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
