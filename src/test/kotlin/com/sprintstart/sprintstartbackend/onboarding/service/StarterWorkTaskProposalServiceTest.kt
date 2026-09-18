@@ -261,6 +261,41 @@ class StarterWorkTaskProposalServiceTest {
     }
 
     @Nested
+    inner class ListPool {
+        @Test
+        fun `defaults to the live pool, sorted by title`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s2", title = "Zebra"),
+                StarterWorkTaskProposal(sourceId = "s1", title = "Apple"),
+            )
+
+            val result = service.listPool(ProposalStatus.LIVE)
+
+            assertEquals(listOf("Apple", "Zebra"), result.map { it.title })
+        }
+
+        @Test
+        fun `lists the stale pool when asked`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.STALE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s1", title = "Closed upstream", status = ProposalStatus.STALE),
+            )
+
+            val result = service.listPool(ProposalStatus.STALE)
+
+            assertEquals(1, result.size)
+            assertEquals(ProposalStatus.STALE, result.single().status)
+        }
+
+        @Test
+        fun `refuses REJECTED with 400`() {
+            val ex = assertThrows<ResponseStatusException> { service.listPool(ProposalStatus.REJECTED) }
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+            verify(exactly = 0) { starterWorkTaskProposalRepository.findAllByStatus(any()) }
+        }
+    }
+
+    @Nested
     inner class Approve {
         @Test
         fun `throws 404 when no proposal matches`() {

@@ -96,6 +96,9 @@ class StarterWorkControllerTest(
             competencyKeys = listOf("docs"),
             status = ProposalStatus.LIVE,
             taskZeroEligible = false,
+            reviewed = true,
+            sourceHasAssignee = null,
+            sourceCheckedAt = null,
         )
 
     @Test
@@ -123,13 +126,40 @@ class StarterWorkControllerTest(
     }
 
     @Test
-    fun `listPool should return 200 for a PM`() {
-        every { starterWorkTaskProposalService.listPool() } returns listOf(taskResponse())
+    fun `listPool should return 200 for a PM, defaulting to LIVE`() {
+        every { starterWorkTaskProposalService.listPool(ProposalStatus.LIVE) } returns listOf(taskResponse())
 
         mockMvc
             .perform(get("/api/v1/onboarding/starter-work/pool").with(pmJwt))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$[0].status").value("LIVE"))
+    }
+
+    @Test
+    fun `listPool should return 200 for a PM asking for STALE`() {
+        every { starterWorkTaskProposalService.listPool(ProposalStatus.STALE) } returns
+            listOf(taskResponse().copy(status = ProposalStatus.STALE))
+
+        mockMvc
+            .perform(
+                get("/api/v1/onboarding/starter-work/pool")
+                    .param("status", "STALE")
+                    .with(pmJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].status").value("STALE"))
+    }
+
+    @Test
+    fun `listPool should return 400 for a PM asking for REJECTED`() {
+        every { starterWorkTaskProposalService.listPool(ProposalStatus.REJECTED) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be LIVE or STALE")
+
+        mockMvc
+            .perform(
+                get("/api/v1/onboarding/starter-work/pool")
+                    .param("status", "REJECTED")
+                    .with(pmJwt),
+            ).andExpect(status().isBadRequest)
     }
 
     @Test

@@ -89,6 +89,9 @@ class TaskZeroControllerTest(
                 competencyKeys = emptyList(),
                 status = ProposalStatus.LIVE,
                 taskZeroEligible = true,
+                reviewed = true,
+                sourceHasAssignee = null,
+                sourceCheckedAt = null,
             )
 
         mockMvc
