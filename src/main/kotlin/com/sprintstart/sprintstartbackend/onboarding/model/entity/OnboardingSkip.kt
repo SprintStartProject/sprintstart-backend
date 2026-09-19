@@ -29,4 +29,6 @@ class OnboardingSkip(
     @Column(nullable = false)
     val createdAt: Instant = Instant.now(),
     var resolvedAt: Instant? = null,
+    /** When the member first saw the review; null while pending, or while the answer is new. */
+    var answerSeenAt: Instant? = null,
 )
