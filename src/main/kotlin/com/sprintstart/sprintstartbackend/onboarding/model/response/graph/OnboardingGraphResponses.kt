@@ -16,15 +16,15 @@ data class OnboardingBlockersResponse(
  * another tab, or from this one before a reload.
  * @property runningProjectId The project the running generation builds from, when [running].
  * @property startedAt When the running generation started, when [running].
- * @property hasActiveBlueprint Whether the requested project has exactly one active blueprint, the
- * one thing a path cannot be built without.
- * @property activeBlueprintCount How many active blueprints the project has, so "none yet" and
- * "several, which is ambiguous" can be told apart when [hasActiveBlueprint] is false.
+ * @property activeBlueprintCount How many active blueprints the project has. A path is built from
+ * exactly one, so "none yet" and "several, which is ambiguous" are both reasons it cannot be.
  */
 data class OnboardingGenerationStatusResponse(
     val running: Boolean,
     val runningProjectId: UUID? = null,
     val startedAt: Instant? = null,
-    val hasActiveBlueprint: Boolean,
-    val activeBlueprintCount: Long = if (hasActiveBlueprint) 1 else 0,
-)
+    val activeBlueprintCount: Long,
+) {
+    /** Whether a path can be built: exactly one active blueprint. Derived, so it cannot disagree. */
+    val hasActiveBlueprint: Boolean get() = activeBlueprintCount == 1L
+}

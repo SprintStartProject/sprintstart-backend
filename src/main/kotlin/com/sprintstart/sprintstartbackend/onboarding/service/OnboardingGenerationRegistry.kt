@@ -53,10 +53,13 @@ class OnboardingGenerationRegistry(
     private val runs = ConcurrentHashMap<String, GenerationRun>()
 
     /**
-     * One lock per user, so starting a generation -- which looks the user and project up first --
-     * serializes only that user's repeated starts, not everybody's.
+     * Striped locks for starting a generation, which looks the user and project up first: a user's
+     * repeated starts always meet on the same lock, while different users rarely share one. A fixed
+     * set rather than one lock per user, so nothing here grows with every user who ever started.
      */
-    private val startLocks = ConcurrentHashMap<String, Any>()
+    private val startLocks = Array(START_LOCK_STRIPES) { Any() }
+
+    private fun startLockFor(authId: String): Any = startLocks[Math.floorMod(authId.hashCode(), START_LOCK_STRIPES)]
 
     /** A generation in flight for one user. */
     class GenerationRun(
@@ -90,7 +93,7 @@ class OnboardingGenerationRegistry(
     fun startOrAttach(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
         runs[authId]?.let { return it.watch() }
 
-        synchronized(startLocks.computeIfAbsent(authId) { Any() }) {
+        synchronized(startLockFor(authId)) {
             runs[authId]?.let { return it.watch() }
 
             val generation = personalizationService.personalize(authId, projectId)
@@ -139,5 +142,7 @@ class OnboardingGenerationRegistry(
         const val REPLAYED_EVENTS = 400
 
         val TERMINAL_EVENT_TYPES = setOf("done", "error")
+
+        const val START_LOCK_STRIPES = 64
     }
 }

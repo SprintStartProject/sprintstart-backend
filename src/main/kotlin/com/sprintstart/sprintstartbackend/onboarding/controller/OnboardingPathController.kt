@@ -232,7 +232,6 @@ class ProjectOnboardingPathController(
             running = run != null,
             runningProjectId = run?.projectId,
             startedAt = run?.startedAt,
-            hasActiveBlueprint = activeBlueprints == 1L,
             activeBlueprintCount = activeBlueprints,
         )
     }
