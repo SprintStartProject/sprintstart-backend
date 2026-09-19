@@ -74,11 +74,12 @@ class StarterWorkTaskProposalService(
      * to the stateless AI service so it can dedupe and ground competency tags. The AI call runs
      * outside any transaction.
      */
-    suspend fun generate(): GenerateStarterWorkResponse {
+    suspend fun generate(projectId: UUID): GenerateStarterWorkResponse {
         val (activeSourceIds, activeCompetencyKeys) = withContext(Dispatchers.IO) {
             readTxTemplate.execute { loadActiveState() }!!
         }
         val outcome = onboardingAiClient.proposeStarterWork(
+            projectIds = listOf(projectId),
             activeSourceIds = activeSourceIds,
             activeCompetencyKeys = activeCompetencyKeys,
         )
@@ -100,11 +101,12 @@ class StarterWorkTaskProposalService(
      * task the backend re-gates away on persist (already pooled) is announced as a `warning` before
      * the `done`, never silently dropped. A stream failure becomes a synthesised terminal `error`.
      */
-    suspend fun streamGenerate(): Flow<AiProgressEvent> {
+    suspend fun streamGenerate(projectId: UUID): Flow<AiProgressEvent> {
         val active = withContext(Dispatchers.IO) { readTxTemplate.execute { loadActiveState() }!! }
         return flow {
             onboardingAiClient
                 .streamStarterWork(
+                    projectIds = listOf(projectId),
                     activeSourceIds = active.sourceIds,
                     activeCompetencyKeys = active.competencyKeys,
                 ).collect { event ->
@@ -138,7 +140,7 @@ class StarterWorkTaskProposalService(
 
     private fun loadActiveState(): ActiveState {
         val sourceIds = starterWorkTaskProposalRepository
-            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED))
+            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE))
             .map { it.sourceId }
         val competencyKeys = competencyRepository.findAll().map { it.key }
         return ActiveState(sourceIds, competencyKeys)
@@ -155,7 +157,7 @@ class StarterWorkTaskProposalService(
         // REJECTED counts as already-pooled: a rejection is sticky, so a task somebody turned
         // down must never be mined back into existence.
         val alreadyPooled = starterWorkTaskProposalRepository
-            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED))
+            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE))
             .map { it.sourceId }
             .toMutableSet()
         val skipped = mutableListOf<String>()
@@ -271,7 +273,7 @@ class StarterWorkTaskProposalService(
     @Transactional(readOnly = true)
     fun listCandidates(projectId: UUID): List<StarterWorkCandidateResponse> {
         val poolStateBySourceId = starterWorkTaskProposalRepository
-            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED))
+            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE))
             .associate { it.sourceId to it.status.toPoolState() }
 
         return artifactIngestionApi
@@ -302,6 +304,13 @@ class StarterWorkTaskProposalService(
         when (this) {
             ProposalStatus.LIVE -> CandidatePoolState.IN_POOL
             ProposalStatus.REJECTED -> CandidatePoolState.REMOVED
+            // A stale row is only ever seen here when its issue has *reopened* — this browser lists
+            // open issues only — and that is exactly when promoting it should work. Promotion
+            // revives the row rather than duplicating it, so offering it is the honest answer:
+            // nothing is on offer to a hire right now, and the PM's click is what brings it back.
+            // Reporting IN_POOL would hide the one action that helps, and REMOVED would blame a
+            // person for something the tracker did.
+            ProposalStatus.STALE -> CandidatePoolState.AVAILABLE
         }
 
     /**
@@ -326,7 +335,7 @@ class StarterWorkTaskProposalService(
         val sourceId = request.sourceId.trim()
         val issue = loadPromotableIssue(sourceId)
         val title = titleOf(sourceId, issue)
-        refuseIfAlreadyDecided(sourceId)
+        reviveOrRefuse(sourceId, request)?.let { return it.toResponse() }
 
         val proposal = starterWorkTaskProposalRepository.save(
             StarterWorkTaskProposal(
@@ -370,19 +379,56 @@ class StarterWorkTaskProposalService(
             )
 
     /**
-     * Refuses an issue that already has a proposal, live or rejected.
+     * Handles an issue that already has a proposal: revives a stale one, refuses the rest.
      *
-     * The rejected half is the load-bearing one: rejection is sticky, so promotion must not
+     * The rejected branch is the load-bearing one: rejection is sticky, so promotion must not
      * become the accidental way to undo it.
+     *
+     * A stale row is the opposite case. [loadPromotableIssue] has already established that this
+     * issue is open, so the row is out of date rather than unwanted, and reviving it is both what
+     * the caller asked for and what the next reconciliation pass would do anyway. Reviving rather
+     * than inserting is not a preference either — `sourceId` is unique per proposal, so a second
+     * row for the same issue cannot exist.
+     *
+     * A revived row lands in the same state a fresh promotion does: live *and reviewed*, because
+     * this endpoint's whole premise is that somebody looked at the issue and vouched for it. Coming
+     * back still carrying the unreviewed demotion would contradict the act that revived it.
+     *
+     * What the promoter sent is applied; what they left out is kept. Both fields are optional and
+     * default to empty, so reading silence as "clear this" would let a promotion that said nothing
+     * destroy competency keys mining had already worked out.
+     *
+     * @return the revived proposal, or null when the issue has no proposal at all.
      */
-    private fun refuseIfAlreadyDecided(sourceId: String) {
-        val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId) ?: return
-        val reason = when (existing.status) {
-            ProposalStatus.LIVE -> "Issue $sourceId is already in the starter-work pool"
-            ProposalStatus.REJECTED ->
-                "Issue $sourceId was removed from the starter-work pool and is not re-addable"
+    private fun reviveOrRefuse(
+        sourceId: String,
+        request: PromoteStarterWorkCandidateRequest,
+    ): StarterWorkTaskProposal? {
+        val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId) ?: return null
+        return when (existing.status) {
+            ProposalStatus.STALE -> {
+                existing.status = ProposalStatus.LIVE
+                existing.reviewed = true
+                request.summary
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { existing.summary = it }
+                request.competencyKeys.takeIf { it.isNotEmpty() }?.let {
+                    existing.competencyKeys.clear()
+                    existing.competencyKeys.addAll(it)
+                }
+                existing.decidedAt = Instant.now()
+                starterWorkTaskProposalRepository.save(existing)
+            }
+            ProposalStatus.LIVE -> throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Issue $sourceId is already in the starter-work pool",
+            )
+            ProposalStatus.REJECTED -> throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Issue $sourceId was removed from the starter-work pool and is not re-addable",
+            )
         }
-        throw ResponseStatusException(HttpStatus.CONFLICT, reason)
     }
 
     /**
@@ -512,6 +558,9 @@ class StarterWorkTaskProposalService(
             labels = labels,
             repositoryFullName = repositoryOf(proposal.sourceId),
             reviewed = proposal.reviewed,
+            // Only a definite yes demotes; unknown is not "free". Written by
+            // StarterWorkPoolReconciler, so ranking the pool stays one read per task.
+            assigned = proposal.sourceHasAssignee == true,
         )
     }
 
@@ -554,12 +603,14 @@ class StarterWorkTaskProposalService(
         val proposal = starterWorkTaskProposalRepository.findById(id).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No starter-work task found with id: $id")
         }
-        if (proposal.status != ProposalStatus.LIVE) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Starter-work task $id was rejected and is no longer in the pool",
-            )
+        // Each refusal names which of the two it is. One is a person's decision and permanent, the
+        // other is the tracker's and reverses itself — somebody told "rejected" about a closed
+        // issue would go looking for a colleague who never acted.
+        val reason = when (proposal.status) {
+            ProposalStatus.LIVE -> return proposal
+            ProposalStatus.REJECTED -> "Starter-work task $id was rejected and is no longer in the pool"
+            ProposalStatus.STALE -> "Starter-work task $id is closed at its source and is not claimable"
         }
-        return proposal
+        throw ResponseStatusException(HttpStatus.CONFLICT, reason)
     }
 }

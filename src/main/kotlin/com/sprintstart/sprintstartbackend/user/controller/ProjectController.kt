@@ -1,11 +1,13 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
+import com.sprintstart.sprintstartbackend.user.model.request.project.SetProjectIndustryRequest
 import com.sprintstart.sprintstartbackend.user.model.response.project.AdminProjectDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ManagedProjectResponse
+import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUserResponse
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
 import com.sprintstart.sprintstartbackend.user.service.ProjectIndustryService
 import com.sprintstart.sprintstartbackend.user.service.ProjectManagerService
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -215,7 +218,8 @@ class ProjectController(
     /**
      * Evaluates the industry domain for a managed project via AI and persists the result.
      *
-     * Manual evaluation always persists the detected industry and confidence, overriding any previous values.
+     * Manual evaluation always persists the detected industry and confidence, overriding any previous
+     * values, including a custom industry set via [setIndustry].
      *
      * @param projectId Project identifier.
      * @return The evaluated industry, confidence level, and grounding evidence.
@@ -241,5 +245,43 @@ class ProjectController(
         @PathVariable projectId: UUID,
     ): AiIndustryEvaluationResponse {
         return projectIndustryService.evaluateIndustry(projectId)
+    }
+
+    /**
+     * Manually sets the industry for a managed project.
+     *
+     * @param projectId Project identifier.
+     * @param request The industry to set.
+     * @return The project's industry, confidence, and custom flag after the update.
+     */
+    @Operation(
+        summary = "Set project industry",
+        description = "Manually sets the project industry, marking it as custom rather than AI-evaluated.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Industry set successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid request body"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Caller does not manage this project"),
+            ApiResponse(responseCode = "404", description = "Project not found"),
+        ],
+    )
+    @PutMapping("/{projectId}/industry")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
+    fun setIndustry(
+        @Parameter(description = "UUID of the project to update")
+        @PathVariable projectId: UUID,
+        @SwaggerRequestBody(
+            description = "The industry to set on the project.",
+            required = true,
+            content = [Content(schema = Schema(implementation = SetProjectIndustryRequest::class))],
+        )
+        @Valid
+        @RequestBody
+        request: SetProjectIndustryRequest,
+    ): ProjectIndustryResponse {
+        return projectIndustryService.setCustomIndustry(projectId, request.industry)
     }
 }

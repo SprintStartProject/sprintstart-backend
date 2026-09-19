@@ -36,6 +36,7 @@ import kotlin.ranges.contains
 class OnboardingStepService(
     private val onboardingPhaseRepository: OnboardingPhaseRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -208,6 +209,21 @@ class OnboardingStepService(
         return step.toUpdateResponse()
     }
 
+    /**
+     * Marks a step in the authenticated user's onboarding path as finished.
+     *
+     * Only waiting or in-progress steps can be completed. If the step was never started,
+     * the completion timestamp doubles as the start timestamp, and a trailing pending skip
+     * request is discarded because it is no longer needed. Because completing a step can
+     * finish the whole onboarding, completion is re-evaluated via
+     * [OnboardingCompletionService] after the step is updated.
+     *
+     * @param authId External authentication identifier.
+     * @param stepId Identifier of the step to complete.
+     * @return The updated step.
+     * @throws ResponseStatusException When the user or step does not exist, or the step
+     * is already finished or skipped.
+     */
     @Transactional
     @Tracked("Completing an onboarding step")
     fun completeOnboardingStepForMe(
@@ -236,6 +252,10 @@ class OnboardingStepService(
         }
 
         step.status = StepStatus.FINISHED
+
+        // The journey can end on a step just as well as on a question, so completion is
+        // re-evaluated here rather than only after a knowledge-check attempt.
+        onboardingCompletionService.completeIfFinished(userId)
 
         return step.toUpdateResponse()
     }

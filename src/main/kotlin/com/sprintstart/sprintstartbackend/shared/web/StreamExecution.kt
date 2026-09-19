@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -23,7 +24,8 @@ import java.net.http.HttpResponse
  * Each matching line's payload is deserialized into [T] and emitted downstream.
  *
  * ### Error handling
- * A non-2xx status before the stream starts throws [WebClientException].
+ * A non-2xx status before the stream starts throws [WebClientException]. The response body is
+ * captured with a bounded size so validation errors from upstream services remain diagnosable.
  * Deserialization errors per-chunk call [onChunkError] (default: log and skip),
  * so a single malformed chunk does not kill the whole stream.
  *
@@ -52,6 +54,7 @@ class StreamExecution internal constructor(
      * @param onChunkError Called when a chunk fails deserialization. Defaults to stderr logging.
      *   Return `true` to continue the stream, `false` to cancel it.
      */
+    @Suppress("CyclomaticComplexMethod")
     inline fun <reified T> perform(
         terminationMarkers: Set<String> = setOf("[DONE]"),
         crossinline onChunkError: (raw: String, error: Throwable) -> Boolean = { raw, err ->
@@ -77,10 +80,18 @@ class StreamExecution internal constructor(
             .await()
 
         if (response.statusCode() !in HTTP_SUCCESS_RANGE) {
+            val errorBody = response.body().use { lines ->
+                lines
+                    .limit(100)
+                    .toList()
+                    .joinToString("\n")
+                    .take(16_384)
+            }
             throw WebClientException(
                 statusCode = response.statusCode(),
-                body = "(streaming — body not buffered)",
-                message = "Stream request to ${request.uri()} failed with status ${response.statusCode()}",
+                body = errorBody,
+                message = "Stream request to ${request.uri()} failed with status " +
+                    "${response.statusCode()}: $errorBody",
             )
         }
 
@@ -95,6 +106,10 @@ class StreamExecution internal constructor(
 
                 try {
                     emit(builder.jsonParser.decodeFromString<T>(raw))
+                } catch (e: CancellationException) {
+                    // Cancellation (e.g. a caller-imposed timeout, or `take(n)` completing) must
+                    // abort the stream, not be mistaken for a malformed chunk and swallowed.
+                    throw e
                 } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
                     val shouldContinue = onChunkError(raw, e)
                     if (!shouldContinue) break

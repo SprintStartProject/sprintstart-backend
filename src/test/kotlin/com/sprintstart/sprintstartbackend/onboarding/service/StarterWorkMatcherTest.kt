@@ -26,12 +26,14 @@ class StarterWorkMatcherTest {
         labels: Set<String> = emptySet(),
         repository: String? = "acme/api",
         reviewed: Boolean = true,
+        assigned: Boolean = false,
     ) = StarterWorkMatcher.TaskFeatures(
         competencyKeys = competencies,
         taskType = type,
         labels = labels,
         repositoryFullName = repository,
         reviewed = reviewed,
+        assigned = assigned,
     )
 
     @Test
@@ -210,6 +212,61 @@ class StarterWorkMatcherTest {
                 StarterWorkMatcher.score(hire, task(competencies = setOf("rust")), null)
 
             assertTrue(fitsButUnreviewed.score > reviewedButUnrelated.score)
+        }
+    }
+
+    @Nested
+    inner class AssignedTasks {
+        @Test
+        fun `a task somebody already has is demoted, not removed`() {
+            val hire = profile(competencies = setOf("kotlin"))
+
+            val free = StarterWorkMatcher.score(hire, task(competencies = setOf("kotlin")), null)
+            val taken = StarterWorkMatcher.score(
+                hire,
+                task(competencies = setOf("kotlin"), assigned = true),
+                null,
+            )
+
+            assertTrue(taken.score < free.score, "an assigned task should rank lower")
+            assertTrue(taken.score > 0.0, "it should still be offerable, not buried")
+        }
+
+        @Test
+        fun `the demotion is explained, like every other signal`() {
+            val scored = StarterWorkMatcher.score(profile(), task(assigned = true), null)
+
+            assertContains(scored.reasons, "note: somebody is already assigned to this one")
+        }
+
+        @Test
+        fun `an unassigned task says nothing about assignment`() {
+            val scored = StarterWorkMatcher.score(profile(), task(assigned = false), null)
+
+            assertTrue(
+                scored.reasons.none { it.contains("assigned") },
+                "silence is the right answer when nobody has it",
+            )
+        }
+
+        @Test
+        fun `a strong match somebody has still beats a weak match nobody has`() {
+            val hire = profile(competencies = setOf("kotlin", "spring"))
+
+            val takenButFitting = StarterWorkMatcher.score(
+                hire,
+                task(competencies = setOf("kotlin", "spring"), assigned = true),
+                null,
+            )
+            val freeButUnrelated = StarterWorkMatcher.score(
+                hire,
+                task(competencies = setOf("elixir"), repository = null),
+                null,
+            )
+
+            // The whole point of demoting rather than filtering: being wrong about who holds an
+            // issue costs rank, never the task.
+            assertTrue(takenButFitting.score > freeButUnrelated.score)
         }
     }
 }

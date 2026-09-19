@@ -329,4 +329,26 @@ class ProjectRoleServiceTest {
         val ex = assertThrows<ResponseStatusException> { service.setSkillsForRole(roleId, request) }
         assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
     }
+
+    @Test
+    fun `getProjectRolesByIds returns short dtos for the requested ids`() {
+        val role = ProjectRole(id = UUID.randomUUID(), name = "Dev", description = "Test")
+        every { projectRoleRepository.findAllById(setOf(role.id)) } returns listOf(role)
+
+        val result = service.getProjectRolesByIds(setOf(role.id))
+
+        assertEquals(1, result.size)
+        assertEquals(role.id, result.single().id)
+        assertEquals("Dev", result.single().name)
+    }
+
+    @Test
+    fun `getProjectRolesByIds omits unknown ids from the result`() {
+        val role = ProjectRole(id = UUID.randomUUID(), name = "Dev", description = "Test")
+        every { projectRoleRepository.findAllById(any()) } returns listOf(role)
+
+        val result = service.getProjectRolesByIds(setOf(role.id, UUID.randomUUID()))
+
+        assertEquals(setOf(role.id), result.map { it.id }.toSet())
+    }
 }

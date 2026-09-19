@@ -268,8 +268,8 @@ internal class ChatController(
     }
 
     @Operation(
-        summary = "Deletes an existing chat",
-        description = "Deletes a chat and all its contained messages from the db.",
+        summary = "Bins an existing chat",
+        description = "Sets the status of an existing chat to BINNED.",
     )
     @ApiResponses(
         value = [
@@ -282,13 +282,13 @@ internal class ChatController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    fun deleteChat(@PathVariable id: UUID) {
-        chatService.deleteChat(id)
+    fun binChat(@PathVariable id: UUID) {
+        chatService.binChat(id)
     }
 
     @Operation(
-        summary = "Deletes an existing chat created by the current user",
-        description = "Deletes a chat and all its contained messages from the db, given that the chat was created by " +
+        summary = "Bins an existing chat created by the current user",
+        description = "Sets the status of an existing chat to BINNED, given that the chat was created by " +
             "the current user.",
     )
     @ApiResponses(
@@ -302,11 +302,11 @@ internal class ChatController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/me/{id}")
     @PreAuthorize("hasRole('USER')")
-    fun deleteMyChat(
+    fun binMyChat(
         @PathVariable id: UUID,
         @AuthenticationPrincipal jwt: Jwt,
     ) {
-        chatService.deleteChatForCurrentUser(jwt.subject, id)
+        chatService.binChatForCurrentUser(jwt.subject, id)
     }
 
     @Operation(

@@ -12,11 +12,14 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkCandidateResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkTaskProposalResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.UnreviewedStarterWorkResponse
+import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkPoolReconciler
 import com.sprintstart.sprintstartbackend.onboarding.service.StarterWorkTaskProposalService
 import com.sprintstart.sprintstartbackend.onboarding.service.UserGoalService
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
 import kotlinx.coroutines.flow.flowOf
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -49,10 +52,16 @@ class StarterWorkControllerTest(
     private lateinit var starterWorkTaskProposalService: StarterWorkTaskProposalService
 
     @MockkBean
+    private lateinit var starterWorkPoolReconciler: StarterWorkPoolReconciler
+
+    @MockkBean
     private lateinit var userGoalService: UserGoalService
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
+
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
 
     private val objectMapper = jacksonObjectMapper()
 
@@ -69,6 +78,12 @@ class StarterWorkControllerTest(
     private val userJwt = jwtWithRoles("USER")
 
     private val taskId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
+
+    @BeforeEach
+    fun setUp() {
+        every { projectAuth.canAccessProject(any(), any()) } returns true
+    }
 
     private fun taskResponse(): StarterWorkTaskProposalResponse =
         StarterWorkTaskProposalResponse(
@@ -320,15 +335,35 @@ class StarterWorkControllerTest(
     @Test
     fun `generate should return 401 when not authenticated`() {
         mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate"))
+            .perform(post("/api/v1/onboarding/starter-work/generate").param("projectId", projectId.toString()))
             .andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `generate should return 403 for a plain USER`() {
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate").with(userJwt))
-            .andExpect(request().asyncStarted())
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(mvcResult))
+            .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `generate should return 403 when user cannot access project`() {
+        every { projectAuth.canAccessProject(any(), projectId) } returns false
+
+        val mvcResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -338,12 +373,15 @@ class StarterWorkControllerTest(
 
     @Test
     fun `generate should return 200 for a PM`() {
-        coEvery { starterWorkTaskProposalService.generate() } returns
+        coEvery { starterWorkTaskProposalService.generate(projectId) } returns
             GenerateStarterWorkResponse(status = "proposed", tasksProposed = 1, notes = emptyList())
 
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate").with(pmJwt))
-            .andExpect(request().asyncStarted())
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -354,8 +392,11 @@ class StarterWorkControllerTest(
     @Test
     fun `streamGenerate should return 403 for a plain USER`() {
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate/stream").with(userJwt))
-            .andExpect(request().asyncStarted())
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate/stream")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt),
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
@@ -365,7 +406,7 @@ class StarterWorkControllerTest(
 
     @Test
     fun `streamGenerate streams progress events for a PM`() {
-        coEvery { starterWorkTaskProposalService.streamGenerate() } returns
+        coEvery { starterWorkTaskProposalService.streamGenerate(projectId) } returns
             flowOf(
                 AiProgressEvent(type = "stage", operation = "starter_work", stage = "retrieving", label = "…"),
                 AiProgressEvent(type = "item", operation = "starter_work", label = "Task: Fix typo"),
@@ -373,8 +414,11 @@ class StarterWorkControllerTest(
             )
 
         val mvcResult = mockMvc
-            .perform(post("/api/v1/onboarding/starter-work/generate/stream").with(pmJwt))
-            .andExpect(request().asyncStarted())
+            .perform(
+                post("/api/v1/onboarding/starter-work/generate/stream")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt),
+            ).andExpect(request().asyncStarted())
             .andReturn()
 
         val body = mockMvc
@@ -386,5 +430,30 @@ class StarterWorkControllerTest(
 
         assertTrue(body.contains("\"type\":\"item\""))
         assertTrue(body.contains("\"type\":\"done\""))
+    }
+
+    @Test
+    fun `reconcile should return 200 and the counts for a PM`() {
+        every { starterWorkPoolReconciler.reconcile() } returns
+            StarterWorkPoolReconciler.Outcome(
+                examined = 3,
+                markedStale = 1,
+                revived = 0,
+                assigneeChanged = 2,
+                skipped = 0,
+            )
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/starter-work/reconcile").with(jwtWithRoles("PM")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.markedStale").value(1))
+            .andExpect(jsonPath("$.assigneeChanged").value(2))
+    }
+
+    @Test
+    fun `reconcile should return 403 for a plain USER`() {
+        mockMvc
+            .perform(post("/api/v1/onboarding/starter-work/reconcile").with(jwtWithRoles("USER")))
+            .andExpect(status().isForbidden)
     }
 }

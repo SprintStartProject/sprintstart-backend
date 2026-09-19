@@ -30,8 +30,14 @@ import kotlin.test.assertNull
 class OnboardingStepServiceTest {
     private val onboardingPhaseRepository: OnboardingPhaseRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingStepService(onboardingPhaseRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingStepService(
+        onboardingPhaseRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val phaseId = UUID.randomUUID()
@@ -244,6 +250,41 @@ class OnboardingStepServiceTest {
             assertThrows<ResponseStatusException> {
                 service.completeOnboardingStepForMe(authId, stepId)
             }.also { assertEquals(400, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `triggers onboarding completion check after completing step`() {
+            val step = makeStep(0, StepStatus.WAITING)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            service.completeOnboardingStepForMe(authId, stepId)
+
+            verify(exactly = 1) { onboardingCompletionService.completeIfFinished(userId) }
+        }
+
+        @Test
+        fun `does not trigger completion check when step cannot be completed`() {
+            val step = makeStep(0, StepStatus.FINISHED)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            assertThrows<ResponseStatusException> {
+                service.completeOnboardingStepForMe(authId, stepId)
+            }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
+        }
+
+        @Test
+        fun `throws 404 when user not found and does not trigger completion check`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.completeOnboardingStepForMe(authId, stepId)
+            }.also { assertEquals(404, it.statusCode.value()) }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
         }
     }
 

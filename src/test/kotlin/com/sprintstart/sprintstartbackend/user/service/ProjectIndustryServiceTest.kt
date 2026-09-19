@@ -51,6 +51,7 @@ class ProjectIndustryServiceTest {
         assertEquals(listOf("Payment gateway", "Ledger service"), result.evidence)
         assertEquals("Fintech / Banking", project.industry)
         assertEquals("high", project.industryConfidence)
+        assertEquals(false, project.industryCustom)
 
         verify(exactly = 1) {
             projectRepository.save(match { it.industry == "Fintech / Banking" && it.industryConfidence == "high" })
@@ -86,6 +87,28 @@ class ProjectIndustryServiceTest {
     }
 
     @Test
+    fun `evaluate resets a previously custom industry`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Custom Industry",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "E-Commerce",
+            confidence = "medium",
+            evidence = emptyList(),
+        )
+
+        service.evaluateIndustry(projectId)
+
+        assertEquals(false, project.industryCustom)
+    }
+
+    @Test
     fun `throws 404 when project does not exist`() = runTest {
         every { projectRepository.findById(projectId) } returns Optional.empty()
 
@@ -96,6 +119,37 @@ class ProjectIndustryServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
         coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
         verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `setCustomIndustry sets industry, marks it custom and clears confidence`() {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Old Industry",
+            industryConfidence = "high",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.setCustomIndustry(projectId, "  Healthcare  ")
+
+        assertEquals("Healthcare", result.industry)
+        assertEquals(null, result.industryConfidence)
+        assertEquals(true, result.industryCustom)
+        assertEquals("Healthcare", project.industry)
+        assertEquals(null, project.industryConfidence)
+        assertEquals(true, project.industryCustom)
+    }
+
+    @Test
+    fun `setCustomIndustry throws 404 when project does not exist`() {
+        every { projectRepository.findById(projectId) } returns Optional.empty()
+
+        val exception = assertThrows<ResponseStatusException> {
+            service.setCustomIndustry(projectId, "Healthcare")
+        }
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.statusCode)
     }
 
     @Test
@@ -116,5 +170,393 @@ class ProjectIndustryServiceTest {
         assertEquals(503, exception.statusCode)
         assertEquals("Service Unavailable", exception.body)
         verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    // ==========================================
+    // getOrEvaluateIndustry (lazy evaluation)
+    // ==========================================
+
+    @Test
+    fun `getOrEvaluateIndustry returns cached industry without AI call when already present`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Healthcare",
+            industryConfidence = "high",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Healthcare", result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry evaluates and persists when industry is unset and confidence is medium`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Automotive",
+            confidence = "medium",
+            evidence = listOf("CAN bus", "Telemetry"),
+        )
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Automotive", result)
+        assertEquals("Automotive", project.industry)
+        assertEquals("medium", project.industryConfidence)
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "Automotive" && it.industryConfidence == "medium" })
+        }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry returns winning industry when concurrent evaluation persisted during AI call`() =
+        runTest {
+            val initialProject = Project(
+                id = projectId,
+                name = "Test Project",
+                industry = null,
+                industryConfidence = null,
+            )
+            val concurrentlyUpdatedProject = Project(
+                id = projectId,
+                name = "Test Project",
+                industry = "Healthcare",
+                industryConfidence = "high",
+            )
+            every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+            every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(concurrentlyUpdatedProject)
+            coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+                industry = "Automotive",
+                confidence = "medium",
+                evidence = listOf("CAN bus"),
+            )
+
+            val result = service.getOrEvaluateIndustry(projectId)
+
+            assertEquals("Healthcare", result)
+            verify(exactly = 0) { projectRepository.save(any()) }
+        }
+
+    @Test
+    fun `getOrEvaluateIndustry discards low confidence result and returns null without persisting`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Gaming",
+            confidence = "low",
+            evidence = emptyList(),
+        )
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals(null, result)
+        assertEquals(null, project.industry)
+        assertEquals(null, project.industryConfidence)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry handles AI exception gracefully and returns null`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            ProjectIndustryAiException(statusCode = 500, body = "Error", message = "AI down")
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals(null, result)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry returns null when project does not exist`() = runTest {
+        every { projectRepository.findById(projectId) } returns Optional.empty()
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry returns custom industry without AI call`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Healthcare",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Healthcare", result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry returns null for blank custom industry without AI call`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "   ",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals(null, result)
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry keeps custom value when set mid-flight`() = runTest {
+        val initialProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = null,
+            industryConfidence = null,
+            industryCustom = false,
+        )
+        val customProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Manual Fintech",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(customProject)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Automotive",
+            confidence = "high",
+            evidence = listOf("CAN bus"),
+        )
+
+        val result = service.getOrEvaluateIndustry(projectId)
+
+        assertEquals("Manual Fintech", result)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `getOrEvaluateIndustry rethrows CancellationException`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            kotlinx.coroutines.CancellationException("Job cancelled")
+
+        assertThrows<kotlinx.coroutines.CancellationException> {
+            service.getOrEvaluateIndustry(projectId)
+        }
+    }
+
+    // ==========================================
+    // evaluateIndustryAutomatically (monotonicity & threshold)
+    // ==========================================
+
+    @Test
+    fun `evaluateIndustryAutomatically skips custom industry entirely`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Healthcare",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically does not overwrite when industry becomes custom mid-flight`() = runTest {
+        val initialProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = null,
+            industryConfidence = null,
+            industryCustom = false,
+        )
+        val customProject = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Manual Set",
+            industryConfidence = null,
+            industryCustom = true,
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(initialProject)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(customProject)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "AI Guess",
+            confidence = "high",
+            evidence = listOf("evidence"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        coVerify(exactly = 1) { projectIndustryAiClient.evaluateIndustry(projectId) }
+        verify(exactly = 0) { projectRepository.save(any()) }
+        assertEquals("Manual Set", customProject.industry)
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically rethrows CancellationException`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            kotlinx.coroutines.CancellationException("Job cancelled")
+
+        assertThrows<kotlinx.coroutines.CancellationException> {
+            service.evaluateIndustryAutomatically(projectId)
+        }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically persists when industry is unset and confidence is high`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Quantum Computing",
+            confidence = "high",
+            evidence = listOf("Qubits"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        assertEquals("Quantum Computing", project.industry)
+        assertEquals("high", project.industryConfidence)
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "Quantum Computing" && it.industryConfidence == "high" })
+        }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically discards low confidence result for unset project`() = runTest {
+        val project = Project(id = projectId, name = "Test Project", industry = null, industryConfidence = null)
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Guess",
+            confidence = "low",
+            evidence = emptyList(),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        assertEquals(null, project.industry)
+        assertEquals(null, project.industryConfidence)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically overwrites medium confidence with high confidence`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Initial Domain",
+            industryConfidence = "medium",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
+        every { projectRepository.save(any()) } answers { firstArg() }
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Refined Domain",
+            confidence = "high",
+            evidence = listOf("Strong evidence"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        assertEquals("Refined Domain", project.industry)
+        assertEquals("high", project.industryConfidence)
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "Refined Domain" && it.industryConfidence == "high" })
+        }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically does not overwrite high confidence with medium confidence`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "High Confidence Domain",
+            industryConfidence = "high",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Worse Guess",
+            confidence = "medium",
+            evidence = listOf("Some evidence"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        assertEquals("High Confidence Domain", project.industry)
+        assertEquals("high", project.industryConfidence)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically does not overwrite equal confidence`() = runTest {
+        val project = Project(
+            id = projectId,
+            name = "Test Project",
+            industry = "Existing Medium",
+            industryConfidence = "medium",
+        )
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        every { projectRepository.findByIdForUpdate(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } returns AiIndustryEvaluationResponse(
+            industry = "Another Medium",
+            confidence = "medium",
+            evidence = listOf("Some evidence"),
+        )
+
+        service.evaluateIndustryAutomatically(projectId)
+
+        assertEquals("Existing Medium", project.industry)
+        assertEquals("medium", project.industryConfidence)
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically logs and does not throw on AI failure`() = runTest {
+        val project = Project(id = projectId, name = "Test Project")
+        every { projectRepository.findById(projectId) } returns Optional.of(project)
+        coEvery { projectIndustryAiClient.evaluateIndustry(projectId) } throws
+            ProjectIndustryAiException(statusCode = 500, body = "Crash", message = "AI unavailable")
+
+        // Must not throw
+        service.evaluateIndustryAutomatically(projectId)
+
+        verify(exactly = 0) { projectRepository.save(any()) }
+    }
+
+    @Test
+    fun `evaluateIndustryAutomatically does nothing when project does not exist`() = runTest {
+        every { projectRepository.findById(projectId) } returns Optional.empty()
+
+        // Must not throw
+        service.evaluateIndustryAutomatically(projectId)
+
+        coVerify(exactly = 0) { projectIndustryAiClient.evaluateIndustry(any()) }
     }
 }

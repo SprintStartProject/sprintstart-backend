@@ -59,6 +59,7 @@ class StarterWorkTaskProposalServiceTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk(relaxed = true)
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
+    private val projectId = UUID.randomUUID()
     private val service = StarterWorkTaskProposalService(
         onboardingAiClient,
         competencyRepository,
@@ -78,7 +79,7 @@ class StarterWorkTaskProposalServiceTest {
         fun `persists proposed tasks as PROPOSED rows`() = runTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
-            coEvery { onboardingAiClient.proposeStarterWork(any(), any()) } returns
+            coEvery { onboardingAiClient.proposeStarterWork(any(), any(), any()) } returns
                 StarterWorkOutcome(
                     status = "proposed",
                     tasks = listOf(
@@ -94,7 +95,7 @@ class StarterWorkTaskProposalServiceTest {
             val slot = slot<StarterWorkTaskProposal>()
             every { starterWorkTaskProposalRepository.save(capture(slot)) } answers { slot.captured }
 
-            val result = service.generate()
+            val result = service.generate(projectId)
 
             assertEquals("github:org/repo:ISSUE:1", slot.captured.sourceId)
             assertEquals("Fix typo", slot.captured.title)
@@ -115,7 +116,7 @@ class StarterWorkTaskProposalServiceTest {
         fun `a rejected task is never mined back into existence`() = runTest {
             every {
                 starterWorkTaskProposalRepository.findAllByStatusIn(
-                    listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED),
+                    listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE),
                 )
             } returns listOf(
                 StarterWorkTaskProposal(
@@ -125,7 +126,7 @@ class StarterWorkTaskProposalServiceTest {
                 ),
             )
             every { competencyRepository.findAll() } returns emptyList()
-            coEvery { onboardingAiClient.proposeStarterWork(any(), any()) } returns
+            coEvery { onboardingAiClient.proposeStarterWork(any(), any(), any()) } returns
                 StarterWorkOutcome(
                     status = "proposed",
                     tasks = listOf(
@@ -139,14 +140,15 @@ class StarterWorkTaskProposalServiceTest {
                     ),
                 )
 
-            val result = service.generate()
+            val result = service.generate(projectId)
 
             assertEquals(0, result.tasksProposed)
             verify(exactly = 0) { starterWorkTaskProposalRepository.save(any()) }
         }
 
-        fun `sends the pooled source ids and the live competency keys`() = runTest {
-            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED)
+        @Test
+        fun `sends the project id, pooled source ids and the live competency keys`() = runTest {
+            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE)
             every { starterWorkTaskProposalRepository.findAllByStatusIn(pooledStatuses) } returns
                 listOf(
                     StarterWorkTaskProposal(sourceId = "s1", title = "t1", status = ProposalStatus.LIVE),
@@ -154,14 +156,20 @@ class StarterWorkTaskProposalServiceTest {
                 )
             every { competencyRepository.findAll() } returns
                 listOf(Competency(key = "kotlin", label = "Kotlin", kind = CompetencyKind.SKILL))
+            val pidsSlot = slot<List<UUID>>()
             val sourceIdsSlot = slot<List<String>>()
             val keysSlot = slot<List<String>>()
             coEvery {
-                onboardingAiClient.proposeStarterWork(capture(sourceIdsSlot), capture(keysSlot))
+                onboardingAiClient.proposeStarterWork(
+                    capture(pidsSlot),
+                    capture(sourceIdsSlot),
+                    capture(keysSlot),
+                )
             } returns StarterWorkOutcome(status = "unchanged")
 
-            service.generate()
+            service.generate(projectId)
 
+            assertEquals(listOf(projectId), pidsSlot.captured)
             assertEquals(listOf("s1", "s2"), sourceIdsSlot.captured)
             assertEquals(listOf("kotlin"), keysSlot.captured)
         }
@@ -193,13 +201,13 @@ class StarterWorkTaskProposalServiceTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
             every { starterWorkTaskProposalRepository.save(any()) } answers { firstArg() }
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns flowOf(
+            every { onboardingAiClient.streamStarterWork(any(), any(), any()) } returns flowOf(
                 AiProgressEvent(type = "stage", operation = "starter_work", stage = "retrieving", label = "…"),
                 AiProgressEvent(type = "item", operation = "starter_work", label = "Task: Fix typo"),
                 doneEvent(proposedOutcome()),
             )
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals(listOf("stage", "item", "done"), events.map { it.type })
             verify(exactly = 1) { starterWorkTaskProposalRepository.save(any()) }
@@ -216,9 +224,11 @@ class StarterWorkTaskProposalServiceTest {
                 ),
             )
             every { competencyRepository.findAll() } returns emptyList()
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns flowOf(doneEvent(proposedOutcome()))
+            every {
+                onboardingAiClient.streamStarterWork(any(), any(), any())
+            } returns flowOf(doneEvent(proposedOutcome()))
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals(listOf("warning", "done"), events.map { it.type })
             verify(exactly = 0) { starterWorkTaskProposalRepository.save(any()) }
@@ -228,10 +238,10 @@ class StarterWorkTaskProposalServiceTest {
         fun `a stream failure becomes a synthesised terminal error`() = runTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns
+            every { onboardingAiClient.streamStarterWork(any(), any(), any()) } returns
                 flow { throw RuntimeException("ai down") }
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals("error", events.last().type)
         }
@@ -307,6 +317,23 @@ class StarterWorkTaskProposalServiceTest {
             assertEquals(CandidatePoolState.AVAILABLE, byId.getValue("i:1").poolState)
             assertEquals(CandidatePoolState.IN_POOL, byId.getValue("i:2").poolState)
             assertEquals(CandidatePoolState.REMOVED, byId.getValue("i:3").poolState)
+        }
+
+        /**
+         * This browser lists open issues only, so a stale row shows up here exactly when its issue
+         * has reopened — which is when promoting it should work. It revives the row rather than
+         * duplicating it, so reporting IN_POOL would hide the one action that helps.
+         */
+        @Test
+        fun `a stale row whose issue reopened is offered for promotion`() {
+            every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "i:1", title = "closed, then not", status = ProposalStatus.STALE),
+            )
+            every { artifactIngestionApi.getOpenIssues(projectId) } returns listOf(ingestedIssue("i:1"))
+
+            val candidate = service.listCandidates(projectId).single()
+
+            assertEquals(CandidatePoolState.AVAILABLE, candidate.poolState)
         }
 
         /**
@@ -391,6 +418,77 @@ class StarterWorkTaskProposalServiceTest {
             assertTrue(saved.captured.reviewed)
             assertEquals(listOf("docs"), saved.captured.competencyKeys)
             assertEquals("i:1", result.sourceId)
+        }
+
+        /**
+         * A stale row is out of date, not unwanted, so promotion revives it rather than refusing.
+         * It must land in the same state a fresh promotion does — a person has just vouched for it,
+         * and a revived row still carrying the unreviewed demotion would contradict that.
+         */
+        @Test
+        fun `promoting a stale issue revives it as reviewed`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                status = ProposalStatus.STALE,
+                reviewed = false,
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(PromoteStarterWorkCandidateRequest(sourceId = "i:1"))
+
+            assertEquals(ProposalStatus.LIVE, stale.status)
+            assertTrue(stale.reviewed, "somebody just vouched for it")
+        }
+
+        @Test
+        fun `reviving applies what the promoter actually sent`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                status = ProposalStatus.STALE,
+                competencyKeys = mutableListOf("mined"),
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(
+                PromoteStarterWorkCandidateRequest(
+                    sourceId = "i:1",
+                    summary = "worth a newcomer's time",
+                    competencyKeys = listOf("docs"),
+                ),
+            )
+
+            assertEquals(listOf("docs"), stale.competencyKeys)
+            assertEquals("worth a newcomer's time", stale.summary)
+        }
+
+        /**
+         * Both fields are optional and default to empty, so silence must not be read as "clear
+         * this". Mined competency keys would otherwise be destroyed by a promotion that said
+         * nothing about them.
+         */
+        @Test
+        fun `reviving keeps what the promoter said nothing about`() {
+            val stale = StarterWorkTaskProposal(
+                sourceId = "i:1",
+                title = "Fix the typo",
+                summary = "mined note",
+                status = ProposalStatus.STALE,
+                competencyKeys = mutableListOf("mined"),
+            )
+            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
+            every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
+
+            service.promoteCandidate(PromoteStarterWorkCandidateRequest(sourceId = "i:1"))
+
+            assertEquals(listOf("mined"), stale.competencyKeys)
+            assertEquals("mined note", stale.summary)
         }
 
         /**

@@ -164,6 +164,16 @@ internal class ArtifactIngestionApiService(
         return artifact.toIngestedIssue()
     }
 
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving ingested issues by source id")
+    override fun getIssues(sourceIds: Collection<String>): Map<String, IngestedIssue> {
+        if (sourceIds.isEmpty()) return emptyMap()
+        return artifactRepository
+            .findAllBySourceIdIn(sourceIds.toSet())
+            .filter { it.artifactType == ArtifactType.ISSUE }
+            .associate { it.sourceId to it.toIngestedIssue() }
+    }
+
     private fun Artifact.toIngestedIssue(): IngestedIssue =
         IngestedIssue(
             sourceId = sourceId,

@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -31,11 +32,10 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 private const val TEST_AUTH_ID = "testAuthId"
-
-// Todo: update this test with error paths
 
 @WebMvcTest(controllers = [UserSelfController::class, AdminUserController::class])
 @Import(SecurityConfig::class)
@@ -120,6 +120,31 @@ class UserControllerTest(
     }
 
     @Test
+    fun `patchMe returns not found when the user is missing`() {
+        val request = PatchMeRequest(email = "new@mail.de", projectsId = emptySet())
+        every { userService.patchMe("user", request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/users/me")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `getMyProjects returns not found when the user is missing`() {
+        every { userService.getMyProjects("user") } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(get("/api/v1/users/me/projects").with(userJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
     fun `get admin users uses admin namespace`() {
         every { userService.getAllUsers() } returns listOf(userResponse())
 
@@ -138,6 +163,74 @@ class UserControllerTest(
             .andExpect(status().isForbidden)
 
         verify(exactly = 0) { userService.getAllUsers() }
+    }
+
+    @Test
+    fun `get admin user by id returns the user`() {
+        val id = UUID.randomUUID()
+        every { userService.getUserById(id) } returns userResponse(id = id)
+
+        mockMvc
+            .perform(get("/api/v1/admin/users/$id").with(adminJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(id.toString()))
+            .andExpect(jsonPath("$.username").value("alice"))
+
+        verify(exactly = 1) { userService.getUserById(id) }
+    }
+
+    @Test
+    fun `get admin user by id returns not found when the user is missing`() {
+        val id = UUID.randomUUID()
+        every { userService.getUserById(id) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(get("/api/v1/admin/users/$id").with(adminJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `patch admin user returns not found when the user is missing`() {
+        val id = UUID.randomUUID()
+        val request = PatchUserRequest(email = "new@mail.de")
+        every { userService.patchAdminUserById(id, request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/admin/users/$id")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `patch admin user enabled returns not found when the user is missing`() {
+        val id = UUID.randomUUID()
+        val request = UpdateUserEnabledRequest(enabled = false)
+        every { userService.updateUserEnabledById(id, request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/admin/users/$id/enabled")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `delete admin user returns not found when the user is missing`() {
+        val id = UUID.randomUUID()
+        every { userService.deleteAdminUserById(id) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+
+        mockMvc
+            .perform(delete("/api/v1/admin/users/$id").with(adminJwt))
+            .andExpect(status().isNotFound)
     }
 
     @Test
