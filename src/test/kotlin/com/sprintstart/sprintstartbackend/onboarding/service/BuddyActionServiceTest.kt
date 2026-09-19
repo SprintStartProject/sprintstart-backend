@@ -49,6 +49,7 @@ class BuddyActionServiceTest {
         attestationService,
         boardService,
         competencyPlacementService,
+        BuddyBoardWriteActions(boardService),
     )
 
     private val userId = UUID.randomUUID()
@@ -106,7 +107,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the seven action tools`() {
+    fun `exposes exactly the thirteen action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -115,6 +116,12 @@ class BuddyActionServiceTest {
             "request_attestation",
             "set_github_login",
             "record_assessment",
+            "place_checklist",
+            "amend_checklist",
+            "place_link",
+            "place_note",
+            "tick_checklist_items",
+            "reword_checklist_item",
         )
     }
 

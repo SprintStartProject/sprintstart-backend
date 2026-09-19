@@ -27,4 +27,22 @@ data class BuddyActionRequest(
      */
     val competencyKey: String? = null,
     val level: String? = null,
+    /**
+     * The checklist to keep, for `place_checklist` — echoed back exactly as it was proposed.
+     *
+     * Capped server-side rather than trusted: this is the one action whose payload is free text
+     * from the client, so length and count are re-checked at confirm time.
+     */
+    val checklistTitle: String? = null,
+    val checklistItems: List<String>? = null,
+    /** `amend_checklist`: the card the lines go on. Re-checked as theirs before anything is written. */
+    val cardId: UUID? = null,
+    /** `place_link` payload: the address and its label. */
+    val linkUrl: String? = null,
+    val linkLabel: String? = null,
+    /** `place_note` payload: the note's text. */
+    val noteText: String? = null,
+    /** `reword_checklist_item`: which line, and what it should say instead. */
+    val lineBefore: String? = null,
+    val lineAfter: String? = null,
 )

@@ -315,6 +315,125 @@ class BoardService(
     }
 
     /**
+     * Adds lines to the end of one of the hire's checklists, and can do nothing else to it.
+     *
+     * **Append-only, enforced here rather than asked of the caller.** [editAuthoredCard] replaces a
+     * card's content whole, which is right for the hire editing their own card and wrong for the
+     * mentor adding to one: given the whole list to send back, a model that rewords a line it
+     * dislikes, drops one it thinks is done, or reorders them into what it considers a better
+     * sequence has silently edited the hire's card, and the hire has no way to see what changed.
+     * So the existing items are read from storage and copied through untouched — their ids, their
+     * words, their ticks — and the new lines can only land after them.
+     *
+     * Ids are minted here for the new lines, the same way [addAuthoredCard] mints them, so a tick
+     * still lands on a line rather than on a position.
+     *
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when it is a
+     * card of another kind.
+     */
+    fun appendChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): BoardCardResponse {
+        val (card, board) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = card.checklistOrThrow()
+        val added = lines.filter { it.isNotBlank() }.ifEmpty {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
+        }
+
+        card.payload = json.encodeToString<BoardCardPayload>(
+            existing.copy(
+                items = existing.items +
+                    added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+            ),
+        )
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        val member = memberOrNull(userId, board.projectId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
+        return card.toResponse(
+            member,
+            board.projectId,
+            timeline = null,
+            arrivalSteps = arrivalStepService.forHire(member.userId),
+        )
+    }
+
+    /**
+     * Ticks lines the hire says they have done, and can do nothing else to the card.
+     *
+     * Matched by their **words**, not by an id, for the reason marks are (`marks/cardMarks.ts`):
+     * making this work by id would mean putting every item's id in the mentor's prompt, and the
+     * mentor would then be one slip away from reading one out. A line the text does not match is
+     * simply not ticked, and the caller is told how many were — silence would let a typo look like
+     * success.
+     *
+     * **It only ever sets done, never clears it.** Un-ticking is the hire saying they were wrong
+     * about their own work, which is not something anybody should be able to do on their behalf;
+     * the checkbox on the card is right there. Nothing else moves either: no text changes, no
+     * re-ordering, no lines added or dropped.
+     *
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when the card
+     * holds no checklist.
+     */
+    fun tickChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): Int {
+        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = card.checklistOrThrow()
+        val wanted = lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+
+        var ticked = 0
+        val items = existing.items.map { item ->
+            if (!item.done && item.text.trim().lowercase() in wanted) {
+                ticked++
+                item.copy(done = true)
+            } else {
+                item
+            }
+        }
+        if (ticked == 0) return 0
+
+        card.payload = json.encodeToString<BoardCardPayload>(existing.copy(items = items))
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        return ticked
+    }
+
+    /**
+     * Rewrites one line of a checklist, keeping everything the line is apart from its words.
+     *
+     * Its id survives, so a tick stays on the line rather than sliding to a neighbour, and so does
+     * whether it was ticked — rewording a step is not undoing it. Nothing else on the card moves.
+     *
+     * **Refuses an ambiguous match rather than picking one.** Two lines that read the same are rare
+     * and a card where the wrong one silently changed is worse than a card that did not change: the
+     * hire asked for one edit and would have to diff the list to find out they got another.
+     *
+     * @return true when a line was rewritten, false when the text matched none or more than one.
+     * @throws ResponseStatusException 404 when it is not a checklist of theirs.
+     */
+    fun rewordChecklistItem(userId: UUID, cardId: UUID, before: String, after: String): Boolean {
+        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+        val existing = card.checklistOrThrow()
+        val wanted = before.trim().lowercase()
+        val words = after.trim()
+        if (words.isEmpty()) return false
+
+        val matches = existing.items.filter { it.text.trim().lowercase() == wanted }
+        if (matches.size != 1) return false
+
+        card.payload = json.encodeToString<BoardCardPayload>(
+            existing.copy(
+                items = existing.items.map { item ->
+                    if (item.id == matches.first().id) item.copy(text = words) else item
+                },
+            ),
+        )
+        card.updatedAt = Instant.now()
+        boardCardRepository.save(card)
+
+        return true
+    }
+
+    /**
      * Puts the hire's cards in the order they asked for.
      *
      * Takes the whole order, not a from/to pair. Ids not on this board are ignored, not rejected.
@@ -591,6 +710,22 @@ class BoardService(
         placedAt = placedAt,
         content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps),
     )
+
+    /**
+     * The checklist a card holds.
+     *
+     * Its own function only because [appendChecklistItems] may raise at most two kinds of refusal
+     * before detekt calls it a function that does too much deciding — which is a fair thing to be
+     * told about a write, so this is the decision that moved rather than the rule that bent.
+     *
+     * A null payload and a payload of another shape get the same refusal, because they are the
+     * same thing from here: a row whose kind says CHECKLIST over content that is not one. Neither
+     * is reachable by any write in this class, which is exactly why it is worth saying out loud
+     * rather than asserting.
+     */
+    private fun BoardCard.checklistOrThrow(): ChecklistPayload =
+        payload?.let { json.decodeFromString<BoardCardPayload>(it) } as? ChecklistPayload
+            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That card holds no checklist")
 
     /**
      * The card this edit is allowed to change, with the board it sits on.

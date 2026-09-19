@@ -17,14 +17,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTas
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationPacket
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskOrientationSection
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.TaskZeroAssignment
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationCitationRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.orientation.AuthorOrientationSectionRequest
 import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.TaskOrientationPacketRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import io.mockk.coEvery
@@ -57,7 +55,7 @@ import kotlin.test.assertTrue
 
 class TaskOrientationServiceTest {
     private val packetRepository: TaskOrientationPacketRepository = mockk(relaxed = true)
-    private val assignmentRepository: TaskZeroAssignmentRepository = mockk(relaxed = true)
+    private val currentTaskReader: CurrentTaskReader = mockk(relaxed = true)
     private val proposalRepository: StarterWorkTaskProposalRepository = mockk(relaxed = true)
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
@@ -71,7 +69,7 @@ class TaskOrientationServiceTest {
 
     private val service = TaskOrientationService(
         packetRepository,
-        assignmentRepository,
+        currentTaskReader,
         proposalRepository,
         projectMembershipApi,
         artifactIngestionApi,
@@ -97,8 +95,9 @@ class TaskOrientationServiceTest {
 
     private fun hasTask(cached: TaskOrientationPacket? = null) {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns
-            TaskZeroAssignment(hireId = hireId, projectId = projectId, proposalId = proposal.id, assignedAt = now)
+        // Through the shared reader, which is the point: a claimed goal and an assigned Task 0 are
+        // both "the task this hire is on", and orientation must not be able to see only one of them.
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns proposal
         every { proposalRepository.findById(proposal.id) } returns Optional.of(proposal)
         every { artifactIngestionApi.getTaskSource(proposal.sourceId) } returns null
         every { packetRepository.findByTaskProposalIdAndProjectId(proposal.id, projectId) } returns cached
@@ -267,13 +266,38 @@ class TaskOrientationServiceTest {
     @Test
     fun `no current task is a handled state and calls no AI`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val result = service.getForHire(hireId, projectId)
 
         assertNull(result.taskId)
         assertNull(result.packet)
         coVerify(exactly = 0) { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) }
+    }
+
+    /**
+     * The bug this reader was introduced to prevent, found by a hire rather than by a test.
+     *
+     * Orientation used to read the Task 0 assignment table directly, so a hire who had *claimed a
+     * goal* — the ordinary path, and the one the mentor itself offers — had a current task on their
+     * board and no current task here. They were told to their face that they had claimed nothing.
+     *
+     * Asserted through the reader rather than through a goal fixture on purpose: the reader is
+     * where "which task is this person on" is answered, and the whole point is that this service
+     * does not get to answer it a second way.
+     */
+    @Test
+    fun `orients on a claimed goal, not only on an assigned Task 0`() = runTest {
+        hasTask()
+        // Stubbed like every other test that lets `getForHire` run to the end: `hasTask` leaves no
+        // cached packet, so the call reaches the AI client, and that mock is strict.
+        coEvery { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) } returns
+            assembled(section("SET_UP"))
+
+        val result = service.getForHire(hireId, projectId)
+
+        assertEquals(proposal.id, result.taskId)
+        coVerify(exactly = 1) { currentTaskReader.currentTaskFor(hireId, projectId) }
     }
 
     @Test
@@ -339,7 +363,7 @@ class TaskOrientationServiceTest {
 
         service.getForHire(hireId, projectId)
 
-        verify(exactly = 0) { assignmentRepository.save(any()) }
+        verify(exactly = 0) { proposalRepository.save(any()) }
     }
 
     @Test
@@ -542,7 +566,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `authorForHire 404s when the hire has no current task`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val error = assertThrows<ResponseStatusException> {
             service.authorForHire(hireId, projectId, authorRequest())
@@ -634,7 +658,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `no current task streams a single done and calls no AI`() = runTest {
         isMember()
-        every { assignmentRepository.findByHireIdAndProjectId(hireId, projectId) } returns null
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
 
         val events = service.streamForHire(hireId, projectId).toList()
 
