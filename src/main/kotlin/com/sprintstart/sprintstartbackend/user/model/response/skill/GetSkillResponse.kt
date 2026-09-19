@@ -8,4 +8,6 @@ data class GetSkillResponse(
     val name: String,
     val roleIds: List<UUID>,
     val status: SkillStatus,
+    val category: String?,
+    val universal: Boolean,
 )

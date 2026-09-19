@@ -170,6 +170,8 @@ class ProjectRoleControllerTest(
             name = "Kotlin",
             roleIds = listOf(roleId),
             status = SkillStatus.ACTIVE,
+            category = "Languages & Paradigms",
+            universal = false,
         )
         every { projectRoleService.getSkillsForRole(roleId) } returns listOf(dto)
 
@@ -200,6 +202,8 @@ class ProjectRoleControllerTest(
             name = "Kotlin",
             roleIds = listOf(roleId),
             status = SkillStatus.ACTIVE,
+            category = "Languages & Paradigms",
+            universal = false,
         )
         every { projectRoleService.setSkillsForRole(roleId, request) } returns listOf(dto)
 

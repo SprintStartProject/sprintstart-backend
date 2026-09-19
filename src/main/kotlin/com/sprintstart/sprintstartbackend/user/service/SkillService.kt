@@ -65,6 +65,8 @@ class SkillService(
             existingSkill.name = request.name
             existingSkill.projectRoles = roles
             existingSkill.status = SkillStatus.ACTIVE
+            existingSkill.category = request.category
+            existingSkill.universal = request.universal
 
             return skillRepository.save(existingSkill).toCreateResponse()
         }
@@ -74,6 +76,8 @@ class SkillService(
                 Skill(
                     name = request.name,
                     projectRoles = roles,
+                    category = request.category,
+                    universal = request.universal,
                 ),
             ).toCreateResponse()
     }
@@ -95,6 +99,9 @@ class SkillService(
         request.roleIds?.let { roleIds ->
             skill.projectRoles = findRolesByIds(roleIds)
         }
+
+        skill.category = request.category
+        skill.universal = request.universal
 
         return skillRepository.save(skill).toUpdateResponse()
     }

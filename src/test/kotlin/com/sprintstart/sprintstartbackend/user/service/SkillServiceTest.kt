@@ -39,7 +39,9 @@ class SkillServiceTest {
         name: String = "Kotlin",
         status: SkillStatus = SkillStatus.ACTIVE,
         roles: MutableSet<ProjectRole> = mutableSetOf(role()),
-    ) = Skill(id = id, name = name, projectRoles = roles, status = status)
+        category: String = "Languages & Paradigms",
+        universal: Boolean = false,
+    ) = Skill(id = id, name = name, projectRoles = roles, status = status, category = category, universal = universal)
 
     @Test
     fun `getAllSkills returns list of mapped skills`() {
@@ -79,7 +81,12 @@ class SkillServiceTest {
     fun `createSkill saves and returns skill`() {
         val roleId = UUID.randomUUID()
         val r = role(roleId)
-        val request = CreateSkillRequest(name = "Kotlin", roleIds = listOf(roleId))
+        val request = CreateSkillRequest(
+            name = "Kotlin",
+            roleIds = listOf(roleId),
+            category = "Languages & Paradigms",
+            universal = true,
+        )
 
         every { skillRepository.findByNormalizedName("Kotlin") } returns null
         every { projectRoleRepository.findAllById(listOf(roleId)) } returns listOf(r)
@@ -89,8 +96,17 @@ class SkillServiceTest {
 
         assertEquals("Kotlin", result.name)
         assertEquals(listOf(roleId), result.roleIds)
+        assertEquals("Languages & Paradigms", result.category)
+        assertEquals(true, result.universal)
         assertEquals(SkillStatus.ACTIVE, result.status)
-        verify(exactly = 1) { skillRepository.save(any()) }
+
+        verify(exactly = 1) {
+            skillRepository.save(
+                match {
+                    it.category == "Languages & Paradigms" && it.universal
+                },
+            )
+        }
     }
 
     @Test
@@ -98,7 +114,11 @@ class SkillServiceTest {
         val firstRoleId = UUID.randomUUID()
         val secondRoleId = UUID.randomUUID()
         val roles = listOf(role(firstRoleId), role(secondRoleId))
-        val request = CreateSkillRequest(name = "Kotlin", roleIds = listOf(firstRoleId, secondRoleId))
+        val request = CreateSkillRequest(
+            name = "Kotlin",
+            roleIds = listOf(firstRoleId, secondRoleId),
+            category = "Languages & Paradigms",
+        )
 
         every { skillRepository.findByNormalizedName("Kotlin") } returns null
         every { projectRoleRepository.findAllById(listOf(firstRoleId, secondRoleId)) } returns roles
@@ -112,12 +132,16 @@ class SkillServiceTest {
     @Test
     fun `createSkill throws 409 if normalized name already exists`() {
         val roleId = UUID.randomUUID()
-        val request = CreateSkillRequest(name = "kotlin", roleIds = listOf(roleId))
+        val request = CreateSkillRequest(
+            name = "kotlin",
+            roleIds = listOf(roleId),
+            category = "Languages & Paradigms",
+        )
 
         every { projectRoleRepository.findAllById(listOf(roleId)) } returns listOf(role(roleId))
         every {
             skillRepository.findByNormalizedName("kotlin")
-        } returns skill(name = "Kotlin", status = SkillStatus.ACTIVE)
+        } returns skill(name = "Kotlin", status = SkillStatus.ACTIVE, category = "Languages & Paradigms")
 
         val ex = assertThrows<ResponseStatusException> { service.createSkill(request) }
         assertEquals(HttpStatus.CONFLICT, ex.statusCode)
@@ -126,7 +150,11 @@ class SkillServiceTest {
     @Test
     fun `createSkill throws 404 if role not found`() {
         val roleId = UUID.randomUUID()
-        val request = CreateSkillRequest(name = "Kotlin", roleIds = listOf(roleId))
+        val request = CreateSkillRequest(
+            name = "Kotlin",
+            roleIds = listOf(roleId),
+            category = "Languages & Paradigms",
+        )
 
         every { skillRepository.findByNormalizedName("Kotlin") } returns null
         every { projectRoleRepository.findAllById(listOf(roleId)) } returns emptyList()
@@ -140,8 +168,21 @@ class SkillServiceTest {
         val roleId = UUID.randomUUID()
         val existingRole = role()
         val newRole = role(roleId)
-        val retiredSkill = skill(name = "Kotlin", status = SkillStatus.RETIRED, roles = mutableSetOf(existingRole))
-        val request = CreateSkillRequest(name = " kotlin ", roleIds = listOf(roleId))
+
+        val retiredSkill = skill(
+            name = "Kotlin",
+            status = SkillStatus.RETIRED,
+            roles = mutableSetOf(existingRole),
+            category = "Old Category",
+            universal = false,
+        )
+
+        val request = CreateSkillRequest(
+            name = " kotlin ",
+            roleIds = listOf(roleId),
+            category = "Languages & Paradigms",
+            universal = true,
+        )
 
         every { projectRoleRepository.findAllById(listOf(roleId)) } returns listOf(newRole)
         every { skillRepository.findByNormalizedName(" kotlin ") } returns retiredSkill
@@ -152,16 +193,33 @@ class SkillServiceTest {
         assertEquals(SkillStatus.ACTIVE, retiredSkill.status)
         assertEquals(" kotlin ", retiredSkill.name)
         assertEquals(setOf(roleId), retiredSkill.projectRoles.map { it.id }.toSet())
+        assertEquals("Languages & Paradigms", retiredSkill.category)
+        assertEquals(true, retiredSkill.universal)
+
         assertEquals(retiredSkill.id, result.id)
         assertEquals(SkillStatus.ACTIVE, result.status)
+        assertEquals("Languages & Paradigms", result.category)
+        assertEquals(true, result.universal)
+
+        verify(exactly = 1) { skillRepository.save(retiredSkill) }
     }
 
     @Test
     fun `updateSkill changes editable fields`() {
-        val s = skill()
+        val s = skill(
+            category = "Languages & Paradigms",
+            universal = false,
+        )
+
         val newRoleId = UUID.randomUUID()
         val newRole = role(newRoleId)
-        val request = UpdateSkillRequest(name = "Go", roleIds = listOf(newRoleId))
+
+        val request = UpdateSkillRequest(
+            name = "Go",
+            roleIds = listOf(newRoleId),
+            category = "Programming Languages",
+            universal = true,
+        )
 
         every { skillRepository.findById(s.id) } returns Optional.of(s)
         every { skillRepository.existsByNormalizedNameExcluding("Go", s.id) } returns false
@@ -172,12 +230,49 @@ class SkillServiceTest {
 
         assertEquals("Go", result.name)
         assertEquals(listOf(newRoleId), result.roleIds)
+        assertEquals("Programming Languages", result.category)
+        assertEquals(true, result.universal)
+
+        assertEquals("Programming Languages", s.category)
+        assertEquals(true, s.universal)
+    }
+
+    @Test
+    fun `updateSkill can clear category and unset universal`() {
+        val s = skill(
+            category = "AI/GenAI",
+            universal = true,
+        )
+
+        val request = UpdateSkillRequest(
+            name = null,
+            roleIds = null,
+            category = null,
+            universal = false,
+        )
+
+        every { skillRepository.findById(s.id) } returns Optional.of(s)
+        every { skillRepository.save(any()) } answers { firstArg() }
+
+        val result = service.updateSkill(s.id, request)
+
+        assertEquals(null, s.category)
+        assertEquals(false, s.universal)
+
+        assertEquals(null, result.category)
+        assertEquals(false, result.universal)
+
+        verify(exactly = 1) { skillRepository.save(s) }
     }
 
     @Test
     fun `updateSkill throws 409 if name conflicts with another skill`() {
         val s = skill()
-        val request = UpdateSkillRequest(name = "Go", roleIds = null)
+        val request = UpdateSkillRequest(
+            name = "Go",
+            roleIds = null,
+            category = "Languages & Paradigms",
+        )
 
         every { skillRepository.findById(s.id) } returns Optional.of(s)
         every { skillRepository.existsByNormalizedNameExcluding("Go", s.id) } returns true
@@ -192,7 +287,14 @@ class SkillServiceTest {
         every { skillRepository.findById(id) } returns Optional.empty()
 
         val ex = assertThrows<ResponseStatusException> {
-            service.updateSkill(id, UpdateSkillRequest(name = "Go", roleIds = null))
+            service.updateSkill(
+                id,
+                UpdateSkillRequest(
+                    name = "Go",
+                    roleIds = null,
+                    category = "Languages & Paradigms",
+                ),
+            )
         }
         assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
     }
