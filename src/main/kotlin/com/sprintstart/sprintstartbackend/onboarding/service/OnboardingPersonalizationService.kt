@@ -24,6 +24,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.persistence.EntityManager
 import kotlinx.coroutines.CancellationException
@@ -56,6 +57,7 @@ class OnboardingPersonalizationService(
     private val onboardingPathFactory: OnboardingPathFromBlueprintFactory,
     private val onboardingAiClient: OnboardingAiClient,
     private val userApi: UserApi,
+    private val projectIndustryApi: ProjectIndustryApi,
     private val json: Json,
     private val entityManager: EntityManager,
     transactionManager: PlatformTransactionManager,
@@ -119,6 +121,7 @@ class OnboardingPersonalizationService(
         val skillIds = profile.skills.map { it.skillId }.toSet()
 
         return channelFlow {
+            val industry = projectIndustryApi.getOrEvaluateIndustry(projectId)
             val blueprint = loadBlueprintSelection(projectId, projectRoleIds, skillIds)
             logger.info(
                 "Starting onboarding personalization for user {} in project {} from blueprint {}",
@@ -154,6 +157,7 @@ class OnboardingPersonalizationService(
                             generatePhase(
                                 phase = phase,
                                 projectId = projectId.toString(),
+                                industry = industry,
                                 phaseTimeoutMillis = phaseTimeoutMillis,
                                 totalTimeoutMillis = totalTimeoutMillis,
                                 semaphore = semaphore,
@@ -293,6 +297,7 @@ class OnboardingPersonalizationService(
     private suspend fun generatePhase(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         phaseTimeoutMillis: Long,
         totalTimeoutMillis: Long,
         semaphore: Semaphore,
@@ -301,7 +306,7 @@ class OnboardingPersonalizationService(
         emitStage("Waiting")
         val result = withTimeoutOrNull(totalTimeoutMillis) {
             semaphore.withPermit {
-                runPhaseAssembly(phase, projectId, phaseTimeoutMillis, emitStage)
+                runPhaseAssembly(phase, projectId, industry, phaseTimeoutMillis, emitStage)
             }
         }
         return result ?: timedOut(phase, projectId, emitStage, totalTimeoutMillis)
@@ -314,11 +319,12 @@ class OnboardingPersonalizationService(
     private suspend fun runPhaseAssembly(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         phaseTimeoutMillis: Long,
         emitStage: suspend (detail: String) -> Unit,
     ): PhaseGenerationResult {
         val result = withTimeoutOrNull(phaseTimeoutMillis) {
-            streamPhaseContent(phase, projectId) { detail -> emitStage(detail) }
+            streamPhaseContent(phase, projectId, industry) { detail -> emitStage(detail) }
         }
         if (result == null) {
             return timedOut(phase, projectId, emitStage, phaseTimeoutMillis)
@@ -366,6 +372,7 @@ class OnboardingPersonalizationService(
     private suspend fun streamPhaseContent(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         relay: suspend (detail: String) -> Unit,
     ): PhaseGenerationResult {
         val request = AssemblePhaseRequest(
@@ -373,6 +380,7 @@ class OnboardingPersonalizationService(
             phaseDescription = phase.description,
             phasePrompt = phase.prompt,
             projectId = projectId,
+            industry = industry,
         )
         var content: GeneratedPhaseContent? = null
         var generationStatus = GenerationStatus.FAILED
