@@ -1,0 +1,13 @@
+package com.sprintstart.sprintstartbackend.onboarding.blueprint.model.request.phase
+
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.external.enums.BlueprintPhaseType
+
+data class CreateBlueprintPhaseRequest(
+    val position: Int,
+    val title: String,
+    val description: String?,
+    val aiPrompt: String?,
+    val type: BlueprintPhaseType,
+    val graphX: Double?,
+    val graphY: Double?,
+)

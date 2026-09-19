@@ -16,10 +16,10 @@ class OnboardingResource(
     @ManyToOne
     @JoinColumn(name = "step_id", nullable = false)
     val step: OnboardingStep,
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var title: String,
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var description: String,
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     var url: String,
 )

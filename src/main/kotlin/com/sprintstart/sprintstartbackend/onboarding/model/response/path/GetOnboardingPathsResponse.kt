@@ -10,4 +10,5 @@ data class GetOnboardingPathsResponse(
     val phaseCount: Int,
     val stepCount: Int,
     val finishedStepCount: Int,
+    val blueprintId: UUID? = null,
 )
