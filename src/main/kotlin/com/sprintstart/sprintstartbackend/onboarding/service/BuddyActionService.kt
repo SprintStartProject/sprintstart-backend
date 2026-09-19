@@ -662,6 +662,9 @@ class BuddyActionService(
         val linkLabel: String? = null,
         /** `place_note` confirm payload. */
         val noteText: String? = null,
+        /** `reword_checklist_item`: the line as it reads now, and as it would read. */
+        val lineBefore: String? = null,
+        val lineAfter: String? = null,
     )
 
     private sealed interface ProjectResolution {
