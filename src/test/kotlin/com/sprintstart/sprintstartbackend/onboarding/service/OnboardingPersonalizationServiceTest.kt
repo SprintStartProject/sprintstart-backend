@@ -370,7 +370,7 @@ class OnboardingPersonalizationServiceTest {
 
         assertTrue(events.none { it.type == "path" })
         val error = events.single { it.type == "error" }
-        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.name)
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.reason)
         // The path the hire already had is left alone.
         verify(exactly = 0) { onboardingPathRepository.deleteByUserId(userId) }
     }
@@ -443,7 +443,7 @@ class OnboardingPersonalizationServiceTest {
         // Every phase timed out, so nothing is saved and the run ends on one error, not a path.
         assertTrue(events.none { it.type == "path" || it.type == "done" })
         val error = events.single { it.type == "error" }
-        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.name)
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.reason)
     }
 
     @Test

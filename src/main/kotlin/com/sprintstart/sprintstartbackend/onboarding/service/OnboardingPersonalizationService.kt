@@ -103,15 +103,7 @@ class OnboardingPersonalizationService(
      */
     @Tracked("Creating onboarding path from blueprint")
     fun personalize(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
-        val profile = userApi
-            .getOnboardingProfileByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
-        if (projectId !in profile.projectIds) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "User with authId: $authId is not assigned to project: $projectId",
-            )
-        }
+        val profile = userApi.onboardingProfileInProject(authId, projectId)
         val projectRoleIds = profile.projectRoles[projectId]
             .orEmpty()
             .map { it.roleId }
@@ -223,7 +215,7 @@ class OnboardingPersonalizationService(
             emit(
                 OnboardingSseEvent(
                     type = "error",
-                    name = (error as? EmptyOnboardingPathException)?.reason,
+                    reason = (error as? EmptyOnboardingPathException)?.reason,
                     message = error.message,
                 ),
             )

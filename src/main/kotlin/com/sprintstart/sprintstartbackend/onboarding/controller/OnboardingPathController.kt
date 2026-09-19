@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.Onboard
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
+import com.sprintstart.sprintstartbackend.onboarding.service.onboardingProfileInProject
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -191,6 +193,7 @@ class OnboardingPathController(
 class ProjectOnboardingPathController(
     private val onboardingPersonalizationService: OnboardingPersonalizationService,
     private val onboardingGenerationRegistry: OnboardingGenerationRegistry,
+    private val userApi: UserApi,
 ) {
     /**
      * Reports whether a generation is running for the authenticated user, and whether [projectId]
@@ -208,6 +211,8 @@ class ProjectOnboardingPathController(
         value = [
             ApiResponse(responseCode = "200", description = "Generation status returned"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "User is not assigned to the project"),
+            ApiResponse(responseCode = "404", description = "User not found"),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -219,12 +224,16 @@ class ProjectOnboardingPathController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): OnboardingGenerationStatusResponse {
+        // The same gate as starting one: what a project has is only answered to its members.
+        userApi.onboardingProfileInProject(jwt.subject, projectId)
         val run = onboardingGenerationRegistry.status(jwt.subject)
+        val activeBlueprints = onboardingGenerationRegistry.activeBlueprintCount(projectId)
         return OnboardingGenerationStatusResponse(
             running = run != null,
             runningProjectId = run?.projectId,
             startedAt = run?.startedAt,
-            hasActiveBlueprint = onboardingGenerationRegistry.hasActiveBlueprint(projectId),
+            hasActiveBlueprint = activeBlueprints == 1L,
+            activeBlueprintCount = activeBlueprints,
         )
     }
 

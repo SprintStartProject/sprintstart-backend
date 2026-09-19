@@ -77,6 +77,27 @@ class OnboardingGenerationRegistryTest {
     }
 
     @Test
+    fun `a page opened halfway through is shown the phases that already finished`(): Unit = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        every { personalizationService.personalize(authId, projectId) } returns flow {
+            emit(OnboardingSseEvent(type = "stage", name = "Setup", detail = "Done"))
+            emit(OnboardingSseEvent(type = "stage", name = "Team", detail = "Done"))
+            release.await()
+            emit(OnboardingSseEvent(type = "done"))
+        }
+
+        // The first page sees both stages go by, then leaves.
+        registry.startOrAttach(authId, projectId).take(2).toList()
+        // A page opened now, before the end, starts from the beginning of the run.
+        val late = registry.startOrAttach(authId, projectId)
+        release.complete(Unit)
+
+        val seen = withTimeout(5_000) { late.toList() }
+        assertThat(seen.map { it.name }).startsWith("Setup", "Team")
+        assertThat(seen.last().type).isEqualTo("done")
+    }
+
+    @Test
     fun `the run is gone once it has finished`(): Unit = runBlocking {
         every { personalizationService.personalize(authId, projectId) } returns flow {
             emit(OnboardingSseEvent(type = "done"))

@@ -37,6 +37,11 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * In-memory on purpose: a generation is a few minutes of work tied to this instance. A restart
  * loses the run the same way it would have lost the request.
+ *
+ * **Per instance.** "One run per user" holds within one backend process. With several replicas, two
+ * requests for the same user landing on different instances would each start a generation, and both
+ * would replace the same path -- one of them lost. Fine while the backend runs as one instance; a
+ * row-level claim (or sticky routing) is needed before it runs as several.
  */
 @Component
 class OnboardingGenerationRegistry(
@@ -46,6 +51,12 @@ class OnboardingGenerationRegistry(
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val runs = ConcurrentHashMap<String, GenerationRun>()
+
+    /**
+     * One lock per user, so starting a generation -- which looks the user and project up first --
+     * serializes only that user's repeated starts, not everybody's.
+     */
+    private val startLocks = ConcurrentHashMap<String, Any>()
 
     /** A generation in flight for one user. */
     class GenerationRun(
@@ -79,7 +90,7 @@ class OnboardingGenerationRegistry(
     fun startOrAttach(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
         runs[authId]?.let { return it.watch() }
 
-        synchronized(runs) {
+        synchronized(startLocks.computeIfAbsent(authId) { Any() }) {
             runs[authId]?.let { return it.watch() }
 
             val generation = personalizationService.personalize(authId, projectId)
@@ -108,12 +119,12 @@ class OnboardingGenerationRegistry(
     }
 
     /**
-     * Whether a path can be built from [projectId] at all: the project has exactly one active
-     * blueprint. Lets the onboarding page say so up front instead of starting a generation that can
-     * only end in an error event.
+     * How many active blueprints [projectId] has. A path is built from exactly one: none means there
+     * is nothing to build from, several means the build refuses to guess (409). Lets the onboarding
+     * page say which, up front, instead of starting a generation that can only end in an error.
      */
-    fun hasActiveBlueprint(projectId: UUID): Boolean =
-        blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE).size == 1
+    fun activeBlueprintCount(projectId: UUID): Long =
+        blueprintPathRepository.countByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
 
     /** The generation currently running for the caller, or null. */
     fun status(authId: String): GenerationRun? = runs[authId]

@@ -63,6 +63,38 @@ class OnboardingGraphServiceTest {
     }
 
     @Test
+    fun `a PM can arrange the phases of somebody else's path`() {
+        val second = OnboardingPhase(path = path, position = 1, title = "Team", description = "d")
+        every { pathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+        every { phaseRepository.findAllByPathId(path.id) } returns mutableListOf(phase, second)
+
+        service.arrangePathForUser(
+            userId,
+            ArrangeOnboardingGraphRequest(
+                listOf(
+                    OnboardingGraphNodePosition(phase.id, 0.0, 0.0),
+                    OnboardingGraphNodePosition(second.id, 330.0, 0.0),
+                ),
+            ),
+        )
+
+        assertThat(second.graphX to second.graphY).isEqualTo(330.0 to 0.0)
+    }
+
+    @Test
+    fun `arranging a path refuses a phase that belongs to another path`() {
+        every { pathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+        every { phaseRepository.findAllByPathId(path.id) } returns mutableListOf(phase)
+
+        assertThatThrownBy {
+            service.arrangePathForUser(
+                userId,
+                ArrangeOnboardingGraphRequest(listOf(OnboardingGraphNodePosition(UUID.randomUUID(), 0.0, 0.0))),
+            )
+        }.isInstanceOf(ResponseStatusException::class.java)
+    }
+
+    @Test
     fun `arranging refuses a node from another phase`() {
         every { phaseRepository.findById(phase.id) } returns Optional.of(phase)
 

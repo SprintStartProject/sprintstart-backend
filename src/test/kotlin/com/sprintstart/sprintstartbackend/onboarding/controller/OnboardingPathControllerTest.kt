@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -30,6 +32,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
+import java.util.Optional
 import java.util.UUID
 
 @WebMvcTest(OnboardingPathController::class, ProjectOnboardingPathController::class)
@@ -46,6 +49,9 @@ class OnboardingPathControllerTest(
 
     @MockkBean
     private lateinit var onboardingGenerationRegistry: OnboardingGenerationRegistry
+
+    @MockkBean
+    private lateinit var userApi: UserApi
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -204,7 +210,8 @@ class OnboardingPathControllerTest(
         val startedAt = Instant.parse("2026-09-15T10:00:00Z")
         every { onboardingGenerationRegistry.status(authId) } returns
             OnboardingGenerationRegistry.GenerationRun(projectId = projectId, startedAt = startedAt)
-        every { onboardingGenerationRegistry.hasActiveBlueprint(projectId) } returns true
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 1
 
         mockMvc
             .perform(
@@ -214,12 +221,14 @@ class OnboardingPathControllerTest(
             .andExpect(jsonPath("$.running").value(true))
             .andExpect(jsonPath("$.runningProjectId").value(projectId.toString()))
             .andExpect(jsonPath("$.hasActiveBlueprint").value(true))
+            .andExpect(jsonPath("$.activeBlueprintCount").value(1))
     }
 
     @Test
     fun `getGenerationStatus says nothing is running when no generation is`() {
         every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingGenerationRegistry.hasActiveBlueprint(projectId) } returns false
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 0
 
         mockMvc
             .perform(
@@ -228,6 +237,34 @@ class OnboardingPathControllerTest(
             ).andExpect(status().isOk)
             .andExpect(jsonPath("$.running").value(false))
             .andExpect(jsonPath("$.hasActiveBlueprint").value(false))
+    }
+
+    @Test
+    fun `getGenerationStatus tells several active blueprints apart from none`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 2
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(false))
+            .andExpect(jsonPath("$.activeBlueprintCount").value(2))
+    }
+
+    @Test
+    fun `getGenerationStatus answers only for a project the caller is assigned to`() {
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(UUID.randomUUID()))
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingGenerationRegistry.activeBlueprintCount(any()) }
     }
 
     @Test
@@ -353,4 +390,7 @@ class OnboardingPathControllerTest(
             onboardingPathService.deleteOnboardingPathByUserId(userId)
         }
     }
+
+    private fun profileIn(project: UUID) =
+        UserOnboardingProfile(id = userId, projectIds = setOf(project), projectRoles = emptyMap())
 }
