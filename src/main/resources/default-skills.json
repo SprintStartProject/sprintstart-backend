@@ -28,10 +28,6 @@
     "category": "Languages & Paradigms"
   },
   {
-    "name": "SQL",
-    "category": "Languages & Paradigms"
-  },
-  {
     "name": "Rust",
     "category": "Languages & Paradigms"
   },
@@ -224,7 +220,7 @@
     "category": "Data & Databases"
   },
   {
-    "name": "Elastisearch/OpenSearch",
+    "name": "Elasticsearch/OpenSearch",
     "category": "Data & Databases"
   },
   {
@@ -272,7 +268,7 @@
     "category": "DevOps, Infrastructure & Cloud"
   },
   {
-    "name": "Gitlab CI",
+    "name": "GitLab CI",
     "category": "DevOps, Infrastructure & Cloud"
   },
   {
@@ -556,7 +552,7 @@
     "category": "Processes, Methods & Architecture"
   },
   {
-    "name": "User Stores/Epics/Features",
+    "name": "User Stories/Epics/Features",
     "category": "Processes, Methods & Architecture"
   },
   {
