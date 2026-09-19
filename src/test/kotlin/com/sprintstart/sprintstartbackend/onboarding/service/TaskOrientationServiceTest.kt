@@ -289,6 +289,10 @@ class TaskOrientationServiceTest {
     @Test
     fun `orients on a claimed goal, not only on an assigned Task 0`() = runTest {
         hasTask()
+        // Stubbed like every other test that lets `getForHire` run to the end: `hasTask` leaves no
+        // cached packet, so the call reaches the AI client, and that mock is strict.
+        coEvery { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) } returns
+            assembled(section("SET_UP"))
 
         val result = service.getForHire(hireId, projectId)
 
