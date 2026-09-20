@@ -6,5 +6,5 @@ data class UpdateSkillRequest(
     val name: String?,
     val roleIds: List<UUID>?,
     val category: String?,
-    val universal: Boolean = false,
+    val universal: Boolean? = null,
 )

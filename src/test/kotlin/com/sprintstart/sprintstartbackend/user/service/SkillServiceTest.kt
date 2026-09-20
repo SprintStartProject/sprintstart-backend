@@ -266,6 +266,31 @@ class SkillServiceTest {
     }
 
     @Test
+    fun `updateSkill does not change universal when omitted`() {
+        val s = skill(
+            category = "AI/GenAI",
+            universal = true,
+        )
+
+        val request = UpdateSkillRequest(
+            name = "Go",
+            roleIds = null,
+            category = null,
+            universal = null,
+        )
+
+        every { skillRepository.findById(s.id) } returns Optional.of(s)
+        every { skillRepository.existsByNormalizedNameExcluding("Go", s.id) } returns false
+        every { skillRepository.save(any()) } answers { firstArg() }
+
+        val result = service.updateSkill(s.id, request)
+
+        assertEquals("Go", result.name)
+        assertEquals(null, result.category)
+        assertEquals(true, result.universal)
+    }
+
+    @Test
     fun `updateSkill throws 409 if name conflicts with another skill`() {
         val s = skill()
         val request = UpdateSkillRequest(

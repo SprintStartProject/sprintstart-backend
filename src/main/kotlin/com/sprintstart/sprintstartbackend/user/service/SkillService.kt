@@ -101,7 +101,10 @@ class SkillService(
         }
 
         skill.category = request.category
-        skill.universal = request.universal
+
+        request.universal?.let {
+            skill.universal = it
+        }
 
         return skillRepository.save(skill).toUpdateResponse()
     }
