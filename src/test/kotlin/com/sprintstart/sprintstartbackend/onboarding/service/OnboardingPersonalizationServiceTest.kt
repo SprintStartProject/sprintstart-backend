@@ -25,9 +25,12 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseResourc
 import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseStepDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseTaskDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -56,6 +59,7 @@ class OnboardingPersonalizationServiceTest {
     private val blueprintPathRepository: BlueprintPathRepository = mockk()
     private val onboardingAiClient: OnboardingAiClient = mockk()
     private val userApi: UserApi = mockk()
+    private val projectIndustryApi: ProjectIndustryApi = mockk(relaxed = true)
     private val entityManager: EntityManager = mockk(relaxed = true)
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val json = Json {
@@ -509,6 +513,38 @@ class OnboardingPersonalizationServiceTest {
         )
     }
 
+    @Test
+    fun `personalize queries project industry once and forwards it to AI phase requests`() = runTest {
+        val blueprint = aiEnhancedBlueprint(listOf("Phase1", "Phase2"))
+        expectBlueprint(blueprint)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns "Fintech / Banking"
+        every { onboardingAiClient.streamPhase(any()) } returns flowOf(doneEvent())
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertTrue(events.any { it.type == "path" })
+        coVerify(exactly = 1) { projectIndustryApi.getOrEvaluateIndustry(projectId) }
+        coVerify(exactly = 2) {
+            onboardingAiClient.streamPhase(match { it.industry == "Fintech / Banking" })
+        }
+    }
+
+    @Test
+    fun `personalize passes null industry when getOrEvaluateIndustry returns null`() = runTest {
+        val blueprint = aiEnhancedBlueprint(listOf("Overview"))
+        expectBlueprint(blueprint)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns null
+        every { onboardingAiClient.streamPhase(any()) } returns flowOf(doneEvent())
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertTrue(events.any { it.type == "path" })
+        coVerify(exactly = 1) { projectIndustryApi.getOrEvaluateIndustry(projectId) }
+        coVerify(exactly = 1) {
+            onboardingAiClient.streamPhase(match { it.industry == null })
+        }
+    }
+
     private fun serviceWith(onboarding: OnboardingConfig): OnboardingPersonalizationService =
         OnboardingPersonalizationService(
             onboardingPathRepository = onboardingPathRepository,
@@ -516,6 +552,7 @@ class OnboardingPersonalizationServiceTest {
             onboardingPathFactory = OnboardingPathFromBlueprintFactory(),
             onboardingAiClient = onboardingAiClient,
             userApi = userApi,
+            projectIndustryApi = projectIndustryApi,
             json = json,
             entityManager = entityManager,
             transactionManager = transactionManager,
@@ -530,6 +567,7 @@ class OnboardingPersonalizationServiceTest {
 
     private fun expectBlueprint(blueprint: BlueprintPath) {
         every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns "Fintech / Banking"
         every {
             blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
         } returns listOf(blueprint)
