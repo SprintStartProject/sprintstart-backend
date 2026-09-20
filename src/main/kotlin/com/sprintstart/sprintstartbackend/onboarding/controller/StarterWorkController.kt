@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.request.competency.RejectProposalRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.starterwork.ClaimGoalRequest
@@ -229,16 +230,20 @@ class StarterWorkController(
     fun listUnreviewed(): UnreviewedStarterWorkResponse = starterWorkTaskProposalService.listUnreviewed()
 
     /**
-     * Lists the whole live starter-work pool, for a PM choosing one to author orientation for.
+     * Lists the starter-work pool at one status, for a PM choosing a task to author orientation
+     * for, or reviewing what closed at its source.
      */
     @Operation(
-        summary = "List the live starter-work pool",
-        description = "Returns every live starter-work task — reviewed or not — which is the pool a PM can " +
-            "author task orientation for and the pool hires are ranked against.",
+        summary = "List the starter-work pool",
+        description = "Returns every starter-work task at the given status — reviewed or not. Defaults to " +
+            "`LIVE`, the pool a PM can author task orientation for and the pool hires are ranked against; " +
+            "`STALE` lists what has closed at its source since. `REJECTED` is refused (400) — that is a " +
+            "person's sticky decision, not a pool this endpoint exposes.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Pool returned"),
+            ApiResponse(responseCode = "400", description = "status was REJECTED"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role"),
         ],
@@ -246,7 +251,10 @@ class StarterWorkController(
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/pool")
     @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
-    fun listPool(): List<StarterWorkTaskProposalResponse> = starterWorkTaskProposalService.listPool()
+    fun listPool(
+        @Parameter(description = "Which status to list — LIVE or STALE; REJECTED is refused")
+        @RequestParam(defaultValue = "LIVE") status: ProposalStatus,
+    ): List<StarterWorkTaskProposalResponse> = starterWorkTaskProposalService.listPool(status)
 
     /**
      * Brings the pool back in line with its trackers now, rather than waiting for the next pass.

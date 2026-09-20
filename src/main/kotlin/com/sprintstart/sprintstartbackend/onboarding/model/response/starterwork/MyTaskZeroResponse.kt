@@ -3,7 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork
 import java.time.Instant
 
 /**
- * A hire's Task 0 on one project, as they see it on their first-week surface.
+ * A hire's Task 0 on one project, as they see it during their first week.
  *
  * Available from day one — there is no environment-readiness precondition. Every combination is a
  * real, handled state, none an error:

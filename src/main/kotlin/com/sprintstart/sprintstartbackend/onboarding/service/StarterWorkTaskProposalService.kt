@@ -201,17 +201,25 @@ class StarterWorkTaskProposalService(
         )
 
     /**
-     * Returns the live starter-work pool, for a PM choosing a task to author orientation for.
+     * Returns the starter-work pool at one status, for a PM choosing a task to author orientation
+     * for or reviewing what closed at its source.
      *
-     * The whole live set, ordered by title and not scoped to a project — tasks are a global
-     * pool (the entity has no `projectId`).
+     * Ordered by title and not scoped to a project — tasks are a global pool (the entity has no
+     * `projectId`). `REJECTED` is refused: that status is a person's sticky decision, not a shape
+     * of pool this endpoint means to expose, and the controller keeps that distinction at 400.
+     *
+     * @throws ResponseStatusException 400 if [status] is `REJECTED`.
      */
     @Transactional(readOnly = true)
-    fun listPool(): List<StarterWorkTaskProposalResponse> =
-        starterWorkTaskProposalRepository
-            .findAllByStatus(ProposalStatus.LIVE)
+    fun listPool(status: ProposalStatus): List<StarterWorkTaskProposalResponse> {
+        if (status == ProposalStatus.REJECTED) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be LIVE or STALE")
+        }
+        return starterWorkTaskProposalRepository
+            .findAllByStatus(status)
             .sortedBy { it.title }
             .map { it.toResponse() }
+    }
 
     /**
      * Records that a person has looked at this task and is happy with it.
