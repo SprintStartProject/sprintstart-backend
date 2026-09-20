@@ -69,3 +69,8 @@ data class ChecklistItemRequest(
 data class ReorderBoardRequest(
     val cardIds: List<UUID>,
 )
+
+/** Ticks or unticks one task on a `PATH_STEP` card — the one live card the hire may change. */
+data class TickPathStepTaskRequest(
+    val done: Boolean,
+)
