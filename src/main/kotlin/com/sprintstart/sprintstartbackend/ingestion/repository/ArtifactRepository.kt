@@ -33,6 +33,26 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
 
     fun findBySourceSystemAndSourceId(sourceSystem: SourceSystem, sourceId: String): Artifact?
 
+    /**
+     * Resolves the organization metadata artifact for a source system and organization login.
+     *
+     * Matches the source ID case-insensitively to accommodate casing differences between
+     * connector inputs and upstream API responses.
+     */
+    @Query(
+        """
+            SELECT a
+            FROM Artifact a
+            WHERE a.sourceSystem = :sourceSystem
+                AND LOWER(a.sourceId) = LOWER(:sourceId)
+                AND a.artifactType = 'ORG_METADATA'
+        """,
+    )
+    fun findOrgMetadataArtifact(
+        @Param("sourceSystem") sourceSystem: SourceSystem,
+        @Param("sourceId") sourceId: String,
+    ): Artifact?
+
     fun findAllBySourceSystemAndSourceIdIn(
         sourceSystem: SourceSystem,
         sourceIds: Collection<String>,
