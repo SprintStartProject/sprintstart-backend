@@ -42,6 +42,17 @@ sprintstart:
       initial-delay: 500ms
       max-delay: 30s
       multiplier: 2.0
+  notion:
+    api-version: "2026-03-11"
+    retry:
+      max-attempts: 4
+      initial-delay: 500ms
+      max-delay: 30s
+      multiplier: 2.0
+      jitter: 250ms
+    throttle:
+      min-interval: 334ms
+      max-wait: 30s
   insights:
     faq:
       live-updates: ${SPRINTSTART_FAQ_LIVE_UPDATES:true}
