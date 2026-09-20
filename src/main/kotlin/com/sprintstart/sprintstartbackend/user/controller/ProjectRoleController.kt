@@ -72,7 +72,7 @@ class ProjectRoleController(
     @PostMapping("/projectRoles")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
-    fun createRole(
+    suspend fun createRole(
         @RequestBody request: CreateProjectRoleRequest,
     ): ProjectRole {
         return projectRoleService.createRole(request)
@@ -312,5 +312,33 @@ class ProjectRoleController(
         @RequestBody request: UpdateRoleSkillsRequest,
     ): List<UpdateRoleSkillsResponse> {
         return projectRoleService.setSkillsForRole(roleId, request)
+    }
+
+    /**
+     * Requests AI-suggested skills for an existing project role and links them.
+     *
+     * @param roleId The UUID of the project role.
+     * @return The skills linked to the role after adding suggestions.
+     */
+    @Operation(
+        summary = "Suggest skills for project role",
+        description = "Requests AI-suggested skills for a project role and links them, preserving existing skills.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Skills suggested and linked successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role not found"),
+            ApiResponse(responseCode = "502", description = "The AI service failed to suggest skills"),
+        ],
+    )
+    @PostMapping("/projectRoles/{roleId}/skills/suggest")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    suspend fun suggestSkillsForRole(
+        @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
+    ): List<UpdateRoleSkillsResponse> {
+        return projectRoleService.suggestSkillsForRole(roleId)
     }
 }

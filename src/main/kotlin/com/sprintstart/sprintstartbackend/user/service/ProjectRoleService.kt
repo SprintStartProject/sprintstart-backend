@@ -1,9 +1,16 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
+import com.sprintstart.sprintstartbackend.user.external.SkillSuggestionAiClient
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
+import com.sprintstart.sprintstartbackend.user.external.model.SkillCatalogItemDto
+import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionItemDto
+import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionRequestDto
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toShortDto
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateRoleSkillsResponse
@@ -16,33 +23,159 @@ import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.SkillRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 @Service
+@Suppress("TooManyFunctions")
 class ProjectRoleService(
     private val projectRoleRepository: ProjectRoleRepository,
     private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
     private val skillRepository: SkillRepository,
     private val userRepository: UserRepository,
+    private val projectIndustryApi: ProjectIndustryApi,
+    private val skillSuggestionAiClient: SkillSuggestionAiClient,
+    transactionManager: PlatformTransactionManager,
 ) : ProjectRoleApi {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
+    // The AI call is a long-running suspend operation, so it must not run inside a
+    // transaction (a DB connection would be pinned for its whole duration).
+    private val txTemplate = TransactionTemplate(transactionManager)
+
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
     fun getAllRoles(): List<ProjectRole> {
         return projectRoleRepository.findAll()
     }
 
-    @Transactional
     @Tracked("Creating new project role")
-    fun createRole(request: CreateProjectRoleRequest): ProjectRole {
-        val role = ProjectRole(
-            name = request.name,
-            description = request.description,
+    suspend fun createRole(request: CreateProjectRoleRequest): ProjectRole {
+        val role = txTemplate.execute {
+            val entity = ProjectRole(
+                name = request.name,
+                description = request.description,
+            )
+            projectRoleRepository.save(entity)
+        } ?: throw IllegalStateException("Failed to persist project role")
+
+        val industry = resolveIndustry(request.projectId, request.industry)
+        val availableSkills = loadActiveSkills()
+
+        val aiRequest = SkillSuggestionRequestDto(
+            roleName = request.name,
+            roleDescription = request.description,
+            projectId = request.projectId?.toString(),
+            projectIndustry = industry,
+            availableSkills = availableSkills,
         )
-        return projectRoleRepository.save(role)
+
+        val suggestions = try {
+            skillSuggestionAiClient.suggestSkills(aiRequest).suggestions
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("AI skill suggestion failed during role creation for ${request.name}: ${e.message}", e)
+            emptyList()
+        }
+
+        if (suggestions.isNotEmpty()) {
+            txTemplate.execute {
+                val managedRole = projectRoleRepository.findById(role.id).orElse(role)
+                linkSuggestions(managedRole, suggestions)
+            }
+        }
+
+        return role
+    }
+
+    /**
+     * Manually requests AI-suggested skills for an existing project role and links them.
+     *
+     * Existing skill links are preserved.
+     */
+    @Tracked("Suggesting skills for project role")
+    suspend fun suggestSkillsForRole(roleId: UUID): List<UpdateRoleSkillsResponse> {
+        val role = projectRoleRepository.findById(roleId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found")
+        }
+
+        val availableSkills = loadActiveSkills()
+        val aiRequest = SkillSuggestionRequestDto(
+            roleName = role.name,
+            roleDescription = role.description,
+            projectId = null,
+            projectIndustry = null,
+            availableSkills = availableSkills,
+        )
+
+        val response = skillSuggestionAiClient.suggestSkills(aiRequest)
+
+        if (response.suggestions.isNotEmpty()) {
+            txTemplate.execute {
+                val managedRole = projectRoleRepository.findById(roleId).orElse(role)
+                linkSuggestions(managedRole, response.suggestions)
+            }
+        }
+
+        return skillRepository.findAllByProjectRolesId(roleId).map { it.toUpdateRoleSkillsResponse() }
+    }
+
+    private suspend fun resolveIndustry(projectId: UUID?, fallbackIndustry: String?): String? {
+        if (projectId != null) {
+            val evaluated = projectIndustryApi.getOrEvaluateIndustry(projectId)
+            if (!evaluated.isNullOrBlank()) {
+                return evaluated
+            }
+        }
+        return fallbackIndustry?.takeIf { it.isNotBlank() }
+    }
+
+    private fun loadActiveSkills(): List<SkillCatalogItemDto> {
+        return txTemplate.execute {
+            skillRepository
+                .findAll()
+                .filter { it.status == SkillStatus.ACTIVE }
+                .map {
+                    SkillCatalogItemDto(
+                        id = it.id.toString(),
+                        name = it.name,
+                        category = it.category,
+                        universal = it.universal,
+                    )
+                }
+        } ?: emptyList()
+    }
+
+    private fun linkSuggestions(role: ProjectRole, suggestions: List<SkillSuggestionItemDto>) {
+        for (suggestion in suggestions) {
+            val trimmedName = suggestion.name.trim()
+            if (trimmedName.isBlank()) continue
+            val existing = skillRepository.findByNormalizedName(trimmedName)
+            if (existing != null) {
+                if (existing.status == SkillStatus.RETIRED) {
+                    existing.status = SkillStatus.ACTIVE
+                    existing.category = suggestion.category ?: existing.category
+                }
+                existing.projectRoles.add(role)
+                skillRepository.save(existing)
+            } else {
+                val newSkill = Skill(
+                    name = trimmedName,
+                    category = suggestion.category,
+                    universal = false,
+                    projectRoles = mutableSetOf(role),
+                )
+                skillRepository.save(newSkill)
+            }
+        }
     }
 
     @Transactional
