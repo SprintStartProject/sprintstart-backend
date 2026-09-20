@@ -50,6 +50,7 @@ class BuddyBoardTools(
     private val boardService: BoardService,
     private val boardStructureService: BoardStructureService,
     private val userApi: UserApi,
+    private val pathStepReader: PathStepReader,
 ) {
     /** The tool specs this component owns, aggregated into the buddy's catalog by the executor. */
     fun toolSpecs(): List<BuddyToolSpecDto> = listOf(PLACE_CARD_SPEC, READ_BOARD_SPEC)
@@ -277,10 +278,30 @@ class BuddyBoardTools(
             BoardService.PlacementOutcome.NOT_A_MEMBER ->
                 "The hire is not a member of that project, so there is no board to put a card on."
             BoardService.PlacementOutcome.NEEDS_A_SUBJECT ->
-                "A diagram has to be a diagram of something, and no subject was given, so nothing " +
-                    "was placed. Try again with the question it should answer — for example " +
-                    "\"how a request reaches the database\"."
+                "That kind needs a subject and none was given, so nothing was placed. For a " +
+                    "diagram, try again with the question it should answer — for example \"how a " +
+                    "request reaches the database\". For a path step, try again with the step's " +
+                    "title."
+            BoardService.PlacementOutcome.NO_SUCH_STEP -> noSuchStepMessage(userId)
         }
+    }
+
+    /**
+     * What to say when a `PATH_STEP` subject named nothing real, naming the hire's actual step
+     * titles so the model can retry correctly without a separate read tool.
+     *
+     * Capped at [LIST_LIMIT] for the reason every other list here is: a mentor reading out every
+     * step on a long path has turned a conversation into a listing.
+     */
+    private fun noSuchStepMessage(userId: UUID): String {
+        val titles = pathStepReader.titlesFor(userId)
+        if (titles.isEmpty()) {
+            return "The hire has no path yet, so there is no step to put on their board."
+        }
+        val named = titles.take(LIST_LIMIT).joinToString(", ")
+        val suffix = if (titles.size > LIST_LIMIT) ", and more" else ""
+        return "That is not one of the hire's steps, so nothing was placed. Their actual steps " +
+            "are: $named$suffix. Try again with one of those."
     }
 
     /** Reads the `kind` argument, or null when it is missing or not a kind the buddy may place. */
@@ -290,10 +311,10 @@ class BuddyBoardTools(
     }
 
     /**
-     * Reads the `subject` argument — the question a diagram answers, and only ever that.
+     * Reads the `subject` argument — the question a diagram answers, or the title of a path step.
      *
-     * Passed straight through to [BoardService.place], which ignores it for every kind but
-     * `DIAGRAM`. A subject sent alongside `CURRENT_TASK` is not an error worth a sentence; it is a
+     * Passed straight through to [BoardService.place], which ignores it for every kind that does not
+     * take one. A subject sent alongside `CURRENT_TASK` is not an error worth a sentence; it is a
      * model being verbose, and the card is unaffected either way.
      */
     private fun BuddyToolCallDto.subjectArg(): String? =
@@ -371,13 +392,17 @@ class BuddyBoardTools(
                 "conversations, since this chat starts fresh every visit. Use it when something " +
                 "you have just discussed is worth them still having tomorrow: after they pick a " +
                 "task to work on (CURRENT_TASK), or when they are looking for work and you have " +
-                "shown them suggestions (SUGGESTED_TASKS), or after explaining how some part of " +
-                "the system fits together (DIAGRAM). This applies straight away — no " +
-                "confirmation — and the card is clearly marked as yours and easy for them to " +
+                "shown them suggestions (SUGGESTED_TASKS), after explaining how some part of the " +
+                "system fits together (DIAGRAM), or when they are working through a step of their " +
+                "path and it is worth having its tasks, expected outcome and resources pinned " +
+                "where they will still find them tomorrow (PATH_STEP). This applies straight away " +
+                "— no confirmation — and the card is clearly marked as yours and easy for them to " +
                 "dismiss. You choose *that* a card belongs there; you never choose what it says, " +
-                "because its contents are read live from the same place your other tools read. " +
-                "Kinds: " + placeableKindNames() + ". Do not place a card they have already " +
-                "dismissed, and do not place one just to have placed something.",
+                "because its contents are read live from the same place your other tools read — " +
+                "for PATH_STEP that includes the tasks, which the hire can tick right on the card " +
+                "and it will still agree with their path page. Kinds: " + placeableKindNames() +
+                ". Do not place a card they have already dismissed, and do not place one just to " +
+                "have placed something.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
@@ -390,14 +415,17 @@ class BuddyBoardTools(
                         put("type", "string")
                         put(
                             "description",
-                            "DIAGRAM only, and required for it: what the diagram should be a " +
-                                "diagram of, phrased as the question it answers — \"how a request " +
-                                "reaches the database\", \"what the ingestion pipeline is made " +
-                                "of\". You are choosing the question, not the answer: the picture " +
-                                "is drawn from this project's own material, every box carries the " +
-                                "source it came from, and anything the material does not support " +
-                                "is left out. So ask about something this project actually has, " +
-                                "and use the names it uses. Ignored for other kinds.",
+                            "Required for DIAGRAM and PATH_STEP, ignored for every other kind. " +
+                                "For DIAGRAM: what the diagram should be a diagram of, phrased as " +
+                                "the question it answers — \"how a request reaches the database\", " +
+                                "\"what the ingestion pipeline is made of\". You are choosing the " +
+                                "question, not the answer: the picture is drawn from this " +
+                                "project's own material, every box carries the source it came " +
+                                "from, and anything the material does not support is left out. So " +
+                                "ask about something this project actually has, and use the names " +
+                                "it uses. For PATH_STEP: the title of the step, exactly as the hire " +
+                                "sees it on their path — a wrong title fails and lists the real " +
+                                "ones back, so retry with one of those.",
                         )
                     }
                 }

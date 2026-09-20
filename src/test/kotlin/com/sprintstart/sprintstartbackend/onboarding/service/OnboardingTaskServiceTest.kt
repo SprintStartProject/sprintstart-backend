@@ -232,6 +232,44 @@ class OnboardingTaskServiceTest {
     }
 
     @Nested
+    inner class SetFinishedForUser {
+        @Test
+        fun `flips finished and nothing else`() {
+            val task = makeTask()
+            val step = task.step
+            every { onboardingTaskRepository.findByIdAndStepPhasePathUserId(taskId, userId) } returns
+                Optional.of(task)
+
+            service.setFinishedForUser(userId, taskId, true)
+
+            assertEquals(true, task.finished)
+            // The write-back is scoped to the flag alone: it must never move the step underneath it.
+            assertEquals(StepStatus.WAITING, step.status)
+        }
+
+        @Test
+        fun `is idempotent`() {
+            val task = makeTask().apply { finished = true }
+            every { onboardingTaskRepository.findByIdAndStepPhasePathUserId(taskId, userId) } returns
+                Optional.of(task)
+
+            service.setFinishedForUser(userId, taskId, true)
+
+            assertEquals(true, task.finished)
+        }
+
+        @Test
+        fun `throws 404 for a task that is not the user's`() {
+            every { onboardingTaskRepository.findByIdAndStepPhasePathUserId(taskId, userId) } returns
+                Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.setFinishedForUser(userId, taskId, true)
+            }.also { assertEquals(404, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
     inner class GetOnboardingTasksByStepId {
         @Test
         fun `returns all tasks for step`() {
