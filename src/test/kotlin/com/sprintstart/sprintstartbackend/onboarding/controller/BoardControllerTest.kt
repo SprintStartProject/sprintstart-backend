@@ -4,6 +4,7 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
@@ -11,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardM
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardDiagramService
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardService
@@ -208,6 +210,63 @@ class BoardControllerTest(
                     .content("""{"kind":"NOTE","text":"deploys are on Thursdays"}""")
                     .with(userJwt),
             ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `tickPathStepTask ticks the task and returns the refreshed card`() {
+        val cardId = UUID.randomUUID()
+        val taskId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.tickPathStepTask(userId, cardId, taskId, true) } returns
+            PathStepContent(
+                stepId = UUID.randomUUID(),
+                phaseTitle = "Getting set up",
+                title = "Set up your laptop",
+                description = "Install the toolchain",
+                status = StepStatus.IN_PROGRESS,
+                isAiAssisted = true,
+                expectedOutcomes = listOf("A machine that builds"),
+                tasks = emptyList(),
+                resources = emptyList(),
+                reason = null,
+            )
+
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/$cardId/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.title").value("Set up your laptop"))
+            .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+    }
+
+    @Test
+    fun `tickPathStepTask is 404 for a card that is not on a board of theirs`() {
+        val cardId = UUID.randomUUID()
+        val taskId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.tickPathStepTask(userId, cardId, taskId, true) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/$cardId/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}""")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `tickPathStepTask requires authentication`() {
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/${UUID.randomUUID()}/tasks/${UUID.randomUUID()}")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}"""),
+            ).andExpect(status().isUnauthorized)
     }
 
     @Test

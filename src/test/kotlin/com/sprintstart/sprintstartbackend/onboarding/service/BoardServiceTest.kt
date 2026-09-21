@@ -10,6 +10,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.CompetencyKi
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CompetencySource
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
@@ -18,6 +20,11 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPaylo
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistItemPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingResource
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
@@ -26,6 +33,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Compet
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.SuggestedTasksContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
@@ -36,15 +44,19 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardReposit
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.runs
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
@@ -77,12 +89,16 @@ class BoardServiceTest {
     private val myCompetencyService: MyCompetencyService = mockk()
     private val buddySessionRepository: BuddySessionRepository = mockk()
     private val boardDiagramRepository: BoardDiagramRepository = mockk()
+    private val onboardingPathRepository: OnboardingPathRepository = mockk()
+    private val onboardingTaskService: OnboardingTaskService = mockk()
 
     // Relaxed, and empty by default: arrival steps are incidental to these tests, and an
     // empty list means no arrival card is ensured, so every card assertion here is unaffected.
     private val arrivalStepService: ArrivalStepService = mockk(relaxed = true)
     private val onboardingAiClient: OnboardingAiClient = mockk()
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
+
+    private val pathStepReader = PathStepReader(onboardingPathRepository)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -111,6 +127,8 @@ class BoardServiceTest {
         boardDiagramRepository,
         boardDiagramService,
         arrivalStepService,
+        pathStepReader,
+        onboardingTaskService,
     )
 
     @BeforeEach
@@ -128,6 +146,7 @@ class BoardServiceTest {
         every { myCompetencyService.getCompetenciesForUser(hireId) } returns emptyList()
         every { buddySessionRepository.findByUserId(hireId) } returns null
         every { boardDiagramRepository.findAllByCardIdIn(any()) } returns emptyList()
+        every { onboardingPathRepository.findOnboardingPathByUserId(hireId) } returns Optional.empty()
     }
 
     private fun member(
@@ -900,6 +919,272 @@ class BoardServiceTest {
 
     private fun List<BoardMomentResponse>.momentAt(key: BoardMomentKey): Instant? =
         first { it.key == key }.reachedAt
+
+    // ---- PATH_STEP ----
+
+    @Suppress("LongParameterList")
+    private fun onboardingStep(
+        title: String,
+        id: UUID = UUID.randomUUID(),
+        status: StepStatus = StepStatus.IN_PROGRESS,
+        expectedOutcome: String = "Outcome",
+    ): OnboardingStep {
+        val path = OnboardingPath(userId = hireId)
+        val phase = OnboardingPhase(path = path, position = 0, title = "Phase 1", description = "Desc")
+        path.phases.add(phase)
+        val step = OnboardingStep(
+            id = id,
+            phase = phase,
+            position = 0,
+            title = title,
+            description = "Step description",
+            type = StepType.DOCUMENT,
+            estimatedMinutes = 30,
+            expectedOutcome = expectedOutcome,
+            status = status,
+        )
+        phase.steps.add(step)
+        return step
+    }
+
+    private fun OnboardingStep.withTask(finished: Boolean = false, id: UUID = UUID.randomUUID()): OnboardingTask {
+        val task = OnboardingTask(id = id, step = this, position = tasks.size, title = "Task", description = "Desc")
+        task.finished = finished
+        tasks.add(task)
+        return task
+    }
+
+    private fun OnboardingStep.withResource(): OnboardingResource {
+        val resource = OnboardingResource(step = this, title = "Docs", description = "Desc", url = "https://x")
+        resources.add(resource)
+        return resource
+    }
+
+    private fun stubPath(step: OnboardingStep) {
+        every { onboardingPathRepository.findOnboardingPathByUserId(hireId) } returns Optional.of(step.phase.path)
+    }
+
+    private fun pathStepCard(
+        board: Board,
+        step: OnboardingStep,
+        state: BoardCardState = BoardCardState.ACTIVE,
+    ) = BoardCard(
+        boardId = board.id,
+        kind = BoardCardKind.PATH_STEP,
+        owner = BoardCardOwner.AI,
+        state = state,
+        position = 0,
+        subject = step.id.toString(),
+    )
+
+    @Test
+    fun `placing a path step with no subject asks for one`() {
+        existingBoard()
+
+        assertEquals(
+            BoardService.PlacementOutcome.NEEDS_A_SUBJECT,
+            service.place(hireId, projectId, BoardCardKind.PATH_STEP),
+        )
+    }
+
+    @Test
+    fun `placing a path step by an unknown title refuses`() {
+        existingBoard()
+        stubPath(onboardingStep("Set up your laptop"))
+
+        assertEquals(
+            BoardService.PlacementOutcome.NO_SUCH_STEP,
+            service.place(hireId, projectId, BoardCardKind.PATH_STEP, "Learn the deploy pipeline"),
+        )
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `placing a path step by its title stores the resolved step id, not the title`() {
+        existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        stubPath(step)
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        val outcome = service.place(hireId, projectId, BoardCardKind.PATH_STEP, "  set up   YOUR laptop ")
+
+        assertEquals(BoardService.PlacementOutcome.PLACED, outcome)
+        assertEquals(step.id.toString(), saved.captured.subject)
+    }
+
+    @Test
+    fun `the same step under a different phrasing is already there`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        stubPath(step)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(pathStepCard(board, step))
+
+        assertEquals(
+            BoardService.PlacementOutcome.ALREADY_THERE,
+            service.place(hireId, projectId, BoardCardKind.PATH_STEP, "SET UP YOUR LAPTOP"),
+        )
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a dismissed path step card is not put back`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        stubPath(step)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns
+            listOf(pathStepCard(board, step, state = BoardCardState.DISMISSED))
+
+        assertEquals(
+            BoardService.PlacementOutcome.DISMISSED_BY_HIRE,
+            service.place(hireId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop"),
+        )
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a path step card reads its tasks, outcome and resources live`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop", expectedOutcome = "A machine that builds")
+        val task = step.withTask()
+        step.withResource()
+        stubPath(step)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(pathStepCard(board, step))
+
+        val content = service
+            .getBoard(hireId, projectId)!!
+            .cards
+            .first { it.kind == BoardCardKind.PATH_STEP }
+            .content as PathStepContent
+
+        assertEquals(step.id, content.stepId)
+        assertEquals(listOf("A machine that builds"), content.expectedOutcomes)
+        assertEquals(listOf(task.id), content.tasks.map { it.id })
+        assertEquals(1, content.resources.size)
+        assertNull(content.reason)
+    }
+
+    @Test
+    fun `a path step card reflects a task flipped underneath it, on the next read`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        val task = step.withTask()
+        stubPath(step)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(pathStepCard(board, step))
+
+        fun taskFinished() = service
+            .getBoard(hireId, projectId)!!
+            .cards
+            .first { it.kind == BoardCardKind.PATH_STEP }
+            .content
+            .let { (it as PathStepContent).tasks.first().finished }
+
+        assertFalse(taskFinished())
+        task.finished = true
+        assertTrue(taskFinished())
+    }
+
+    @Test
+    fun `a path step card whose step is gone hydrates with a reason and no step id`() {
+        val board = existingBoard()
+        // The path no longer holds the step the card's subject names.
+        stubPath(onboardingStep("A different step"))
+        every { boardCardRepository.findAllByBoardId(board.id) } returns
+            listOf(
+                BoardCard(
+                    boardId = board.id,
+                    kind = BoardCardKind.PATH_STEP,
+                    owner = BoardCardOwner.AI,
+                    position = 0,
+                    subject = UUID.randomUUID().toString(),
+                ),
+            )
+
+        val content = service
+            .getBoard(hireId, projectId)!!
+            .cards
+            .first { it.kind == BoardCardKind.PATH_STEP }
+            .content as PathStepContent
+
+        assertNull(content.stepId)
+        assertNotNull(content.reason)
+        assertTrue(content.tasks.isEmpty())
+    }
+
+    @Test
+    fun `ticking a task on a path step card writes back to the path and leaves its status alone`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop", status = StepStatus.IN_PROGRESS)
+        val task = step.withTask()
+        stubPath(step)
+        val card = pathStepCard(board, step)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        every { onboardingTaskService.setFinishedForUser(hireId, task.id, true) } answers { task.finished = true }
+
+        val content = service.tickPathStepTask(hireId, card.id, task.id, true)
+
+        assertTrue(content.tasks.first { it.id == task.id }.finished)
+        assertEquals(StepStatus.IN_PROGRESS, step.status)
+        verify(exactly = 1) { onboardingTaskService.setFinishedForUser(hireId, task.id, true) }
+    }
+
+    @Test
+    fun `ticking a task is idempotent`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        val task = step.withTask(finished = true)
+        stubPath(step)
+        val card = pathStepCard(board, step)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        every { onboardingTaskService.setFinishedForUser(hireId, task.id, true) } just runs
+
+        val content = service.tickPathStepTask(hireId, card.id, task.id, true)
+
+        assertTrue(content.tasks.first { it.id == task.id }.finished)
+    }
+
+    @Test
+    fun `ticking a task on somebody else's card is a 404`() {
+        val otherBoard = Board(userId = UUID.randomUUID(), projectId = projectId)
+        val step = onboardingStep("Set up your laptop")
+        val task = step.withTask()
+        val card = pathStepCard(otherBoard, step)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(otherBoard.id) } returns Optional.of(otherBoard)
+
+        assertThrows<ResponseStatusException> {
+            service.tickPathStepTask(hireId, card.id, task.id, true)
+        }.also { assertEquals(404, it.statusCode.value()) }
+    }
+
+    @Test
+    fun `ticking a task on a card that is not a path step is a 404`() {
+        val board = existingBoard()
+        val card = card(board, BoardCardKind.CURRENT_TASK)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+
+        assertThrows<ResponseStatusException> {
+            service.tickPathStepTask(hireId, card.id, UUID.randomUUID(), true)
+        }.also { assertEquals(404, it.statusCode.value()) }
+    }
+
+    @Test
+    fun `ticking a task that belongs to another step is a 404`() {
+        val board = existingBoard()
+        val step = onboardingStep("Set up your laptop")
+        step.withTask()
+        stubPath(step)
+        val card = pathStepCard(board, step)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+
+        assertThrows<ResponseStatusException> {
+            service.tickPathStepTask(hireId, card.id, UUID.randomUUID(), true)
+        }.also { assertEquals(404, it.statusCode.value()) }
+    }
 
     // -- Buddy edits to a checklist ---------------------------------------------------------------
 

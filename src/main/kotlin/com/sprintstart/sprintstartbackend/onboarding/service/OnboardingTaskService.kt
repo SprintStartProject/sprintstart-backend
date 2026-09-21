@@ -294,6 +294,31 @@ class OnboardingTaskService(
         onboardingTaskRepository.delete(task)
     }
 
+    /**
+     * Flips one task's finished flag for the authenticated user, and nothing else about it.
+     *
+     * The single write path for [OnboardingTask.finished]: a caller that needs to change what a task
+     * says — its position, title, description — still goes through [updateOnboardingTaskForMe].
+     * This one exists so the board's write-back has something narrower to call than a full replace,
+     * which needs a position and 400s on a stale one. It leaves the owning step's status untouched,
+     * the same as [updateOnboardingTaskForMe] already does: ticking a task must never move the step
+     * status underneath it.
+     *
+     * @param userId The task's owner.
+     * @param taskId Identifier of the task to flip.
+     * @param finished The value to set.
+     * @throws ResponseStatusException When no such task exists on that user's path.
+     */
+    @Transactional
+    @Tracked("Ticking an onboarding task for user")
+    fun setFinishedForUser(userId: UUID, taskId: UUID, finished: Boolean) {
+        val task = onboardingTaskRepository
+            .findByIdAndStepPhasePathUserId(taskId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found") }
+
+        task.finished = finished
+    }
+
 //  ========================== Helper Methods ==========================
 
     /**
