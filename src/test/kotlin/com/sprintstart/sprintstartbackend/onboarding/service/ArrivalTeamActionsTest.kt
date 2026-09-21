@@ -366,6 +366,79 @@ class ArrivalTeamActionsTest {
         }
 
         @Test
+        fun `a place past the end of the list is refused`() {
+            onList(step("vpn", position = 0), step("laptop", title = "Laptop", position = 1))
+
+            val reason = refusal(
+                action.draft(call("update_arrival_step", args("key" to "vpn", "position" to "9")), context),
+            )
+
+            assertThat(reason).contains("places run from 0 to 1")
+            assertThat(reason).contains("reorder_arrival_steps")
+        }
+
+        @Test
+        fun `taking the description off is previewed as a removal, not as an empty value`() {
+            onList(step("vpn", title = "Get on the VPN", description = "Ask IT"))
+
+            val draft = proposed(
+                action.draft(
+                    call(
+                        "update_arrival_step",
+                        buildJsonObject {
+                            put("key", "vpn")
+                            put("clear_description", true)
+                        },
+                    ),
+                    context,
+                ),
+            )
+
+            assertThat(draft.preview).contains("“Ask IT” is taken off, leaving none")
+        }
+
+        @Test
+        fun `a new description and clear_description together are refused rather than one winning`() {
+            onList(step("vpn", description = "Ask IT"))
+
+            val reason = refusal(
+                action.draft(
+                    call(
+                        "update_arrival_step",
+                        buildJsonObject {
+                            put("key", "vpn")
+                            put("description", "Ask the platform team")
+                            put("clear_description", true)
+                        },
+                    ),
+                    context,
+                ),
+            )
+
+            assertThat(reason).contains("not both")
+        }
+
+        @Test
+        fun `taking off a link the step does not have is refused`() {
+            onList(step("vpn", href = null))
+
+            val reason = refusal(
+                action.draft(
+                    call(
+                        "update_arrival_step",
+                        buildJsonObject {
+                            put("key", "vpn")
+                            put("clear_href", true)
+                        },
+                    ),
+                    context,
+                ),
+            )
+
+            assertThat(reason).contains("no href to take off")
+        }
+
+        @Test
         fun `a non-numeric place is refused`() {
             onList(step("vpn"))
 
@@ -385,6 +458,42 @@ class ArrivalTeamActionsTest {
         }
 
         @Test
+        fun `a place taken since the preview stops the confirm`() {
+            onList(step("vpn", position = 0), step("laptop", title = "Laptop", position = 1))
+
+            val params = buildJsonObject {
+                put("key", "vpn")
+                put("position", "1")
+            }
+
+            assertThat(action.recheck(params, context)).contains("“Laptop” took place 1 in the meantime")
+        }
+
+        @Test
+        fun `a list shorter than the confirmed place stops the confirm`() {
+            onList(step("vpn", position = 0))
+
+            val params = buildJsonObject {
+                put("key", "vpn")
+                put("position", "3")
+            }
+
+            assertThat(action.recheck(params, context)).contains("shorter than it was")
+        }
+
+        @Test
+        fun `a place still free at the confirm is let through`() {
+            onList(step("vpn", position = 0), step("laptop", title = "Laptop", position = 1))
+
+            val params = buildJsonObject {
+                put("key", "laptop")
+                put("position", "1")
+            }
+
+            assertThat(action.recheck(params, context)).isNull()
+        }
+
+        @Test
         fun `the confirm updates within the turn's project`() = runTest {
             val params = buildJsonObject {
                 put("key", "vpn")
@@ -394,6 +503,18 @@ class ArrivalTeamActionsTest {
             action.perform(params, context)
 
             verify { arrivalStepService.update("vpn", projectId, "Join the VPN", null, null, null, null) }
+        }
+
+        @Test
+        fun `the confirm takes a description off, rather than reading blank as no change`() = runTest {
+            val params = buildJsonObject {
+                put("key", "vpn")
+                put("description", "")
+            }
+
+            action.perform(params, context)
+
+            verify { arrivalStepService.update("vpn", projectId, null, "", null, null, null) }
         }
     }
 

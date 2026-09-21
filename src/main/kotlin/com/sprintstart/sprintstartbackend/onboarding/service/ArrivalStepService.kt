@@ -435,7 +435,13 @@ class ArrivalStepService(
             .orEmpty()
             .associate { it.projectId to it.name }
 
-    private companion object {
+    companion object {
+        /**
+         * The shape of a step key.
+         *
+         * Exposed so a caller that wants to refuse a malformed key in its own words answers by the
+         * same rule this service enforces, instead of keeping a copy that can drift from it.
+         */
         val KEY = Regex("^[a-z\\d][a-z\\d_-]{0,63}$")
     }
 }

@@ -20,8 +20,15 @@ import java.util.UUID
  * The actions of team mode's arrival area.
  *
  * Every arrival service method takes a nullable `projectId`, and `null` is the organisation-wide
- * default list. Team mode passes `context.projectId` and never `null`, so nothing here can read or
- * write that list — a key a model invents names a step in this project's scope or names nothing.
+ * default list. Everything here writes with `context.projectId`, so a key a model invents names a
+ * step in this project's scope or names nothing: that list is never written from team mode.
+ *
+ * It is read, twice, and only to keep a preview honest. A project step wins its key outright —
+ * `resolve` drops the company step of the same key — so creating one silently replaces a company
+ * step for everybody here, and deleting one lets that step back onto every hire's list. Neither
+ * preview could say what confirming does without looking. Nothing of that list reaches the model
+ * beyond the title of a step the manager's own call collided with, which is already on the arrival
+ * list they are looking at.
  *
  * Keys are the identity here, not ids, and the service will not rename one: state is recorded
  * against the key, so changing it would orphan every hire's record of having done the step while
@@ -29,12 +36,21 @@ import java.util.UUID
  * rather than quietly doing half of it.
  */
 
-/** The key regex the service enforces, applied here so a malformed key is a sentence, not a 400. */
-private val KEY = Regex("^[a-z\\d][a-z\\d_-]{0,63}$")
-
 /** The step [key] names on [projectId], or null. */
 private fun ArrivalStepService.stepOn(key: String, projectId: UUID): ArrivalStep? =
     listForAuthoring(projectId).firstOrNull { it.key == key }
+
+/** A preview line for a field that can be replaced or, as an empty [to], taken off. */
+private fun fieldLine(label: String, from: String?, to: String, show: (String) -> String): String =
+    if (to.isEmpty()) {
+        "$label: ${show(from.orEmpty())} is taken off, leaving none"
+    } else {
+        "$label: ${from?.let(show) ?: "(none)"} becomes ${show(to)}"
+    }
+
+/** The step other than [key] already sitting on [position], or null when nobody is. */
+private fun occupantOf(position: Int, key: String, steps: List<ArrivalStep>): ArrivalStep? =
+    steps.firstOrNull { it.position == position && it.key != key }
 
 /** A model-supplied key, lower-cased and trimmed the way the service will store it. */
 private fun normalizeKey(raw: String): String = raw.trim().lowercase()
@@ -151,7 +167,7 @@ class CreateArrivalStepsAction(
         val drafted = mutableListOf<DraftedStep>()
         for (entry in requested) {
             val key = normalizeKey(entry.text("key"))
-            if (!KEY.matches(key)) {
+            if (!ArrivalStepService.KEY.matches(key)) {
                 return TeamActionDraft.Refused(
                     "'${entry.text("key")}' is not a usable key. Keys are lower-case letters, digits, '-' " +
                         "and '_', starting with a letter or digit.",
@@ -285,17 +301,50 @@ class UpdateArrivalStepAction(
         description = "Offer to change one arrival step on this project: its title, description, link, place " +
             "in the list, or how it gets settled. The key cannot be changed — state is recorded against it, " +
             "so renaming would lose every hire's record of having done the step. To rename, offer a delete " +
-            "and a create and say that is what it is. Pass only the fields you are changing. This does NOT " +
+            "and a create and say that is what it is. Pass only the fields you are changing, and use " +
+            "clear_description or clear_href to take a description or link off entirely. This does NOT " +
             "change anything by itself.",
-        parameters = stringFields(
-            "key" to "The key from list_arrival_steps.",
-            "title" to "Optional: the new title.",
-            "description" to "Optional: the new description.",
-            "href" to "Optional: the new link.",
-            "position" to "Optional: a 0-based place in the list. Prefer reorder_arrival_steps for ordering.",
-            "settled_by" to "Optional: observed, attested or declared.",
-            required = listOf("key"),
-        ),
+        parameters = buildJsonObject {
+            put("type", "object")
+            putJsonObject("properties") {
+                putJsonObject("key") {
+                    put("type", "string")
+                    put("description", "The key from list_arrival_steps.")
+                }
+                putJsonObject("title") {
+                    put("type", "string")
+                    put("description", "Optional: the new title.")
+                }
+                putJsonObject("description") {
+                    put("type", "string")
+                    put("description", "Optional: the new description. To take one off, use clear_description.")
+                }
+                putJsonObject("clear_description") {
+                    put("type", "boolean")
+                    put("description", "Optional: true to leave the step with no description. Not with description.")
+                }
+                putJsonObject("href") {
+                    put("type", "string")
+                    put("description", "Optional: the new link. To take one off, use clear_href.")
+                }
+                putJsonObject("clear_href") {
+                    put("type", "boolean")
+                    put("description", "Optional: true to leave the step with no link. Not with href.")
+                }
+                putJsonObject("position") {
+                    put("type", "string")
+                    put(
+                        "description",
+                        "Optional: a 0-based place this list already runs to. Prefer reorder_arrival_steps.",
+                    )
+                }
+                putJsonObject("settled_by") {
+                    put("type", "string")
+                    put("description", "Optional: observed, attested or declared.")
+                }
+            }
+            putJsonArray("required") { add("key") }
+        },
     )
 
     override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft {
@@ -319,10 +368,18 @@ class UpdateArrivalStepAction(
             is Parsed.Bad -> return Read.Refused(parsed.reason)
             is Parsed.Value -> parsed.value
         }
+        val description = when (val parsed = readClearable(call, "description", step.description)) {
+            is Parsed.Bad -> return Read.Refused(parsed.reason)
+            is Parsed.Value -> parsed.value
+        }
+        val href = when (val parsed = readClearable(call, "href", step.href)) {
+            is Parsed.Bad -> return Read.Refused(parsed.reason)
+            is Parsed.Value -> parsed.value
+        }
         val changes = Read.Changes(
             title = call.textArgument("title").ifBlank { null },
-            description = call.textArgument("description").ifBlank { null },
-            href = call.textArgument("href").ifBlank { null },
+            description = description,
+            href = href,
             position = position,
             rigor = rigor,
         )
@@ -334,11 +391,12 @@ class UpdateArrivalStepAction(
     }
 
     /**
-     * A place in the list, refused when another step already holds it.
+     * A place in the list, refused when another step holds it or the list does not run that far.
      *
      * Two steps on one position order arbitrarily against each other, and a manager who confirmed a
-     * place would not be able to tell that is what happened. Reordering is the operation that keeps
-     * the list coherent, so a collision points there instead of being created quietly.
+     * place would not be able to tell that is what happened; a place past the end leaves a gap in
+     * the sequence that only a later reorder tidies. Reordering is the operation that keeps the list
+     * coherent, so both point there instead of being created quietly.
      */
     private fun readPosition(call: BuddyToolCallDto, step: ArrivalStep, context: TeamToolContext): Parsed<Int?> {
         val text = call.textArgument("position")
@@ -346,15 +404,45 @@ class UpdateArrivalStepAction(
 
         val position = text.toIntOrNull()?.takeIf { it >= 0 }
             ?: return Parsed.Bad("That is not a place in the list. Give a whole number from 0.")
-        val occupant = arrivalStepService
-            .listForAuthoring(context.projectId)
-            .firstOrNull { it.position == position && it.key != step.key }
-            ?: return Parsed.Value(position)
+        val steps = arrivalStepService.listForAuthoring(context.projectId)
+        val occupant = occupantOf(position, step.key, steps)
+        if (occupant != null) {
+            return Parsed.Bad(
+                "“${occupant.title}” is already at place $position. Offer reorder_arrival_steps with the whole " +
+                    "list instead, so the order stays unambiguous.",
+            )
+        }
+        if (position >= steps.size) {
+            return Parsed.Bad(
+                "This list has ${steps.size} steps, so its places run from 0 to ${steps.size - 1}. Offer " +
+                    "reorder_arrival_steps with the whole list if the order should change.",
+            )
+        }
+        return Parsed.Value(position)
+    }
 
-        return Parsed.Bad(
-            "“${occupant.title}” is already at place $position. Offer reorder_arrival_steps with the whole " +
-                "list instead, so the order stays unambiguous.",
-        )
+    /**
+     * An optional field that can also be taken off: the new text, "" for taken off, or null for kept.
+     *
+     * The service reads a blank value as "leave this step with none", but a model passing an empty
+     * string means "I am not changing this" far more often than it means "remove it". So removing is
+     * its own flag, and the two together are refused rather than one of them quietly winning.
+     */
+    private fun readClearable(call: BuddyToolCallDto, field: String, current: String?): Parsed<String?> {
+        val given = call.textArgument(field)
+        if (call.booleanArgument("clear_$field") != true) {
+            return Parsed.Value(given.ifBlank { null })
+        }
+        if (given.isNotBlank()) {
+            return Parsed.Bad(
+                "Pass either $field or clear_$field, not both. One replaces what is there, the other takes it off.",
+            )
+        }
+        return if (current == null) {
+            Parsed.Bad("That step has no $field to take off.")
+        } else {
+            Parsed.Value("")
+        }
     }
 
     /** How the step should settle, refused when the system already decides that for this key. */
@@ -375,16 +463,17 @@ class UpdateArrivalStepAction(
         return Parsed.Value(rigor)
     }
 
+    /** What the manager is agreeing to, one line per field the call changes. */
+    private fun lines(step: ArrivalStep, changes: Read.Changes): List<String> = buildList {
+        changes.title?.let { add("Title: “${step.title}” becomes “$it”") }
+        changes.description?.let { add(fieldLine("Description", step.description, it) { text -> "“$text”" }) }
+        changes.href?.let { add(fieldLine("Link", step.href, it) { text -> text }) }
+        changes.position?.let { add("Place in the list: ${step.position} becomes $it") }
+        changes.rigor?.let { add("Settled by ${settlementWords(step.settledBy)} becomes ${settlementWords(it)}") }
+    }
+
     private fun propose(step: ArrivalStep, key: String, changes: Read.Changes): TeamActionDraft {
-        val lines = buildList {
-            changes.title?.let { add("Title: “${step.title}” becomes “$it”") }
-            changes.description?.let { add("Description: “${step.description ?: "(none)"}” becomes “$it”") }
-            changes.href?.let { add("Link: ${step.href ?: "(none)"} becomes $it") }
-            changes.position?.let { add("Place in the list: ${step.position} becomes $it") }
-            changes.rigor?.let {
-                add("Settled by ${settlementWords(step.settledBy)} becomes ${settlementWords(it)}")
-            }
-        }
+        val lines = lines(step, changes)
         return TeamActionDraft.Proposed(
             params = buildJsonObject {
                 put("key", key)
@@ -405,8 +494,29 @@ class UpdateArrivalStepAction(
         )
     }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? =
-        GONE_SINCE.takeIf { arrivalStepService.stepOn(params.text("key"), context.projectId) == null }
+    /**
+     * The step is still here, and the place it was given is still one it can take.
+     *
+     * [perform] sets the position unconditionally, so a reorder or another update confirmed in
+     * between would let this confirm create exactly the collision [readPosition] refused to draft.
+     */
+    override fun recheck(params: JsonObject, context: TeamToolContext): String? {
+        val steps = arrivalStepService.listForAuthoring(context.projectId)
+        val step = steps.firstOrNull { it.key == params.text("key") } ?: return GONE_SINCE
+        val position = params.text("position").toIntOrNull() ?: return null
+
+        val occupant = occupantOf(position, step.key, steps)
+        if (occupant != null) {
+            return "“${occupant.title}” took place $position in the meantime, so nothing was changed. Offer " +
+                "the change again against the list as it now stands."
+        }
+        return if (position >= steps.size) {
+            "This project's arrival list is shorter than it was, so place $position is past its end and nothing " +
+                "was changed. Offer the change again against the list as it now stands."
+        } else {
+            null
+        }
+    }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val key = params.text("key")
@@ -414,8 +524,10 @@ class UpdateArrivalStepAction(
             key = key,
             projectId = context.projectId,
             title = params.text("title").ifBlank { null },
-            description = params.text("description").ifBlank { null },
-            href = params.text("href").ifBlank { null },
+            // Present but blank is a taking-off the manager confirmed, so presence decides these two
+            // rather than emptiness: the service reads blank as "leave this step with none".
+            description = params.textIfPresent("description"),
+            href = params.textIfPresent("href"),
             position = params.text("position").toIntOrNull(),
             settledBy = rigorOrNull(params.text("settled_by")),
         )

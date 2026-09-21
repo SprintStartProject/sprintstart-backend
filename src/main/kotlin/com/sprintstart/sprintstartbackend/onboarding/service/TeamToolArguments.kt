@@ -32,6 +32,14 @@ internal fun BuddyToolCallDto.booleanArgument(name: String): Boolean? = argument
 /** A text field of stored params, trimmed; empty when missing or not text. */
 internal fun JsonObject.text(name: String): String = (this[name] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
 
+/**
+ * A text field of stored params when the proposal carried it at all, blank included; null when not.
+ *
+ * For a field whose blank value means something — a description confirmed to be taken off — where
+ * [text] alone cannot tell that apart from a field the proposal never mentioned.
+ */
+internal fun JsonObject.textIfPresent(name: String): String? = if (containsKey(name)) text(name) else null
+
 /** A UUID field of stored params; null when missing or not a UUID. */
 internal fun JsonObject.uuid(name: String): UUID? = runCatching { UUID.fromString(text(name)) }.getOrNull()
 
