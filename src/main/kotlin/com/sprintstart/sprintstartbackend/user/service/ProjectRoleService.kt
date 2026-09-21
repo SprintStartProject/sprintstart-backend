@@ -1,15 +1,25 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
+import com.sprintstart.sprintstartbackend.user.external.SkillSuggestionAiClient
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
+import com.sprintstart.sprintstartbackend.user.external.model.SkillCatalogItemDto
+import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionRequestDto
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.entity.Skill
+import com.sprintstart.sprintstartbackend.user.model.exceptions.SkillSuggestionAiException
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toShortDto
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUpdateRoleSkillsResponse
+import com.sprintstart.sprintstartbackend.user.model.request.AcceptSkillSuggestionRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.SuggestSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.SkillSuggestionItemResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
@@ -23,11 +33,14 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 @Service
+@Suppress("TooManyFunctions")
 class ProjectRoleService(
     private val projectRoleRepository: ProjectRoleRepository,
     private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
     private val skillRepository: SkillRepository,
     private val userRepository: UserRepository,
+    private val projectIndustryApi: ProjectIndustryApi,
+    private val skillSuggestionAiClient: SkillSuggestionAiClient,
 ) : ProjectRoleApi {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
@@ -43,6 +56,172 @@ class ProjectRoleService(
             description = request.description,
         )
         return projectRoleRepository.save(role)
+    }
+
+    /**
+     * Requests AI-suggested skills for a project role without persisting them.
+     *
+     * Returns reviewable suggestions. If a suggestion matches an existing active skill,
+     * it is returned with [SkillSuggestionItemResponse.skillId] set and `isNew` as false.
+     * Suggestions matching retired skills are dropped.
+     *
+     * @param roleId The UUID of the project role.
+     * @param request Optional project and industry context for RAG and industry hints.
+     * @return List of reviewable skill suggestions.
+     * @throws ResponseStatusException 404 when role does not exist.
+     * @throws SkillSuggestionAiException when AI service fails.
+     */
+    @Tracked("Suggesting skills for project role")
+    suspend fun suggestSkillsForRole(
+        roleId: UUID,
+        request: SuggestSkillsRequest? = null,
+    ): List<SkillSuggestionItemResponse> {
+        val role = projectRoleRepository.findById(roleId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found")
+        }
+
+        val industry = resolveIndustry(request?.projectId, request?.industry)
+        val activeSkills = skillRepository.findAll().filter { it.status == SkillStatus.ACTIVE }
+        val catalogMap = activeSkills.associateBy { it.name.trim().lowercase() }
+
+        val aiRequest = SkillSuggestionRequestDto(
+            roleName = role.name,
+            roleDescription = role.description,
+            projectId = request?.projectId?.toString(),
+            projectIndustry = industry,
+            availableSkills = activeSkills.map {
+                SkillCatalogItemDto(
+                    id = it.id.toString(),
+                    name = it.name,
+                    category = it.category,
+                    universal = it.universal,
+                )
+            },
+        )
+
+        val response = skillSuggestionAiClient.suggestSkills(aiRequest)
+
+        val results = mutableListOf<SkillSuggestionItemResponse>()
+        for (suggestion in response.suggestions) {
+            val trimmedName = suggestion.name.trim()
+            if (trimmedName.isBlank()) continue
+            val normalized = trimmedName.lowercase()
+
+            val catalogMatch = catalogMap[normalized]
+            if (catalogMatch != null) {
+                // Active skill match: use catalog as ground truth
+                results.add(
+                    SkillSuggestionItemResponse(
+                        skillId = catalogMatch.id,
+                        name = catalogMatch.name,
+                        category = catalogMatch.category ?: suggestion.category,
+                        reason = suggestion.reason,
+                        confidence = suggestion.confidence,
+                        isNew = false,
+                        chunkIds = suggestion.chunkIds,
+                    ),
+                )
+            } else {
+                // Check if it matches a RETIRED skill in DB -> skip if retired
+                val dbMatch = skillRepository.findByNormalizedName(trimmedName)
+                if (dbMatch != null && dbMatch.status == SkillStatus.RETIRED) {
+                    // Skip suggestion matching a retired skill
+                    continue
+                }
+                results.add(
+                    SkillSuggestionItemResponse(
+                        skillId = null,
+                        name = trimmedName,
+                        category = suggestion.category,
+                        reason = suggestion.reason,
+                        confidence = suggestion.confidence,
+                        isNew = true,
+                        chunkIds = suggestion.chunkIds,
+                    ),
+                )
+            }
+        }
+        return results
+    }
+
+    /**
+     * Accepts a skill suggestion for a project role: links an existing active skill or creates
+     * a new non-universal skill and links it.
+     *
+     * @param roleId The UUID of the project role.
+     * @param request The suggestion acceptance request containing either a skillId or a skill name.
+     * @return The updated list of skills linked to the role.
+     * @throws ResponseStatusException 404 when role or skill not found, 400 when invalid or retired.
+     */
+    @Transactional
+    @Tracked("Accepting skill suggestion for project role")
+    fun acceptSkillSuggestion(
+        roleId: UUID,
+        request: AcceptSkillSuggestionRequest,
+    ): List<UpdateRoleSkillsResponse> {
+        val role = projectRoleRepository.findById(roleId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found")
+        }
+
+        val skill = findOrCreateSkillForAccept(request, role)
+        skill.projectRoles.add(role)
+        skillRepository.save(skill)
+
+        return skillRepository.findAllByProjectRolesId(roleId).map { it.toUpdateRoleSkillsResponse() }
+    }
+
+    private fun findOrCreateSkillForAccept(request: AcceptSkillSuggestionRequest, role: ProjectRole): Skill {
+        if (request.skillId != null) {
+            return findExistingSkillById(request.skillId)
+        }
+        return findOrCreateSkillByName(request.name, request.category, role)
+    }
+
+    private fun findExistingSkillById(skillId: UUID): Skill {
+        val skill = skillRepository.findById(skillId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Skill with id $skillId not found")
+        }
+        if (skill.status == SkillStatus.RETIRED) {
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Skill '${skill.name}' is retired and cannot be assigned",
+            )
+        }
+        return skill
+    }
+
+    private fun findOrCreateSkillByName(name: String?, category: String?, role: ProjectRole): Skill {
+        val trimmedName = name?.trim()
+        if (trimmedName.isNullOrBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Skill name or skillId must be provided")
+        }
+        val existing = skillRepository.findByNormalizedName(trimmedName)
+        if (existing != null) {
+            if (existing.status == SkillStatus.RETIRED) {
+                throw ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Skill '$trimmedName' is retired and cannot be assigned",
+                )
+            }
+            return existing
+        }
+
+        return Skill(
+            name = trimmedName,
+            category = category,
+            universal = false,
+            projectRoles = mutableSetOf(role),
+        )
+    }
+
+    private suspend fun resolveIndustry(projectId: UUID?, fallbackIndustry: String?): String? {
+        if (projectId != null) {
+            val evaluated = projectIndustryApi.getOrEvaluateIndustry(projectId)
+            if (!evaluated.isNullOrBlank()) {
+                return evaluated
+            }
+        }
+        return fallbackIndustry?.takeIf { it.isNotBlank() }
     }
 
     @Transactional
