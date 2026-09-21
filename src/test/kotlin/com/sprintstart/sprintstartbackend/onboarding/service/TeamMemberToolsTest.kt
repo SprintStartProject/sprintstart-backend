@@ -4,10 +4,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.user.external.DirectoryMatch
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleDetailDto
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
-import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
-import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -21,10 +21,10 @@ import java.util.Optional
 import java.util.UUID
 
 class TeamMemberToolsTest {
-    private val projectRoleService: ProjectRoleService = mockk()
+    private val projectRoleApi: ProjectRoleApi = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val userApi: UserApi = mockk()
-    private val tools = TeamMemberTools(projectRoleService, projectMembershipApi, userApi)
+    private val tools = TeamMemberTools(projectRoleApi, projectMembershipApi, userApi)
 
     private val projectId = UUID.randomUUID()
     private val memberId = UUID.randomUUID()
@@ -53,9 +53,9 @@ class TeamMemberToolsTest {
 
     @Test
     fun `lists the role catalogue with the ids to act on, and says it is not editable here`() {
-        every { projectRoleService.getAllRoles() } returns listOf(
-            ProjectRole(name = "Reviewer", description = "Reviews work"),
-            ProjectRole(name = "Backend developer", description = "Writes the backend"),
+        every { projectRoleApi.getAllProjectRoles() } returns listOf(
+            ProjectRoleDetailDto(UUID.randomUUID(), "Reviewer", "Reviews work"),
+            ProjectRoleDetailDto(UUID.randomUUID(), "Backend developer", "Writes the backend"),
         )
 
         val result = tools.execute(call(TeamMemberTools.LIST_PROJECT_ROLES), context)
@@ -70,8 +70,8 @@ class TeamMemberToolsTest {
     @Test
     fun `reads one member's roles on this project`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member())
-        every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns
-            listOf(ProjectRoleSummary(id = UUID.randomUUID(), name = "Reviewer"))
+        every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns
+            listOf(ProjectRoleShortDto(id = UUID.randomUUID(), name = "Reviewer"))
 
         val result = tools.execute(call(TeamMemberTools.GET_MEMBER_ROLES, "member_id" to "$memberId"), context)
 
@@ -82,7 +82,7 @@ class TeamMemberToolsTest {
     @Test
     fun `a member with no role here is not confused with somebody who is not here`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member())
-        every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns emptyList()
+        every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
 
         val result = tools.execute(call(TeamMemberTools.GET_MEMBER_ROLES, "member_id" to "$memberId"), context)
 
@@ -99,13 +99,13 @@ class TeamMemberToolsTest {
         )
 
         assertThat(result).contains("not on this project")
-        verify(exactly = 0) { projectRoleService.getRolesForUserOnProject(any(), any()) }
+        verify(exactly = 0) { projectRoleApi.getRolesOnProject(any(), any()) }
     }
 
     @Test
     fun `a 404 from the role service is answered, not thrown`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member())
-        every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } throws
+        every { projectRoleApi.getRolesOnProject(memberId, projectId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "gone")
 
         val result = tools.execute(call(TeamMemberTools.GET_MEMBER_ROLES, "member_id" to "$memberId"), context)

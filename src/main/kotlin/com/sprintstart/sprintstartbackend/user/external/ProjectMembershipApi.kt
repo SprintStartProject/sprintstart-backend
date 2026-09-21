@@ -34,6 +34,27 @@ interface ProjectMembershipApi {
      * @return The manager's user id, or empty when the project has none or does not exist.
      */
     fun getProjectManagerId(projectId: UUID): Optional<UUID>
+
+    /**
+     * Puts people on a project, leaving anybody already on it as they are.
+     *
+     * Idempotent, so a caller need not diff against the current membership first.
+     *
+     * @throws org.springframework.web.server.ResponseStatusException 404 when the project or any
+     * of the users does not exist.
+     */
+    fun addMembers(projectId: UUID, userIds: Set<UUID>)
+
+    /**
+     * Takes one person off a project.
+     *
+     * The membership carries their roles on that project, so this removes those too, and putting
+     * them back later gives them a fresh membership with none.
+     *
+     * @throws org.springframework.web.server.ResponseStatusException 409 when they manage the
+     * project, 404 when they are not on it.
+     */
+    fun removeMember(projectId: UUID, userId: UUID)
 }
 
 /**

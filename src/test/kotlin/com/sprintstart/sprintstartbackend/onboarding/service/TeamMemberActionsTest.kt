@@ -4,13 +4,11 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposa
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleDetailDto
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
-import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
-import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
-import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
-import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
-import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -27,8 +25,7 @@ import java.util.Optional
 import java.util.UUID
 
 class TeamMemberActionsTest {
-    private val adminProjectService: AdminProjectService = mockk(relaxed = true)
-    private val projectRoleService: ProjectRoleService = mockk(relaxed = true)
+    private val projectRoleApi: ProjectRoleApi = mockk(relaxed = true)
     private val projectMembershipApi: ProjectMembershipApi = mockk(relaxed = true)
     private val userApi: UserApi = mockk(relaxed = true)
 
@@ -66,7 +63,7 @@ class TeamMemberActionsTest {
 
     @Nested
     inner class AddMembers {
-        private val action = AddMembersAction(adminProjectService, projectMembershipApi, userApi)
+        private val action = AddMembersAction(projectMembershipApi, userApi)
 
         private fun ids(vararg values: String) = buildJsonObject {
             putJsonArray("user_ids") { values.forEach { add(it) } }
@@ -116,7 +113,7 @@ class TeamMemberActionsTest {
 
             action.draft(BuddyToolCallDto("c1", "add_members", ids("$a")), context)
 
-            verify(exactly = 0) { adminProjectService.assignUsers(any(), any()) }
+            verify(exactly = 0) { projectMembershipApi.addMembers(any(), any()) }
         }
 
         @Test
@@ -157,19 +154,19 @@ class TeamMemberActionsTest {
 
         @Test
         fun `the confirm assigns to the turn's project`() = runTest {
-            val captured = slot<AssignProjectUsersRequest>()
-            every { adminProjectService.assignUsers(projectId, capture(captured)) } returns emptyList()
+            val captured = slot<Set<UUID>>()
+            every { projectMembershipApi.addMembers(projectId, capture(captured)) } returns Unit
 
             action.perform(ids("$memberId"), context)
 
-            assertThat(captured.captured.userIds).containsExactly(memberId)
-            verify { adminProjectService.assignUsers(projectId, any()) }
+            assertThat(captured.captured).containsExactly(memberId)
+            verify { projectMembershipApi.addMembers(projectId, any()) }
         }
     }
 
     @Nested
     inner class RemoveMember {
-        private val action = RemoveMemberAction(adminProjectService, projectMembershipApi, projectRoleService)
+        private val action = RemoveMemberAction(projectMembershipApi, projectRoleApi)
 
         @Test
         fun `is marked destructive`() {
@@ -180,9 +177,9 @@ class TeamMemberActionsTest {
         fun `says the roles go with the membership and do not come back`() {
             onProject(member())
             managedBy(UUID.randomUUID())
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns listOf(
-                ProjectRoleSummary(id = UUID.randomUUID(), name = "Reviewer"),
-                ProjectRoleSummary(id = UUID.randomUUID(), name = "Backend developer"),
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns listOf(
+                ProjectRoleShortDto(id = UUID.randomUUID(), name = "Reviewer"),
+                ProjectRoleShortDto(id = UUID.randomUUID(), name = "Backend developer"),
             )
 
             val draft = proposed(action.draft(call("remove_member", "member_id" to "$memberId"), context))
@@ -196,7 +193,7 @@ class TeamMemberActionsTest {
         fun `a member with no roles is not told about roles`() {
             onProject(member())
             managedBy(null)
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns emptyList()
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
 
             val draft = proposed(action.draft(call("remove_member", "member_id" to "$memberId"), context))
 
@@ -211,7 +208,7 @@ class TeamMemberActionsTest {
             val reason = refusal(action.draft(call("remove_member", "member_id" to "$memberId"), context))
 
             assertThat(reason).contains("Dana Okafor manages this project")
-            verify(exactly = 0) { adminProjectService.removeUser(any(), any()) }
+            verify(exactly = 0) { projectMembershipApi.removeMember(any(), any()) }
         }
 
         @Test
@@ -248,19 +245,19 @@ class TeamMemberActionsTest {
         fun `the confirm removes from the turn's project`() = runTest {
             action.perform(buildJsonObject { put("member_id", "$memberId") }, context)
 
-            verify { adminProjectService.removeUser(projectId, memberId) }
+            verify { projectMembershipApi.removeMember(projectId, memberId) }
         }
     }
 
     @Nested
     inner class AssignRole {
-        private val action = AssignProjectRoleAction(projectRoleService, projectMembershipApi)
-        private val role = ProjectRole(name = "Reviewer", description = "Reviews work")
+        private val action = AssignProjectRoleAction(projectRoleApi, projectMembershipApi)
+        private val role = ProjectRoleDetailDto(UUID.randomUUID(), "Reviewer", "Reviews work")
 
         @Test
         fun `a non-member is refused before the service is called`() {
             onProject()
-            every { projectRoleService.getAllRoles() } returns listOf(role)
+            every { projectRoleApi.getAllProjectRoles() } returns listOf(role)
 
             val reason = refusal(
                 action.draft(
@@ -270,13 +267,13 @@ class TeamMemberActionsTest {
             )
 
             assertThat(reason).contains("not on this project")
-            verify(exactly = 0) { projectRoleService.assignRoleToUser(any(), any(), any()) }
+            verify(exactly = 0) { projectRoleApi.assignRoleOnProject(any(), any(), any()) }
         }
 
         @Test
         fun `an unknown role is refused`() {
             onProject(member())
-            every { projectRoleService.getAllRoles() } returns listOf(role)
+            every { projectRoleApi.getAllProjectRoles() } returns listOf(role)
 
             val reason = refusal(
                 action.draft(
@@ -291,9 +288,9 @@ class TeamMemberActionsTest {
         @Test
         fun `a role they already hold is refused rather than confirmed as a no-op`() {
             onProject(member())
-            every { projectRoleService.getAllRoles() } returns listOf(role)
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns
-                listOf(ProjectRoleSummary(id = role.id, name = "Reviewer"))
+            every { projectRoleApi.getAllProjectRoles() } returns listOf(role)
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns
+                listOf(ProjectRoleShortDto(id = role.id, name = "Reviewer"))
 
             val reason = refusal(
                 action.draft(
@@ -308,8 +305,8 @@ class TeamMemberActionsTest {
         @Test
         fun `the preview says the role is scoped to this project`() {
             onProject(member())
-            every { projectRoleService.getAllRoles() } returns listOf(role)
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns emptyList()
+            every { projectRoleApi.getAllProjectRoles() } returns listOf(role)
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
 
             val draft = proposed(
                 action.draft(
@@ -332,8 +329,11 @@ class TeamMemberActionsTest {
 
             action.perform(params, context)
 
-            verify { projectRoleService.assignRoleToUser(memberId, projectId, role.id) }
-            verify(exactly = 0) { projectRoleService.assignRoleToUser(any(), any()) }
+            verify { projectRoleApi.assignRoleOnProject(memberId, projectId, role.id) }
+            // The published API has no projectless form to call by mistake: every role operation on
+            // it takes a project, so "applies to every project they belong to" is unreachable here.
+            assertThat(ProjectRoleApi::class.java.methods.filter { it.name.contains("RoleOnProject") })
+                .allMatch { it.parameterCount == 3 }
         }
 
         @Test
@@ -347,13 +347,13 @@ class TeamMemberActionsTest {
 
     @Nested
     inner class UnassignRole {
-        private val action = UnassignProjectRoleAction(projectRoleService, projectMembershipApi)
-        private val role = ProjectRole(name = "Reviewer", description = "Reviews work")
+        private val action = UnassignProjectRoleAction(projectRoleApi, projectMembershipApi)
+        private val role = ProjectRoleDetailDto(UUID.randomUUID(), "Reviewer", "Reviews work")
 
         @Test
         fun `a role they do not hold is refused, since the service would silently do nothing`() {
             onProject(member())
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns emptyList()
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
 
             val reason = refusal(
                 action.draft(
@@ -363,14 +363,14 @@ class TeamMemberActionsTest {
             )
 
             assertThat(reason).contains("does not hold that role")
-            verify(exactly = 0) { projectRoleService.unassignRoleFromUser(any(), any(), any()) }
+            verify(exactly = 0) { projectRoleApi.unassignRoleOnProject(any(), any(), any()) }
         }
 
         @Test
         fun `taking their only role says they keep the project but hold nothing here`() {
             onProject(member())
-            every { projectRoleService.getRolesForUserOnProject(memberId, projectId) } returns
-                listOf(ProjectRoleSummary(id = role.id, name = "Reviewer"))
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns
+                listOf(ProjectRoleShortDto(id = role.id, name = "Reviewer"))
 
             val draft = proposed(
                 action.draft(
@@ -407,8 +407,7 @@ class TeamMemberActionsTest {
 
             action.perform(params, context)
 
-            verify { projectRoleService.unassignRoleFromUser(memberId, projectId, role.id) }
-            verify(exactly = 0) { projectRoleService.unassignRoleFromUser(any(), any()) }
+            verify { projectRoleApi.unassignRoleOnProject(memberId, projectId, role.id) }
         }
     }
 
@@ -417,10 +416,10 @@ class TeamMemberActionsTest {
         @Test
         fun `all four are in the team area and none mutates while drafting`() {
             val actions: List<TeamActionHandler> = listOf(
-                AddMembersAction(adminProjectService, projectMembershipApi, userApi),
-                RemoveMemberAction(adminProjectService, projectMembershipApi, projectRoleService),
-                AssignProjectRoleAction(projectRoleService, projectMembershipApi),
-                UnassignProjectRoleAction(projectRoleService, projectMembershipApi),
+                AddMembersAction(projectMembershipApi, userApi),
+                RemoveMemberAction(projectMembershipApi, projectRoleApi),
+                AssignProjectRoleAction(projectRoleApi, projectMembershipApi),
+                UnassignProjectRoleAction(projectRoleApi, projectMembershipApi),
             )
 
             assertThat(actions.map { it.area }).allMatch { it == TeamArea.TEAM }
@@ -437,8 +436,8 @@ class TeamMemberActionsTest {
         @Test
         fun `no action offers to create or delete a role`() {
             val names = listOf(
-                AssignProjectRoleAction(projectRoleService, projectMembershipApi).spec.name,
-                UnassignProjectRoleAction(projectRoleService, projectMembershipApi).spec.name,
+                AssignProjectRoleAction(projectRoleApi, projectMembershipApi).spec.name,
+                UnassignProjectRoleAction(projectRoleApi, projectMembershipApi).spec.name,
             )
 
             assertThat(names).noneMatch { it.contains("create") || it.contains("delete") }

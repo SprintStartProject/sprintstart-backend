@@ -3,8 +3,8 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.springframework.stereotype.Component
@@ -21,7 +21,7 @@ import java.util.UUID
  */
 @Component
 class TeamMemberTools(
-    private val projectRoleService: ProjectRoleService,
+    private val projectRoleApi: ProjectRoleApi,
     private val projectMembershipApi: ProjectMembershipApi,
     private val userApi: UserApi,
 ) : TeamAreaTools {
@@ -48,7 +48,7 @@ class TeamMemberTools(
      * roles changes every project at once, so it stays an admin surface.
      */
     private fun projectRoles(): String {
-        val roles = projectRoleService.getAllRoles()
+        val roles = projectRoleApi.getAllProjectRoles()
         if (roles.isEmpty()) {
             return "No project roles exist yet. They are created by an administrator, not from here."
         }
@@ -67,7 +67,7 @@ class TeamMemberTools(
         val member = memberOn(memberId, projectId) ?: return NOT_A_MEMBER
         // The service 404s rather than returning empty for a non-member, which the membership check
         // above has already ruled out; anything else from it is worth saying plainly.
-        val roles = runCatching { projectRoleService.getRolesForUserOnProject(member.userId, projectId) }
+        val roles = runCatching { projectRoleApi.getRolesOnProject(member.userId, projectId) }
             .getOrElse { return if (it is ResponseStatusException) NOT_A_MEMBER else throw it }
 
         if (roles.isEmpty()) {

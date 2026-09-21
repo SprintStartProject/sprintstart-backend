@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
@@ -28,7 +27,7 @@ class ProjectRoleService(
     private val projectUserAssignmentRepository: ProjectUserAssignmentRepository,
     private val skillRepository: SkillRepository,
     private val userRepository: UserRepository,
-) : ProjectRoleApi {
+) {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
     fun getAllRoles(): List<ProjectRole> {
@@ -219,7 +218,7 @@ class ProjectRoleService(
      * @param ids Ids of the project roles to resolve.
      * @return The matching project roles, mapped to [ProjectRoleShortDto]s.
      */
-    override fun getProjectRolesByIds(ids: Set<UUID>): Set<ProjectRoleShortDto> {
+    fun getProjectRolesByIds(ids: Set<UUID>): Set<ProjectRoleShortDto> {
         return projectRoleRepository
             .findAllById(ids)
             .map { it.toShortDto() }

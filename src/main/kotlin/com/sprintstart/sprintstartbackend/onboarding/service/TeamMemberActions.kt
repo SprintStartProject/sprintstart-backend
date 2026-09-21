@@ -5,10 +5,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.model.request.project.AssignProjectUsersRequest
-import com.sprintstart.sprintstartbackend.user.service.AdminProjectService
-import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -51,7 +49,6 @@ private const val LEFT_SINCE = "That person is no longer on this project, so not
  */
 @Component
 class AddMembersAction(
-    private val adminProjectService: AdminProjectService,
     private val projectMembershipApi: ProjectMembershipApi,
     private val userApi: UserApi,
 ) : TeamActionHandler {
@@ -130,7 +127,7 @@ class AddMembersAction(
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val ids = params.textArray("user_ids").mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
-        adminProjectService.assignUsers(context.projectId, AssignProjectUsersRequest(userIds = ids.toSet()))
+        projectMembershipApi.addMembers(context.projectId, ids.toSet())
         return if (ids.size == 1) {
             "Added. They are on this project now, with no role here yet."
         } else {
@@ -148,9 +145,8 @@ class AddMembersAction(
  */
 @Component
 class RemoveMemberAction(
-    private val adminProjectService: AdminProjectService,
     private val projectMembershipApi: ProjectMembershipApi,
-    private val projectRoleService: ProjectRoleService,
+    private val projectRoleApi: ProjectRoleApi,
 ) : TeamActionHandler {
     override val area = TeamArea.TEAM
     override val risk = BuddyProposalRisk.DESTRUCTIVE
@@ -203,7 +199,7 @@ class RemoveMemberAction(
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val memberId = requireNotNull(params.uuid("member_id"))
-        adminProjectService.removeUser(context.projectId, memberId)
+        projectMembershipApi.removeMember(context.projectId, memberId)
         return "Removed. They are off this project, and the roles they held here went with the membership."
     }
 
@@ -219,14 +215,14 @@ class RemoveMemberAction(
     }
 
     private fun rolesOf(userId: UUID, projectId: UUID): List<String> =
-        runCatching { projectRoleService.getRolesForUserOnProject(userId, projectId).map { it.name } }
+        runCatching { projectRoleApi.getRolesOnProject(userId, projectId).map { it.name } }
             .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
 }
 
 /** Offers to give somebody a role on this project. */
 @Component
 class AssignProjectRoleAction(
-    private val projectRoleService: ProjectRoleService,
+    private val projectRoleApi: ProjectRoleApi,
     private val projectMembershipApi: ProjectMembershipApi,
 ) : TeamActionHandler {
     override val area = TeamArea.TEAM
@@ -247,11 +243,11 @@ class AssignProjectRoleAction(
         val member = projectMembershipApi.memberOn(call.uuidArgument("member_id"), context.projectId)
             ?: return TeamActionDraft.Refused(NOT_A_MEMBER)
         val roleId = call.uuidArgument("role_id")
-        val role = projectRoleService.getAllRoles().firstOrNull { it.id == roleId }
+        val role = projectRoleApi.getAllProjectRoles().firstOrNull { it.id == roleId }
             ?: return TeamActionDraft.Refused(
                 "There is no such role. Call list_project_roles and pass a role_id from it.",
             )
-        if (heldBy(member.userId, context.projectId).any { it.equals(role.name, ignoreCase = true) }) {
+        if (heldBy(member.userId, context.projectId).any { it == role.id }) {
             return TeamActionDraft.Refused(
                 "${member.displayName} already holds “${role.name}” on this project, so there is nothing " +
                     "to change.",
@@ -274,7 +270,7 @@ class AssignProjectRoleAction(
         LEFT_SINCE.takeIf { projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId) == null }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        projectRoleService.assignRoleToUser(
+        projectRoleApi.assignRoleOnProject(
             requireNotNull(params.uuid("member_id")),
             context.projectId,
             requireNotNull(params.uuid("role_id")),
@@ -282,15 +278,15 @@ class AssignProjectRoleAction(
         return "Done. They hold “${params.text("role_name")}” on this project now."
     }
 
-    private fun heldBy(userId: UUID, projectId: UUID): List<String> =
-        runCatching { projectRoleService.getRolesForUserOnProject(userId, projectId).map { it.name } }
+    private fun heldBy(userId: UUID, projectId: UUID): List<UUID> =
+        runCatching { projectRoleApi.getRolesOnProject(userId, projectId).map { it.id } }
             .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
 }
 
 /** Offers to take a role off somebody on this project. */
 @Component
 class UnassignProjectRoleAction(
-    private val projectRoleService: ProjectRoleService,
+    private val projectRoleApi: ProjectRoleApi,
     private val projectMembershipApi: ProjectMembershipApi,
 ) : TeamActionHandler {
     override val area = TeamArea.TEAM
@@ -313,7 +309,7 @@ class UnassignProjectRoleAction(
         val roleId = call.uuidArgument("role_id")
         // The service removes by id without complaining when nothing matches, so a role they do not
         // hold would confirm as a change and change nothing. Checked here instead.
-        val held = runCatching { projectRoleService.getRolesForUserOnProject(member.userId, context.projectId) }
+        val held = runCatching { projectRoleApi.getRolesOnProject(member.userId, context.projectId) }
             .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
         val role = held.firstOrNull { it.id == roleId }
             ?: return TeamActionDraft.Refused(
@@ -329,17 +325,24 @@ class UnassignProjectRoleAction(
             },
             label = "Take “${role.name}” off ${member.displayName.forLabel()}",
             preview = "Take the role “${role.name}” off ${member.displayName} on this project.\n\n" +
-                "They stay on the project" +
-                (if (held.size == 1) " with no role here" else " and keep their other ${held.size - 1} role(s) here") +
+                "They stay on the project" + remaining(held.size) +
                 ". Any role they hold on another project is untouched.",
         )
     }
+
+    /** What they are left holding here, said as a person would say it. */
+    private fun remaining(heldNow: Int): String =
+        when (heldNow) {
+            1 -> " with no role here"
+            2 -> " and keep their other role here"
+            else -> " and keep their other ${heldNow - 1} roles here"
+        }
 
     override fun recheck(params: JsonObject, context: TeamToolContext): String? =
         LEFT_SINCE.takeIf { projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId) == null }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        projectRoleService.unassignRoleFromUser(
+        projectRoleApi.unassignRoleOnProject(
             requireNotNull(params.uuid("member_id")),
             context.projectId,
             requireNotNull(params.uuid("role_id")),
