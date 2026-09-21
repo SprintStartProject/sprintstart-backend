@@ -900,6 +900,11 @@ class BoardServiceTest {
 
     // -- Buddy edits to a checklist ---------------------------------------------------------------
 
+    // Real UUIDs, not readable stand-ins: every response parses item ids with UUID.fromString, so a
+    // fixture id like "i1" fails in the mapping before the test gets to assert anything.
+    private val firstLineId = UUID.randomUUID().toString()
+    private val secondLineId = UUID.randomUUID().toString()
+
     private fun checklistCard(
         board: Board,
         state: BoardCardState = BoardCardState.ACTIVE,
@@ -913,8 +918,8 @@ class BoardServiceTest {
             ChecklistPayload(
                 title = "Getting started",
                 items = listOf(
-                    ChecklistItemPayload(id = "i1", text = "Run it locally", done = true),
-                    ChecklistItemPayload(id = "i2", text = "Fix it"),
+                    ChecklistItemPayload(id = firstLineId, text = "Run it locally", done = true),
+                    ChecklistItemPayload(id = secondLineId, text = "Fix it"),
                 ),
             ),
         ),
@@ -985,7 +990,7 @@ class BoardServiceTest {
 
         val saved = assertNotNull(card.payload)
         val checklist = assertNotNull(json.decodeFromString<BoardCardPayload>(saved) as? ChecklistPayload)
-        assertEquals(listOf("i1", "i2"), checklist.items.take(2).map { it.id })
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.take(2).map { it.id })
         assertEquals(listOf("Run it locally", "Fix it", "Open a PR"), checklist.items.map { it.text })
         assertEquals(listOf(true, false, false), checklist.items.map { it.done })
         verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
