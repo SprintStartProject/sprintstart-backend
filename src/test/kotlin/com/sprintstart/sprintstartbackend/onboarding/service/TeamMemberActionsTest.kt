@@ -69,19 +69,22 @@ class TeamMemberActionsTest {
             putJsonArray("user_ids") { values.forEach { add(it) } }
         }
 
+        private val directory = mutableMapOf<UUID, UserDto>()
+
         private fun known(id: UUID, first: String, last: String) {
-            every { userApi.getUsersByIds(listOf(id)) } returns listOf(
-                UserDto(
-                    id = id,
-                    username = "$first.$last",
-                    firstname = first,
-                    lastname = last,
-                    avatarUrl = null,
-                    profileIcon = null,
-                    projects = emptySet(),
-                    projectRoles = emptyList(),
-                ),
+            directory[id] = UserDto(
+                id = id,
+                username = "$first.$last",
+                firstname = first,
+                lastname = last,
+                avatarUrl = null,
+                profileIcon = null,
+                projects = emptySet(),
+                projectRoles = emptyList(),
             )
+            every { userApi.getUsersByIds(any()) } answers {
+                firstArg<List<UUID>>().mapNotNull { directory[it] }
+            }
         }
 
         @Test
@@ -150,6 +153,37 @@ class TeamMemberActionsTest {
             val stale = action.recheck(ids("$memberId"), context)
 
             assertThat(stale).contains("joined this project since")
+        }
+
+        @Test
+        fun `the whole batch is resolved in one directory read`() {
+            val a = UUID.randomUUID()
+            val b = UUID.randomUUID()
+            onProject()
+            known(a, "Sam", "Rivera")
+            known(b, "Alex", "Chen")
+
+            action.draft(BuddyToolCallDto("c1", "add_members", ids("$a", "$b")), context)
+
+            verify(exactly = 1) { userApi.getUsersByIds(any()) }
+        }
+
+        @Test
+        fun `an account deleted between preview and confirm stops the confirm`() {
+            onProject()
+            every { userApi.getUsersByIds(any()) } returns emptyList()
+
+            val stale = action.recheck(ids("$memberId"), context)
+
+            assertThat(stale).contains("not a person any more")
+        }
+
+        @Test
+        fun `a confirm whose people are all still there and still off the project goes through`() {
+            onProject()
+            known(memberId, "Sam", "Rivera")
+
+            assertThat(action.recheck(ids("$memberId"), context)).isNull()
         }
 
         @Test
@@ -343,6 +377,35 @@ class TeamMemberActionsTest {
             assertThat(action.recheck(buildJsonObject { put("member_id", "$memberId") }, context))
                 .contains("no longer on this project")
         }
+
+        @Test
+        fun `a role given to them in the meantime stops the confirm`() {
+            onProject(member())
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns
+                listOf(ProjectRoleShortDto(id = role.id, name = "Reviewer"))
+
+            val params = buildJsonObject {
+                put("member_id", "$memberId")
+                put("role_id", "${role.id}")
+                put("role_name", "Reviewer")
+            }
+
+            assertThat(action.recheck(params, context)).contains("given")
+        }
+
+        @Test
+        fun `a confirm that still gives them something they do not hold goes through`() {
+            onProject(member())
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
+
+            val params = buildJsonObject {
+                put("member_id", "$memberId")
+                put("role_id", "${role.id}")
+                put("role_name", "Reviewer")
+            }
+
+            assertThat(action.recheck(params, context)).isNull()
+        }
     }
 
     @Nested
@@ -395,6 +458,48 @@ class TeamMemberActionsTest {
             )
 
             assertThat(reason).contains("not on this project")
+        }
+
+        @Test
+        fun `a role taken off in the meantime stops the confirm`() {
+            onProject(member())
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns emptyList()
+
+            val params = buildJsonObject {
+                put("member_id", "$memberId")
+                put("role_id", "${role.id}")
+                put("role_name", "Reviewer")
+            }
+
+            assertThat(action.recheck(params, context)).contains("already off them")
+        }
+
+        @Test
+        fun `a confirm that still takes off a role they hold goes through`() {
+            onProject(member())
+            every { projectRoleApi.getRolesOnProject(memberId, projectId) } returns
+                listOf(ProjectRoleShortDto(id = role.id, name = "Reviewer"))
+
+            val params = buildJsonObject {
+                put("member_id", "$memberId")
+                put("role_id", "${role.id}")
+                put("role_name", "Reviewer")
+            }
+
+            assertThat(action.recheck(params, context)).isNull()
+        }
+
+        @Test
+        fun `somebody who left between preview and confirm stops the confirm`() {
+            onProject()
+
+            val params = buildJsonObject {
+                put("member_id", "$memberId")
+                put("role_id", "${role.id}")
+                put("role_name", "Reviewer")
+            }
+
+            assertThat(action.recheck(params, context)).contains("no longer on this project")
         }
 
         @Test

@@ -64,7 +64,7 @@ class TeamMemberTools(
     }
 
     private fun memberRoles(memberId: UUID?, projectId: UUID): String {
-        val member = memberOn(memberId, projectId) ?: return NOT_A_MEMBER
+        val member = projectMembershipApi.memberOn(memberId, projectId) ?: return NOT_A_MEMBER
         // The service 404s rather than returning empty for a non-member, which the membership check
         // above has already ruled out; anything else from it is worth saying plainly.
         val roles = runCatching { projectRoleApi.getRolesOnProject(member.userId, projectId) }
@@ -104,9 +104,6 @@ class TeamMemberTools(
                 "Offer add_members with this user_id to put them on it."
         }
     }
-
-    private fun memberOn(memberId: UUID?, projectId: UUID) =
-        memberId?.let { id -> projectMembershipApi.getProjectMembers(projectId).firstOrNull { it.userId == id } }
 
     companion object {
         const val LIST_PROJECT_ROLES = "list_project_roles"

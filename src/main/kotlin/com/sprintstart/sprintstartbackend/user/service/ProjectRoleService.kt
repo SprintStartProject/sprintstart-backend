@@ -212,8 +212,8 @@ class ProjectRoleService(
     /**
      * Returns the project roles matching the given ids.
      *
-     * Implementation of the module-facing [ProjectRoleApi]. Unknown ids are silently omitted,
-     * so the result may be smaller than the requested id set — or empty.
+     * Unknown ids are silently omitted, so the result may be smaller than the requested id set —
+     * or empty. [ProjectRoleApiService] publishes this to the other modules.
      *
      * @param ids Ids of the project roles to resolve.
      * @return The matching project roles, mapped to [ProjectRoleShortDto]s.

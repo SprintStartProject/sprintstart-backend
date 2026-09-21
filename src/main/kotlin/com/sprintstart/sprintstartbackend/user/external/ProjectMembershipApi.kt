@@ -52,7 +52,7 @@ interface ProjectMembershipApi {
      * them back later gives them a fresh membership with none.
      *
      * @throws org.springframework.web.server.ResponseStatusException 409 when they manage the
-     * project, 404 when they are not on it.
+     * project, 404 when there is no such project or they are not on it.
      */
     fun removeMember(projectId: UUID, userId: UUID)
 }
