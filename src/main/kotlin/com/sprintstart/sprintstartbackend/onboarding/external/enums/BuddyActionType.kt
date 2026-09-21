@@ -72,15 +72,6 @@ enum class BuddyActionType(
     AMEND_CHECKLIST("amend_checklist", "Add these to the list"),
 
     /**
-     * Keeps a link the mentor cited as a card.
-     *
-     * The lowest-risk of the authored actions: the address comes from material this project has
-     * ingested rather than from the model's memory, so the one thing on the card that has to be
-     * exactly right is the one thing it did not invent.
-     */
-    PLACE_LINK("place_link", "Keep this link"),
-
-    /**
      * Keeps an explanation the mentor just gave as a note.
      *
      * The weakest of the four on its own — every reply already carries a "keep this answer" button

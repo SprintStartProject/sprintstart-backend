@@ -39,9 +39,9 @@ import java.util.UUID
  * project the buddy did not scope it to, nor act as another hire.
  *
  * Seven wrapped actions live here, each with a propose and a perform half — hence the suppressed
- * function count. The four that put the mentor's *own words* on a board are in
+ * function count. The five that put the mentor's *own words* on a board are in
  * [BuddyBoardWriteActions]: what the actions here do is wrap an existing `/me/...` operation one
- * for one, and those four do something different enough to be worth reading on their own.
+ * for one, and those five do something different enough to be worth reading on their own.
  */
 @Service
 @Suppress("TooManyFunctions")
@@ -369,7 +369,6 @@ class BuddyActionService(
                         requestAttestation(resolved, request.title, request.attesterId)
                     BuddyActionType.PLACE_CHECKLIST,
                     BuddyActionType.AMEND_CHECKLIST,
-                    BuddyActionType.PLACE_LINK,
                     BuddyActionType.PLACE_NOTE,
                     BuddyActionType.TICK_CHECKLIST_ITEMS,
                     BuddyActionType.REWORD_CHECKLIST_ITEM,
@@ -381,8 +380,6 @@ class BuddyActionService(
                             checklistTitle = request.checklistTitle,
                             checklistItems = request.checklistItems,
                             cardId = request.cardId,
-                            linkUrl = request.linkUrl,
-                            linkLabel = request.linkLabel,
                             noteText = request.noteText,
                             lineBefore = request.lineBefore,
                             lineAfter = request.lineAfter,
@@ -544,8 +541,6 @@ class BuddyActionService(
         checklistTitle: String? = null,
         checklistItems: List<String>? = null,
         cardId: UUID? = null,
-        linkUrl: String? = null,
-        linkLabel: String? = null,
         noteText: String? = null,
     ): ProposeOutcome =
         ProposeOutcome(
@@ -566,8 +561,6 @@ class BuddyActionService(
                 checklistTitle = checklistTitle,
                 checklistItems = checklistItems,
                 cardId = cardId,
-                linkUrl = linkUrl,
-                linkLabel = linkLabel,
                 noteText = noteText,
             ),
         )
@@ -625,7 +618,6 @@ class BuddyActionService(
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
             BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
             BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
-            BuddyActionType.PLACE_LINK -> "keep a link on your board"
             BuddyActionType.PLACE_NOTE -> "keep a note on your board"
             BuddyActionType.TICK_CHECKLIST_ITEMS -> "tick something off your board"
             BuddyActionType.REWORD_CHECKLIST_ITEM -> "reword a line on your board"
@@ -657,9 +649,6 @@ class BuddyActionService(
         val checklistItems: List<String>? = null,
         /** `amend_checklist`: the card being added to, and only the lines being added. */
         val cardId: UUID? = null,
-        /** `place_link` confirm payload. */
-        val linkUrl: String? = null,
-        val linkLabel: String? = null,
         /** `place_note` confirm payload. */
         val noteText: String? = null,
         /** `reword_checklist_item`: the line as it reads now, and as it would read. */

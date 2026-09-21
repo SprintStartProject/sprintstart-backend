@@ -412,8 +412,6 @@ class BuddyService(
                         checklistTitle = proposal.checklistTitle,
                         checklistItems = proposal.checklistItems,
                         cardId = proposal.cardId?.toString(),
-                        linkUrl = proposal.linkUrl,
-                        linkLabel = proposal.linkLabel,
                         noteText = proposal.noteText,
                         lineBefore = proposal.lineBefore,
                         lineAfter = proposal.lineAfter,

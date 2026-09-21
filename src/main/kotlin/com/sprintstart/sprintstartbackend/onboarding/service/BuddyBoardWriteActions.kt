@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistItemRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService.BuddyActionProposal
@@ -27,7 +26,7 @@ import java.util.UUID
  *
  * Split out of [BuddyActionService] once there were four of them, for the reason [BuddyBoardTools]
  * is split out of [BuddyToolExecutor]: the rest of that class wraps existing `/me/...` operations
- * one for one, and these four do something different enough to be worth reading on their own.
+ * one for one, and these five do something different enough to be worth reading on their own.
  *
  * **What they have in common is the guarantee, not the card kind.** Each one only ever *proposes*:
  * the tool call writes nothing, the hire sees a button with the content on it, and the confirm is
@@ -47,18 +46,17 @@ import java.util.UUID
 class BuddyBoardWriteActions(
     private val boardService: BoardService,
 ) {
-    /** The four tools, offered by [BuddyActionService] alongside its own. */
+    /** The five tools, offered by [BuddyActionService] alongside its own. */
     fun specs(): List<BuddyToolSpecDto> =
         listOf(
             PLACE_CHECKLIST_SPEC,
             AMEND_CHECKLIST_SPEC,
             TICK_CHECKLIST_SPEC,
             REWORD_CHECKLIST_SPEC,
-            PLACE_LINK_SPEC,
             PLACE_NOTE_SPEC,
         )
 
-    /** Whether this is one of ours, so the caller's dispatch need not know the four names. */
+    /** Whether this is one of ours, so the caller's dispatch need not know the five names. */
     fun handles(type: BuddyActionType): Boolean = type in HANDLED
 
     /** Turns one of these tool calls into a proposal, or into the reason there is none. */
@@ -66,7 +64,6 @@ class BuddyBoardWriteActions(
         when (type) {
             BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, projectName)
             BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, projectName)
-            BuddyActionType.PLACE_LINK -> proposeLink(call, type, projectName)
             BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, projectName)
             BuddyActionType.REWORD_CHECKLIST_ITEM -> proposeReword(call, type, projectName)
             else -> proposeNote(call, type, projectName)
@@ -83,7 +80,6 @@ class BuddyBoardWriteActions(
             placeChecklist(userId, projectId, payload.checklistTitle, payload.checklistItems)
         BuddyActionType.AMEND_CHECKLIST ->
             amendChecklist(userId, projectId, payload.cardId, payload.checklistItems)
-        BuddyActionType.PLACE_LINK -> placeLink(userId, projectId, payload.linkUrl, payload.linkLabel)
         BuddyActionType.TICK_CHECKLIST_ITEMS ->
             tickItems(userId, projectId, payload.cardId, payload.checklistItems)
         BuddyActionType.REWORD_CHECKLIST_ITEM ->
@@ -96,8 +92,6 @@ class BuddyBoardWriteActions(
         val checklistTitle: String? = null,
         val checklistItems: List<String>? = null,
         val cardId: UUID? = null,
-        val linkUrl: String? = null,
-        val linkLabel: String? = null,
         val noteText: String? = null,
         val lineBefore: String? = null,
         val lineAfter: String? = null,
@@ -341,35 +335,6 @@ class BuddyBoardWriteActions(
     }
 
     /**
-     * Offers to keep a link the mentor cited.
-     *
-     * `http(s)` only, and the same check `LinkCard` relies on for what it renders into an `href`.
-     * The mentor reads project material that came from elsewhere, so a `javascript:` or `data:`
-     * address in somebody's issue body is not something to mint a card from.
-     */
-    private fun proposeLink(
-        call: BuddyToolCallDto,
-        type: BuddyActionType,
-        projectName: String,
-    ): ProposeOutcome {
-        val url = call.stringArg("url").trim()
-        val label = call
-            .stringArg("label")
-            .trim()
-            .take(MAX_CHECKLIST_TITLE)
-            .ifBlank { null }
-        return when {
-            !isHttpUrl(url) ->
-                ProposeOutcome(
-                    "That is not an http or https address, so there is no link to keep. Offer one " +
-                        "from a citation you actually read rather than one you remember.",
-                    null,
-                )
-            else -> offer(type, projectName, linkUrl = url, linkLabel = label)
-        }
-    }
-
-    /**
      * Offers to keep an explanation as a note.
      *
      * Refuses a note that is only a heading's worth of words: every reply already carries a button
@@ -424,25 +389,6 @@ class BuddyBoardWriteActions(
         }
     }
 
-    private fun placeLink(
-        userId: UUID,
-        projectId: UUID,
-        url: String?,
-        label: String?,
-    ): BuddyActionResponse {
-        val address = url?.trim().orEmpty()
-        if (!isHttpUrl(address)) {
-            return BuddyActionResponse(ok = false, message = "There was no address to keep.")
-        }
-
-        boardService.addAuthoredCard(
-            userId,
-            projectId,
-            LinkCardRequest(url = address, label = label?.trim()?.take(MAX_CHECKLIST_TITLE)?.ifBlank { null }),
-        )
-        return BuddyActionResponse(ok = true, message = "Kept on your board — it'll be there tomorrow.")
-    }
-
     private fun placeNote(userId: UUID, projectId: UUID, text: String?): BuddyActionResponse {
         val body = text?.trim()?.take(MAX_NOTE_LENGTH).orEmpty()
         if (body.length < MIN_NOTE_LENGTH) {
@@ -453,15 +399,11 @@ class BuddyBoardWriteActions(
         return BuddyActionResponse(ok = true, message = "Kept on your board. It's yours — edit it as you like.")
     }
 
-    /** Whether this is an address worth putting behind a link. Same rule the client's card renders by. */
-    private fun isHttpUrl(candidate: String): Boolean =
-        candidate.startsWith("http://") || candidate.startsWith("https://")
-
     /**
      * One of these as an offer the hire can confirm.
      *
      * The tool result is the same promise every action makes — offered, not done — with the part
-     * that is specific to these four spelled out: the mentor never learns what became of it, and a
+     * that is specific to these five spelled out: the mentor never learns what became of it, and a
      * confirmed proposal leaves the screen, so pointing at the button afterwards is how a hire ends
      * up being told they must be missing something that is not there.
      */
@@ -472,8 +414,6 @@ class BuddyBoardWriteActions(
         checklistTitle: String? = null,
         checklistItems: List<String>? = null,
         cardId: UUID? = null,
-        linkUrl: String? = null,
-        linkLabel: String? = null,
         noteText: String? = null,
         lineBefore: String? = null,
         lineAfter: String? = null,
@@ -491,8 +431,6 @@ class BuddyBoardWriteActions(
                 checklistTitle = checklistTitle,
                 checklistItems = checklistItems,
                 cardId = cardId,
-                linkUrl = linkUrl,
-                linkLabel = linkLabel,
                 noteText = noteText,
                 lineBefore = lineBefore,
                 lineAfter = lineAfter,
@@ -515,7 +453,6 @@ class BuddyBoardWriteActions(
         val HANDLED = setOf(
             BuddyActionType.PLACE_CHECKLIST,
             BuddyActionType.AMEND_CHECKLIST,
-            BuddyActionType.PLACE_LINK,
             BuddyActionType.PLACE_NOTE,
             BuddyActionType.TICK_CHECKLIST_ITEMS,
             BuddyActionType.REWORD_CHECKLIST_ITEM,
@@ -700,35 +637,6 @@ class BuddyBoardWriteActions(
                     add("card_id")
                     add("line")
                     add("reworded")
-                }
-            },
-        )
-
-        val PLACE_LINK_SPEC = BuddyToolSpecDto(
-            name = BuddyActionType.PLACE_LINK.toolName,
-            description = "Offer to keep a link on the hire's board — a runbook, a guide, a page " +
-                "you have just pointed them at. Use it when your answer sends them somewhere they " +
-                "will need again: the conversation is not replayed, so a link they were only told " +
-                "about is one they will search for tomorrow. Pass an address you actually read in " +
-                "a citation from this project's material, never one you remember or guess — a " +
-                "card is a promise that the address works. http and https only. Give a label in " +
-                "the words they would recognise it by, not the bare URL. This does NOT write " +
-                "anything by itself; the hire sees a confirm button with the link on it.",
-            parameters = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {
-                    putJsonObject("url") {
-                        put("type", "string")
-                        put("description", "The address, from a citation you read. http(s) only.")
-                    }
-                    putJsonObject("label") {
-                        put("type", "string")
-                        put("description", "What to call it, in a few words the hire would recognise.")
-                    }
-                }
-                putJsonArray("required") {
-                    add("url")
-                    add("label")
                 }
             },
         )

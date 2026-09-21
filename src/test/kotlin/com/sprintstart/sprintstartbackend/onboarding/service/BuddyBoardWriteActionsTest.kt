@@ -3,7 +3,6 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -159,7 +158,7 @@ class BuddyBoardWriteActionsTest {
         verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any()) }
     }
 
-    // -- amend_checklist / place_link / place_note -------------------------------------------------
+    // -- amend_checklist / place_note --------------------------------------------------------------
 
     /**
      * Only the new lines cross the wire. The mentor is never handed the whole list to send back,
@@ -247,48 +246,6 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("No such card")
-    }
-
-    /** A card is a promise that the address works, so only a real one may be offered. */
-    @Test
-    fun `refuses a link that is not an http address`() {
-        onOneProject()
-
-        val outcome = service.propose(
-            BuddyToolCallDto(
-                id = "c0",
-                name = "place_link",
-                arguments = buildJsonObject {
-                    put("url", "javascript:alert(1)")
-                    put("label", "The runbook")
-                },
-            ),
-            userId,
-        )
-
-        assertThat(outcome.proposal).isNull()
-    }
-
-    @Test
-    fun `confirming a link keeps it as a card the hire owns`() = runTest {
-        asHire()
-        onOneProject()
-
-        val result = service.perform(
-            BuddyActionRequest(
-                action = "place_link",
-                linkUrl = "https://example.test/runbook",
-                linkLabel = "The deploy runbook",
-            ),
-            jwt,
-        )
-
-        assertThat(result.ok).isTrue()
-        val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request)) }
-        val link = request.captured as LinkCardRequest
-        assertThat(link.url).isEqualTo("https://example.test/runbook")
-        assertThat(link.label).isEqualTo("The deploy runbook")
     }
 
     /** Every reply already carries a button that keeps the whole answer. */

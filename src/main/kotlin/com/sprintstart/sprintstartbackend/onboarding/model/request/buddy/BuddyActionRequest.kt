@@ -37,9 +37,6 @@ data class BuddyActionRequest(
     val checklistItems: List<String>? = null,
     /** `amend_checklist`: the card the lines go on. Re-checked as theirs before anything is written. */
     val cardId: UUID? = null,
-    /** `place_link` payload: the address and its label. */
-    val linkUrl: String? = null,
-    val linkLabel: String? = null,
     /** `place_note` payload: the note's text. */
     val noteText: String? = null,
     /** `reword_checklist_item`: which line, and what it should say instead. */

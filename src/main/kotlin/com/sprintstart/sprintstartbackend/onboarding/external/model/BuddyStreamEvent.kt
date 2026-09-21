@@ -53,9 +53,6 @@ data class BuddyStreamEvent(
     @SerialName("checklist_items") val checklistItems: List<String>? = null,
     /** `amend_checklist`: which card of theirs the lines would be added to. */
     @SerialName("card_id") val cardId: String? = null,
-    /** `place_link` confirm payload: the address, and what to call it. */
-    @SerialName("link_url") val linkUrl: String? = null,
-    @SerialName("link_label") val linkLabel: String? = null,
     /** `place_note` confirm payload: the note's text, as the hire will read it on the offer. */
     @SerialName("note_text") val noteText: String? = null,
     /** `reword_checklist_item`: the line as it reads now, and as it would read. Both, so the
