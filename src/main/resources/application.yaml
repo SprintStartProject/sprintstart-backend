@@ -25,7 +25,9 @@ sprintstart:
   github:
     cache-path: ${REPO_CACHE_PATH:${java.io.tmpdir}/repos}
     base-url: "https://api.github.com"
-    cron: "0 2 * * 1" # Every Monday night at 2:00 am
+    cron: "0 2 * * 1"
+  bitbucket:
+    base-url: "https://api.bitbucket.org/2.0"
   crypto:
     master-key: ${CRYPTO_MASTER_KEY}
     salt: ${CRYPTO_SALT}

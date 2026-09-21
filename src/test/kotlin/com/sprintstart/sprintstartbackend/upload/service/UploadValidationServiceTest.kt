@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.upload.service
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.UploadConfig
@@ -21,6 +22,7 @@ class UploadValidationServiceTest {
                 github = GithubConfig(
                     baseUrl = "https://api.github.com",
                 ),
+                bitbucket = BitbucketConfig(baseUrl = "https://api.bitbucket.org/2.0"),
                 crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
                 upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
             ),

@@ -1,6 +1,16 @@
 package com.sprintstart.sprintstartbackend.connectors.bitbucket
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.BitbucketPage
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.DiscoverRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.DiscoveredRepository
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.PullRequest
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.PullRequestComment
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.WorkspaceMemberResponse
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.WorkspaceMembersResponse
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.client.WorkspaceMetadataResponse
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.shared.web.RequestBuilder
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
@@ -11,7 +21,8 @@ import java.nio.charset.StandardCharsets
 /**
  * Talks to the Bitbucket Cloud REST API, version 2.0.
  *
- * ### While Bitbucket is somewhat similar to Github (in this application's sense), some differences to [GithubClient]
+ * While Bitbucket is somewhat similar to GitHub (in this application's sense), some differences
+ * to [GithubClient] shaped this client deliberately:
  *
  * * **No issue tracker.** Atlassian removed the native Issue tracker and its API endpoints on
  *   20 August 2026, so there is deliberately no `fetchIssues` here. Issue-shaped work for a
@@ -91,15 +102,15 @@ class BitbucketClient(
     /**
      * Checks whether a connected repository still exists at its source.
      *
-     * Uses the credential of whoever connected the repository, not the caller's, so a visibility
-     * check reflects what the connection can actually reach.
-     *
-     * @param repository The connected repository to check.
+     * @param workspace The workspace to check for repository existence.
+     * @param slug The workspace slug to check for repository existence.
+     * @param token The user auth token to authorize existence check. Will also return false if the repository exists
+     * but this token has no access permissions.
      * @return true when the repository is readable with the connection's token, false otherwise.
      * @throws WebClientException if the request fails with a status other than 404.
      */
-    suspend fun repositoryExists(repository: BitbucketRepositoryConnection): Boolean =
-        authorizedGet(repositoryUri(repository), repository.user.token)
+    suspend fun repositoryExists(workspace: String, slug: String, token: String): Boolean =
+        authorizedGet(repositoryUri(workspace, slug), token)
             .isReadable()
 
     /**
@@ -151,7 +162,7 @@ class BitbucketClient(
      * @throws kotlinx.serialization.SerializationException if a response body cannot be deserialized.
      */
     suspend fun fetchAllPullRequests(
-        repository: BitbucketRepositoryConnection,
+        repository: BitbucketConnection,
         sinceTimestamp: String? = null,
     ): List<PullRequest> =
         fetchAllPages(
@@ -172,7 +183,7 @@ class BitbucketClient(
      * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized.
      */
     suspend fun fetchPullRequest(
-        repository: BitbucketRepositoryConnection,
+        repository: BitbucketConnection,
         pullRequestId: Int,
     ): PullRequest? =
         authorizedGet("${repositoryUri(repository)}/pullrequests/$pullRequestId", repository.user.token)
@@ -193,7 +204,7 @@ class BitbucketClient(
      * @throws kotlinx.serialization.SerializationException if a response body cannot be deserialized.
      */
     suspend fun fetchAllPullRequestComments(
-        repository: BitbucketRepositoryConnection,
+        repository: BitbucketConnection,
         pullRequestId: Int,
     ): List<PullRequestComment> =
         fetchAllPages(
@@ -209,7 +220,7 @@ class BitbucketClient(
      * @return The absolute URI of the first page.
      */
     private fun buildPullRequestsUri(
-        repository: BitbucketRepositoryConnection,
+        repository: BitbucketConnection,
         sinceTimestamp: String?,
     ): String =
         buildString {
@@ -315,8 +326,12 @@ class BitbucketClient(
         }
 
     /** Builds the URI of a repository resource from the connection's stored coordinates. */
-    private fun repositoryUri(repository: BitbucketRepositoryConnection): String =
+    private fun repositoryUri(repository: BitbucketConnection): String =
         "$apiBaseUrl/repositories/${urlEncode(repository.workspace)}/${urlEncode(repository.slug)}"
+
+    /** Builds the URI of a a repository's workspace and slug. */
+    private fun repositoryUri(workspace: String, slug: String): String =
+        "$apiBaseUrl/repositories/${urlEncode(workspace)}/${urlEncode(slug)}"
 
     /**
      * Percent-encodes one URI component.
