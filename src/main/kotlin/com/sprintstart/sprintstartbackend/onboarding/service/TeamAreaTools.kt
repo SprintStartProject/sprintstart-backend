@@ -4,14 +4,24 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import java.util.UUID
 
-/** A part of the manager's surface the team-mode buddy can open, each with its own tools. */
-enum class TeamArea {
-    KNOWLEDGE,
-    STARTER_WORK,
-    TEAM,
-    ARRIVAL,
-    CONTENT,
-    SOURCES,
+/**
+ * A part of the manager's surface the team-mode buddy can open, each with its own tools.
+ *
+ * @property summary What is inside, in the manager's words. The model chooses an area from its name and
+ * this alone, and a name is not enough: "knowledge" does not say that hires' escalated questions live there.
+ */
+enum class TeamArea(
+    val summary: String,
+) {
+    KNOWLEDGE("questions hires escalated because nobody could answer them, and the canonical answers written for them"),
+    STARTER_WORK("the pool of starter-work tasks hires are offered, and GitHub issues that could join it"),
+    TEAM("who is on the project and which roles they hold: adding and removing people, giving and taking roles"),
+    ARRIVAL("what has to be true before a new hire can start working, as a list the project owns"),
+    CONTENT(
+        "the onboarding paths of the project's members: their phases, steps, tasks and links, skip requests, " +
+            "feedback, knowledge checks and orientation packets",
+    ),
+    SOURCES("where the project's material comes from: repositories, other connected sources and uploads"),
 }
 
 /** Who a team-mode tool runs for, and on which project. Resolved and authorised before any tool runs. */

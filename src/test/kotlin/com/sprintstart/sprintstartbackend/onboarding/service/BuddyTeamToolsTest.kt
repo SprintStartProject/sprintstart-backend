@@ -374,4 +374,35 @@ class BuddyTeamToolsTest {
 
         assertThat(offered.map { it.jsonPrimitive.content }).containsExactly("knowledge")
     }
+
+    /**
+     * The model picks an area from what the definition says is in it. Seen live: asked about questions hires
+     * were waiting on an answer for, it opened the arrival area, because "knowledge" said nothing.
+     */
+    @Test
+    fun `open_area's definition says what is in each area it offers, and only those`() {
+        val tools = tools(
+            actions = listOf(
+                action("answer_escalation", TeamArea.KNOWLEDGE),
+                action("create_arrival_steps", TeamArea.ARRIVAL),
+            ),
+        )
+
+        val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
+
+        assertThat(description).contains("- knowledge: ${TeamArea.KNOWLEDGE.summary}")
+        assertThat(description).contains("- arrival: ${TeamArea.ARRIVAL.summary}")
+        assertThat(description).doesNotContain("- starter_work:").doesNotContain("- content:")
+    }
+
+    @Test
+    fun `open_area's definition says an area stays open for one more message, and forbids inventing a confirmation`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
+
+        assertThat(description).contains("stays open for the manager's next message too")
+        assertThat(description).contains("open the area again first")
+        assertThat(description).contains("Never say something has been offered for confirmation unless a tool")
+    }
 }

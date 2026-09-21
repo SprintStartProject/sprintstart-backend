@@ -144,10 +144,15 @@ class BuddyTeamService(
         val session = getOrCreateSession(userId, projectId)
 
         // Read before saving the new message so it is not sent to the AI twice.
-        val history = buddyTeamMessageRepository
-            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
-            .drop(session.summarizedCount)
-            .map { it.toAgentMessage() }
+        val transcript = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
+        val history = transcript.drop(session.summarizedCount).map { it.toAgentMessage() }
+        // The last reply is the one this message answers, so it decides what is still open. It is the whole
+        // transcript, not the unfolded part: a fold must not close what the last reply opened.
+        val carriedOver = transcript
+            .lastOrNull()
+            ?.takeIf { it.role == BuddyMessageRole.ASSISTANT }
+            ?.openedAreas
+            .toTeamAreas()
 
         buddyTeamMessageRepository.save(
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
@@ -160,12 +165,13 @@ class BuddyTeamService(
             var citations: List<BuddyCitationDto> = emptyList()
             var answer: String? = null
             var step = 0
-            val openedAreas = mutableSetOf<TeamArea>()
+            val areas = OpenAreas(carriedOver)
 
             while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
                 step++
-                // Per hop, not per turn: an area opened on the previous hop is mounted from this one.
-                val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(openedAreas) else emptyList()
+                // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
+                // one opened by the previous *reply* is mounted from the first.
+                val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
                 val response = onboardingAiClient.buddyAgentTurn(
                     BuddyAgentRequest(
                         messages = messages,
@@ -188,7 +194,7 @@ class BuddyTeamService(
                         next.add(
                             BuddyAgentMessageDto(
                                 role = "tool",
-                                content = runToolCall(call, context, mounted, openedAreas),
+                                content = runToolCall(call, context, mounted, areas),
                                 toolCallId = call.id,
                             ),
                         )
@@ -201,7 +207,14 @@ class BuddyTeamService(
             emitAgentReply(reply, citations)
 
             buddyTeamMessageRepository.save(
-                BuddyTeamMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
+                BuddyTeamMessage(
+                    session = session,
+                    role = BuddyMessageRole.ASSISTANT,
+                    content = reply,
+                    // Only what this reply opened, not what it inherited: an area stays open for one more
+                    // message, so a conversation does not slowly mount every area's tools.
+                    openedAreas = areas.openedThisTurn.encoded(),
+                ),
             )
             compactInBackground(userId, projectId)
         }
@@ -219,7 +232,7 @@ class BuddyTeamService(
         call: BuddyToolCallDto,
         context: TeamToolContext,
         mountedToolNames: Set<String>,
-        openedAreas: MutableSet<TeamArea>,
+        areas: OpenAreas,
     ): String {
         if (call.name in mountedToolNames && buddyProposalService.isAction(call.name)) {
             val outcome = buddyProposalService.propose(call, context)
@@ -240,7 +253,7 @@ class BuddyTeamService(
         emit(BuddyStreamEvent(type = "tool_use", name = call.name, kind = "tool"))
         if (call.name == BuddyTeamTools.OPEN_AREA && call.name in mountedToolNames) {
             val outcome = buddyTeamTools.openArea(call)
-            outcome.area?.let { openedAreas.add(it) }
+            outcome.area?.let { areas.open(it) }
             return outcome.toolResult
         }
         return buddyTeamTools.execute(call, context, mountedToolNames)
