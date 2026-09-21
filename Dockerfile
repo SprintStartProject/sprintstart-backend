@@ -5,7 +5,7 @@ COPY gradlew .
 RUN sed -i 's/\r$//' gradlew && chmod +x gradlew
 
 COPY gradle gradle
-COPY build.gradle.kts settings.gradle.kts ./
+COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY src src
 
 RUN --mount=type=cache,target=/root/.gradle ./gradlew bootJar --no-daemon
