@@ -67,13 +67,16 @@ class StarterWorkTaskProposal(
     @Column(nullable = false)
     var reviewed: Boolean = false,
     /**
-     * Retired: Task 0, the first task a hire was handed automatically, is gone -- onboarding is the
-     * path their PM's blueprint prescribes (#311). Nothing reads or writes this any more.
+     * A PM's judgement that this task is small and safe enough to be somebody's first one.
      *
-     * Still mapped only because databases created before then hold it as a NOT NULL column with no
-     * default, and `ddl-auto: update` never drops a column: without the field every new proposal
-     * would fail to insert. `V19__retire_legacy_onboarding.sql` gives the column a default; once that
-     * has run everywhere, delete this field and drop the column.
+     * A fact about the *task*, not about anybody's onboarding. That distinction is the whole of
+     * what #311 changed here: the flag used to feed an assignment that handed a hire their first
+     * task and called it onboarding, and onboarding is now the path their PM's blueprint
+     * prescribes. The assignment is gone; the judgement is worth keeping, because "this one is
+     * safe to start on" is a useful thing for a PM to record and for the pool to show.
+     *
+     * Nothing withholds an unflagged task from anybody: hires claim their own work from the whole
+     * live pool.
      */
     @Column(name = "task_zero_eligible", nullable = false)
     var taskZeroEligible: Boolean = false,

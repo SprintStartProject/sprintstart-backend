@@ -752,6 +752,7 @@ class BoardServiceTest {
             sourceUrl = null,
             competencyKeys = emptyList(),
             status = ProposalStatus.LIVE,
+            taskZeroEligible = false,
             reviewed = true,
             sourceHasAssignee = null,
             sourceCheckedAt = null,

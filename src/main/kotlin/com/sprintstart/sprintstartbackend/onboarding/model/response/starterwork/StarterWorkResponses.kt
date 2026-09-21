@@ -15,6 +15,11 @@ data class StarterWorkTaskProposalResponse(
     val sourceUrl: String?,
     val competencyKeys: List<String>,
     val status: ProposalStatus,
+    /**
+     * Whether a PM flagged this task as a good first one; see
+     * `StarterWorkTaskProposal.taskZeroEligible`. A hint the pool shows, never a gate.
+     */
+    val taskZeroEligible: Boolean,
     /** Whether a person has actually looked at this task; see `StarterWorkTaskProposal.reviewed`. */
     val reviewed: Boolean,
     /**

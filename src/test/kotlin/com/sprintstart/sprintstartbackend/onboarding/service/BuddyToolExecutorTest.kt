@@ -209,6 +209,7 @@ class BuddyToolExecutorTest {
             sourceUrl = sourceUrl,
             competencyKeys = emptyList(),
             status = ProposalStatus.LIVE,
+            taskZeroEligible = false,
             reviewed = true,
             sourceHasAssignee = null,
             sourceCheckedAt = null,

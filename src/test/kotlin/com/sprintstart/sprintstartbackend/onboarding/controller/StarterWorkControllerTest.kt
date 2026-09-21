@@ -95,6 +95,7 @@ class StarterWorkControllerTest(
             sourceUrl = "https://github.com/org/repo/issues/1",
             competencyKeys = listOf("docs"),
             status = ProposalStatus.LIVE,
+            taskZeroEligible = false,
             reviewed = true,
             sourceHasAssignee = null,
             sourceCheckedAt = null,
@@ -190,6 +191,31 @@ class StarterWorkControllerTest(
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(mapOf("title" to "Add dark mode"))),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `setTaskZeroEligibility should return 200 and the flagged task for a PM`() {
+        val id = UUID.randomUUID()
+        every { starterWorkTaskProposalService.setTaskZeroEligibility(id, true) } returns taskResponse()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/$id/task-zero")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("eligible" to true))),
+            ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `setTaskZeroEligibility should return 403 for a plain USER`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/${UUID.randomUUID()}/task-zero")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("eligible" to true))),
             ).andExpect(status().isForbidden)
     }
 

@@ -6,9 +6,10 @@
 DROP TABLE IF EXISTS task_zero_assignments;
 DROP TABLE IF EXISTS autonomy_milestones;
 
--- task_zero_eligible stays for now: StarterWorkTaskProposal still maps it, because an existing
--- database holds it as NOT NULL with no default and inserts would fail without the field. The
--- default below lifts that; once it has run everywhere, delete the field and drop the column.
+-- task_zero_eligible stays, and keeps its meaning: a PM's note that a task is a good first one.
+-- What went is the assignment that read it -- the flag is a label on the pool entry now, and
+-- nothing hands a flagged task to anybody. The default is for rows written before the column had
+-- one.
 ALTER TABLE starter_work_task_proposals
     ALTER COLUMN task_zero_eligible SET DEFAULT false;
 
