@@ -521,9 +521,12 @@ class BuddyToolExecutor(
             name = GET_SUGGESTED_TASKS,
             description = "Good next starter-work tasks for the hire, ranked by fit, each with the " +
                 "plain reasons it was suggested and the task_id to claim it by. Use this for " +
-                "questions like 'what should I work on?' or 'what's a good first task for me?'. " +
-                "Present the reasons, never a score. When the hire picks one, offer to claim it " +
-                "as their goal with claim_goal. Takes no arguments — it always ranks for the caller.",
+                "questions like 'what should I work on?', 'what's a good first task for me?' and " +
+                "'is there anything I could pick up?'. The pool is open to them however far along " +
+                "their onboarding path they are, so never hold it back until they have got " +
+                "further. Present the reasons, never a score. When the hire picks one, offer to " +
+                "claim it as their goal with claim_goal. Takes no arguments -- it always ranks " +
+                "for the caller.",
             parameters = noArgs(),
         )
 

@@ -92,14 +92,17 @@ class BuddyControllerTest(
     @Test
     fun `getSuggestionsForMe should return 200 with the hire's chips`() {
         every { buddySuggestionService.forMe(authId) } returns listOf(
-            BuddySuggestionResponse(label = "What should I work on?", question = "What should I work on next?"),
+            BuddySuggestionResponse(
+                label = "Anything I can pick up?",
+                question = "Is there something in the work pool I could pick up?",
+            ),
         )
 
         mockMvc
             .perform(get("/api/v1/onboarding/me/buddy/suggestions").with(userJwt))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].label").value("What should I work on?"))
-            .andExpect(jsonPath("$[0].question").value("What should I work on next?"))
+            .andExpect(jsonPath("$[0].label").value("Anything I can pick up?"))
+            .andExpect(jsonPath("$[0].question").value("Is there something in the work pool I could pick up?"))
     }
 
     /**

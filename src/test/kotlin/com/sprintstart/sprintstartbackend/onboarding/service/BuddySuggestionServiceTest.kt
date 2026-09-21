@@ -33,7 +33,7 @@ class BuddySuggestionServiceTest {
         )
 
         assertThat(service.forHire(userId).map { it.label })
-            .containsExactly("How's my work going?", "What should I work on?")
+            .containsExactly("How's my work going?", "Anything I can pick up?")
     }
 
     @Test
@@ -115,7 +115,7 @@ class BuddySuggestionServiceTest {
             "Where am I on my path?",
             "What do I still need?",
             "How's my work going?",
-            "What should I work on?",
+            "Anything I can pick up?",
         )
     }
 
@@ -146,7 +146,7 @@ class BuddySuggestionServiceTest {
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
         mounted(BuddyToolExecutor.GET_SUGGESTED_TASKS)
 
-        assertThat(service.forMe(authId).map { it.label }).containsExactly("What should I work on?")
+        assertThat(service.forMe(authId).map { it.label }).containsExactly("Anything I can pick up?")
     }
 
     @Test

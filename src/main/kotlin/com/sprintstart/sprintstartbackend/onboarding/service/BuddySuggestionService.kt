@@ -74,9 +74,12 @@ class BuddySuggestionService(
                 label = "What do I still need?",
                 question = "What do I still need to get set up?",
             ),
+            // "What should I work on?" was a coin toss next to the path chip, and the mentor
+            // read it as the path's question -- which is how a hire with work sitting in the pool
+            // got told there was nothing for them. This one asks for the pool and nothing else.
             BuddyToolExecutor.GET_SUGGESTED_TASKS to BuddySuggestionResponse(
-                label = "What should I work on?",
-                question = "What should I work on next?",
+                label = "Anything I can pick up?",
+                question = "Is there something in the work pool I could pick up?",
             ),
             BuddyToolExecutor.GET_MY_OPEN_PULL_REQUESTS to BuddySuggestionResponse(
                 label = "Is my PR stuck?",
