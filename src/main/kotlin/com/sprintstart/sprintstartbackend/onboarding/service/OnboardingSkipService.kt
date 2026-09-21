@@ -195,6 +195,29 @@ class OnboardingSkipService(
         deleteSkip(skip)
     }
 
+    /**
+     * Records that the authenticated user has seen the review of one of their skip requests.
+     *
+     * Drives the "updated" marker on the step: an answered skip counts as new until this is
+     * called. Marking a pending skip, or one already seen, changes nothing.
+     *
+     * @param authId External authentication identifier.
+     * @param skipId Identifier of the reviewed skip.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or skip does not exist.
+     */
+    @Transactional
+    @Tracked("Marking skip review as seen by user")
+    fun markSkipAnswerSeenForMe(authId: String, skipId: UUID) {
+        val userId = getUserId(authId)
+        val skip = onboardingSkipRepository
+            .findByIdAndStepPhasePathUserId(skipId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
+
+        if (skip.status != SkipStatus.PENDING && skip.answerSeenAt == null) {
+            skip.answerSeenAt = Instant.now()
+        }
+    }
+
 //  ========================== Methods for admins ==========================
 
     /**
