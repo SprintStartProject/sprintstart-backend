@@ -1,35 +1,35 @@
-package com.sprintstart.sprintstartbackend.connectors.github
+package com.sprintstart.sprintstartbackend.connectors.bitbucket
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.service.GithubConnectorService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
 import org.springframework.stereotype.Component
 import java.util.UUID
 
+/**
+ * Registers the Bitbucket connector with the connector overview.
+ *
+ * Deliberately reports no sources yet: source lookup needs the connection service that this
+ * connector's module still grows, and returning an empty list is the honest answer until then —
+ * the overview treats a connector without sources as connectable but empty rather than broken.
+ *
+ * Once sources exist, a connection maps to `ConnectorSource(id = "$workspace/$slug",
+ * url = "https://bitbucket.org/$workspace/$slug", enabled = sourceEnabled)`, mirroring the
+ * GitHub connector.
+ */
 @Component
-class GithubConnector(
-    private val service: GithubConnectorService,
-) : IConnector {
+class BitbucketConnector : IConnector {
     override val id: String
-        get() = "github"
+        get() = "bitbucket"
     override val displayName: String
-        get() = "Github Repository Connector"
+        get() = "Bitbucket Repository Connector"
 
-    override fun getSources(): List<ConnectorSource> =
-        service.getAllSources().map { it.toConnectorSource() }
+    override fun getSources(): List<ConnectorSource> = emptyList()
 
-    override fun getSources(projectId: UUID): List<ConnectorSource> =
-        service.getSourcesByProjectId(projectId).map { it.toConnectorSource() }
+    override fun getSources(projectId: UUID): List<ConnectorSource> = emptyList()
 
-    override fun patchSource(source: ConnectorSource, newStatus: Boolean) =
-        service.patchSource(source, newStatus)
-
-    private fun GithubRepositoryConnection.toConnectorSource() =
-        ConnectorSource(
-            id = "$owner/$name",
-            name = name,
-            url = "https://github.com/$owner/$name",
-            enabled = sourceEnabled,
+    override fun patchSource(source: ConnectorSource, newStatus: Boolean) {
+        throw UnsupportedOperationException(
+            "Bitbucket sources cannot be patched yet: the connector does not manage sources so far.",
         )
+    }
 }
