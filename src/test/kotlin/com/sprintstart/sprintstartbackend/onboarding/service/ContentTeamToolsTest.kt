@@ -20,7 +20,16 @@ class ContentTeamToolsTest {
     private val f = ContentFixture()
     private val pathService: OnboardingPathService = mockk(relaxed = true)
     private val stepService: OnboardingStepService = mockk(relaxed = true)
-    private val tools = ContentTeamTools(f.scope, pathService, stepService)
+    private val tools = ContentTeamTools(
+        f.scope,
+        f.pathElements,
+        pathService,
+        stepService,
+        mockk(relaxed = true),
+        mockk(relaxed = true),
+        mockk(relaxed = true),
+        mockk(relaxed = true),
+    )
 
     private val phaseId = UUID.randomUUID()
     private val stepId = UUID.randomUUID()
@@ -64,8 +73,14 @@ class ContentTeamToolsTest {
     @Test
     fun `mounts exactly the reads of the area, in the content area`() {
         assertThat(tools.area).isEqualTo(TeamArea.CONTENT)
-        assertThat(tools.toolSpecs().map { it.name }).containsExactly("get_member_path")
-        assertThat(tools.handles("get_member_path")).isTrue()
+        assertThat(tools.toolSpecs().map { it.name }).containsExactly(
+            "get_member_path",
+            "list_pending_skips",
+            "list_feedback",
+            "get_phase_checks",
+            "get_orientation_packet",
+        )
+        assertThat(tools.toolSpecs().all { tools.handles(it.name) }).isTrue()
         assertThat(tools.handles("add_phase")).isFalse()
     }
 

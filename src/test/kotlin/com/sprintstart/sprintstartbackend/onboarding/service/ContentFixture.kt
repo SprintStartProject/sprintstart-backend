@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
+import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -16,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
+import java.util.Optional
 import java.util.UUID
 
 /**
@@ -28,7 +31,9 @@ internal class ContentFixture {
     val pathElements: PathElements = mockk(relaxed = true)
     val projectMembershipApi: ProjectMembershipApi = mockk(relaxed = true)
     val userApi: UserApi = mockk(relaxed = true)
-    val scope = ContentScope(pathElements, projectMembershipApi, userApi)
+    val proposals: StarterWorkTaskProposalRepository = mockk(relaxed = true)
+    val starterWorkScope: StarterWorkScope = mockk(relaxed = true)
+    val scope = ContentScope(pathElements, projectMembershipApi, userApi, proposals, starterWorkScope)
 
     val projectId: UUID = UUID.randomUUID()
     val memberId: UUID = UUID.randomUUID()
@@ -39,6 +44,7 @@ internal class ContentFixture {
         every { projectMembershipApi.getProjectMembers(projectId) } returns
             listOf(ProjectMember(memberId, "Sam Rivera", githubLogin = null, joinedAt = null))
         onlyThisProject()
+        every { proposals.findById(any()) } returns Optional.empty()
     }
 
     /** The member is on this project and no other, which is what most tests want. */
@@ -77,6 +83,14 @@ internal class ContentFixture {
         val element = PathElement(kind, id, owner, title, position, children, contains, stepStatus, finishedSteps)
         every { pathElements.find(kind, id) } returns element
         return element
+    }
+
+    /** A starter-work task, from a repository that is linked to this project or not. */
+    fun task(linked: Boolean = true, title: String = "Fix the typo"): StarterWorkTaskProposal {
+        val task = StarterWorkTaskProposal(sourceId = "github:acme/app:ISSUE:${UUID.randomUUID()}", title = title)
+        every { proposals.findById(task.id) } returns Optional.of(task)
+        every { starterWorkScope.covers(task.sourceId, projectId) } returns linked
+        return task
     }
 
     /** An element that is gone. */

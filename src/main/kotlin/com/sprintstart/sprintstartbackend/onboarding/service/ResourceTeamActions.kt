@@ -19,10 +19,10 @@ import java.net.URI
  * be a web link, so these refuse anything else at proposal.
  */
 
-private const val NOT_A_WEB_LINK = "The url must be a full web address starting with http:// or https://."
+internal const val NOT_A_WEB_LINK = "The url must be a full web address starting with http:// or https://."
 
 /** Whether [text] is an absolute http(s) address with a host. */
-private fun isWebLink(text: String): Boolean =
+internal fun isWebLink(text: String): Boolean =
     runCatching { URI(text) }.getOrNull()?.let {
         (it.scheme == "http" || it.scheme == "https") && !it.host.isNullOrBlank()
     } ?: false

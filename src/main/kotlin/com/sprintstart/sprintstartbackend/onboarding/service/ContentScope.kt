@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
+import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -28,6 +30,8 @@ class ContentScope(
     private val pathElements: PathElements,
     private val projectMembershipApi: ProjectMembershipApi,
     private val userApi: UserApi,
+    private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository,
+    private val starterWorkScope: StarterWorkScope,
 ) {
     /**
      * The [kind] element [id] names, if it sits on the path of a member of [projectId].
@@ -44,6 +48,21 @@ class ContentScope(
     /** The refusal for a stored proposal whose target is gone or out of scope since, or null when it is fine. */
     fun missing(kind: PathElementKind, id: UUID?, projectId: UUID): String? =
         goneSince(kind).takeIf { element(kind, id, projectId) == null }
+
+    /**
+     * The starter-work task [taskId] names, if its repository is linked to [projectId].
+     *
+     * An orientation packet belongs to a task and a project together, but the services behind it only
+     * check that the task exists. The task's source is what ties it to a project, so that is what is
+     * asked here — the same question the starter-work area asks of the pool.
+     */
+    fun proposal(taskId: UUID?, projectId: UUID): StarterWorkTaskProposal? =
+        taskId
+            ?.let { starterWorkTaskProposalRepository.findById(it).orElse(null) }
+            ?.takeIf { starterWorkScope.covers(it.sourceId, projectId) }
+
+    /** Everyone on [projectId]. */
+    fun members(projectId: UUID): List<ProjectMember> = projectMembershipApi.getProjectMembers(projectId)
 
     /** The member [memberId] names on [projectId], or null. */
     fun member(memberId: UUID?, projectId: UUID): ProjectMember? =
@@ -81,12 +100,22 @@ internal const val NOT_A_MEMBER_HERE =
     "That person is not on this project. Call find_member for the people who are, and pass the member_id " +
         "it gives."
 
+internal const val TASK_NOT_HERE =
+    "That task is not from a repository linked to this project. Call list_starter_work_pool for the tasks " +
+        "that are, and pass the task_id it gives."
+
 internal const val LEFT_SINCE_HERE = "That person is no longer on this project, so nothing was changed."
 
 /** What to tell the model when an id is not in scope, per kind. */
-internal fun notInScope(kind: PathElementKind): String =
-    "That ${kind.noun} is not on the onboarding path of anybody on this project. Call get_member_path for " +
-        "somebody who is, and pass an id from it."
+internal fun notInScope(kind: PathElementKind): String {
+    val where = when (kind) {
+        PathElementKind.SKIP -> "list_pending_skips"
+        PathElementKind.FEEDBACK -> "list_feedback"
+        else -> "get_member_path for somebody who is"
+    }
+    return "That ${kind.noun} is not on the onboarding path of anybody on this project. Call $where, and pass " +
+        "an id from it."
+}
 
 /** Why a stored proposal's target is no longer there: gone, or no longer on a member's path. */
 internal fun goneSince(kind: PathElementKind): String =
