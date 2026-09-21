@@ -4,11 +4,15 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.request.AcceptSkillSuggestionRequest
 import com.sprintstart.sprintstartbackend.user.model.request.AssignProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.SuggestSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.SkillSuggestionItemResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
 import io.mockk.Runs
@@ -49,6 +53,9 @@ class ProjectRoleControllerTest(
 
     @MockkBean
     private lateinit var projectRoleService: ProjectRoleService
+
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -116,23 +123,18 @@ class ProjectRoleControllerTest(
     fun `createRole should return 201 and created role`() {
         val request = CreateProjectRoleRequest("Developer", "Writes code")
         val role = ProjectRole(id = UUID.randomUUID(), name = "Developer", description = "Writes code")
-        coEvery { projectRoleService.createRole(request) } returns role
+        every { projectRoleService.createRole(request) } returns role
 
-        val asyncResult = mockMvc
+        mockMvc
             .perform(
                 post("/api/v1/projectRoles")
                     .with(adminJwt)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)),
-            ).andExpect(request().asyncStarted())
-            .andReturn()
-
-        mockMvc
-            .perform(asyncDispatch(asyncResult))
-            .andExpect(status().isCreated)
+            ).andExpect(status().isCreated)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { projectRoleService.createRole(request) }
+        verify(exactly = 1) { projectRoleService.createRole(request) }
     }
 
     @Test
@@ -289,17 +291,18 @@ class ProjectRoleControllerTest(
     }
 
     @Test
-    fun `suggestSkillsForRole should return 200 for admins`() {
+    fun `suggestSkillsForRole should return 200 for admins without body`() {
         val roleId = UUID.randomUUID()
-        val dto = UpdateRoleSkillsResponse(
-            id = UUID.randomUUID(),
+        val dto = SkillSuggestionItemResponse(
+            skillId = UUID.randomUUID(),
             name = "Kotlin",
-            roleIds = listOf(roleId),
-            status = SkillStatus.ACTIVE,
             category = "Languages & Paradigms",
-            universal = false,
+            reason = "Used in backend",
+            confidence = "high",
+            isNew = false,
+            chunkIds = listOf("c1"),
         )
-        coEvery { projectRoleService.suggestSkillsForRole(roleId) } returns listOf(dto)
+        coEvery { projectRoleService.suggestSkillsForRole(roleId, null) } returns listOf(dto)
 
         val asyncResult = mockMvc
             .perform(
@@ -313,26 +316,30 @@ class ProjectRoleControllerTest(
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId) }
+        coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId, null) }
     }
 
     @Test
-    fun `suggestSkillsForRole should return 200 for PMs`() {
+    fun `suggestSkillsForRole should return 200 for PMs with authorized projectId`() {
         val roleId = UUID.randomUUID()
-        val dto = UpdateRoleSkillsResponse(
-            id = UUID.randomUUID(),
-            name = "Kotlin",
-            roleIds = listOf(roleId),
-            status = SkillStatus.ACTIVE,
-            category = "Languages & Paradigms",
-            universal = false,
+        val projectId = UUID.randomUUID()
+        val request = SuggestSkillsRequest(projectId = projectId, industry = "Fintech")
+        val dto = SkillSuggestionItemResponse(
+            name = "Docker",
+            category = "DevOps",
+            reason = "Containerization",
+            confidence = "high",
+            isNew = true,
         )
-        coEvery { projectRoleService.suggestSkillsForRole(roleId) } returns listOf(dto)
+        every { projectAuth.canAccessProject(any(), projectId) } returns true
+        coEvery { projectRoleService.suggestSkillsForRole(roleId, request) } returns listOf(dto)
 
         val asyncResult = mockMvc
             .perform(
                 post("/api/v1/projectRoles/$roleId/skills/suggest")
-                    .with(pmJwt),
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -341,7 +348,30 @@ class ProjectRoleControllerTest(
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-        coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId) }
+        coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId, request) }
+    }
+
+    @Test
+    fun `suggestSkillsForRole should return 403 when PM sends unauthorized projectId`() {
+        val roleId = UUID.randomUUID()
+        val foreignProjectId = UUID.randomUUID()
+        val request = SuggestSkillsRequest(projectId = foreignProjectId)
+        every { projectAuth.canAccessProject(any(), foreignProjectId) } returns false
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggest")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isForbidden)
+
+        coVerify(exactly = 0) { projectRoleService.suggestSkillsForRole(any(), any()) }
     }
 
     @Test
@@ -359,7 +389,7 @@ class ProjectRoleControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
 
-        coVerify(exactly = 0) { projectRoleService.suggestSkillsForRole(any()) }
+        coVerify(exactly = 0) { projectRoleService.suggestSkillsForRole(any(), any()) }
     }
 
     @Test
@@ -377,13 +407,13 @@ class ProjectRoleControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
 
-        coVerify(exactly = 0) { projectRoleService.suggestSkillsForRole(any()) }
+        coVerify(exactly = 0) { projectRoleService.suggestSkillsForRole(any(), any()) }
     }
 
     @Test
     fun `suggestSkillsForRole should return 404 when role not found`() {
         val roleId = UUID.randomUUID()
-        coEvery { projectRoleService.suggestSkillsForRole(roleId) } throws
+        coEvery { projectRoleService.suggestSkillsForRole(roleId, null) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 
         val asyncResult = mockMvc
@@ -396,5 +426,121 @@ class ProjectRoleControllerTest(
         mockMvc
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 200 for admins`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest(skillId = UUID.randomUUID())
+        val dto = UpdateRoleSkillsResponse(
+            id = request.skillId!!,
+            name = "Kotlin",
+            roleIds = listOf(roleId),
+            status = SkillStatus.ACTIVE,
+            category = "Languages & Paradigms",
+            universal = false,
+        )
+        every { projectRoleService.acceptSkillSuggestion(roleId, request) } returns listOf(dto)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { projectRoleService.acceptSkillSuggestion(roleId, request) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 200 for PMs`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest(name = "Docker", category = "DevOps")
+        val dto = UpdateRoleSkillsResponse(
+            id = UUID.randomUUID(),
+            name = "Docker",
+            roleIds = listOf(roleId),
+            status = SkillStatus.ACTIVE,
+            category = "DevOps",
+            universal = false,
+        )
+        every { projectRoleService.acceptSkillSuggestion(roleId, request) } returns listOf(dto)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isOk)
+            .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+
+        verify(exactly = 1) { projectRoleService.acceptSkillSuggestion(roleId, request) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 403 for normal users`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest(name = "Docker")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectRoleService.acceptSkillSuggestion(any(), any()) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 403 for HR`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest(name = "Docker")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(hrJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { projectRoleService.acceptSkillSuggestion(any(), any()) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 400 when request invalid or skill retired`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest()
+        every { projectRoleService.acceptSkillSuggestion(roleId, request) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion should return 404 when role not found`() {
+        val roleId = UUID.randomUUID()
+        val request = AcceptSkillSuggestionRequest(name = "Docker")
+        every { projectRoleService.acceptSkillSuggestion(roleId, request) } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projectRoles/$roleId/skills/suggestions/accept")
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isNotFound)
     }
 }
