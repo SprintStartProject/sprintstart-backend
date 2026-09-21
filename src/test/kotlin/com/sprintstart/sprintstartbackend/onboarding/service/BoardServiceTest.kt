@@ -911,6 +911,10 @@ class BoardServiceTest {
     private fun checklistCard(
         board: Board,
         state: BoardCardState = BoardCardState.ACTIVE,
+        items: List<ChecklistItemPayload> = listOf(
+            ChecklistItemPayload(id = firstLineId, text = "Run it locally", done = true),
+            ChecklistItemPayload(id = secondLineId, text = "Fix it"),
+        ),
     ) = BoardCard(
         boardId = board.id,
         kind = BoardCardKind.CHECKLIST,
@@ -918,15 +922,12 @@ class BoardServiceTest {
         state = state,
         position = 0,
         payload = json.encodeToString<BoardCardPayload>(
-            ChecklistPayload(
-                title = "Getting started",
-                items = listOf(
-                    ChecklistItemPayload(id = firstLineId, text = "Run it locally", done = true),
-                    ChecklistItemPayload(id = secondLineId, text = "Fix it"),
-                ),
-            ),
+            ChecklistPayload(title = "Getting started", items = items),
         ),
     )
+
+    private fun savedChecklist(card: BoardCard): ChecklistPayload =
+        assertNotNull(json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload)) as? ChecklistPayload)
 
     private fun onBoard(card: BoardCard, board: Board) {
         every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
@@ -997,5 +998,79 @@ class BoardServiceTest {
         assertEquals(listOf("Run it locally", "Fix it", "Open a PR"), checklist.items.map { it.text })
         assertEquals(listOf(true, false, false), checklist.items.map { it.done })
         verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
+    }
+
+    /**
+     * Set only, and matched the way a hire would say it: trimmed and case-insensitive. A line that
+     * is already done stays done and is not counted, so the count is what actually changed.
+     */
+    @Test
+    fun `ticking sets only the named lines and counts only the new ticks`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val ticked = service.tickChecklistItems(hireId, projectId, card.id, listOf("  fix IT ", "Run it locally"))
+
+        assertEquals(1, ticked)
+        val checklist = savedChecklist(card)
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.map { it.id })
+        assertEquals(listOf("Run it locally", "Fix it"), checklist.items.map { it.text })
+        assertEquals(listOf(true, true), checklist.items.map { it.done })
+        verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
+    }
+
+    /** Nothing matched is nothing changed, and nothing is written. */
+    @Test
+    fun `ticking lines that are not on the card writes nothing`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val ticked = service.tickChecklistItems(hireId, projectId, card.id, listOf("Deploy to production"))
+
+        assertEquals(0, ticked)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Rewording a step is not undoing it: the line keeps its id and its tick, and nothing else moves. */
+    @Test
+    fun `rewording keeps the line's id and tick and leaves the rest alone`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val reworded = service.rewordChecklistItem(
+            hireId,
+            projectId,
+            card.id,
+            before = " run IT locally",
+            after = "Run it locally with the seed data",
+        )
+
+        assertTrue(reworded)
+        val checklist = savedChecklist(card)
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.map { it.id })
+        assertEquals(listOf("Run it locally with the seed data", "Fix it"), checklist.items.map { it.text })
+        assertEquals(listOf(true, false), checklist.items.map { it.done })
+    }
+
+    /** Two lines that read the same: rewording either one silently would be the wrong edit half the time. */
+    @Test
+    fun `rewording refuses a line that matches more than one and writes nothing`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(
+            board,
+            items = listOf(
+                ChecklistItemPayload(id = firstLineId, text = "Fix it"),
+                ChecklistItemPayload(id = secondLineId, text = "fix it"),
+            ),
+        )
+        onBoard(card, board)
+
+        val reworded = service.rewordChecklistItem(hireId, projectId, card.id, "Fix it", "Fix the redirect")
+
+        assertFalse(reworded)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
     }
 }

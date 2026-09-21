@@ -8,9 +8,10 @@ import java.util.UUID
  * [action] is the proposed action's tool name (see `BuddyActionType`). The project is not
  * carried here — it is re-resolved server-side from the caller, so a client can never confirm an
  * action against a project the buddy did not scope it to. The remaining fields are the per-action
- * confirm payloads the proposal carried, echoed back verbatim: [question] for flag-to-PM (the
- * text the buddy composed and showed the hire), [taskId] for claiming a suggested goal. All are
- * ignored by the actions that don't use them.
+ * confirm payloads the proposal carried, echoed back verbatim — for example [question] for
+ * flag-to-PM (the text the buddy composed and showed the hire) or [taskId] for claiming a
+ * suggested goal; each field's own doc names the action it belongs to. All are ignored by the
+ * actions that don't use them.
  */
 data class BuddyActionRequest(
     val action: String,

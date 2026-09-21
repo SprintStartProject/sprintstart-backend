@@ -66,7 +66,8 @@ class BuddyBoardWriteActions(
             BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, projectName)
             BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, projectName)
             BuddyActionType.REWORD_CHECKLIST_ITEM -> proposeReword(call, type, projectName)
-            else -> proposeNote(call, type, projectName)
+            BuddyActionType.PLACE_NOTE -> proposeNote(call, type, projectName)
+            else -> error("$type is not a board write; handles() keeps it out of here")
         }
 
     /** Runs a confirmed one. The caller has already resolved whose board, and which project. */
@@ -84,7 +85,8 @@ class BuddyBoardWriteActions(
             tickItems(userId, projectId, payload.cardId, payload.checklistItems)
         BuddyActionType.REWORD_CHECKLIST_ITEM ->
             rewordItem(userId, projectId, payload.cardId, payload.lineBefore, payload.lineAfter)
-        else -> placeNote(userId, projectId, payload.noteText)
+        BuddyActionType.PLACE_NOTE -> placeNote(userId, projectId, payload.noteText)
+        else -> error("$type is not a board write; handles() keeps it out of here")
     }
 
     /** What a confirmed board write carries, unpacked from the request by the caller. */
