@@ -42,4 +42,13 @@ data class BuddyStreamEvent(
     /** `record_assessment` confirm payload: which competency, and the level in words. */
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
+    /**
+     * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
+     * instead of per-action payload fields — the client echoes nothing back but this.
+     */
+    @SerialName("proposal_id") val proposalId: String? = null,
+    /** Team-mode `action_proposal`: everything the manager is agreeing to, in words. */
+    val preview: String? = null,
+    /** Team-mode `action_proposal`: `STANDARD`, `DESTRUCTIVE` or `BULK`, deciding how the card is drawn. */
+    val risk: String? = null,
 )

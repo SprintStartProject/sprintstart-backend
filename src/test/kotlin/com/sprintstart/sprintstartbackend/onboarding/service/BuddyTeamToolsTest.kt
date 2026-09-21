@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
@@ -16,6 +17,9 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.ObjectProvider
@@ -29,13 +33,22 @@ class BuddyTeamToolsTest {
     private val arrivalStepService: ArrivalStepService = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val areaToolsProvider: ObjectProvider<TeamAreaTools> = mockk()
+    private val buddyProposalService: BuddyProposalService = mockk()
 
     private val projectId = UUID.randomUUID()
     private val memberId = UUID.randomUUID()
     private val context = TeamToolContext(userId = UUID.randomUUID(), authId = "auth|pm", projectId = projectId)
 
-    private fun tools(vararg areas: TeamAreaTools): BuddyTeamTools {
+    private fun tools(
+        vararg areas: TeamAreaTools,
+        actions: List<TeamActionHandler> = emptyList(),
+    ): BuddyTeamTools {
         every { areaToolsProvider.orderedStream() } answers { areas.toList().stream() }
+        every { buddyProposalService.actionAreas() } answers { actions.map { it.area }.toSet() }
+        every { buddyProposalService.actionSpecs(any()) } answers {
+            val opened = firstArg<Set<TeamArea>>()
+            actions.filter { it.area in opened }.map { it.spec }
+        }
         return BuddyTeamTools(
             projectAttentionService,
             onboardingMetricsService,
@@ -43,8 +56,22 @@ class BuddyTeamToolsTest {
             arrivalStepService,
             projectMembershipApi,
             areaToolsProvider,
+            buddyProposalService,
         )
     }
+
+    private fun action(name: String, area: TeamArea) =
+        object : TeamActionHandler {
+            override val area = area
+            override val risk = BuddyProposalRisk.STANDARD
+            override val spec = spec(name)
+
+            override fun draft(call: BuddyToolCallDto, context: TeamToolContext) = TeamActionDraft.Refused("unused")
+
+            override fun recheck(params: JsonObject, context: TeamToolContext): String? = null
+
+            override suspend fun perform(params: JsonObject, context: TeamToolContext) = "unused"
+        }
 
     private fun spec(name: String) =
         BuddyToolSpecDto(name = name, description = "", parameters = JsonObject(emptyMap()))
@@ -319,5 +346,32 @@ class BuddyTeamToolsTest {
             .contains("GitHub account (we confirmed this)")
             .contains("Read the handbook (they told us)")
             .doesNotContain(" of ")
+    }
+
+    /** An area whose only tools are actions still has something behind it, so it can be opened. */
+    @Test
+    fun `an area with only actions can be opened, and its actions are mounted only after opening`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        assertThat(readNames(tools)).contains(BuddyTeamTools.OPEN_AREA).doesNotContain("answer_escalation")
+        assertThat(tools.openArea(call(BuddyTeamTools.OPEN_AREA, "area" to "knowledge")).area)
+            .isEqualTo(TeamArea.KNOWLEDGE)
+        assertThat(readNames(tools, setOf(TeamArea.KNOWLEDGE))).contains("answer_escalation")
+    }
+
+    /**
+     * The model is held to the enum in open_area's definition. An area left out of it cannot be opened,
+     * however openArea itself would answer — so the enum must list action-only areas too.
+     */
+    @Test
+    fun `open_area's definition offers an area whose only tools are actions`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        val openArea = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }
+        val properties = openArea.parameters.getValue("properties").jsonObject
+        val area = properties.getValue("area").jsonObject
+        val offered = area.getValue("enum").jsonArray
+
+        assertThat(offered.map { it.jsonPrimitive.content }).containsExactly("knowledge")
     }
 }

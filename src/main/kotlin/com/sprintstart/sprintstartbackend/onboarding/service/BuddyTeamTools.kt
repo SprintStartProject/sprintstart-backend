@@ -41,29 +41,35 @@ class BuddyTeamTools(
     private val arrivalStepService: ArrivalStepService,
     private val projectMembershipApi: ProjectMembershipApi,
     private val areaToolsProvider: ObjectProvider<TeamAreaTools>,
+    private val buddyProposalService: BuddyProposalService,
 ) {
     // Resolved lazily: an area's tools may themselves depend on services that depend on this one.
     private val areaTools: Map<TeamArea, TeamAreaTools> by lazy {
         areaToolsProvider.orderedStream().toList().associateBy { it.area }
     }
 
+    /** Every area with something behind it: read tools, actions, or both. */
+    private fun openableAreas(): Set<TeamArea> = areaTools.keys + buddyProposalService.actionAreas()
+
     /**
      * The tools mounted for one hop, given the areas opened so far this turn.
      *
      * @param openedAreas Areas `open_area` has opened on earlier hops of this turn.
-     * @return The team reads, `open_area` when any area has tools, and each opened area's tools.
+     * @return The team reads, `open_area` when any area has tools, and each opened area's read tools
+     * and actions.
      */
     fun toolSpecs(openedAreas: Set<TeamArea>): List<BuddyToolSpecDto> =
         buildList {
             add(GET_TEAM_ATTENTION_SPEC)
             add(FIND_MEMBER_SPEC)
             add(GET_MEMBER_PROGRESS_SPEC)
-            if (areaTools.isNotEmpty()) {
+            if (openableAreas().isNotEmpty()) {
                 add(openAreaSpec())
             }
             openedAreas.sorted().forEach { area ->
                 areaTools[area]?.let { addAll(it.toolSpecs()) }
             }
+            addAll(buddyProposalService.actionSpecs(openedAreas))
         }
 
     /**
@@ -73,16 +79,18 @@ class BuddyTeamTools(
      */
     fun openArea(call: BuddyToolCallDto): OpenAreaOutcome {
         val requested = call.stringArg("area").trim()
-        val area = TeamArea.entries.firstOrNull { it.name.equals(requested, ignoreCase = true) }
-        val tools = area?.let { areaTools[it] }
-        if (area == null || tools == null) {
-            val available = areaTools.keys.sorted().joinToString(", ") { it.name.lowercase() }
+        val area = TeamArea.entries
+            .firstOrNull { it.name.equals(requested, ignoreCase = true) }
+            ?.takeIf { it in openableAreas() }
+        if (area == null) {
+            val available = openableAreas().sorted().joinToString(", ") { it.name.lowercase() }
             return OpenAreaOutcome(
                 area = null,
                 toolResult = "There is no area called “$requested”. Areas you can open: $available.",
             )
         }
-        val names = tools.toolSpecs().joinToString(", ") { it.name }
+        val names = (areaTools[area]?.toolSpecs().orEmpty() + buddyProposalService.actionSpecs(setOf(area)))
+            .joinToString(", ") { it.name }
         return OpenAreaOutcome(
             area = area,
             toolResult = "Opened ${area.name.lowercase()}. These tools are available from your next step: $names.",
@@ -277,7 +285,10 @@ class BuddyTeamTools(
                 putJsonObject("properties") {
                     putJsonObject("area") {
                         put("type", "string")
-                        putJsonArray("enum") { areaTools.keys.sorted().forEach { add(it.name.lowercase()) } }
+                        // The same set toolSpecs and openArea use. Listing only areas with read tools
+                        // would mount open_area and still forbid the model from opening an area whose
+                        // tools are all actions.
+                        putJsonArray("enum") { openableAreas().sorted().forEach { add(it.name.lowercase()) } }
                         put("description", "The area to open.")
                     }
                 }
