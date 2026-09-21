@@ -826,7 +826,8 @@ class BoardService(
     ): Pair<BoardCard, ProjectMember> {
         val member = memberOrNull(userId, projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
-        val card = boardRepository.findByUserIdAndProjectId(userId, projectId)
+        val card = boardRepository
+            .findByUserIdAndProjectId(userId, projectId)
             ?.let { board -> boardCardRepository.findLockedById(cardId)?.takeIf { it.boardId == board.id } }
             ?.takeIf { it.owner == BoardCardOwner.HIRE && it.state == BoardCardState.ACTIVE }
             ?.takeIf { it.kind == BoardCardKind.CHECKLIST }
