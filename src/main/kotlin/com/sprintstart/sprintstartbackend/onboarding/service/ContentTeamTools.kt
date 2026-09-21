@@ -109,8 +109,7 @@ class ContentTeamTools(
             scope.sharedNote(owner, projectId).takeIf { it.isNotEmpty() }?.let { appendLine(it) }
             path.phases.sortedBy { it.position }.forEach { phase ->
                 appendLine()
-                val hidden = if (phase.generationStatus.isHiddenFromUser()) " — not shown to them" else ""
-                appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]$hidden")
+                appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]")
                 phase.description.takeIf { it.isNotBlank() }?.let { appendLine("  ${it.short()}") }
                 onboardingStepService.getOnboardingStepsByPhaseId(phase.id).sortedBy { it.position }.forEach { step ->
                     appendLine(
@@ -124,6 +123,15 @@ class ContentTeamTools(
                     step.resources.forEach { resource ->
                         appendLine("    - link: ${resource.title} <${resource.url}> [resource_id: ${resource.id}]")
                     }
+                }
+            }
+            if (path.generationIssues.isNotEmpty()) {
+                appendLine()
+                appendLine("Not shown to them, because generating them produced nothing usable:")
+                path.generationIssues.forEach {
+                    appendLine(
+                        "- ${it.title} [phase_id: ${it.phaseId}] (${it.status.name.lowercase().replace('_', ' ')})",
+                    )
                 }
             }
         }.trim()

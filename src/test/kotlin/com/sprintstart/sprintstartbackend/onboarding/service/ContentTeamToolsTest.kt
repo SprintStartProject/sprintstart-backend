@@ -3,8 +3,9 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhasesResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingGenerationIssueResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
@@ -37,14 +38,25 @@ class ContentTeamToolsTest {
     private val taskId = UUID.randomUUID()
     private val resourceId = UUID.randomUUID()
 
+    private fun phase(description: String) =
+        GetOnboardingPhaseForUserResponse(
+            phaseId,
+            UUID.randomUUID(),
+            0,
+            "Setup",
+            description,
+            locked = false,
+            steps = emptyList(),
+        )
+
     private fun path() {
         every { pathService.getOnboardingPathByUserId(f.memberId) } returns
-            GetOnboardingPathResponse(
+            GetOnboardingPathForUserResponse(
                 id = UUID.randomUUID(),
                 userId = f.memberId,
                 createdAt = Instant.now(),
                 phases = listOf(
-                    GetOnboardingPhasesResponse(phaseId, UUID.randomUUID(), 0, "Setup", "Get the machine ready"),
+                    phase("Get the machine ready"),
                 ),
             )
         every { stepService.getOnboardingStepsByPhaseId(phaseId) } returns
@@ -102,26 +114,20 @@ class ContentTeamToolsTest {
     }
 
     @Test
-    fun `a phase the hire is not shown is marked as such`() {
-        path()
+    fun `phases that produced nothing are listed as not shown to them`() {
+        val hiddenId = UUID.randomUUID()
         every { pathService.getOnboardingPathByUserId(f.memberId) } returns
-            GetOnboardingPathResponse(
+            GetOnboardingPathForUserResponse(
                 UUID.randomUUID(),
                 f.memberId,
                 Instant.now(),
-                listOf(
-                    GetOnboardingPhasesResponse(
-                        phaseId,
-                        UUID.randomUUID(),
-                        0,
-                        "Setup",
-                        "d",
-                        generationStatus = GenerationStatus.FAILED,
-                    ),
+                emptyList(),
+                generationIssues = listOf(
+                    OnboardingGenerationIssueResponse(hiddenId, "Deep dive", GenerationStatus.FAILED),
                 ),
             )
 
-        assertThat(read(f.memberId)).contains("[phase_id: $phaseId] — not shown to them")
+        assertThat(read(f.memberId)).contains("Not shown to them", "Deep dive [phase_id: $hiddenId] (failed)")
     }
 
     @Test
@@ -137,11 +143,11 @@ class ContentTeamToolsTest {
         path()
         val long = "word ".repeat(200)
         every { pathService.getOnboardingPathByUserId(f.memberId) } returns
-            GetOnboardingPathResponse(
+            GetOnboardingPathForUserResponse(
                 UUID.randomUUID(),
                 f.memberId,
                 Instant.now(),
-                listOf(GetOnboardingPhasesResponse(phaseId, UUID.randomUUID(), 0, "Setup", long)),
+                listOf(phase(long)),
             )
 
         val text = read(f.memberId)
