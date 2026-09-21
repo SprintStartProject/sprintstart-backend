@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.DeclaredSkill
+import com.sprintstart.sprintstartbackend.user.external.DirectoryMatch
 import com.sprintstart.sprintstartbackend.user.external.GithubSeedingContext
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
@@ -255,6 +256,40 @@ class UserApiService(
             .findManagerAuthId(projectId)
             .map { it == authId }
             .orElse(false)
+    }
+
+    /**
+     * One person by an identifier somebody already has, or nobody.
+     *
+     * Blank input is nobody rather than everybody — the difference between a lookup and a listing,
+     * and the whole reason this exists next to [searchUsers]. More than one match is also nobody:
+     * an email and a GitHub login could belong to two different people, and answering with either
+     * would be this method guessing which one the caller meant.
+     */
+    @Transactional(readOnly = true)
+    override fun findByExactEmailOrGithubLogin(query: String): Optional<DirectoryMatch> {
+        val needle = query.trim()
+        if (needle.isBlank()) {
+            return Optional.empty()
+        }
+
+        // Equality, not `like`: a Specification rather than a finder keeps this off the repository
+        // interface, but the point is the predicate — an exact match on either identifier, so no
+        // prefix, suffix or wildcard a caller types can widen it into a search.
+        val exactly = Specification<User> { root, _, cb ->
+            cb.or(
+                cb.equal(cb.lower(root.get("email")), needle.lowercase()),
+                cb.equal(cb.lower(root.get("githubLogin")), needle.lowercase()),
+            )
+        }
+        val only = userRepository.findAll(exactly).singleOrNull() ?: return Optional.empty()
+
+        return Optional.of(
+            DirectoryMatch(
+                userId = only.id,
+                displayName = "${only.firstname} ${only.lastname}".trim().ifBlank { only.username },
+            ),
+        )
     }
 
     @Transactional(readOnly = true)
