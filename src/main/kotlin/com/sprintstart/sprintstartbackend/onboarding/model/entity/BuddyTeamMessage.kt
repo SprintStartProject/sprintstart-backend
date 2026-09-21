@@ -35,4 +35,14 @@ class BuddyTeamMessage(
     val createdAt: Instant = Instant.now(),
     @Column(nullable = false)
     val opening: Boolean = false,
+    /**
+     * The team areas this reply opened, as a comma-separated list of area names; null when it opened
+     * none, and for every message written before the column existed.
+     *
+     * Read back on the manager's *next* message so that an area opened to draft something is still
+     * open when they say "yes, send it". The transcript holds text only, so without this the tools that
+     * make the change are gone by the time the manager approves, and the model has nothing to call.
+     */
+    @Column(name = "opened_areas", nullable = true)
+    val openedAreas: String? = null,
 )
