@@ -30,4 +30,8 @@ class Skill(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var status: SkillStatus = SkillStatus.ACTIVE,
+    @Column(name = "category")
+    var category: String?,
+    @Column(name = "universal", nullable = false)
+    var universal: Boolean = false,
 )

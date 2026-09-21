@@ -5,4 +5,6 @@ import java.util.UUID
 data class CreateSkillRequest(
     val name: String,
     val roleIds: List<UUID>,
+    val category: String?,
+    val universal: Boolean = false,
 )

@@ -59,6 +59,7 @@ class StarterWorkTaskProposalServiceTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk(relaxed = true)
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
+    private val projectId = UUID.randomUUID()
     private val service = StarterWorkTaskProposalService(
         onboardingAiClient,
         competencyRepository,
@@ -78,7 +79,7 @@ class StarterWorkTaskProposalServiceTest {
         fun `persists proposed tasks as PROPOSED rows`() = runTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
-            coEvery { onboardingAiClient.proposeStarterWork(any(), any()) } returns
+            coEvery { onboardingAiClient.proposeStarterWork(any(), any(), any()) } returns
                 StarterWorkOutcome(
                     status = "proposed",
                     tasks = listOf(
@@ -94,7 +95,7 @@ class StarterWorkTaskProposalServiceTest {
             val slot = slot<StarterWorkTaskProposal>()
             every { starterWorkTaskProposalRepository.save(capture(slot)) } answers { slot.captured }
 
-            val result = service.generate()
+            val result = service.generate(projectId)
 
             assertEquals("github:org/repo:ISSUE:1", slot.captured.sourceId)
             assertEquals("Fix typo", slot.captured.title)
@@ -125,7 +126,7 @@ class StarterWorkTaskProposalServiceTest {
                 ),
             )
             every { competencyRepository.findAll() } returns emptyList()
-            coEvery { onboardingAiClient.proposeStarterWork(any(), any()) } returns
+            coEvery { onboardingAiClient.proposeStarterWork(any(), any(), any()) } returns
                 StarterWorkOutcome(
                     status = "proposed",
                     tasks = listOf(
@@ -139,14 +140,15 @@ class StarterWorkTaskProposalServiceTest {
                     ),
                 )
 
-            val result = service.generate()
+            val result = service.generate(projectId)
 
             assertEquals(0, result.tasksProposed)
             verify(exactly = 0) { starterWorkTaskProposalRepository.save(any()) }
         }
 
-        fun `sends the pooled source ids and the live competency keys`() = runTest {
-            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED)
+        @Test
+        fun `sends the project id, pooled source ids and the live competency keys`() = runTest {
+            val pooledStatuses = listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE)
             every { starterWorkTaskProposalRepository.findAllByStatusIn(pooledStatuses) } returns
                 listOf(
                     StarterWorkTaskProposal(sourceId = "s1", title = "t1", status = ProposalStatus.LIVE),
@@ -154,14 +156,20 @@ class StarterWorkTaskProposalServiceTest {
                 )
             every { competencyRepository.findAll() } returns
                 listOf(Competency(key = "kotlin", label = "Kotlin", kind = CompetencyKind.SKILL))
+            val pidsSlot = slot<List<UUID>>()
             val sourceIdsSlot = slot<List<String>>()
             val keysSlot = slot<List<String>>()
             coEvery {
-                onboardingAiClient.proposeStarterWork(capture(sourceIdsSlot), capture(keysSlot))
+                onboardingAiClient.proposeStarterWork(
+                    capture(pidsSlot),
+                    capture(sourceIdsSlot),
+                    capture(keysSlot),
+                )
             } returns StarterWorkOutcome(status = "unchanged")
 
-            service.generate()
+            service.generate(projectId)
 
+            assertEquals(listOf(projectId), pidsSlot.captured)
             assertEquals(listOf("s1", "s2"), sourceIdsSlot.captured)
             assertEquals(listOf("kotlin"), keysSlot.captured)
         }
@@ -193,13 +201,13 @@ class StarterWorkTaskProposalServiceTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
             every { starterWorkTaskProposalRepository.save(any()) } answers { firstArg() }
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns flowOf(
+            every { onboardingAiClient.streamStarterWork(any(), any(), any()) } returns flowOf(
                 AiProgressEvent(type = "stage", operation = "starter_work", stage = "retrieving", label = "…"),
                 AiProgressEvent(type = "item", operation = "starter_work", label = "Task: Fix typo"),
                 doneEvent(proposedOutcome()),
             )
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals(listOf("stage", "item", "done"), events.map { it.type })
             verify(exactly = 1) { starterWorkTaskProposalRepository.save(any()) }
@@ -216,9 +224,11 @@ class StarterWorkTaskProposalServiceTest {
                 ),
             )
             every { competencyRepository.findAll() } returns emptyList()
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns flowOf(doneEvent(proposedOutcome()))
+            every {
+                onboardingAiClient.streamStarterWork(any(), any(), any())
+            } returns flowOf(doneEvent(proposedOutcome()))
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals(listOf("warning", "done"), events.map { it.type })
             verify(exactly = 0) { starterWorkTaskProposalRepository.save(any()) }
@@ -228,10 +238,10 @@ class StarterWorkTaskProposalServiceTest {
         fun `a stream failure becomes a synthesised terminal error`() = runTest {
             every { starterWorkTaskProposalRepository.findAllByStatusIn(any()) } returns emptyList()
             every { competencyRepository.findAll() } returns emptyList()
-            every { onboardingAiClient.streamStarterWork(any(), any()) } returns
+            every { onboardingAiClient.streamStarterWork(any(), any(), any()) } returns
                 flow { throw RuntimeException("ai down") }
 
-            val events = service.streamGenerate().toList()
+            val events = service.streamGenerate(projectId).toList()
 
             assertEquals("error", events.last().type)
         }
@@ -247,6 +257,41 @@ class StarterWorkTaskProposalServiceTest {
             val result = service.listUnreviewed()
 
             assertEquals(1, result.tasks.size)
+        }
+    }
+
+    @Nested
+    inner class ListPool {
+        @Test
+        fun `defaults to the live pool, sorted by title`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s2", title = "Zebra"),
+                StarterWorkTaskProposal(sourceId = "s1", title = "Apple"),
+            )
+
+            val result = service.listPool(ProposalStatus.LIVE)
+
+            assertEquals(listOf("Apple", "Zebra"), result.map { it.title })
+        }
+
+        @Test
+        fun `lists the stale pool when asked`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.STALE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s1", title = "Closed upstream", status = ProposalStatus.STALE),
+            )
+
+            val result = service.listPool(ProposalStatus.STALE)
+
+            assertEquals(1, result.size)
+            assertEquals(ProposalStatus.STALE, result.single().status)
+        }
+
+        @Test
+        fun `refuses REJECTED with 400`() {
+            val ex = assertThrows<ResponseStatusException> { service.listPool(ProposalStatus.REJECTED) }
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+            verify(exactly = 0) { starterWorkTaskProposalRepository.findAllByStatus(any()) }
         }
     }
 

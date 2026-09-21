@@ -16,7 +16,7 @@ import com.sprintstart.sprintstartbackend.chat.service.ChatPromptService
 import com.sprintstart.sprintstartbackend.chat.service.ChatService
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -39,7 +39,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.authority.SimpleGrantedAuthority
-import org.springframework.security.crypto.keygen.KeyGenerators.string
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
@@ -410,10 +409,10 @@ class ChatControllerWebMvcTest(
     }
 
     @Nested
-    inner class DeleteChat {
+    inner class BinChat {
         @Test
-        fun `returns 204 when admin deletes chat`() {
-            every { chatService.deleteChat(chatId) } returns Unit
+        fun `returns 204 when admin bins chat`() {
+            every { chatService.binChat(chatId) } returns Unit
 
             mockMvc
                 .delete("/api/v1/chats/$chatId") {
@@ -423,12 +422,12 @@ class ChatControllerWebMvcTest(
                 }
 
             verify(exactly = 1) {
-                chatService.deleteChat(chatId)
+                chatService.binChat(chatId)
             }
         }
 
         @Test
-        fun `returns 403 when normal user tries to delete chat`() {
+        fun `returns 403 when normal user tries to bin chat`() {
             mockMvc
                 .delete("/api/v1/chats/$chatId") {
                     with(userJwt)
@@ -437,14 +436,14 @@ class ChatControllerWebMvcTest(
                 }
 
             verify(exactly = 0) {
-                chatService.deleteChat(any())
+                chatService.binChat(any())
             }
         }
 
         @Test
-        fun `returns 204 when current user deletes own chat`() {
+        fun `returns 204 when current user bins own chat`() {
             every {
-                chatService.deleteChatForCurrentUser(authId, chatId)
+                chatService.binChatForCurrentUser(authId, chatId)
             } returns Unit
 
             mockMvc
@@ -455,7 +454,7 @@ class ChatControllerWebMvcTest(
                 }
 
             verify(exactly = 1) {
-                chatService.deleteChatForCurrentUser(authId, chatId)
+                chatService.binChatForCurrentUser(authId, chatId)
             }
         }
 
@@ -468,7 +467,7 @@ class ChatControllerWebMvcTest(
                 }
 
             verify(exactly = 0) {
-                chatService.deleteChatForCurrentUser(any(), any())
+                chatService.binChatForCurrentUser(any(), any())
             }
         }
 
@@ -482,7 +481,7 @@ class ChatControllerWebMvcTest(
                 }
 
             verify(exactly = 0) {
-                chatService.deleteChatForCurrentUser(any(), any())
+                chatService.binChatForCurrentUser(any(), any())
             }
         }
     }

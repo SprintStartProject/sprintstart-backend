@@ -15,7 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluenceConnectionService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
-import com.sprintstart.sprintstartbackend.user.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

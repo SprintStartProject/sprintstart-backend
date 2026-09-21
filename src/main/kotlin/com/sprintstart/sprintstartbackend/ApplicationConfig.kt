@@ -43,15 +43,21 @@ data class ApplicationConfig(
  * concurrency limit. A phase that crosses either timeout is persisted as `TIMED_OUT` and left out
  * of the learner journey instead of blocking the path.
  *
+ * The defaults are aligned with the AI service's per-call timeout (`LLM_TIMEOUT_SECONDS`,
+ * 600 seconds): a phase may spend two full AI calls (generation plus one JSON-correction retry),
+ * so the phase timeout is 2 × 600 plus headroom, and the total timeout covers four sequential
+ * phase batches (the seeded 16-phase blueprint at the default concurrency of 4) plus headroom.
+ * Keep these in sync with the AI service when its timeout changes.
+ *
  * @property phaseTimeoutSeconds cap for a single phase's AI assembly
  * @property totalTimeoutSeconds cap for the complete onboarding generation
  * @property phaseConcurrency how many phases may assemble in parallel
  */
 data class OnboardingConfig(
     @get:JsonProperty("phase-timeout-seconds")
-    val phaseTimeoutSeconds: Long = 240,
+    val phaseTimeoutSeconds: Long = 1_300,
     @get:JsonProperty("total-timeout-seconds")
-    val totalTimeoutSeconds: Long = 900,
+    val totalTimeoutSeconds: Long = 5_400,
     @get:JsonProperty("phase-concurrency")
     val phaseConcurrency: Int = 4,
 )

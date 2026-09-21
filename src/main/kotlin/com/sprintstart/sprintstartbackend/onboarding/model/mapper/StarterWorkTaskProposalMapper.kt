@@ -13,4 +13,7 @@ fun StarterWorkTaskProposal.toResponse(): StarterWorkTaskProposalResponse =
         sourceUrl = sourceUrl,
         competencyKeys = competencyKeys.toList(),
         status = status,
+        reviewed = reviewed,
+        sourceHasAssignee = sourceHasAssignee,
+        sourceCheckedAt = sourceCheckedAt,
     )

@@ -170,13 +170,23 @@ class SkillAdminController(
     )
     @PostMapping("/skills")
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     fun createSkill(
         @RequestBody request: CreateSkillRequest,
     ): CreateSkillResponse {
         return skillService.createSkill(request)
     }
 
+    /**
+     * Partially updates a skill.
+     *
+     * Fields that are omitted from the request retain their current values, except for `category` (which gets reset
+     * to `null` when omitted).
+     *
+     * @param skillId The ID of the skill to update.
+     * @param request The request containing the skill details.
+     * @return The updated skill.
+     */
     @Operation(summary = "Update skill", description = "Updates editable fields of an existing skill.")
     @ApiResponses(
         value = [
@@ -189,7 +199,7 @@ class SkillAdminController(
     )
     @PatchMapping("/skills/{skillId}")
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     fun updateSkill(
         @Parameter(description = "UUID of the skill to update") @PathVariable skillId: UUID,
         @RequestBody request: UpdateSkillRequest,
@@ -218,7 +228,7 @@ class SkillAdminController(
     )
     @DeleteMapping("/skills/{skillId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN')")
     fun retireSkill(
         @Parameter(description = "UUID of the skill to retire") @PathVariable skillId: UUID,
     ) {

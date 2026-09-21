@@ -36,6 +36,8 @@ class Project(
     var industry: String? = null,
     @Column(name = "industry_confidence", nullable = true)
     var industryConfidence: String? = null,
+    @Column(name = "industry_custom", nullable = false, columnDefinition = "boolean not null default false")
+    var industryCustom: Boolean = false,
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
         name = "manager_user_id",

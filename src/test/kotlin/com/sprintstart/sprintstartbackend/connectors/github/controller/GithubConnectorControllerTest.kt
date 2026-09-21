@@ -23,10 +23,13 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubConnectorService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryConnectionOrchestrator
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryProjectService
+import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryVisibilityService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubUpdatesService
 import io.mockk.coEvery
+import io.mockk.coJustRun
 import io.mockk.every
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -72,6 +75,9 @@ class GithubConnectorControllerTest {
 
     @MockkBean
     private lateinit var githubRepositoryProjectService: GithubRepositoryProjectService
+
+    @MockkBean
+    private lateinit var visibilityService: GithubRepositoryVisibilityService
 
     private val objectMapper = jacksonObjectMapper()
 
@@ -585,6 +591,54 @@ class GithubConnectorControllerTest {
                         .content(objectMapper.writeValueAsString(request))
                         .with(pmJwt),
                 ).andExpect(status().isBadRequest)
+        }
+    }
+
+    @Nested
+    inner class AddRepositoryToProject {
+        @Test
+        fun `should return 200 with the resulting project ids`() {
+            val repositoryId = UUID.randomUUID()
+            coJustRun { visibilityService.requireCallerCanSeeConnection("mockId", repositoryId) }
+            every {
+                githubRepositoryProjectService.addProjectToRepository("mockId", repositoryId, projectId)
+            } returns setOf(projectId)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connections/$repositoryId/projects/$projectId").with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.projectIds[0]").value(projectId.toString()))
+        }
+
+        @Test
+        fun `should refuse a caller who cannot see the repository behind the connection`() {
+            val repositoryId = UUID.randomUUID()
+            coEvery {
+                visibilityService.requireCallerCanSeeConnection("mockId", repositoryId)
+            } throws RepositoryNotFoundException("acme", "private-repo")
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connections/$repositoryId/projects/$projectId").with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isNotFound)
+
+            // The link must not happen: connection ids are handed out by the source overview, so
+            // without this a PM holding one could pull another team's private repository into
+            // their own project -- and the propagation would carry its artifacts along.
+            verify(exactly = 0) {
+                githubRepositoryProjectService.addProjectToRepository(any(), any(), any())
+            }
         }
     }
 

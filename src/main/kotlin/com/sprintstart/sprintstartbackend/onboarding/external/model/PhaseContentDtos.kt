@@ -18,7 +18,7 @@ data class AssemblePhaseRequest(
     @SerialName("phase_description") val phaseDescription: String = "",
     @SerialName("phase_prompt") val phasePrompt: String,
     @SerialName("project_id") val projectId: String,
-    @SerialName("last_fingerprint") val lastFingerprint: String? = null,
+    @SerialName("industry") val industry: String? = null,
 )
 
 @Serializable

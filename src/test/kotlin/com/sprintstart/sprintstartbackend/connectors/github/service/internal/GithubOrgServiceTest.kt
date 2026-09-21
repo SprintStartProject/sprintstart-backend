@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -80,7 +81,7 @@ class GithubOrgServiceTest {
     fun `connectGithubOrgIfNecessary publishes failed event and rethrows on fetch failure`() = runTest {
         val published = mutableListOf<Any>()
         every { eventPublisher.publishEvent(capture(published)) } just runs
-        every { orgRepository.existsById("octocat") } returns false
+        every { orgRepository.existsByLoginIgnoreCase("octocat") } returns false
         coEvery { githubClient.isOrganization("octocat", "token") } returns true
         coEvery { githubClient.fetchOrgMetadata("octocat", "token") } throws RuntimeException("boom")
 
@@ -96,13 +97,14 @@ class GithubOrgServiceTest {
     fun `connectGithubOrgIfNecessary skips fetch when org metadata already connected`() = runTest {
         val published = mutableListOf<Any>()
         every { eventPublisher.publishEvent(capture(published)) } just runs
-        every { orgRepository.existsById("octocat") } returns true
+        every { orgRepository.existsByLoginIgnoreCase("octocat") } returns true
 
         service.connectGithubOrgIfNecessary("octocat", "token", transactionId)
 
         assertThat(published.filterIsInstance<GithubOrgMetadataFetchedEvent>()).isEmpty()
         assertThat(published).contains(
             GithubOrgMetadataFetchingStartedEvent(transactionId),
+            GithubOrgMetadataAlreadyConnectedEvent(transactionId, "octocat"),
             GithubOrgMetadataFetchingCompletedEvent(transactionId),
         )
         coVerify(exactly = 0) { githubClient.isOrganization(any(), any()) }
@@ -113,7 +115,7 @@ class GithubOrgServiceTest {
     fun `connectGithubOrgIfNecessary skips fetch when login is not an organization`() = runTest {
         val published = mutableListOf<Any>()
         every { eventPublisher.publishEvent(capture(published)) } just runs
-        every { orgRepository.existsById("octocat") } returns false
+        every { orgRepository.existsByLoginIgnoreCase("octocat") } returns false
         coEvery { githubClient.isOrganization("octocat", "token") } returns false
 
         service.connectGithubOrgIfNecessary("octocat", "token", transactionId)
@@ -128,7 +130,7 @@ class GithubOrgServiceTest {
 
     @Test
     fun `connectGithubOrgIfNecessary saves organization record after successful fetch`() = runTest {
-        every { orgRepository.existsById("octocat") } returns false
+        every { orgRepository.existsByLoginIgnoreCase("octocat") } returns false
         coEvery { githubClient.isOrganization("octocat", "token") } returns true
         val saved = slot<GithubOrganization>()
         every { orgRepository.save(capture(saved)) } answers { saved.captured }
@@ -143,7 +145,7 @@ class GithubOrgServiceTest {
     }
 
     private fun stubFetchableOrg() {
-        every { orgRepository.existsById(any()) } returns false
+        every { orgRepository.existsByLoginIgnoreCase(any()) } returns false
         coEvery { githubClient.isOrganization(any(), any()) } returns true
         every { orgRepository.save(any()) } answers { firstArg() }
     }

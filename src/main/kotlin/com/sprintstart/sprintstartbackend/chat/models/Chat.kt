@@ -4,6 +4,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -29,4 +30,8 @@ internal data class Chat(
     // in the table is irrelevant.
     @Column("project_id")
     var projectId: UUID? = null,
+    @Column("status")
+    var status: ChatStatus = ChatStatus.ACTIVE,
+    @Column("binned_at")
+    var binnedAt: Instant? = null,
 )

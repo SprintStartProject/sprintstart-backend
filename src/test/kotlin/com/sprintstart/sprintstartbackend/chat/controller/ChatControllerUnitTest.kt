@@ -139,11 +139,11 @@ class ChatControllerUnitTest {
     inner class DeleteChat {
         @Test
         fun `delegates to service with correct chat id`() {
-            every { chatService.deleteChat(chatId) } returns Unit
-            controller.deleteChat(chatId)
+            every { chatService.binChat(chatId) } returns Unit
+            controller.binChat(chatId)
 
             verify(exactly = 1) {
-                chatService.deleteChat(chatId)
+                chatService.binChat(chatId)
             }
         }
     }
@@ -154,12 +154,12 @@ class ChatControllerUnitTest {
         fun `delegates to service with correct auth id and chat id`() {
             val jwt = mockk<Jwt>()
             every { jwt.subject } returns authId
-            every { chatService.deleteChatForCurrentUser(authId, chatId) } returns Unit
+            every { chatService.binChatForCurrentUser(authId, chatId) } returns Unit
 
-            controller.deleteMyChat(chatId, jwt)
+            controller.binMyChat(chatId, jwt)
 
             verify(exactly = 1) {
-                chatService.deleteChatForCurrentUser(authId, chatId)
+                chatService.binChatForCurrentUser(authId, chatId)
             }
         }
     }

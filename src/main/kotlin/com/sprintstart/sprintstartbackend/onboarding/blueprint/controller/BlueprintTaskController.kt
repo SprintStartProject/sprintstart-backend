@@ -322,8 +322,9 @@ class BlueprintTaskAdminController(
 /**
  * Exposes project-scoped blueprint task endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
@@ -362,7 +363,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/steps/{stepId}/tasks")
     fun getBlueprintTasksForStep(
         @PathVariable projectId: UUID,
@@ -407,7 +408,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/tasks/{taskId}")
     fun getTaskById(
         @PathVariable projectId: UUID,
@@ -462,7 +463,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/steps/{stepId}/task")
     fun createTaskForStep(
         @PathVariable projectId: UUID,
@@ -522,7 +523,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/tasks/{taskId}")
     fun updateTaskById(
         @PathVariable projectId: UUID,
@@ -582,7 +583,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/tasks/{taskId}/position")
     fun updateBlueprintTaskPositionById(
         @PathVariable projectId: UUID,
@@ -637,7 +638,7 @@ class BlueprintTaskController(
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/tasks/{taskId}")
     fun deleteTaskById(
         @PathVariable projectId: UUID,

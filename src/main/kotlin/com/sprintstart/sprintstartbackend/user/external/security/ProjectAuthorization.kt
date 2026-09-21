@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.user.security
+package com.sprintstart.sprintstartbackend.user.external.security
 
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository

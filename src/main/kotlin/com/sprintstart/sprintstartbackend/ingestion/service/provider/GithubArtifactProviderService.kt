@@ -2,7 +2,9 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -54,10 +56,12 @@ class GithubArtifactProviderService(
     @Transactional
     fun persistArtifact(command: GithubArtifactCommand) {
         val runId = command.ingestionRunId
-        val projectIds = if (command.metadata is GithubArtifactMetadata) {
-            githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
-        } else {
-            mutableSetOf()
+        val projectIds = when (command.metadata) {
+            is GithubArtifactMetadata ->
+                githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
+            is GithubOrgMetadataArtifactMetadata ->
+                githubRepositoryApi.getProjectIdsByOwner(command.metadata.login).toMutableSet()
+            else -> mutableSetOf()
         }
 
         val existing = artifactRepository.findBySourceId(command.sourceId)
@@ -67,6 +71,28 @@ class GithubArtifactProviderService(
         }
 
         storeNew(command, projectIds, runId)
+    }
+
+    /**
+     * Reconciles project memberships for an already stored GitHub organization metadata artifact
+     * during an active ingestion run.
+     *
+     * Invoked when a repository is connected whose organization has already been fetched by an earlier
+     * connection. If any new project IDs are associated with the organization, the artifact is updated
+     * and marked for re-ingestion so the new project memberships are synchronized to the AI index.
+     *
+     * @param runId The active ingestion run ID.
+     * @param orgLogin The organization login or owner name.
+     */
+    @Transactional
+    fun syncOrgArtifactProjects(runId: UUID, orgLogin: String) {
+        val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, orgLogin) ?: return
+        val currentProjectIds = githubRepositoryApi.getProjectIdsByOwner(orgLogin)
+        val linked = artifact.addProjectIds(currentProjectIds)
+        if (linked) {
+            val run = lockRun(runId)
+            run.artifactIdsToReingest.add(artifact.id)
+        }
     }
 
     /**

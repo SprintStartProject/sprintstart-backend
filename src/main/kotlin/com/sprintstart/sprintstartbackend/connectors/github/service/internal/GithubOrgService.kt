@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -42,7 +43,8 @@ class GithubOrgService(
     suspend fun connectGithubOrgIfNecessary(org: String, token: String, transactionId: UUID) {
         eventPublisher.publishEvent(GithubOrgMetadataFetchingStartedEvent(transactionId))
 
-        if (withContext(Dispatchers.IO) { orgRepository.existsById(org) }) {
+        if (withContext(Dispatchers.IO) { orgRepository.existsByLoginIgnoreCase(org) }) {
+            eventPublisher.publishEvent(GithubOrgMetadataAlreadyConnectedEvent(transactionId, org))
             eventPublisher.publishEvent(GithubOrgMetadataFetchingCompletedEvent(transactionId))
             return
         }

@@ -99,6 +99,7 @@ class TaskOrientationService(
         val outcome = try {
             onboardingAiClient.assembleOrientation(
                 taskTitle = context.title,
+                projectIds = listOf(projectId),
                 taskBody = context.body,
                 labels = context.labels,
                 // Not knowable from an issue, so sent empty rather than guessed at.
@@ -141,6 +142,7 @@ class TaskOrientationService(
         return onboardingAiClient
             .streamOrientation(
                 taskTitle = context.title,
+                projectIds = listOf(projectId),
                 taskBody = context.body,
                 labels = context.labels,
                 touchedPaths = emptyList(),
@@ -224,7 +226,7 @@ class TaskOrientationService(
     }
 
     /**
-     * Pins a human-authored packet for the hire's *own* current task (fix-in-place on `/first-week`).
+     * Pins a human-authored packet for the hire's *own* current task (fix-in-place on `/hire-setup`).
      *
      * @throws ResponseStatusException 404 when the hire is not a member of the project or has no
      *   current task; 400 on an invalid request (see [authorPacket]).

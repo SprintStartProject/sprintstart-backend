@@ -29,6 +29,7 @@ class BlueprintGraphControllerTest : BlueprintControllerTestSupport() {
     private val service: BlueprintGraphNodeService = mockk()
     override val controller = BlueprintGraphController(service)
     override val controllerClass = BlueprintGraphController::class
+    override val expectedPreAuthorize = "@projectAuth.canManageProject(authentication, #projectId)"
 
     override val endpointCases =
         listOf(

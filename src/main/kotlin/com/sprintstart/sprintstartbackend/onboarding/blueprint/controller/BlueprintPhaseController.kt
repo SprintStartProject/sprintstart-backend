@@ -365,8 +365,9 @@ class BlueprintPhaseAdminController(
 /**
  * Exposes project-scoped blueprint phase endpoints.
  *
- * All routes derive [BlueprintScope.Project] from the path's project identifier. Method-level security defines which
- * management roles may call each operation, while the service layer enforces blueprint ownership and editability.
+ * All routes derive [BlueprintScope.Project] from the path's project identifier. Every operation requires
+ * `@projectAuth.canManageProject` — admins and the project's manager — while the service layer enforces
+ * blueprint ownership and editability.
  */
 @RestController
 @RequestMapping("/api/v1/projects/{projectId}/onboarding/blueprints")
@@ -406,7 +407,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/path/{pathId}/phases")
     fun getBlueprintPhasesForPath(
         @PathVariable projectId: UUID,
@@ -461,7 +462,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PostMapping("/path/{pathId}/phases")
     fun createBlueprintPhaseForPath(
         @PathVariable projectId: UUID,
@@ -503,7 +504,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/phase/{phaseId}/graph")
     fun getBlueprintSubGraphForPhaseId(
         @PathVariable projectId: UUID,
@@ -548,7 +549,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @GetMapping("/phases/{phaseId}")
     fun getBlueprintPhaseById(
         @PathVariable projectId: UUID,
@@ -603,7 +604,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/phases/{phaseId}")
     fun updateBlueprintPhaseById(
         @PathVariable projectId: UUID,
@@ -659,7 +660,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @PutMapping("/phases/{phaseId}/position")
     fun updateBlueprintPhasePositionById(
         @PathVariable projectId: UUID,
@@ -715,7 +716,7 @@ class BlueprintPhaseController(
         ],
     )
     @ResponseStatus(HttpStatus.OK)
-    @PreAuthorize("hasAnyRole('ADMIN','PM','HR')")
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
     @DeleteMapping("/phases/{phaseId}")
     fun deleteBlueprintPhaseById(
         @PathVariable projectId: UUID,

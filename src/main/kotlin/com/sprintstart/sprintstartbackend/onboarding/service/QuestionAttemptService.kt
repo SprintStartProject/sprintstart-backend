@@ -26,7 +26,9 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
@@ -48,13 +50,33 @@ class QuestionAttemptService(
     private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
     private val phaseCheckAiClient: PhaseCheckAiClient,
+    transactionManager: PlatformTransactionManager,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val txTemplate = TransactionTemplate(transactionManager)
+    private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
 
     /** Grading outcome of one question: whether it was correct plus optional AI feedback. */
     private data class Graded(
         val correct: Boolean,
         val feedback: String? = null,
+    )
+
+    /**
+     * Everything grading and the response need from a question, copied out while the read
+     * transaction is open.
+     *
+     * Question relationships are lazy JPA collections, so they would be detached by the time
+     * grading runs — grading deliberately happens outside any transaction, see
+     * [submitQuestionAttemptForMe].
+     */
+    private data class QuestionSnapshot(
+        val id: UUID,
+        val type: CheckQuestionType,
+        val question: String,
+        val correctOptionIds: Set<UUID>,
+        val correctAnswer: String?,
+        val explanation: String?,
     )
 
 //  ========================== Methods for users ==========================
@@ -65,7 +87,16 @@ class QuestionAttemptService(
      * The response reveals the correct answer, the explanation, and — for short text — the
      * AI's feedback, so the user learns from the attempt either way. A correct answer marks
      * the question passed for good and may unblock steps or questions that were waiting on
-     * it, which is also when the whole journey can end.
+     * it, which is also when the whole journey can end. Once a question is passed it stays
+     * passed: re-answering it wrongly still records the attempt, but the reported status
+     * remains [QuestionStatus.PASSED] so the frontend never shows a completed question as
+     * open again.
+     *
+     * The method is deliberately not transactional as a whole: grading a short-text answer
+     * is a blocking AI round-trip, and running it inside the write transaction would pin a
+     * DB connection for the call's whole duration. Instead the question is snapshotted in a
+     * short read transaction, grading happens outside any transaction, and only the attempt
+     * persistence runs in a write transaction.
      *
      * @param authId External authentication identifier.
      * @param questionId Identifier of the question being answered.
@@ -73,7 +104,6 @@ class QuestionAttemptService(
      * @return The graded attempt including the question's new status.
      * @throws ResponseStatusException When the user or question does not exist.
      */
-    @Transactional
     @Tracked("Submitting onboarding question attempt")
     fun submitQuestionAttemptForMe(
         authId: String,
@@ -81,9 +111,30 @@ class QuestionAttemptService(
         request: SubmitQuestionAttemptRequest,
     ): SubmitQuestionAttemptResponse {
         val userId = resolveUserId(authId)
-        val question = findQuestionForUser(questionId, userId)
-
+        val question = readTxTemplate.execute { findQuestionSnapshot(questionId, userId) }
+            ?: throw IllegalStateException("Question lookup returned no result")
         val graded = gradeQuestion(question, request)
+        return txTemplate.execute {
+            persistAttempt(userId, question, request, graded)
+        } ?: throw IllegalStateException("Attempt persistence returned no result")
+    }
+
+    /**
+     * Stores the attempt and builds the response.
+     *
+     * Runs in the write transaction so the pass check, the attempt insert, and the completion
+     * check see one consistent state. The attempt above is persisted before the completion
+     * check, so a correct answer is already visible to it. A question the user has ever passed
+     * reports [QuestionStatus.PASSED] regardless of this attempt's grading.
+     */
+    private fun persistAttempt(
+        userId: UUID,
+        question: QuestionSnapshot,
+        request: SubmitQuestionAttemptRequest,
+        graded: Graded,
+    ): SubmitQuestionAttemptResponse {
+        val previouslyPassed = questionAttemptRepository
+            .existsByQuestionIdAndUserIdAndCorrectTrue(question.id, userId)
         val attempt = QuestionAttempt(
             questionId = question.id,
             userId = userId,
@@ -106,11 +157,11 @@ class QuestionAttemptService(
             questionId = question.id,
             correct = graded.correct,
             createdAt = savedAttempt.createdAt,
-            correctOptionIds = question.options.filter { it.correct }.map { it.id },
+            correctOptionIds = question.correctOptionIds.toList(),
             correctAnswer = question.correctAnswer,
             explanation = question.explanation,
             feedback = graded.feedback,
-            status = if (graded.correct) QuestionStatus.PASSED else QuestionStatus.RETRY,
+            status = if (graded.correct || previouslyPassed) QuestionStatus.PASSED else QuestionStatus.RETRY,
             onboardingCompleted = onboardingCompleted,
         )
     }
@@ -312,11 +363,30 @@ class QuestionAttemptService(
     }
 
     /**
+     * Loads the question the same way as [findQuestionForUser] and copies everything grading
+     * and the response need into a [QuestionSnapshot] while the read transaction is open.
+     */
+    private fun findQuestionSnapshot(questionId: UUID, userId: UUID): QuestionSnapshot {
+        val question = findQuestionForUser(questionId, userId)
+        return QuestionSnapshot(
+            id = question.id,
+            type = question.type,
+            question = question.question,
+            correctOptionIds = question.options
+                .filter { it.correct }
+                .map { it.id }
+                .toSet(),
+            correctAnswer = question.correctAnswer,
+            explanation = question.explanation,
+        )
+    }
+
+    /**
      * Grades one answer. Multiple choice is decided in process (the exact set of correct
      * options); short text is delegated to the AI service for semantic grading, because users
      * rarely type the reference answer verbatim.
      */
-    private fun gradeQuestion(question: PhaseCheckQuestion, request: SubmitQuestionAttemptRequest): Graded {
+    private fun gradeQuestion(question: QuestionSnapshot, request: SubmitQuestionAttemptRequest): Graded {
         return when (question.type) {
             CheckQuestionType.MULTIPLE_CHOICE -> Graded(gradeMultipleChoice(question, request))
             CheckQuestionType.SHORT_TEXT -> gradeShortText(question, request)
@@ -325,14 +395,11 @@ class QuestionAttemptService(
 
     /** True when the selected options are exactly the correct ones. */
     private fun gradeMultipleChoice(
-        question: PhaseCheckQuestion,
+        question: QuestionSnapshot,
         request: SubmitQuestionAttemptRequest,
     ): Boolean {
-        val correctOptionIds = question.options
-            .filter { it.correct }
-            .map { it.id }
-            .toSet()
-        return correctOptionIds.isNotEmpty() && request.selectedOptionIds.toSet() == correctOptionIds
+        return question.correctOptionIds.isNotEmpty() &&
+            request.selectedOptionIds.toSet() == question.correctOptionIds
     }
 
     /**
@@ -343,7 +410,7 @@ class QuestionAttemptService(
      * comparison so submitting an answer never fails on grading alone.
      */
     private fun gradeShortText(
-        question: PhaseCheckQuestion,
+        question: QuestionSnapshot,
         request: SubmitQuestionAttemptRequest,
     ): Graded {
         val answer = request.textAnswer?.trim()
