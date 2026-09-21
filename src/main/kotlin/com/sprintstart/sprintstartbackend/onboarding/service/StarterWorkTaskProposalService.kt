@@ -58,6 +58,7 @@ class StarterWorkTaskProposalService(
     private val artifactIngestionApi: ArtifactIngestionApi,
     private val userApi: UserApi,
     private val projectMembershipApi: ProjectMembershipApi,
+    private val starterWorkScope: StarterWorkScope,
     private val json: Json,
     transactionManager: PlatformTransactionManager,
 ) {
@@ -201,17 +202,25 @@ class StarterWorkTaskProposalService(
         )
 
     /**
-     * Returns the live starter-work pool, for a PM choosing a task to author orientation for.
+     * Returns the starter-work pool at one status, for a PM choosing a task to author orientation
+     * for or reviewing what closed at its source.
      *
-     * The whole live set, ordered by title and not scoped to a project — tasks are a global
-     * pool (the entity has no `projectId`).
+     * Ordered by title and not scoped to a project — tasks are a global pool (the entity has no
+     * `projectId`). `REJECTED` is refused: that status is a person's sticky decision, not a shape
+     * of pool this endpoint means to expose, and the controller keeps that distinction at 400.
+     *
+     * @throws ResponseStatusException 400 if [status] is `REJECTED`.
      */
     @Transactional(readOnly = true)
-    fun listPool(): List<StarterWorkTaskProposalResponse> =
-        starterWorkTaskProposalRepository
-            .findAllByStatus(ProposalStatus.LIVE)
+    fun listPool(status: ProposalStatus): List<StarterWorkTaskProposalResponse> {
+        if (status == ProposalStatus.REJECTED) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "status must be LIVE or STALE")
+        }
+        return starterWorkTaskProposalRepository
+            .findAllByStatus(status)
             .sortedBy { it.title }
             .map { it.toResponse() }
+    }
 
     /**
      * Records that a person has looked at this task and is happy with it.
@@ -469,11 +478,15 @@ class StarterWorkTaskProposalService(
      * project.
      *
      * The user-id counterpart of [matchForUser], for callers that hold a user id rather than an
-     * auth subject (e.g. the buddy agent ranking tasks for the caller).
+     * auth subject (e.g. the buddy agent ranking tasks for the caller). Only this project's work and
+     * the shared pool are ranked (see [StarterWorkScope.forHiresOn]).
      */
     @Transactional(readOnly = true)
     fun matchForUserId(userId: UUID, projectId: UUID): List<RankedStarterWorkTaskResponse> {
-        val pool = starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE)
+        val pool = starterWorkScope.forHiresOn(
+            starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE),
+            projectId,
+        ) { it.sourceId }
         if (pool.isEmpty()) return emptyList()
 
         val profile = buildProfile(userId)

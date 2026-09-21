@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.events.proj
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService
 import io.mockk.coJustRun
 import io.mockk.coVerify
 import org.junit.jupiter.api.BeforeEach
@@ -44,6 +45,9 @@ class ProjectLinkPropagationTest {
     @MockkBean
     private lateinit var artifactProjectService: ArtifactProjectService
 
+    @MockkBean
+    private lateinit var githubOrgArtifactSyncService: GithubOrgArtifactSyncService
+
     @Autowired
     private lateinit var eventPublisher: ApplicationEventPublisher
 
@@ -52,6 +56,7 @@ class ProjectLinkPropagationTest {
     @BeforeEach
     fun setUp() {
         coJustRun { artifactProjectService.applyProjectLink(any(), any(), any()) }
+        coJustRun { githubOrgArtifactSyncService.syncOrgArtifact(any()) }
     }
 
     @Test
@@ -71,6 +76,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 true,
             )
+            githubOrgArtifactSyncService.syncOrgArtifact("acme")
         }
     }
 
@@ -91,6 +97,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 false,
             )
+            githubOrgArtifactSyncService.syncOrgArtifact("acme")
         }
     }
 

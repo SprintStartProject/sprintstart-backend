@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -19,6 +20,11 @@ class GithubOrgListener(
     @EventListener
     fun on(event: GithubOrgMetadataFetchedEvent) {
         githubArtifactProviderService.persistArtifact(githubArtifactMapper.toCommand(event))
+    }
+
+    @EventListener
+    fun on(event: GithubOrgMetadataAlreadyConnectedEvent) {
+        githubArtifactProviderService.syncOrgArtifactProjects(event.transactionId, event.org)
     }
 
     @EventListener

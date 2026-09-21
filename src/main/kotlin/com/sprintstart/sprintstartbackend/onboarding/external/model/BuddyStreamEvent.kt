@@ -59,4 +59,13 @@ data class BuddyStreamEvent(
      *  hire confirms a change they can see rather than one they would have to go looking for. */
     @SerialName("line_before") val lineBefore: String? = null,
     @SerialName("line_after") val lineAfter: String? = null,
+    /**
+     * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
+     * instead of per-action payload fields — the client echoes nothing back but this.
+     */
+    @SerialName("proposal_id") val proposalId: String? = null,
+    /** Team-mode `action_proposal`: everything the manager is agreeing to, in words. */
+    val preview: String? = null,
+    /** Team-mode `action_proposal`: `STANDARD`, `DESTRUCTIVE` or `BULK`, deciding how the card is drawn. */
+    val risk: String? = null,
 )

@@ -57,6 +57,21 @@ interface UserApi {
     fun userHasAccessToProject(authId: String, projectId: UUID): Boolean
 
     /**
+     * Checks whether a user may manage a project: an admin, or the project's assigned manager.
+     *
+     * The manager foreign key on the project is the authority, not the global PM role — the rule
+     * `ProjectAuthorization.canManageProject` applies to routes, offered here to modules that hold an
+     * auth ID rather than an `Authentication`. Membership alone never qualifies, unlike
+     * [userHasAccessToProject].
+     *
+     * @param authId External authentication identifier.
+     * @param projectId Project identifier.
+     * @return `true` when the user is an admin or the project's manager; `false` otherwise, including
+     * when the user or the project does not exist.
+     */
+    fun canManageProject(authId: String, projectId: UUID): Boolean
+
+    /**
      * Returns the GitHub account a user contributes as, if they have declared one.
      *
      * Artifact verification uses this to attribute a submitted pull request to the hire who

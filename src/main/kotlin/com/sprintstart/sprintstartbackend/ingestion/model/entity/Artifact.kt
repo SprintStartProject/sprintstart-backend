@@ -133,4 +133,19 @@ class Artifact(
      * @return `true` when the project was linked before.
      */
     fun removeProjectId(projectId: UUID): Boolean = projectIdsInternal.remove(projectId)
+
+    /**
+     * Reconciles the complete set of project IDs for this artifact.
+     *
+     * Overwrites the internal project ID set with the given target project IDs.
+     *
+     * @param newProjectIds The target set of project IDs.
+     * @return `true` when the project membership changed.
+     */
+    fun setProjectIds(newProjectIds: Set<UUID>): Boolean {
+        if (projectIdsInternal == newProjectIds) return false
+        projectIdsInternal.clear()
+        projectIdsInternal.addAll(newProjectIds)
+        return true
+    }
 }

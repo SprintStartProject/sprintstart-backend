@@ -97,6 +97,9 @@ class BuddyActionServiceTest {
                 competencyKeys = emptyList(),
                 status = ProposalStatus.LIVE,
                 taskZeroEligible = true,
+                reviewed = true,
+                sourceHasAssignee = null,
+                sourceCheckedAt = null,
             )
         },
         assignedAt = title?.let { Instant.EPOCH },

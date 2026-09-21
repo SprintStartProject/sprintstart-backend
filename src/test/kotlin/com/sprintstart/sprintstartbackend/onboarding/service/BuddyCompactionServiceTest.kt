@@ -9,6 +9,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -44,9 +46,14 @@ class BuddyCompactionServiceTest {
         every { rollback(any<TransactionStatus>()) } returns Unit
     }
 
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository = mockk()
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk()
+
     private val service = BuddyCompactionService(
         buddySessionRepository,
         buddyMessageRepository,
+        buddyTeamSessionRepository,
+        buddyTeamMessageRepository,
         onboardingAiClient,
         transactionManager,
     )
