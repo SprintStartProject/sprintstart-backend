@@ -141,6 +141,13 @@ class CreateArrivalStepsAction(
         }
 
         val taken = arrivalStepService.listForAuthoring(context.projectId).map { it.key }.toSet()
+        // The company-wide list, read to warn rather than to offer. A project-scoped step wins its
+        // key outright -- `resolve` drops the company step of the same key from the hire's list --
+        // so a manager adding "vpn" over a company "vpn" silently replaces it for everybody here.
+        // That is the manager's own decision to make, but only if the preview says it is being made.
+        // Nothing of this list reaches the model except the title of a step it collided with, which
+        // the manager already sees on their own arrival list.
+        val companyTitles = arrivalStepService.listForAuthoring(null).associate { it.key to it.title }
         val drafted = mutableListOf<DraftedStep>()
         for (entry in requested) {
             val key = normalizeKey(entry.text("key"))
@@ -172,6 +179,7 @@ class CreateArrivalStepsAction(
                 description = entry.text("description").ifBlank { null },
                 href = entry.text("href").ifBlank { null },
                 rigor = effectiveRigor(key, rigor),
+                replaces = companyTitles[key],
             )
         }
 
@@ -216,6 +224,12 @@ class CreateArrivalStepsAction(
                 append(" — the system checks this key itself, so it is observed whatever was asked for")
             }
             appendLine(".")
+            step.replaces?.let {
+                appendLine(
+                    "This takes the place of the company-wide step “$it” for everyone on this project — " +
+                        "they see this one instead.",
+                )
+            }
         }
         appendLine()
         append(
@@ -254,6 +268,8 @@ class CreateArrivalStepsAction(
         val description: String?,
         val href: String?,
         val rigor: Rigor,
+        /** The company-wide step this one would take the place of for this project, if any. */
+        val replaces: String?,
     )
 }
 
@@ -551,13 +567,26 @@ class DeleteArrivalStepAction(
         val step = arrivalStepService.stepOn(key, context.projectId)
             ?: return TeamActionDraft.Refused(NO_SUCH_STEP)
 
+        // Removing a project step does not always remove a step. The project's definition was
+        // winning this key outright, so deleting it lets the company-wide one of the same key back
+        // onto every hire's list here -- a different step, with different wording and possibly a
+        // different way of settling. "It stops appearing" would be untrue in exactly that case.
+        val restored = arrivalStepService.listForAuthoring(null).firstOrNull { it.key == key }
+
         return TeamActionDraft.Proposed(
             params = buildJsonObject { put("key", key) },
             label = "Remove arrival step: ${step.title.forLabel()}",
             preview = buildString {
                 appendLine("Remove “${step.title}” [key: $key] from this project's arrival list.")
                 appendLine()
-                appendLine("It stops appearing for everyone on this project.")
+                if (restored == null) {
+                    appendLine("It stops appearing for everyone on this project.")
+                } else {
+                    appendLine(
+                        "This project's version stops applying, and the company-wide step “${restored.title}” " +
+                            "takes its place for everyone here — the step does not disappear, it reverts.",
+                    )
+                }
                 append(
                     "What hires already did is not destroyed: their record is kept against the key '$key', so " +
                         "adding a step with that key back restores it.",

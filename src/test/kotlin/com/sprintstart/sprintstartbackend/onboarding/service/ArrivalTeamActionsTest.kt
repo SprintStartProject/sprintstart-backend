@@ -146,6 +146,43 @@ class ArrivalTeamActionsTest {
         }
 
         @Test
+        fun `a key the company list already uses says so, because the project's one replaces it`() {
+            onList()
+            every { arrivalStepService.listForAuthoring(null) } returns
+                listOf(
+                    ArrivalStep(key = "vpn", projectId = null, title = "Company VPN"),
+                )
+
+            val draft = proposed(
+                action.draft(
+                    call("create_arrival_steps", steps(mapOf("key" to "vpn", "title" to "Team VPN"))),
+                    context,
+                ),
+            )
+
+            // Allowed -- a project may override a company step -- but the manager confirms the
+            // override, not just the addition.
+            assertThat(draft.preview).contains("takes the place of the company-wide step “Company VPN”")
+            assertThat(draft.preview).contains("everyone on this project")
+        }
+
+        @Test
+        fun `a key nothing else uses says nothing about replacing`() {
+            onList()
+            every { arrivalStepService.listForAuthoring(null) } returns
+                listOf(ArrivalStep(key = "badge", projectId = null, title = "Company badge"))
+
+            val draft = proposed(
+                action.draft(
+                    call("create_arrival_steps", steps(mapOf("key" to "vpn", "title" to "Team VPN"))),
+                    context,
+                ),
+            )
+
+            assertThat(draft.preview).doesNotContain("takes the place of")
+        }
+
+        @Test
         fun `a key the project already has fails the whole batch with a plain message`() {
             onList(step("laptop"))
 
@@ -450,6 +487,21 @@ class ArrivalTeamActionsTest {
             assertThat(draft.label).contains("Remove arrival step")
             assertThat(draft.preview).contains("stops appearing for everyone on this project")
             assertThat(draft.preview).contains("adding a step with that key back restores it")
+        }
+
+        @Test
+        fun `removing an override says the company step comes back, not that the step goes away`() {
+            onList(step("vpn", title = "Team VPN"))
+            every { arrivalStepService.listForAuthoring(null) } returns
+                listOf(ArrivalStep(key = "vpn", projectId = null, title = "Company VPN"))
+
+            val draft = proposed(
+                action.draft(call("delete_arrival_step", buildJsonObject { put("key", "vpn") }), context),
+            )
+
+            assertThat(draft.preview).contains("company-wide step “Company VPN” takes its place")
+            assertThat(draft.preview).contains("it reverts")
+            assertThat(draft.preview).doesNotContain("It stops appearing for everyone on this project.")
         }
 
         @Test
