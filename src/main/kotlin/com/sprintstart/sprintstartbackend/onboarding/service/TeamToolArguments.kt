@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -31,11 +32,35 @@ internal fun BuddyToolCallDto.booleanArgument(name: String): Boolean? = argument
 /** A text field of stored params, trimmed; empty when missing or not text. */
 internal fun JsonObject.text(name: String): String = (this[name] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
 
+/**
+ * A text field of stored params when the proposal carried it at all, blank included; null when not.
+ *
+ * For a field whose blank value means something — a description confirmed to be taken off — where
+ * [text] alone cannot tell that apart from a field the proposal never mentioned.
+ */
+internal fun JsonObject.textIfPresent(name: String): String? = if (containsKey(name)) text(name) else null
+
 /** A UUID field of stored params; null when missing or not a UUID. */
 internal fun JsonObject.uuid(name: String): UUID? = runCatching { UUID.fromString(text(name)) }.getOrNull()
 
 /** A boolean field of stored params; null when missing or neither `true` nor `false`. Models send `"true"` too. */
 internal fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
+
+/**
+ * The object entries of an array field; non-objects are dropped rather than failing the read.
+ *
+ * Read off `call.arguments` for a tool call and off the stored params for a confirm — the two are
+ * the same shape, and an array the model sent is untrusted in both places.
+ */
+internal fun JsonObject.objectArray(name: String): List<JsonObject> =
+    (this[name] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
+
+/** The text entries of a stored array field, trimmed, with blanks dropped. */
+internal fun JsonObject.textArray(name: String): List<String> =
+    (this[name] as? JsonArray)
+        .orEmpty()
+        .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim() }
+        .filter { it.isNotEmpty() }
 
 /** A JSON schema of string fields, for a team tool's definition. */
 internal fun stringFields(vararg fields: Pair<String, String>, required: List<String>): JsonObject =
