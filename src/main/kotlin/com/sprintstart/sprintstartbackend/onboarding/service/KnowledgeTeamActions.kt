@@ -10,11 +10,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.KnowledgeReque
 import com.sprintstart.sprintstartbackend.onboarding.repository.CanonicalAnswerRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID
@@ -43,30 +40,11 @@ private fun CanonicalAnswerRepository.on(answerId: UUID?, projectId: UUID): Cano
         ?.let { findById(it).orElse(null) }
         ?.takeIf { it.projectId == projectId }
 
-private const val LABEL_CHARS = 60
-
-private fun String.forLabel(): String = if (length <= LABEL_CHARS) this else take(LABEL_CHARS - 1).trimEnd() + "…"
-
 private const val NOT_OPEN_HERE =
     "That question is not open on this project. Call list_open_escalations for the ones that are, and pass " +
         "the request_id it gives."
 
 private const val GONE_SINCE = "That question was answered or dismissed since, so nothing was changed."
-
-/** A JSON schema of string fields, for an action's tool definition. */
-private fun stringFields(vararg fields: Pair<String, String>, required: List<String>): JsonObject =
-    buildJsonObject {
-        put("type", "object")
-        putJsonObject("properties") {
-            fields.forEach { (name, description) ->
-                putJsonObject(name) {
-                    put("type", "string")
-                    put("description", description)
-                }
-            }
-        }
-        putJsonArray("required") { required.forEach { add(it) } }
-    }
 
 /**
  * Offers to answer a question a hire escalated, which turns the answer into a canonical answer.
