@@ -357,6 +357,38 @@ class OnboardingStepServiceTest {
         }
 
         @Test
+        fun `joins up the graph around a deleted step`() {
+            // A -> X -> B. Without this the edge B -> X outlived X: the delete failed on the join
+            // table, or B stayed locked behind a step nobody could finish.
+            val phase = makePhase()
+
+            fun node(id: UUID, title: String) = OnboardingStep(
+                id = id,
+                phase = phase,
+                position = 0,
+                title = title,
+                description = "d",
+                type = StepType.DOCUMENT,
+                estimatedMinutes = 5,
+                expectedOutcome = "",
+                status = StepStatus.WAITING,
+            ).also { phase.steps += it }
+            val a = node(UUID.randomUUID(), "A")
+            val x = node(stepId, "X").also { it.blockedBy += a }
+            val b = node(UUID.randomUUID(), "B").also { it.blockedBy += x }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(x)
+            every { onboardingStepRepository.findAllByPhaseIdAndPositionGreaterThan(phase.id, 0) } returns
+                mutableListOf()
+            every { onboardingStepRepository.delete(x) } just runs
+
+            service.deleteOnboardingStepForMe(authId, stepId)
+
+            assertEquals(setOf(a.id), b.blockedBy.map { it.id }.toSet())
+            assertEquals(emptySet<UUID>(), x.blockedBy.map { it.id }.toSet())
+        }
+
+        @Test
         fun `throws 404 when step not found`() {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
             every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.empty()

@@ -255,6 +255,40 @@ class OnboardingSkipController(
     ) {
         onboardingSkipService.deleteSkipByIdForMe(jwt.subject, skipId)
     }
+
+    /**
+     * Records that the authenticated user has seen the review of one of their skip requests.
+     *
+     * @param jwt Authenticated JWT used to resolve the current user.
+     * @param skipId Identifier of the reviewed skip.
+     */
+    @Operation(
+        summary = "Mark the review of the current user's onboarding skip as seen",
+        description = "Clears the 'updated' marker an approved or declined skip request shows until the " +
+            "member has looked at it. Pending or already seen skips are left unchanged.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Review marked as seen"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access onboarding skips"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No user or onboarding skip found for the authenticated user",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PostMapping("/skips/{skipId}/seen")
+    @PreAuthorize("hasRole('USER')")
+    fun markSkipAnswerSeenForMe(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "UUID of the reviewed onboarding skip")
+        @PathVariable skipId: UUID,
+    ) {
+        onboardingSkipService.markSkipAnswerSeenForMe(jwt.subject, skipId)
+    }
 }
 
 @RestController
