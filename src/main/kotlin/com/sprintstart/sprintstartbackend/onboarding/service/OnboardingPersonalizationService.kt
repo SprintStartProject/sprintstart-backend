@@ -105,15 +105,7 @@ class OnboardingPersonalizationService(
      */
     @Tracked("Creating onboarding path from blueprint")
     fun personalize(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
-        val profile = userApi
-            .getOnboardingProfileByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
-        if (projectId !in profile.projectIds) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "User with authId: $authId is not assigned to project: $projectId",
-            )
-        }
+        val profile = userApi.onboardingProfileInProject(authId, projectId)
         val projectRoleIds = profile.projectRoles[projectId]
             .orEmpty()
             .map { it.roleId }
@@ -209,13 +201,28 @@ class OnboardingPersonalizationService(
             sendEvent(OnboardingSseEvent(type = "path", path = response))
             sendEvent(OnboardingSseEvent(type = "done"))
         }.catch { error ->
-            logger.error(
-                "Onboarding personalization failed for authId {} in project {}",
-                authId,
-                projectId,
-                error,
+            if (error is EmptyOnboardingPathException) {
+                logger.warn(
+                    "Onboarding personalization for authId {} in project {} produced no phases ({})",
+                    authId,
+                    projectId,
+                    error.reason,
+                )
+            } else {
+                logger.error(
+                    "Onboarding personalization failed for authId {} in project {}",
+                    authId,
+                    projectId,
+                    error,
+                )
+            }
+            emit(
+                OnboardingSseEvent(
+                    type = "error",
+                    reason = (error as? EmptyOnboardingPathException)?.reason,
+                    message = error.message,
+                ),
             )
-            emit(OnboardingSseEvent(type = "error", message = error.message))
         }
     }
 
@@ -277,10 +284,13 @@ class OnboardingPersonalizationService(
                     generatedContentByBlueprintPhaseId = generated,
                     generationStatusByBlueprintPhaseId = generationStatuses,
                 )
+                val response = onboardingPath.toGetForUserResponse()
+                // A path nobody can work through is not saved: the one the hire had stays theirs.
+                if (response.phases.isEmpty()) throw EmptyOnboardingPathException.from(generationStatuses.values)
                 onboardingPathRepository.deleteByUserId(userId)
                 onboardingPathRepository.flush()
                 entityManager.persist(onboardingPath)
-                onboardingPath.toGetForUserResponse()
+                response
             }
         } ?: throw IllegalStateException("Onboarding path transaction returned no result")
 

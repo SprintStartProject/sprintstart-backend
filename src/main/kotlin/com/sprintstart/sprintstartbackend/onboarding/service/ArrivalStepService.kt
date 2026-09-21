@@ -92,9 +92,28 @@ class ArrivalStepService(
      * Empty when nobody has authored any steps, which is a real answer and not an error.
      */
     @Transactional(readOnly = true)
-    fun forHire(userId: UUID): List<ResolvedArrivalStep> {
-        val projectNames = projectNamesFor(userId)
+    fun forHire(userId: UUID): List<ResolvedArrivalStep> = resolve(userId, projectNamesFor(userId))
 
+    /**
+     * The arrival steps that apply to [userId] on one project: company-wide steps plus [projectId]'s
+     * own, with [projectId]'s definition winning a shared key.
+     *
+     * Not a filter over [forHire]. That list lets *any* of the hire's projects override a company
+     * step, so narrowing it to one project afterwards drops a company step another project overrode,
+     * and a reader of this project is told a step that applies here does not.
+     *
+     * @return The steps for that project, company-scoped first. Only company-wide steps when the hire
+     * is not on [projectId].
+     */
+    @Transactional(readOnly = true)
+    fun forHireOn(userId: UUID, projectId: UUID): List<ResolvedArrivalStep> =
+        resolve(userId, projectNamesFor(userId).filterKeys { it == projectId })
+
+    /**
+     * Company-wide steps plus the steps of the projects in [projectNames], with a project-scoped
+     * definition winning the key, each carrying whether [userId] has settled it.
+     */
+    private fun resolve(userId: UUID, projectNames: Map<UUID, String>): List<ResolvedArrivalStep> {
         val companySteps = arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc()
         val projectSteps =
             if (projectNames.isEmpty()) {
@@ -177,17 +196,25 @@ class ArrivalStepService(
     }
 
     /**
-     * The steps the system knows how to check, and whether each is already on the list.
+     * The steps the system knows how to check, and whether each is already on the default list.
      *
      * Nothing is seeded from this — an admin adds the ones their organisation wants, which is
      * what keeps a local-build step off the board of somebody who never builds anything.
      */
     @Transactional(readOnly = true)
-    fun derivable(): List<Pair<ArrivalDerivation, Boolean>> {
-        val present = arrivalStepRepository
-            .findAllByProjectIdIsNullOrderByPositionAsc()
-            .map { it.key }
-            .toSet()
+    fun derivable(): List<Pair<ArrivalDerivation, Boolean>> = derivable(null)
+
+    /**
+     * The same catalogue, answered for one scope: whether each derivable step is on *that* list.
+     *
+     * The scope has to be part of the question. A project authoring its own list needs to know
+     * what is on its own list — answering from the default list would report a step as already
+     * present that the project does not have, and would leak the default list to a surface that
+     * cannot reach it.
+     */
+    @Transactional(readOnly = true)
+    fun derivable(projectId: UUID?): List<Pair<ArrivalDerivation, Boolean>> {
+        val present = listForAuthoring(projectId).map { it.key }.toSet()
 
         return ArrivalDerivation.entries.map { it to (it.stepKey in present) }
     }
@@ -241,6 +268,37 @@ class ArrivalStepService(
                 selfConfirmable = derivation?.selfConfirmable ?: true,
             ),
         )
+    }
+
+    /**
+     * Creates several steps as one unit, appended after whatever the scope already has.
+     *
+     * One transaction on purpose: a half-applied batch would leave the list in a shape nobody
+     * asked for and nothing records what the rest of it was meant to be. A malformed key or one
+     * already taken takes the whole batch down, so the caller can say which one and be offered
+     * the batch again.
+     *
+     * Positions are appended in the order given rather than asked for. A caller adding steps is
+     * saying what should be on the list, not renumbering the list it is joining.
+     *
+     * @throws ResponseStatusException 400 on a blank or malformed key or title; 409 when a key is
+     * already taken in the scope.
+     */
+    @Transactional
+    fun createAll(projectId: UUID?, steps: List<NewArrivalStep>): List<ArrivalStep> {
+        val nextPosition = (listForAuthoring(projectId).maxOfOrNull { it.position } ?: -1) + 1
+
+        return steps.mapIndexed { index, step ->
+            create(
+                key = step.key,
+                projectId = projectId,
+                title = step.title,
+                description = step.description,
+                href = step.href,
+                position = nextPosition + index,
+                settledBy = step.settledBy,
+            )
+        }
     }
 
     /**
@@ -377,7 +435,22 @@ class ArrivalStepService(
             .orEmpty()
             .associate { it.projectId to it.name }
 
-    private companion object {
+    companion object {
+        /**
+         * The shape of a step key.
+         *
+         * Exposed so a caller that wants to refuse a malformed key in its own words answers by the
+         * same rule this service enforces, instead of keeping a copy that can drift from it.
+         */
         val KEY = Regex("^[a-z\\d][a-z\\d_-]{0,63}$")
     }
 }
+
+/** One step in a [ArrivalStepService.createAll] batch, before the scope decides its position. */
+data class NewArrivalStep(
+    val key: String,
+    val title: String,
+    val description: String? = null,
+    val href: String? = null,
+    val settledBy: Rigor = Rigor.DECLARED,
+)

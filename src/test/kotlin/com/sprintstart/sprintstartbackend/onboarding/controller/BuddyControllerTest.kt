@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyS
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
+import com.sprintstart.sprintstartbackend.onboarding.service.BuddyTeamService
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -47,6 +48,11 @@ class BuddyControllerTest(
 ) {
     @MockkBean
     private lateinit var buddyService: BuddyService
+
+    // Never called by these tests — the controller needs it to start. Team routing is
+    // BuddyControllerTeamModeTest's.
+    @MockkBean
+    private lateinit var buddyTeamService: BuddyTeamService
 
     @MockkBean
     private lateinit var buddyActionService: BuddyActionService

@@ -2,11 +2,9 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
@@ -83,27 +81,59 @@ class OnboardingPathService(
         onboardingPathRepository.deleteByUserId(userId)
     }
 
+    /**
+     * A user's path as they see it, by user id, or `null` when they have none.
+     *
+     * The same read as [getOnboardingPathForMe] -- question attempts included, so the statuses are
+     * the ones on their screen -- reached by user id, for a reviewer looking at somebody's path.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding path by user id")
+    fun findPathForUserId(userId: UUID): GetOnboardingPathForUserResponse? =
+        onboardingPathRepository
+            .findOnboardingPathByUserId(userId)
+            .map { path ->
+                path.toGetForUserResponse(
+                    passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
+                    attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
+                )
+            }.orElse(null)
+
 //  ========================== Methods for admins ==========================
 
     /**
-     * Returns the onboarding path for a specific user.
+     * Returns one user's onboarding path, for a PM, HR or admin looking at it.
      *
-     * The target user must exist before the path lookup is attempted.
+     * ### Why this is the hire-shaped response
+     *
+     * It used to answer with the summary shape: phases and nothing inside them. Every reviewer
+     * screen then rebuilt the path client-side — one request per phase for its steps — and none of
+     * them could get the questions at all, because no endpoint hands out a *user's* questions with
+     * their status. So the team page crashed the moment questions became first-class members of a
+     * phase: it read `phase.questions` on phases that had never carried any.
+     *
+     * A PM opening somebody's onboarding wants the path *as that person has it* — the same lock
+     * states, the same step statuses, the same questions with the same passed/retry marks. That is
+     * exactly [toGetForUserResponse], and computing it here rather than in three clients is what
+     * makes the reviewer's view and the hire's view incapable of disagreeing.
+     *
+     * One consequence worth naming: phases whose generation produced nothing are reported in
+     * `generationIssues` rather than listed, here as well. A reviewer sees what the hire sees, which
+     * includes seeing that something came back empty.
      *
      * @param userId Identifier of the user whose path should be loaded.
-     * @return The user's onboarding path.
+     * @return The user's onboarding path, annotated with that user's own attempt state.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
+    @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding path for user")
-    fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathResponse {
+    fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathForUserResponse {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         }
 
-        return onboardingPathRepository
-            .findOnboardingPathByUserId(userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No onboarding path found with for: $userId") }
-            .toGetResponse()
+        return findPathForUserId(userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No onboarding path found for: $userId")
     }
 
     /**

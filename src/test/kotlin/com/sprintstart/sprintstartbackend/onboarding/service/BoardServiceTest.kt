@@ -16,7 +16,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistItemPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingResource
@@ -62,6 +65,7 @@ import java.time.ZoneOffset
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -1180,5 +1184,178 @@ class BoardServiceTest {
         assertThrows<ResponseStatusException> {
             service.tickPathStepTask(hireId, card.id, UUID.randomUUID(), true)
         }.also { assertEquals(404, it.statusCode.value()) }
+    }
+
+    // -- Buddy edits to a checklist ---------------------------------------------------------------
+
+    // Real UUIDs, not readable stand-ins: every response parses item ids with UUID.fromString, so a
+    // fixture id like "i1" fails in the mapping before the test gets to assert anything.
+    private val firstLineId = UUID.randomUUID().toString()
+    private val secondLineId = UUID.randomUUID().toString()
+
+    private fun checklistCard(
+        board: Board,
+        state: BoardCardState = BoardCardState.ACTIVE,
+        items: List<ChecklistItemPayload> = listOf(
+            ChecklistItemPayload(id = firstLineId, text = "Run it locally", done = true),
+            ChecklistItemPayload(id = secondLineId, text = "Fix it"),
+        ),
+    ) = BoardCard(
+        boardId = board.id,
+        kind = BoardCardKind.CHECKLIST,
+        owner = BoardCardOwner.HIRE,
+        state = state,
+        position = 0,
+        payload = json.encodeToString<BoardCardPayload>(
+            ChecklistPayload(title = "Getting started", items = items),
+        ),
+    )
+
+    private fun savedChecklist(card: BoardCard): ChecklistPayload =
+        assertNotNull(json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload)) as? ChecklistPayload)
+
+    private fun onBoard(card: BoardCard, board: Board) {
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findLockedById(card.id) } returns card
+    }
+
+    /**
+     * A confirm can arrive long after its proposal, and the hire may have left the project since.
+     * This used to write first and check membership after, so the refusal came back over a write
+     * that had already been saved.
+     */
+    @Test
+    fun `a buddy edit from a hire who is no longer a member reads and writes nothing`() {
+        every { projectMembershipApi.getProjectMembers(projectId) } returns emptyList()
+
+        assertFailsWith<ResponseStatusException> {
+            service.appendChecklistItems(hireId, projectId, UUID.randomUUID(), listOf("Open a PR"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.findLockedById(any()) }
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** A proposal made on one project, confirmed after the hire moved to another. */
+    @Test
+    fun `a buddy edit refuses a checklist on another project's board`() {
+        val thisBoard = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(Board(userId = hireId, projectId = UUID.randomUUID()))
+        onBoard(card, thisBoard)
+
+        assertFailsWith<ResponseStatusException> {
+            service.tickChecklistItems(hireId, projectId, card.id, listOf("Fix it"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Taking a card off the board is the hire's gesture, and a stale proposal does not undo it. */
+    @Test
+    fun `a buddy edit refuses a checklist the hire has dismissed`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board, state = BoardCardState.DISMISSED)
+        onBoard(card, board)
+
+        assertFailsWith<ResponseStatusException> {
+            service.rewordChecklistItem(hireId, projectId, card.id, "Fix it", "Fix the redirect")
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /**
+     * The guarantee the amendment rests on, pinned where it is enforced: the hire's lines come
+     * back with the same ids, words and ticks, and the new ones land after them. And the card is
+     * read through the lock, so two edits at once cannot each start from the same payload.
+     */
+    @Test
+    fun `appending keeps every existing line as it was and reads the card under a lock`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        service.appendChecklistItems(hireId, projectId, card.id, listOf("Open a PR"))
+
+        val saved = assertNotNull(card.payload)
+        val checklist = assertNotNull(json.decodeFromString<BoardCardPayload>(saved) as? ChecklistPayload)
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.take(2).map { it.id })
+        assertEquals(listOf("Run it locally", "Fix it", "Open a PR"), checklist.items.map { it.text })
+        assertEquals(listOf(true, false, false), checklist.items.map { it.done })
+        verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
+    }
+
+    /**
+     * Set only, and matched the way a hire would say it: trimmed and case-insensitive. A line that
+     * is already done stays done and is not counted, so the count is what actually changed.
+     */
+    @Test
+    fun `ticking sets only the named lines and counts only the new ticks`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val ticked = service.tickChecklistItems(hireId, projectId, card.id, listOf("  fix IT ", "Run it locally"))
+
+        assertEquals(1, ticked)
+        val checklist = savedChecklist(card)
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.map { it.id })
+        assertEquals(listOf("Run it locally", "Fix it"), checklist.items.map { it.text })
+        assertEquals(listOf(true, true), checklist.items.map { it.done })
+        verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
+    }
+
+    /** Nothing matched is nothing changed, and nothing is written. */
+    @Test
+    fun `ticking lines that are not on the card writes nothing`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val ticked = service.tickChecklistItems(hireId, projectId, card.id, listOf("Deploy to production"))
+
+        assertEquals(0, ticked)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Rewording a step is not undoing it: the line keeps its id and its tick, and nothing else moves. */
+    @Test
+    fun `rewording keeps the line's id and tick and leaves the rest alone`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        val reworded = service.rewordChecklistItem(
+            hireId,
+            projectId,
+            card.id,
+            before = " run IT locally",
+            after = "Run it locally with the seed data",
+        )
+
+        assertTrue(reworded)
+        val checklist = savedChecklist(card)
+        assertEquals(listOf(firstLineId, secondLineId), checklist.items.map { it.id })
+        assertEquals(listOf("Run it locally with the seed data", "Fix it"), checklist.items.map { it.text })
+        assertEquals(listOf(true, false), checklist.items.map { it.done })
+    }
+
+    /** Two lines that read the same: rewording either one silently would be the wrong edit half the time. */
+    @Test
+    fun `rewording refuses a line that matches more than one and writes nothing`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(
+            board,
+            items = listOf(
+                ChecklistItemPayload(id = firstLineId, text = "Fix it"),
+                ChecklistItemPayload(id = secondLineId, text = "fix it"),
+            ),
+        )
+        onBoard(card, board)
+
+        val reworded = service.rewordChecklistItem(hireId, projectId, card.id, "Fix it", "Fix the redirect")
+
+        assertFalse(reworded)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
     }
 }

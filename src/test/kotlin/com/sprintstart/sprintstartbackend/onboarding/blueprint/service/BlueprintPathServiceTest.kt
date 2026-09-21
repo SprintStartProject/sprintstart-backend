@@ -428,9 +428,9 @@ class BlueprintPathServiceTest {
         }
 
         @Test
-        fun `rejects publishing when no active version exists`() {
+        fun `publishes an initial draft that has no active version yet`() {
             val blueprintKey = UUID.randomUUID()
-            val draft = makePath(blueprintKey = blueprintKey, version = 1, status = BlueprintStatus.DRAFT)
+            val draft = makePath(blueprintKey = blueprintKey, version = 0, status = BlueprintStatus.DRAFT)
             every {
                 blueprintAccessService.getAuthorizedDraftPath(BlueprintScope.Global, draft.id)
             } returns draft
@@ -438,10 +438,11 @@ class BlueprintPathServiceTest {
                 blueprintAccessService.findActiveForAuthorizedBlueprintKey(BlueprintScope.Global, blueprintKey)
             } returns null
 
-            assertBlueprintStatus(HttpStatus.NOT_FOUND) {
-                service.publishBlueprintPathDraftById(BlueprintScope.Global, draft.id)
-            }
-            assertEquals(BlueprintStatus.DRAFT, draft.status)
+            val result = service.publishBlueprintPathDraftById(BlueprintScope.Global, draft.id)
+
+            assertEquals(draft.id, result.id)
+            assertEquals(BlueprintStatus.ACTIVE, result.status)
+            assertEquals(BlueprintStatus.ACTIVE, draft.status)
         }
 
         @Test

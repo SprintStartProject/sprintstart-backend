@@ -21,7 +21,7 @@ import java.util.UUID
 )
 class BuddySession(
     @Id
-    val id: UUID = UUID.randomUUID(),
+    override val id: UUID = UUID.randomUUID(),
     @Column(name = "user_id", nullable = false)
     val userId: UUID,
     @Column(name = "created_at", nullable = false)
@@ -35,7 +35,7 @@ class BuddySession(
      * record: the full transcript stays in `buddy_messages`.
      */
     @Column(nullable = true, columnDefinition = "TEXT")
-    var summary: String? = null,
+    override var summary: String? = null,
     /**
      * How many of the oldest persisted messages [summary] covers.
      *
@@ -45,7 +45,7 @@ class BuddySession(
      * cannot also mean "the visit started here".
      */
     @Column(name = "summarized_count", nullable = false)
-    var summarizedCount: Int = 0,
+    override var summarizedCount: Int = 0,
     /**
      * Guards the compaction swap.
      *
@@ -57,4 +57,4 @@ class BuddySession(
     @Version
     @Column(nullable = false)
     var version: Long = 0,
-)
+) : BuddyMemory
