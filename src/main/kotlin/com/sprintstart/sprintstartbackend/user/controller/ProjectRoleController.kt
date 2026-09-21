@@ -7,7 +7,7 @@ import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRe
 import com.sprintstart.sprintstartbackend.user.model.request.SuggestSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
-import com.sprintstart.sprintstartbackend.user.model.response.skill.SkillSuggestionItemResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.SkillSuggestionsResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
@@ -348,8 +348,10 @@ class ProjectRoleController(
     suspend fun suggestSkillsForRole(
         @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
         @RequestBody(required = false) request: SuggestSkillsRequest? = null,
-    ): List<SkillSuggestionItemResponse> {
-        return projectRoleService.suggestSkillsForRole(roleId, request)
+    ): SkillSuggestionsResponse {
+        return SkillSuggestionsResponse(
+            suggestions = projectRoleService.suggestSkillsForRole(roleId, request),
+        )
     }
 
     /**

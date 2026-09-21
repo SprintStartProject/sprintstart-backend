@@ -38,6 +38,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
@@ -315,6 +316,9 @@ class ProjectRoleControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.suggestions").isArray)
+            .andExpect(jsonPath("$.suggestions[0].name").value("Kotlin"))
+            .andExpect(jsonPath("$.suggestions[0].skillId").value(dto.skillId.toString()))
 
         coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId, null) }
     }
@@ -347,6 +351,8 @@ class ProjectRoleControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isOk)
             .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+            .andExpect(jsonPath("$.suggestions[0].name").value("Docker"))
+            .andExpect(jsonPath("$.suggestions[0].isNew").value(true))
 
         coVerify(exactly = 1) { projectRoleService.suggestSkillsForRole(roleId, request) }
     }
