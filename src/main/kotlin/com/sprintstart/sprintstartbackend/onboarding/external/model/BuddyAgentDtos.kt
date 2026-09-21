@@ -73,6 +73,13 @@ data class BuddyAgentRequest(
      * a bug rather than as a mode the hire chose.
      */
     @SerialName("capabilities_enabled") val capabilitiesEnabled: Boolean = true,
+    /**
+     * Whether the reader is a project's manager asking about that project's team.
+     *
+     * Sent on every hop for the same reason as [capabilitiesEnabled]: the persona is rebuilt on each
+     * one, and a hop that lost the mode would answer a manager as if they were a new hire.
+     */
+    @SerialName("team_mode") val teamMode: Boolean = false,
 )
 
 /**
@@ -109,6 +116,11 @@ data class BuddyOpenRequest(
     val memory: String? = null,
     val recent: List<BuddyAgentMessageDto> = emptyList(),
     val state: String = "",
+    /**
+     * Whether a project's manager is opening a team conversation. [state] is then the team's
+     * attention list rather than the reader's own onboarding, and the greeting must address a manager.
+     */
+    @SerialName("team_mode") val teamMode: Boolean = false,
 )
 
 /**

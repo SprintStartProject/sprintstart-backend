@@ -53,6 +53,12 @@ class BuddyToolExecutor(
      * arrival list nobody authored, a hire with nothing left to place. Never the hire's role: every
      * tool that has something to say is offered to everybody, and what a hire is asked about is
      * decided by what is actually there for them.
+     *
+     * That rule covers the caller's own buddy. Team mode ([BuddyTeamTools]) is the one exception, and
+     * a deliberate one: a project's manager is handed tools that read *other people* on that project.
+     * It is gated on managing the project — checked by [BuddyTeamService] before every turn — and every
+     * team tool re-checks that the person it reads is on that project. None of these tools is ever
+     * mounted here.
      */
     fun toolSpecs(userId: UUID): List<BuddyToolSpecDto> = buildList {
         // First: what has to be true before somebody can work comes before how their work is
