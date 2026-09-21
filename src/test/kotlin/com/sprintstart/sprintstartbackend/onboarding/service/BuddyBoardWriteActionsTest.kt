@@ -188,7 +188,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(outcome.proposal?.cardId).isEqualTo(cardId)
         assertThat(outcome.proposal?.checklistItems).containsExactly("Write the test", "Open a draft PR")
-        verify(exactly = 0) { boardService.appendChecklistItems(any(), any(), any()) }
+        verify(exactly = 0) { boardService.appendChecklistItems(any(), any(), any(), any()) }
     }
 
     @Test
@@ -224,7 +224,7 @@ class BuddyBoardWriteActionsTest {
         )
 
         assertThat(result.ok).isTrue()
-        verify { boardService.appendChecklistItems(userId, cardId, listOf("Write the test")) }
+        verify { boardService.appendChecklistItems(userId, projectId, cardId, listOf("Write the test")) }
     }
 
     /** A card that is not theirs, or not a checklist: a sentence, not a failed confirm. */
@@ -233,7 +233,7 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.appendChecklistItems(any(), any(), any()) } throws
+        every { boardService.appendChecklistItems(any(), any(), any(), any()) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
 
         val result = service.perform(
@@ -355,7 +355,7 @@ class BuddyBoardWriteActionsTest {
         assertThat(outcome.proposal?.cardId).isEqualTo(cardId)
         assertThat(outcome.proposal?.checklistItems)
             .containsExactly("Reproduce it locally", "Add a failing test")
-        verify(exactly = 0) { boardService.tickChecklistItems(any(), any(), any()) }
+        verify(exactly = 0) { boardService.tickChecklistItems(any(), any(), any(), any()) }
     }
 
     @Test
@@ -363,7 +363,7 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.tickChecklistItems(userId, cardId, listOf("Reproduce it locally")) } returns 1
+        every { boardService.tickChecklistItems(userId, projectId, cardId, listOf("Reproduce it locally")) } returns 1
 
         val result = service.perform(
             BuddyActionRequest(
@@ -387,7 +387,7 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.tickChecklistItems(any(), any(), any()) } returns 0
+        every { boardService.tickChecklistItems(any(), any(), any(), any()) } returns 0
 
         val result = service.perform(
             BuddyActionRequest(
@@ -427,7 +427,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(outcome.proposal?.lineBefore).isEqualTo("Fix it")
         assertThat(outcome.proposal?.lineAfter).isEqualTo("Fix the redirect so it keeps the query string")
-        verify(exactly = 0) { boardService.rewordChecklistItem(any(), any(), any(), any()) }
+        verify(exactly = 0) { boardService.rewordChecklistItem(any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -444,7 +444,7 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.rewordChecklistItem(userId, cardId, "Fix it", "Fix the redirect") } returns true
+        every { boardService.rewordChecklistItem(userId, projectId, cardId, "Fix it", "Fix the redirect") } returns true
 
         val result = service.perform(
             BuddyActionRequest(
@@ -465,7 +465,7 @@ class BuddyBoardWriteActionsTest {
     fun `an ambiguous or missing line comes back as nothing changed`() = runTest {
         asHire()
         onOneProject()
-        every { boardService.rewordChecklistItem(any(), any(), any(), any()) } returns false
+        every { boardService.rewordChecklistItem(any(), any(), any(), any(), any()) } returns false
 
         val result = service.perform(
             BuddyActionRequest(

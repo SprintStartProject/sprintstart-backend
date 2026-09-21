@@ -14,7 +14,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistItemPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
@@ -43,12 +46,14 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -892,4 +897,97 @@ class BoardServiceTest {
 
     private fun List<BoardMomentResponse>.momentAt(key: BoardMomentKey): Instant? =
         first { it.key == key }.reachedAt
+
+    // -- Buddy edits to a checklist ---------------------------------------------------------------
+
+    private fun checklistCard(
+        board: Board,
+        state: BoardCardState = BoardCardState.ACTIVE,
+    ) = BoardCard(
+        boardId = board.id,
+        kind = BoardCardKind.CHECKLIST,
+        owner = BoardCardOwner.HIRE,
+        state = state,
+        position = 0,
+        payload = json.encodeToString<BoardCardPayload>(
+            ChecklistPayload(
+                title = "Getting started",
+                items = listOf(
+                    ChecklistItemPayload(id = "i1", text = "Run it locally", done = true),
+                    ChecklistItemPayload(id = "i2", text = "Fix it"),
+                ),
+            ),
+        ),
+    )
+
+    private fun onBoard(card: BoardCard, board: Board) {
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findLockedById(card.id) } returns card
+    }
+
+    /**
+     * A confirm can arrive long after its proposal, and the hire may have left the project since.
+     * This used to write first and check membership after, so the refusal came back over a write
+     * that had already been saved.
+     */
+    @Test
+    fun `a buddy edit from a hire who is no longer a member reads and writes nothing`() {
+        every { projectMembershipApi.getProjectMembers(projectId) } returns emptyList()
+
+        assertFailsWith<ResponseStatusException> {
+            service.appendChecklistItems(hireId, projectId, UUID.randomUUID(), listOf("Open a PR"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.findLockedById(any()) }
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** A proposal made on one project, confirmed after the hire moved to another. */
+    @Test
+    fun `a buddy edit refuses a checklist on another project's board`() {
+        val thisBoard = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(Board(userId = hireId, projectId = UUID.randomUUID()))
+        onBoard(card, thisBoard)
+
+        assertFailsWith<ResponseStatusException> {
+            service.tickChecklistItems(hireId, projectId, card.id, listOf("Fix it"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Taking a card off the board is the hire's gesture, and a stale proposal does not undo it. */
+    @Test
+    fun `a buddy edit refuses a checklist the hire has dismissed`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board, state = BoardCardState.DISMISSED)
+        onBoard(card, board)
+
+        assertFailsWith<ResponseStatusException> {
+            service.rewordChecklistItem(hireId, projectId, card.id, "Fix it", "Fix the redirect")
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /**
+     * The guarantee the amendment rests on, pinned where it is enforced: the hire's lines come
+     * back with the same ids, words and ticks, and the new ones land after them. And the card is
+     * read through the lock, so two edits at once cannot each start from the same payload.
+     */
+    @Test
+    fun `appending keeps every existing line as it was and reads the card under a lock`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        service.appendChecklistItems(hireId, projectId, card.id, listOf("Open a PR"))
+
+        val saved = assertNotNull(card.payload)
+        val checklist = assertNotNull(json.decodeFromString<BoardCardPayload>(saved) as? ChecklistPayload)
+        assertEquals(listOf("i1", "i2"), checklist.items.take(2).map { it.id })
+        assertEquals(listOf("Run it locally", "Fix it", "Open a PR"), checklist.items.map { it.text })
+        assertEquals(listOf(true, false, false), checklist.items.map { it.done })
+        verify(exactly = 1) { boardCardRepository.findLockedById(card.id) }
+    }
 }

@@ -328,11 +328,17 @@ class BoardService(
      * Ids are minted here for the new lines, the same way [addAuthoredCard] mints them, so a tick
      * still lands on a line rather than on a position.
      *
-     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when it is a
-     * card of another kind.
+     * @throws ResponseStatusException 404 when they are not a member of [projectId], or the card is
+     * not an active checklist of theirs on that project's board; 400 when there is nothing to add.
      */
-    fun appendChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): BoardCardResponse {
-        val (card, board) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+    @Transactional
+    fun appendChecklistItems(
+        userId: UUID,
+        projectId: UUID,
+        cardId: UUID,
+        lines: List<String>,
+    ): BoardCardResponse {
+        val (card, member) = buddyEditableChecklistOrThrow(userId, projectId, cardId)
         val existing = card.checklistOrThrow()
         val added = lines.filter { it.isNotBlank() }.ifEmpty {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
@@ -347,11 +353,9 @@ class BoardService(
         card.updatedAt = Instant.now()
         boardCardRepository.save(card)
 
-        val member = memberOrNull(userId, board.projectId)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
         return card.toResponse(
             member,
-            board.projectId,
+            projectId,
             timeline = null,
             arrivalSteps = arrivalStepService.forHire(member.userId),
         )
@@ -371,11 +375,12 @@ class BoardService(
      * the checkbox on the card is right there. Nothing else moves either: no text changes, no
      * re-ordering, no lines added or dropped.
      *
-     * @throws ResponseStatusException 404 when it is not a checklist of theirs, 400 when the card
-     * holds no checklist.
+     * @throws ResponseStatusException 404 when they are not a member of [projectId], or the card is
+     * not an active checklist of theirs on that project's board.
      */
-    fun tickChecklistItems(userId: UUID, cardId: UUID, lines: List<String>): Int {
-        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+    @Transactional
+    fun tickChecklistItems(userId: UUID, projectId: UUID, cardId: UUID, lines: List<String>): Int {
+        val (card, _) = buddyEditableChecklistOrThrow(userId, projectId, cardId)
         val existing = card.checklistOrThrow()
         val wanted = lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
 
@@ -408,10 +413,18 @@ class BoardService(
      * hire asked for one edit and would have to diff the list to find out they got another.
      *
      * @return true when a line was rewritten, false when the text matched none or more than one.
-     * @throws ResponseStatusException 404 when it is not a checklist of theirs.
+     * @throws ResponseStatusException 404 when they are not a member of [projectId], or the card is
+     * not an active checklist of theirs on that project's board.
      */
-    fun rewordChecklistItem(userId: UUID, cardId: UUID, before: String, after: String): Boolean {
-        val (card, _) = editableCardOrThrow(userId, cardId, BoardCardKind.CHECKLIST)
+    @Transactional
+    fun rewordChecklistItem(
+        userId: UUID,
+        projectId: UUID,
+        cardId: UUID,
+        before: String,
+        after: String,
+    ): Boolean {
+        val (card, _) = buddyEditableChecklistOrThrow(userId, projectId, cardId)
         val existing = card.checklistOrThrow()
         val wanted = before.trim().lowercase()
         val words = after.trim()
@@ -787,6 +800,39 @@ class BoardService(
 
     private fun String.requireContent(message: String): String =
         trim().ifBlank { throw ResponseStatusException(HttpStatus.BAD_REQUEST, message) }
+
+    /**
+     * The checklist a buddy edit may change, locked until the edit commits.
+     *
+     * Stricter than [editableCardOrThrow] on purpose. The hire's own edit comes from a board they
+     * are looking at; a buddy edit is confirmed from a proposal that may be stale — made on a
+     * project they have since left, or before they took the card off their board. So it must be
+     * a member of [projectId] **now**, on that project's board, and the card must still be an
+     * active card of theirs.
+     *
+     * Membership is checked before anything is read, so a hire who has left the project is
+     * refused before a write can happen, not after one already has. The card is read through the
+     * lock, which is what makes the read-change-write in each caller atomic.
+     *
+     * One refusal for every way the card can be wrong, the same as [editableCardOrThrow]: whether
+     * a card exists on somebody else's board is not this caller's business.
+     *
+     * @throws ResponseStatusException 404 in every case.
+     */
+    private fun buddyEditableChecklistOrThrow(
+        userId: UUID,
+        projectId: UUID,
+        cardId: UUID,
+    ): Pair<BoardCard, ProjectMember> {
+        val member = memberOrNull(userId, projectId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
+        val card = boardRepository.findByUserIdAndProjectId(userId, projectId)
+            ?.let { board -> boardCardRepository.findLockedById(cardId)?.takeIf { it.boardId == board.id } }
+            ?.takeIf { it.owner == BoardCardOwner.HIRE && it.state == BoardCardState.ACTIVE }
+            ?.takeIf { it.kind == BoardCardKind.CHECKLIST }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such checklist on your board")
+        return card to member
+    }
 
     private fun memberOrNull(userId: UUID, projectId: UUID): ProjectMember? =
         projectMembershipApi.getProjectMembers(projectId).firstOrNull { it.userId == userId }

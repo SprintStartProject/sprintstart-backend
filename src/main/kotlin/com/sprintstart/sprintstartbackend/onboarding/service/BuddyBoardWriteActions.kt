@@ -81,12 +81,13 @@ class BuddyBoardWriteActions(
     ): BuddyActionResponse = when (type) {
         BuddyActionType.PLACE_CHECKLIST ->
             placeChecklist(userId, projectId, payload.checklistTitle, payload.checklistItems)
-        BuddyActionType.AMEND_CHECKLIST -> amendChecklist(userId, payload.cardId, payload.checklistItems)
+        BuddyActionType.AMEND_CHECKLIST ->
+            amendChecklist(userId, projectId, payload.cardId, payload.checklistItems)
         BuddyActionType.PLACE_LINK -> placeLink(userId, projectId, payload.linkUrl, payload.linkLabel)
         BuddyActionType.TICK_CHECKLIST_ITEMS ->
-            tickItems(userId, payload.cardId, payload.checklistItems)
+            tickItems(userId, projectId, payload.cardId, payload.checklistItems)
         BuddyActionType.REWORD_CHECKLIST_ITEM ->
-            rewordItem(userId, payload.cardId, payload.lineBefore, payload.lineAfter)
+            rewordItem(userId, projectId, payload.cardId, payload.lineBefore, payload.lineAfter)
         else -> placeNote(userId, projectId, payload.noteText)
     }
 
@@ -245,7 +246,12 @@ class BuddyBoardWriteActions(
     }
 
     /** Ticks the named lines, and can do nothing else to the card. */
-    private fun tickItems(userId: UUID, cardId: UUID?, items: List<String>?): BuddyActionResponse {
+    private fun tickItems(
+        userId: UUID,
+        projectId: UUID,
+        cardId: UUID?,
+        items: List<String>?,
+    ): BuddyActionResponse {
         if (cardId == null) {
             return BuddyActionResponse(ok = false, message = "No card was proposed to tick off.")
         }
@@ -255,7 +261,7 @@ class BuddyBoardWriteActions(
         }
 
         return try {
-            when (val ticked = boardService.tickChecklistItems(userId, cardId, lines)) {
+            when (val ticked = boardService.tickChecklistItems(userId, projectId, cardId, lines)) {
                 0 -> BuddyActionResponse(
                     ok = false,
                     // Says which of the two it was, because they need different answers: one is
@@ -306,6 +312,7 @@ class BuddyBoardWriteActions(
     /** Rewrites the named line, and can do nothing else to the card. */
     private fun rewordItem(
         userId: UUID,
+        projectId: UUID,
         cardId: UUID?,
         before: String?,
         after: String?,
@@ -313,9 +320,10 @@ class BuddyBoardWriteActions(
         if (cardId == null || before.isNullOrBlank() || after.isNullOrBlank()) {
             return BuddyActionResponse(ok = false, message = "There was no line to reword.")
         }
+        val reworded = after.take(MAX_CHECKLIST_ITEM_LENGTH)
 
         return try {
-            if (boardService.rewordChecklistItem(userId, cardId, before, after.take(MAX_CHECKLIST_ITEM_LENGTH))) {
+            if (boardService.rewordChecklistItem(userId, projectId, cardId, before, reworded)) {
                 BuddyActionResponse(
                     ok = true,
                     message = "Reworded. It keeps its place and its tick; nothing else changed.",
@@ -387,6 +395,7 @@ class BuddyBoardWriteActions(
     /** Adds the proposed lines to the hire's card, and can do nothing else to it. */
     private fun amendChecklist(
         userId: UUID,
+        projectId: UUID,
         cardId: UUID?,
         items: List<String>?,
     ): BuddyActionResponse {
@@ -403,7 +412,7 @@ class BuddyBoardWriteActions(
         }
 
         return try {
-            boardService.appendChecklistItems(userId, cardId, lines)
+            boardService.appendChecklistItems(userId, projectId, cardId, lines)
             BuddyActionResponse(
                 ok = true,
                 message = "Added ${lines.size} to that list. Nothing else on it changed.",
