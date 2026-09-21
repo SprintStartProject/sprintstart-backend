@@ -106,6 +106,9 @@ internal const val TASK_NOT_HERE =
 
 internal const val LEFT_SINCE_HERE = "That person is no longer on this project, so nothing was changed."
 
+/** Whether anything sits after this element among its siblings, so deleting it moves something up. */
+internal fun PathElement.hasLaterSiblings(): Boolean = position != null && position < siblings - 1
+
 /** What to tell the model when an id is not in scope, per kind. */
 internal fun notInScope(kind: PathElementKind): String {
     val where = when (kind) {

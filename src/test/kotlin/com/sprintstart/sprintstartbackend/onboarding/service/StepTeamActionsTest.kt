@@ -264,6 +264,17 @@ class StepTeamActionsTest {
         }
 
         @Test
+        fun `says the later steps move up only when there are later steps`() {
+            f.element(PathElementKind.STEP, stepId, position = 0, siblings = 2)
+            assertThat(f.proposed(action.draft(f.call("delete_step", "step_id" to stepId), f.context)).preview)
+                .contains("The steps after it move up one place")
+
+            f.element(PathElementKind.STEP, stepId, position = 1, siblings = 2)
+            assertThat(f.proposed(action.draft(f.call("delete_step", "step_id" to stepId), f.context)).preview)
+                .doesNotContain("move up")
+        }
+
+        @Test
         fun `a waiting step makes no claim about progress`() {
             f.element(PathElementKind.STEP, stepId, stepStatus = StepStatus.WAITING)
 

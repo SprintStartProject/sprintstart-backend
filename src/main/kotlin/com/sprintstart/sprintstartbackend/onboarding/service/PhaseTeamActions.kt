@@ -212,7 +212,8 @@ class DeletePhaseAction(
                             "that progress is deleted with them.",
                     )
                 }
-                append("The phases after it move up one place. This cannot be undone.")
+                if (phase.hasLaterSiblings()) append("The phases after it move up one place. ")
+                append("This cannot be undone.")
                 scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
             }.trim(),
         )

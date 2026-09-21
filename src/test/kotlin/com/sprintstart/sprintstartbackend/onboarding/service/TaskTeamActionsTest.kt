@@ -189,6 +189,17 @@ class TaskTeamActionsTest {
         }
 
         @Test
+        fun `says the later tasks move up only when there are later tasks`() {
+            f.element(PathElementKind.TASK, taskId, position = 0, siblings = 2)
+            assertThat(f.proposed(action.draft(f.call("delete_task", "task_id" to taskId), f.context)).preview)
+                .contains("The tasks after it move up one place", "Any tick on it goes with it")
+
+            f.element(PathElementKind.TASK, taskId, position = 1, siblings = 2)
+            assertThat(f.proposed(action.draft(f.call("delete_task", "task_id" to taskId), f.context)).preview)
+                .doesNotContain("move up")
+        }
+
+        @Test
         fun `performing deletes the task by id`() =
             runTest {
                 action.perform(f.json("task_id" to taskId), f.context)

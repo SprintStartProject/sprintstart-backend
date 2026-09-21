@@ -109,7 +109,8 @@ class ContentTeamTools(
             scope.sharedNote(owner, projectId).takeIf { it.isNotEmpty() }?.let { appendLine(it) }
             path.phases.sortedBy { it.position }.forEach { phase ->
                 appendLine()
-                appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]")
+                val hidden = if (phase.generationStatus.isHiddenFromUser()) " — not shown to them" else ""
+                appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]$hidden")
                 phase.description.takeIf { it.isNotBlank() }?.let { appendLine("  ${it.short()}") }
                 onboardingStepService.getOnboardingStepsByPhaseId(phase.id).sortedBy { it.position }.forEach { step ->
                     appendLine(

@@ -25,9 +25,10 @@ import java.util.UUID
  * Replacing a phase's knowledge checks.
  *
  * The service takes the whole list: a question it is given with a known id is edited in place, one
- * without an id is created, and one it is *not* given is deleted — along with the hire's history on it,
- * and any link that made a step wait for it. So the action takes the whole list too, checks every id in
- * it against what the phase has, and previews what stays, what is new and what goes.
+ * without an id is created, and one it is *not* given is deleted — after which the hires' answers to it,
+ * which are kept only by its id, count for nothing, and no step waits on it any more. So the action
+ * takes the whole list too, checks every id in it against what the phase has, and previews what stays,
+ * what is new and what goes.
  */
 
 private const val CHECKS_CHANGED =
@@ -164,8 +165,8 @@ class ReplacePhaseChecksAction(
         name = "replace_phase_checks",
         description = "Offer to replace the knowledge-check questions at the end of a phase on a member's " +
             "onboarding path. It takes the WHOLE new list: a question with its id is edited in place, one " +
-            "without an id is new, and any current question left out is deleted with the hire's answers to " +
-            "it. Always call get_phase_checks first and start from what it shows. This does NOT change " +
+            "without an id is new, and any current question left out is deleted and the hires' answers to " +
+            "it stop counting. Always call get_phase_checks first and start from what it shows. This does NOT change " +
             "anything by itself; the manager confirms.",
         parameters = buildJsonObject {
             put("type", "object")
@@ -265,7 +266,7 @@ class ReplacePhaseChecksAction(
             val removed = current.filter { existing -> questions.none { it.id == existing.id } }
             if (removed.isNotEmpty()) {
                 appendLine()
-                appendLine("These are deleted, with everybody's past answers to them:")
+                appendLine("These are deleted, and nobody's past answers to them count any more:")
                 removed.forEach { appendLine("- ${it.question}") }
                 appendLine("A step that was waiting on one of them no longer waits for it.")
             }

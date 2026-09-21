@@ -276,7 +276,8 @@ class DeleteStepAction(
                 appendLine("Delete the step “${step.title}” from ${target.owner.displayName}'s onboarding path.")
                 if (step.contains.isNotEmpty()) appendLine("It takes ${step.contains} with it.")
                 step.stepStatus.aboutProgress(target.owner.displayName)?.let { appendLine(it) }
-                append("The steps after it move up one place. This cannot be undone.")
+                if (step.hasLaterSiblings()) append("The steps after it move up one place. ")
+                append("This cannot be undone.")
                 scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
             }.trim(),
         )

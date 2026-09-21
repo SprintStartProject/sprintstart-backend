@@ -34,6 +34,8 @@ enum class PathElementKind(
  * @property children How many things sit directly under it, which is what a new child's position is
  * validated against.
  * @property contains What deleting it takes with it, in words; empty when it holds nothing.
+ * @property siblings How many things share its parent, itself included; what tells a preview whether
+ * deleting it moves anything after it.
  * @property finishedSteps How many steps under it the person already got through, finished or skipped.
  * @property stepStatus The status of the step it is or hangs off, or null for a phase.
  */
@@ -47,6 +49,7 @@ data class PathElement(
     val contains: String,
     val stepStatus: StepStatus?,
     val finishedSteps: Int = 0,
+    val siblings: Int = 0,
 )
 
 /**
@@ -105,6 +108,7 @@ class PathElements(
                 contains = containedIn(phase.steps, phase.checkQuestions.size),
                 stepStatus = null,
                 finishedSteps = phase.steps.count { it.status.isDone() },
+                siblings = phase.path.phases.size,
             )
         }
 
@@ -120,6 +124,7 @@ class PathElements(
                 contains = containedIn(listOf(step), checks = 0, includeSteps = false),
                 stepStatus = step.status,
                 finishedSteps = if (step.status.isDone()) 1 else 0,
+                siblings = step.phase.steps.size,
             )
         }
 
@@ -134,6 +139,7 @@ class PathElements(
                 children = 0,
                 contains = "",
                 stepStatus = task.step.status,
+                siblings = task.step.tasks.size,
             )
         }
 

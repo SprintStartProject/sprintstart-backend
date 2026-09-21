@@ -79,8 +79,10 @@ internal class ContentFixture {
         contains: String = "",
         stepStatus: StepStatus? = null,
         finishedSteps: Int = 0,
+        siblings: Int = 0,
     ): PathElement {
-        val element = PathElement(kind, id, owner, title, position, children, contains, stepStatus, finishedSteps)
+        val element =
+            PathElement(kind, id, owner, title, position, children, contains, stepStatus, finishedSteps, siblings)
         every { pathElements.find(kind, id) } returns element
         return element
     }

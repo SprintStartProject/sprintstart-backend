@@ -102,7 +102,7 @@ class ReplacePhaseChecksActionTest {
             "1. (kept) short text: Which command builds it?",
             "2. (new) short text: How do you run the tests?",
             "Correct answer: make test",
-            "These are deleted, with everybody's past answers to them:",
+            "These are deleted, and nobody's past answers to them count any more:",
             "- Where do logs go?",
             "no longer waits for it",
         )

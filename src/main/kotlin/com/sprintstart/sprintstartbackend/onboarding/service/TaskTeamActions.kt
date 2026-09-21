@@ -210,7 +210,8 @@ class DeleteTaskAction(
             label = "Delete task “${task.title.forLabel()}”",
             preview = buildString {
                 appendLine("Delete the task “${task.title}” from ${target.owner.displayName}'s onboarding path.")
-                append("The tasks after it move up one place, and any tick on it goes with it. This cannot be undone.")
+                if (task.hasLaterSiblings()) append("The tasks after it move up one place. ")
+                append("Any tick on it goes with it. This cannot be undone.")
                 scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
             }.trim(),
         )

@@ -316,6 +316,17 @@ class PhaseTeamActionsTest {
         }
 
         @Test
+        fun `says the later phases move up only when there are later phases`() {
+            f.element(PathElementKind.PHASE, phaseId, position = 1, siblings = 3)
+            assertThat(f.proposed(action.draft(f.call("delete_phase", "phase_id" to phaseId), f.context)).preview)
+                .contains("The phases after it move up one place")
+
+            f.element(PathElementKind.PHASE, phaseId, position = 2, siblings = 3)
+            assertThat(f.proposed(action.draft(f.call("delete_phase", "phase_id" to phaseId), f.context)).preview)
+                .doesNotContain("move up")
+        }
+
+        @Test
         fun `an empty phase makes no claim about what is inside`() {
             f.element(PathElementKind.PHASE, phaseId, title = "Empty")
 
