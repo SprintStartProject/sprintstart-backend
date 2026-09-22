@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.
 import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.request.ConnectBitbucketRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.response.ConnectBitbucketRepositoryResponse
 import com.sprintstart.sprintstartbackend.connectors.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
@@ -20,7 +21,9 @@ import java.util.UUID
 internal class BitbucketConnectionService(
     private val connectionRepository: BitbucketConnectionRepository,
     private val bitbucketClient: BitbucketClient,
+    private val bitbucketFileService: BitbucketFileService,
     private val credentialApi: AtlassianCredentialApi,
+    private val applicationScope: Application
     private val eventPublisher: ApplicationEventPublisher,
 ) {
     @Tracked("ConnectBitbucketRepository")
@@ -66,6 +69,7 @@ internal class BitbucketConnectionService(
         }
 
         // Spawn data collectors
+        applicationScope
 
         return transactionId
     }
