@@ -6,9 +6,6 @@ import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.UploadConfig
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketConnection
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketCredentialId
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketUser
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.runBlocking
@@ -66,19 +63,6 @@ class BitbucketClientTest {
         mockWebServer.shutdown()
     }
 
-    private fun connection(
-        workspace: String = "owner",
-        slug: String = "repo",
-        token: String = "test-token",
-    ) = BitbucketConnection(
-        workspace = workspace,
-        slug = slug,
-        user = BitbucketUser(
-            id = BitbucketCredentialId(authId = "some-id", name = "test-credential"),
-            token = token,
-        ),
-    )
-
     @Nested
     inner class FetchWorkspaceMetadata {
         @Test
@@ -92,7 +76,7 @@ class BitbucketClientTest {
             assertThat(result.isPrivate).isFalse()
             assertThat(result.url).isEqualTo("https://bitbucket.org/team")
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/workspaces/team")
+            assertThat(request.path).startsWith("/workspaces/team?fields=")
             assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
         }
 
@@ -103,7 +87,7 @@ class BitbucketClientTest {
             runBlocking { bitbucketClient.fetchWorkspaceMetadata("my team", "test-token") }
 
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/workspaces/my%20team")
+            assertThat(request.path).startsWith("/workspaces/my%20team?fields=")
         }
 
         @Test
@@ -126,7 +110,8 @@ class BitbucketClientTest {
 
             assertThat(result.members.map { it.user.displayName }).containsExactly("Alice", "Bob")
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/workspaces/team/members?pagelen=100")
+            assertThat(request.path).startsWith("/workspaces/team/members?pagelen=100")
+            assertThat(request.path).contains("fields=next")
             assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
         }
 
@@ -147,42 +132,12 @@ class BitbucketClientTest {
     }
 
     @Nested
-    inner class WorkspaceExists {
-        @Test
-        fun `workspaceExists returns true when the workspace endpoint responds with 2xx`() {
-            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-
-            val result = runBlocking { bitbucketClient.workspaceExists("team", "test-token") }
-
-            assertThat(result).isTrue()
-        }
-
-        @Test
-        fun `workspaceExists returns false when the workspace endpoint responds with 404`() {
-            mockWebServer.enqueue(notFoundResponse())
-
-            val result = runBlocking { bitbucketClient.workspaceExists("missing", "test-token") }
-
-            assertThat(result).isFalse()
-        }
-
-        @Test
-        fun `workspaceExists propagates exception on non-404 error`() {
-            mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
-
-            assertThatThrownBy {
-                runBlocking { bitbucketClient.workspaceExists("team", "test-token") }
-            }.hasMessageContaining("500")
-        }
-    }
-
-    @Nested
     inner class RepositoryExists {
         @Test
         fun `repositoryExists returns true when the repository endpoint responds with 2xx`() {
             mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
-            val result = runBlocking { bitbucketClient.repositoryExists(connection()) }
+            val result = runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
 
             assertThat(result).isTrue()
             val request = mockWebServer.takeRequest()
@@ -194,18 +149,63 @@ class BitbucketClientTest {
         fun `repositoryExists returns false when the repository endpoint responds with 404`() {
             mockWebServer.enqueue(notFoundResponse())
 
-            val result = runBlocking { bitbucketClient.repositoryExists(connection()) }
+            val result = runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
 
             assertThat(result).isFalse()
         }
 
         @Test
         fun `repositoryExists propagates exception on non-404 error`() {
-            mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
+            mockWebServer.enqueue(MockResponse().setResponseCode(403).setBody("Forbidden"))
 
             assertThatThrownBy {
-                runBlocking { bitbucketClient.repositoryExists(connection()) }
-            }.hasMessageContaining("500")
+                runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
+            }.hasMessageContaining("403")
+        }
+    }
+
+    @Nested
+    inner class RateLimitRetry {
+        @Test
+        fun `a 429 is retried and the following success is returned`() {
+            mockWebServer.enqueue(
+                notFoundResponse()
+                    .setResponseCode(429)
+                    .setHeader("Retry-After", "0"),
+            )
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+            val result = runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
+
+            assertThat(result).isTrue()
+            assertThat(mockWebServer.requestCount).isEqualTo(2)
+        }
+
+        @Test
+        fun `a persistent 429 fails once the retry budget is spent`() {
+            repeat(4) {
+                mockWebServer.enqueue(
+                    notFoundResponse()
+                        .setResponseCode(429)
+                        .setHeader("Retry-After", "0"),
+                )
+            }
+
+            assertThatThrownBy {
+                runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
+            }.hasMessageContaining("429")
+
+            assertThat(mockWebServer.requestCount).isEqualTo(4)
+        }
+
+        @Test
+        fun `a 404 is not retried`() {
+            mockWebServer.enqueue(notFoundResponse())
+
+            val result = runBlocking { bitbucketClient.repositoryExists("owner", "repo", "test-token") }
+
+            assertThat(result).isFalse()
+            assertThat(mockWebServer.requestCount).isEqualTo(1)
         }
     }
 
@@ -228,7 +228,8 @@ class BitbucketClientTest {
             assertThat(result.repositories.map { it.name }).containsExactly("repo-a", "repo-b")
             assertThat(result.repositories.first().url).isEqualTo("https://bitbucket.org/team/repo-a")
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/repositories/team?pagelen=30&page=1")
+            assertThat(request.path).startsWith("/repositories/team?pagelen=30&page=1")
+            assertThat(request.path).contains("fields=next")
             assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
         }
 
@@ -246,7 +247,7 @@ class BitbucketClientTest {
             }
 
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/repositories/team?pagelen=10&page=3")
+            assertThat(request.path).startsWith("/repositories/team?pagelen=10&page=3")
         }
 
         @Test
@@ -272,7 +273,7 @@ class BitbucketClientTest {
         fun `fetchAllPullRequests requests every pull request state when no filter is given`() {
             mockWebServer.enqueue(pullRequestsPage(pullRequests = emptyList(), nextUrl = null))
 
-            val result = runBlocking { bitbucketClient.fetchAllPullRequests(connection()) }
+            val result = runBlocking { bitbucketClient.fetchAllPullRequests("owner", "repo", "test-token") }
 
             assertThat(result).isEmpty()
             val request = mockWebServer.takeRequest()
@@ -280,6 +281,7 @@ class BitbucketClientTest {
             listOf("OPEN", "MERGED", "DECLINED", "SUPERSEDED").forEach { state ->
                 assertThat(request.path).contains("state=$state")
             }
+            assertThat(request.path).contains("fields=next")
             assertThat(request.path).doesNotContain("q=")
         }
 
@@ -289,7 +291,9 @@ class BitbucketClientTest {
 
             runBlocking {
                 bitbucketClient.fetchAllPullRequests(
-                    connection(),
+                    workspace = "owner",
+                    slug = "repo",
+                    token = "test-token",
                     sinceTimestamp = "2024-01-01T00:00:00Z",
                 )
             }
@@ -303,7 +307,7 @@ class BitbucketClientTest {
         fun `fetchAllPullRequests returns pull requests with their metadata`() {
             mockWebServer.enqueue(pullRequestsPage(pullRequests = listOf(42), nextUrl = null))
 
-            val result = runBlocking { bitbucketClient.fetchAllPullRequests(connection()) }
+            val result = runBlocking { bitbucketClient.fetchAllPullRequests("owner", "repo", "test-token") }
 
             assertThat(result).hasSize(1)
             val pullRequest = result.first()
@@ -315,52 +319,32 @@ class BitbucketClientTest {
         }
 
         @Test
+        fun `fetchAllPullRequests maps review state from participants`() {
+            mockWebServer.enqueue(pullRequestsPage(pullRequests = listOf(42), nextUrl = null))
+
+            val result = runBlocking { bitbucketClient.fetchAllPullRequests("owner", "repo", "test-token") }
+
+            val participant = result.first().participants.single()
+            assertThat(participant.user?.nickname).isEqualTo("reviewer")
+            assertThat(participant.role).isEqualTo("REVIEWER")
+            assertThat(participant.approved).isTrue()
+            assertThat(participant.state).isEqualTo("approved")
+            assertThat(participant.participatedOn).isEqualTo("2024-01-02T00:00:00+00:00")
+        }
+
+        @Test
         fun `fetchAllPullRequests follows the next link across pages`() {
             val secondPageUrl = mockWebServer.url("/repositories/owner/repo/pullrequests?page=2").toString()
             mockWebServer.enqueue(pullRequestsPage(pullRequests = listOf(1), nextUrl = secondPageUrl))
             mockWebServer.enqueue(pullRequestsPage(pullRequests = listOf(2), nextUrl = null))
 
-            val result = runBlocking { bitbucketClient.fetchAllPullRequests(connection()) }
+            val result = runBlocking { bitbucketClient.fetchAllPullRequests("owner", "repo", "test-token") }
 
             assertThat(result.map { it.id }).containsExactly(1, 2)
             mockWebServer.takeRequest() // discard first
             val secondRequest = mockWebServer.takeRequest()
             assertThat(secondRequest.path).isEqualTo("/repositories/owner/repo/pullrequests?page=2")
             assertThat(secondRequest.getHeader("Authorization")).isEqualTo("Bearer test-token")
-        }
-    }
-
-    @Nested
-    inner class FetchPullRequest {
-        @Test
-        fun `fetchPullRequest requests the single pull request endpoint`() {
-            mockWebServer.enqueue(singlePullRequestResponse(prNumber = 42))
-
-            val result = runBlocking { bitbucketClient.fetchPullRequest(connection(), pullRequestId = 42) }
-
-            assertThat(result).isNotNull()
-            assertThat(result?.id).isEqualTo(42)
-            val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/repositories/owner/repo/pullrequests/42")
-            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer test-token")
-        }
-
-        @Test
-        fun `fetchPullRequest returns null when the pull request does not exist`() {
-            mockWebServer.enqueue(notFoundResponse())
-
-            val result = runBlocking { bitbucketClient.fetchPullRequest(connection(), pullRequestId = 99) }
-
-            assertThat(result).isNull()
-        }
-
-        @Test
-        fun `fetchPullRequest propagates exception on non-404 error`() {
-            mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("Internal Server Error"))
-
-            assertThatThrownBy {
-                runBlocking { bitbucketClient.fetchPullRequest(connection(), pullRequestId = 42) }
-            }.hasMessageContaining("500")
         }
     }
 
@@ -372,15 +356,20 @@ class BitbucketClientTest {
                 commentsPage(comments = listOf(commentJson(1, deleted = false), commentJson(2, deleted = true))),
             )
 
-            val result = runBlocking { bitbucketClient.fetchAllPullRequestComments(connection(), pullRequestId = 42) }
+            val result = runBlocking {
+                bitbucketClient.fetchAllPullRequestComments("owner", "repo", 42, "test-token")
+            }
 
             assertThat(result).hasSize(2)
             assertThat(result.first().user?.nickname).isEqualTo("commenter-1")
             assertThat(result.first().deleted).isFalse()
             assertThat(result.last().deleted).isTrue()
             assertThat(result.first().content?.raw).isEqualTo("Comment 1")
+            assertThat(result.first().content?.markup).isEqualTo("markdown")
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).isEqualTo("/repositories/owner/repo/pullrequests/42/comments?pagelen=100")
+            assertThat(request.path)
+                .startsWith("/repositories/owner/repo/pullrequests/42/comments?pagelen=100")
+            assertThat(request.path).contains("fields=next")
         }
 
         @Test
@@ -389,7 +378,9 @@ class BitbucketClientTest {
             mockWebServer.enqueue(commentsPage(comments = listOf(commentJson(1)), nextUrl = secondPageUrl))
             mockWebServer.enqueue(commentsPage(comments = listOf(commentJson(2)), nextUrl = null))
 
-            val result = runBlocking { bitbucketClient.fetchAllPullRequestComments(connection(), pullRequestId = 42) }
+            val result = runBlocking {
+                bitbucketClient.fetchAllPullRequestComments("owner", "repo", 42, "test-token")
+            }
 
             assertThat(result.map { it.id }).containsExactly(1, 2)
         }
@@ -472,6 +463,15 @@ class BitbucketClientTest {
             "updated_on": "2024-01-03T00:00:00+00:00",
             "closed_on": "2024-01-04T00:00:00+00:00",
             "merge_commit": { "hash": "abc123" },
+            "participants": [
+                {
+                    "user": ${accountJson("reviewer")},
+                    "role": "REVIEWER",
+                    "approved": true,
+                    "participated_on": "2024-01-02T00:00:00+00:00",
+                    "state": "approved"
+                }
+            ],
             "links": { "html": { "href": "https://bitbucket.org/owner/repo/pullrequests/$prNumber" } }
         }
         """.trimIndent()
@@ -487,11 +487,6 @@ class BitbucketClientTest {
             }
             """.trimIndent(),
         )
-
-    private fun singlePullRequestResponse(prNumber: Int) = MockResponse()
-        .setResponseCode(200)
-        .setHeader("Content-Type", "application/json")
-        .setBody(pullRequestJson(prNumber))
 
     private fun commentJson(commentId: Int, deleted: Boolean = false) =
         """
