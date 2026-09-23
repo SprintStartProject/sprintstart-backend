@@ -25,16 +25,6 @@ interface ArtifactRepository :
     ArtifactFacetRepository {
     fun findBySourceId(sourceId: String): Artifact?
 
-    @Query(
-        """
-            SELECT a
-            FROM Artifact a
-            JOIN a.projectIdsInternal p
-            WHERE a.id = :artifactId AND p = :projectId
-        """,
-    )
-    fun findByIdAndProjectId(@Param("artifactId") artifactId: UUID, @Param("projectId") projectId: UUID): Artifact?
-
     /**
      * Batch variant of [findBySourceId]. Source ids with no artifact are simply absent, so a
      * caller comparing a set of rows against the corpus learns which of them it no longer holds.

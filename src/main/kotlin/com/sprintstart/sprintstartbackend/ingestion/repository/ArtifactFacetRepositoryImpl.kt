@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
+import jakarta.persistence.criteria.CompoundSelection
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Join
 import jakarta.persistence.criteria.Predicate
@@ -48,21 +49,7 @@ class ArtifactFacetRepositoryImpl(
         val root = query.from(Artifact::class.java)
         val projectJoin = root.join<Artifact, UUID>("projectIdsInternal")
 
-        query.select(
-            cb.construct(
-                ArtifactResponse::class.java,
-                root.get<UUID>("id"),
-                root.get<String?>("title"),
-                root.get<SourceSystem>("sourceSystem"),
-                root.get<String>("sourceId"),
-                root.get<String?>("sourceUrl"),
-                root.get<ArtifactType>("artifactType"),
-                root.get<Instant>("ingestedAt"),
-                root.get<Instant?>("lastChangedAt"),
-                root.get<String>("metadata"),
-                root.get<String?>("sourceVersion"),
-            ),
-        )
+        query.select(artifactProjection(cb, root))
 
         val predicates = buildPredicates(cb, root, projectJoin, projectId, criteria, null)
         query.where(*predicates.toTypedArray())
@@ -91,6 +78,52 @@ class ArtifactFacetRepositoryImpl(
 
         return PageImpl(items, pageable, totalElements)
     }
+
+    override fun findProjectArtifactById(
+        projectId: UUID,
+        artifactId: UUID,
+    ): ArtifactResponse? {
+        val cb = entityManager.criteriaBuilder
+        val query = cb.createQuery(ArtifactResponse::class.java)
+        val root = query.from(Artifact::class.java)
+        val projectJoin = root.join<Artifact, UUID>("projectIdsInternal")
+
+        query.select(artifactProjection(cb, root))
+        query.where(
+            cb.equal(root.get<UUID>("id"), artifactId),
+            cb.equal(projectJoin, projectId),
+        )
+
+        return entityManager
+            .createQuery(query)
+            .setMaxResults(1)
+            .resultList
+            .firstOrNull()
+    }
+
+    /**
+     * The response projection shared by every artifact read.
+     *
+     * Deliberately not the entity: `Artifact` carries the eagerly fetched `content` TEXT column,
+     * so hydrating it to answer a metadata question drags whole file bodies across JDBC. Keep the
+     * field list here and nowhere else — [ArtifactResponse] is the only shape either query builds.
+     */
+    private fun artifactProjection(
+        cb: CriteriaBuilder,
+        root: Root<Artifact>,
+    ): CompoundSelection<ArtifactResponse> = cb.construct(
+        ArtifactResponse::class.java,
+        root.get<UUID>("id"),
+        root.get<String?>("title"),
+        root.get<SourceSystem>("sourceSystem"),
+        root.get<String>("sourceId"),
+        root.get<String?>("sourceUrl"),
+        root.get<ArtifactType>("artifactType"),
+        root.get<Instant>("ingestedAt"),
+        root.get<Instant?>("lastChangedAt"),
+        root.get<String>("metadata"),
+        root.get<String?>("sourceVersion"),
+    )
 
     override fun findFacets(
         projectId: UUID,
@@ -301,11 +334,16 @@ class ArtifactFacetRepositoryImpl(
         root: Root<Artifact>,
         format: UploadFormat,
     ): Predicate {
-        val titleLower = cb.lower(root.get("title"))
-        val sourceUrlLower = cb.lower(root.get("sourceUrl"))
+        // Nullable columns fold to "" exactly as `classifyUploadFormat` does, so this predicate
+        // and the Kotlin classifier that produces the facet counts can never disagree. Without
+        // the coalesce, `NOT(OR(...))` — the OTHER bucket — evaluates to NULL rather than TRUE
+        // for a row whose mime, language and title are unset, and an upload the facet counts as
+        // OTHER would come back from the filter as nothing at all.
+        val titleLower = cb.coalesce(cb.lower(root.get("title")), "")
+        val sourceUrlLower = cb.coalesce(cb.lower(root.get("sourceUrl")), "")
         val sourceIdLower = cb.lower(root.get("sourceId"))
-        val mimeLower = cb.lower(root.get("mime"))
-        val languageLower = cb.lower(root.get("language"))
+        val mimeLower = cb.coalesce(cb.lower(root.get("mime")), "")
+        val languageLower = cb.coalesce(cb.lower(root.get("language")), "")
 
         val isPdf = cb.or(
             cb.equal(mimeLower, "application/pdf"),

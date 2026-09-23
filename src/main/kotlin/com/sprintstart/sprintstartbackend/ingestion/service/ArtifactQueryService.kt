@@ -115,25 +115,6 @@ class ArtifactQueryService(
     }
 
     /**
-     * Legacy overload for project artifact queries specifying only a filter string.
-     */
-    @Transactional(readOnly = true)
-    @Tracked("Retrieving list of artifacts for project")
-    fun getProjectArtifacts(
-        page: Int,
-        size: Int,
-        filter: String?,
-        projectId: UUID,
-        authId: String,
-    ): ArtifactPageResponse = getProjectArtifacts(
-        page = page,
-        size = size,
-        criteria = ArtifactFilterCriteria(search = filter),
-        projectId = projectId,
-        authId = authId,
-    )
-
-    /**
      * Returns aggregated facet counts for a project based on the supplied criteria.
      *
      * @param projectId The SprintStart project that scopes the artifact listing.
@@ -169,12 +150,14 @@ class ArtifactQueryService(
         authId: String,
     ): ArtifactResponse {
         ensureAccessToProject(authId, projectId)
-        val artifact = artifactRepository.findByIdAndProjectId(artifactId, projectId)
+        // A projection, not the entity: opening a deep link needs metadata only, and
+        // `Artifact.content` is an eagerly fetched TEXT column (see
+        // ArtifactFacetRepositoryImpl.artifactProjection).
+        return artifactRepository.findProjectArtifactById(projectId, artifactId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "Artifact $artifactId not found in project $projectId",
             )
-        return artifactMapper.toResponse(artifact)
     }
 
     /**

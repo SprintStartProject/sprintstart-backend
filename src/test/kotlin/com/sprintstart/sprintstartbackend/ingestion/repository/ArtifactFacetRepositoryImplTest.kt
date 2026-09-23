@@ -1,11 +1,10 @@
-package com.sprintstart.sprintstartbackend.ingestion.service
+package com.sprintstart.sprintstartbackend.ingestion.repository
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
-import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactFacetRepositoryImpl
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class ArtifactFacetServiceTest {
+class ArtifactFacetRepositoryImplTest {
     @Test
     fun `extractRepositoryFromSourceId extracts owner and repo correctly`() {
         val standard = "github:SprintStartProject/sprintstart-backend:FILE:README.md"
@@ -42,6 +41,21 @@ class ArtifactFacetServiceTest {
             language = null,
         )
         assertThat(pdfExt).isEqualTo(UploadFormat.PDF)
+    }
+
+    @Test
+    fun `classifyUploadFormat buckets a row with no mime and an unknown extension as OTHER`() {
+        // The facet counts come from this classifier while the filter runs as SQL. The predicate
+        // folds null columns to "" for exactly this row, so a plain .txt upload stays reachable
+        // through the OTHER filter instead of being counted but unfilterable.
+        val other = ArtifactFacetRepositoryImpl.classifyUploadFormat(
+            title = "notes.txt",
+            sourceUrl = null,
+            sourceId = "6f1e2f2c-0000-4000-8000-000000000000",
+            mime = null,
+            language = null,
+        )
+        assertThat(other).isEqualTo(UploadFormat.OTHER)
     }
 
     @Test

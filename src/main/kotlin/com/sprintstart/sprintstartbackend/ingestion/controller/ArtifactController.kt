@@ -108,8 +108,18 @@ class ArtifactController(
     fun getProjectArtifacts(
         @RequestParam(defaultValue = DEFAULT_PAGE) @Min(1) page: Int,
         @RequestParam(defaultValue = DEFAULT_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) size: Int,
-        @RequestParam(defaultValue = "") filter: String,
-        @RequestParam(required = false) search: String?,
+        // `filter` predates `search` and kept its own contract (a fragment matched against title,
+        // type, source system and metadata) until the Knowledge Base moved server-side. It is now
+        // an alias of `search`: nothing in this repo sends it, and it stays only so an outside
+        // client that does is not broken by a query whose meaning it cannot see changing.
+        @Parameter(description = "Deprecated alias of `search`; send `search` instead")
+        @RequestParam(defaultValue = "")
+        filter: String,
+        @Parameter(
+            description = "Case-insensitive match against the artifact's title, source id and source url",
+        )
+        @RequestParam(required = false)
+        search: String?,
         @RequestParam(required = false) types: Set<ArtifactType>?,
         @RequestParam(required = false) sources: Set<SourceSystem>?,
         @RequestParam(required = false) repositories: Set<String>?,

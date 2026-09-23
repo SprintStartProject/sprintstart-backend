@@ -133,7 +133,7 @@ class ArtifactControllerTest(
     @Test
     fun `getProjectArtifacts forwards criteria with repeatable params and pagination`() {
         val projectId = UUID.randomUUID()
-        val criteria = com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria(
+        val criteria = ArtifactFilterCriteria(
             search = "test",
             types = setOf(ArtifactType.FILE, ArtifactType.ISSUE),
             sources = setOf(SourceSystem.GITHUB),

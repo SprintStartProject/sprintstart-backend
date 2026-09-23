@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -140,17 +141,24 @@ class ArtifactQueryServiceTest {
     }
 
     @Test
-    fun `getArtifact returns mapped artifact when found`() {
+    fun `getArtifact returns the projected artifact when found`() {
         val projectId = UUID.randomUUID()
         val artifactId = UUID.randomUUID()
         val authId = "auth-1"
-        val entity = artifact().apply {
-            val idField = Artifact::class.java.getDeclaredField("id")
-            idField.isAccessible = true
-            idField.set(this, artifactId)
-        }
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
-        every { artifactRepository.findByIdAndProjectId(artifactId, projectId) } returns entity
+        every {
+            artifactRepository.findProjectArtifactById(projectId, artifactId)
+        } returns ArtifactResponse(
+            id = artifactId,
+            title = "README.md",
+            sourceSystem = SourceSystem.GITHUB,
+            sourceId = "github:owner/repo:FILE:README.md",
+            sourceUrl = "https://github.com/owner/repo/blob/main/README.md",
+            artifactType = ArtifactType.FILE,
+            ingestedAt = Instant.parse("2026-06-19T09:16:30Z"),
+            lastChangedAt = null,
+            metadata = """{"repositoryFullName":"owner/repo"}""",
+        )
 
         val result = service.getArtifact(projectId, artifactId, authId)
 
@@ -164,7 +172,7 @@ class ArtifactQueryServiceTest {
         val artifactId = UUID.randomUUID()
         val authId = "auth-1"
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
-        every { artifactRepository.findByIdAndProjectId(artifactId, projectId) } returns null
+        every { artifactRepository.findProjectArtifactById(projectId, artifactId) } returns null
 
         org.junit.jupiter.api.assertThrows<org.springframework.web.server.ResponseStatusException> {
             service.getArtifact(projectId, artifactId, authId)

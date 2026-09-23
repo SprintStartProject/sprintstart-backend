@@ -28,6 +28,21 @@ interface ArtifactFacetRepository {
     ): Page<ArtifactResponse>
 
     /**
+     * Resolves one artifact's metadata projection, scoped to a project the caller can see.
+     *
+     * Used to open a deep-linked artifact that is not on the page currently loaded, so it must
+     * not hydrate `content` either — see [findProjectArtifactsWithCriteria].
+     *
+     * @param projectId Scopes the artifact to the target project.
+     * @param artifactId The artifact to resolve.
+     * @return The artifact projection, or null when it is not linked to that project.
+     */
+    fun findProjectArtifactById(
+        projectId: UUID,
+        artifactId: UUID,
+    ): ArtifactResponse?
+
+    /**
      * Calculates aggregated counts for types, sources, upload formats, and repositories
      * using the "count each would add" model (own-facet-excluded, other-facets-applied).
      *

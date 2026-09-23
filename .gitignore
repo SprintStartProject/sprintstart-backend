@@ -24,6 +24,6 @@ CLAUDE.md
 __pycache__/
 *.pyc
 
-# Hermes agent working files (per-developer)
+# Local parallel-work checkouts (per-developer, never committed)
 .worktrees/
 .worktreeinclude
