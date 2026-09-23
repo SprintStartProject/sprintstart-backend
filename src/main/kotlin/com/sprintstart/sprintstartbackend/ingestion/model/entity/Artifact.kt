@@ -48,6 +48,12 @@ class Artifact(
     @CollectionTable(
         name = "artifact_projects",
         joinColumns = [JoinColumn(name = "artifact_id")],
+        indexes = [
+            jakarta.persistence.Index(
+                name = "idx_artifact_projects_project",
+                columnList = "project_id, artifact_id",
+            ),
+        ],
     )
     @Column(name = "project_id", nullable = false)
     // Add companion obj to Artifact to have Artifact.create

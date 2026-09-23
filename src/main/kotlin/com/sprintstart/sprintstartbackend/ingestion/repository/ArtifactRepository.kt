@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
@@ -18,8 +19,21 @@ import java.util.UUID
  * are asked of artifacts, not a repository doing too many things.
  */
 @Suppress("TooManyFunctions")
-interface ArtifactRepository : JpaRepository<Artifact, UUID> {
+interface ArtifactRepository :
+    JpaRepository<Artifact, UUID>,
+    JpaSpecificationExecutor<Artifact>,
+    ArtifactFacetRepository {
     fun findBySourceId(sourceId: String): Artifact?
+
+    @Query(
+        """
+            SELECT a
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE a.id = :artifactId AND p = :projectId
+        """,
+    )
+    fun findByIdAndProjectId(@Param("artifactId") artifactId: UUID, @Param("projectId") projectId: UUID): Artifact?
 
     /**
      * Batch variant of [findBySourceId]. Source ids with no artifact are simply absent, so a

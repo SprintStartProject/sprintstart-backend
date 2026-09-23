@@ -1,8 +1,14 @@
 package com.sprintstart.sprintstartbackend.ingestion.controller
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
 import io.swagger.v3.oas.annotations.Operation
@@ -89,12 +95,13 @@ class ArtifactController(
         summary = "Get project artifacts",
         description =
             "Returns a paginated artifact list limited to one project visible to the " +
-                "authenticated user. When a filter is provided, the search is performed " +
+                "authenticated user. When a filter or criteria are provided, the search is performed " +
                 "case-insensitively across the configured searchable fields.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Project artifact page returned successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid query or pagination parameters"),
             ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
         ],
     )
@@ -102,13 +109,85 @@ class ArtifactController(
         @RequestParam(defaultValue = DEFAULT_PAGE) @Min(1) page: Int,
         @RequestParam(defaultValue = DEFAULT_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) size: Int,
         @RequestParam(defaultValue = "") filter: String,
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) types: Set<ArtifactType>?,
+        @RequestParam(required = false) sources: Set<SourceSystem>?,
+        @RequestParam(required = false) repositories: Set<String>?,
+        @RequestParam(required = false) format: UploadFormat?,
         @Parameter(
             description = "UUID of the project whose artifacts should be returned",
         ) @PathVariable projectId: UUID,
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-    ): ResponseEntity<ArtifactPageResponse> =
+    ): ResponseEntity<ArtifactPageResponse> {
+        val effectiveSearch = search ?: (if (filter.isNotBlank()) filter else null)
+        val criteria = ArtifactFilterCriteria(
+            search = effectiveSearch,
+            types = types,
+            sources = sources,
+            repositories = repositories,
+            format = format,
+        )
+        return ResponseEntity.ok(
+            artifactQueryService.getProjectArtifacts(page, size, criteria, projectId, jwt.subject),
+        )
+    }
+
+    @GetMapping("projects/{projectId}/artifacts/facets")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get project artifact facets",
+        description = "Returns aggregated counts for artifact facets scoped to a project.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Facet counts returned successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid facet query parameters"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+        ],
+    )
+    fun getProjectArtifactFacets(
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) types: Set<ArtifactType>?,
+        @RequestParam(required = false) sources: Set<SourceSystem>?,
+        @RequestParam(required = false) repositories: Set<String>?,
+        @RequestParam(required = false) format: UploadFormat?,
+        @Parameter(
+            description = "UUID of the project whose artifact facets should be calculated",
+        ) @PathVariable projectId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactFacetsResponse> {
+        val criteria = ArtifactFilterCriteria(
+            search = search,
+            types = types,
+            sources = sources,
+            repositories = repositories,
+            format = format,
+        )
+        return ResponseEntity.ok(
+            artifactQueryService.getProjectArtifactFacets(projectId, criteria, jwt.subject),
+        )
+    }
+
+    @GetMapping("projects/{projectId}/artifacts/{artifactId}")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get single artifact",
+        description = "Returns metadata for one artifact when the caller has access to the requested project.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Artifact returned successfully"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+            ApiResponse(responseCode = "404", description = "Artifact not found in project"),
+        ],
+    )
+    fun getArtifact(
+        @Parameter(description = "UUID of the project that scopes artifact access") @PathVariable projectId: UUID,
+        @Parameter(description = "UUID of the artifact to return") @PathVariable artifactId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactResponse> =
         ResponseEntity.ok(
-            artifactQueryService.getProjectArtifacts(page, size, filter, projectId, jwt.subject),
+            artifactQueryService.getArtifact(projectId, artifactId, jwt.subject),
         )
 
     /**

@@ -1,6 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.PageMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMapper
@@ -69,14 +72,11 @@ class ArtifactQueryService(
     }
 
     /**
-     * Returns one paginated artifact list limited to a single project visible to the caller.
-     *
-     * The method first validates project access and then delegates to project-scoped repository
-     * queries using the same filter semantics as the global artifact search.
+     * Returns one paginated artifact list limited to a single project visible to the caller using criteria.
      *
      * @param page The 1-based page number to return.
      * @param size The maximum number of artifacts to include in one page.
-     * @param filter Optional case-insensitive text used to narrow the result set.
+     * @param criteria Filter criteria containing search string, types, sources, repos, and formats.
      * @param projectId The SprintStart project that scopes the artifact listing.
      * @param authId The authenticated caller subject from the JWT.
      * @return One project-scoped artifact page together with pagination metadata.
@@ -88,7 +88,7 @@ class ArtifactQueryService(
     fun getProjectArtifacts(
         page: Int,
         size: Int,
-        filter: String?,
+        criteria: ArtifactFilterCriteria,
         projectId: UUID,
         authId: String,
     ): ArtifactPageResponse {
@@ -96,17 +96,13 @@ class ArtifactQueryService(
         val pageable = PageRequest.of(
             page - 1,
             size,
-            Sort.by("ingestedAt").descending(),
+            Sort.by("ingestedAt").descending().and(Sort.by("id").ascending()),
         )
 
-        val result: Page<Artifact> =
-            if (filter.isNullOrBlank()) {
-                artifactRepository.findAllByProjectId(projectId, pageable)
-            } else {
-                artifactRepository.searchByProjectId(projectId, filter.trim(), pageable)
-            }
+        val result: Page<ArtifactResponse> =
+            artifactRepository.findProjectArtifactsWithCriteria(projectId, criteria, pageable)
         return ArtifactPageResponse(
-            items = result.content.map { artifactMapper.toResponse(it) },
+            items = result.content,
             page = PageMetadata(
                 number = page.toLong(),
                 size = size.toLong(),
@@ -116,6 +112,69 @@ class ArtifactQueryService(
                 hasPrevious = result.hasPrevious(),
             ),
         )
+    }
+
+    /**
+     * Legacy overload for project artifact queries specifying only a filter string.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving list of artifacts for project")
+    fun getProjectArtifacts(
+        page: Int,
+        size: Int,
+        filter: String?,
+        projectId: UUID,
+        authId: String,
+    ): ArtifactPageResponse = getProjectArtifacts(
+        page = page,
+        size = size,
+        criteria = ArtifactFilterCriteria(search = filter),
+        projectId = projectId,
+        authId = authId,
+    )
+
+    /**
+     * Returns aggregated facet counts for a project based on the supplied criteria.
+     *
+     * @param projectId The SprintStart project that scopes the artifact listing.
+     * @param criteria Active filter criteria.
+     * @param authId The authenticated caller subject from the JWT.
+     * @return Aggregated facet counts.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving artifact facets for project")
+    fun getProjectArtifactFacets(
+        projectId: UUID,
+        criteria: ArtifactFilterCriteria,
+        authId: String,
+    ): ArtifactFacetsResponse {
+        ensureAccessToProject(authId, projectId)
+        return artifactRepository.findFacets(projectId, criteria)
+    }
+
+    /**
+     * Retrieves a single artifact by its ID within the project scope.
+     *
+     * @param projectId The SprintStart project that scopes the artifact.
+     * @param artifactId The ID of the artifact to retrieve.
+     * @param authId The authenticated caller subject from the JWT.
+     * @return The artifact response DTO.
+     * @throws ResponseStatusException `403` if access is denied, `404` if not found in project.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving single artifact for project")
+    fun getArtifact(
+        projectId: UUID,
+        artifactId: UUID,
+        authId: String,
+    ): ArtifactResponse {
+        ensureAccessToProject(authId, projectId)
+        val artifact = artifactRepository.findByIdAndProjectId(artifactId, projectId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Artifact $artifactId not found in project $projectId",
+            )
+        return artifactMapper.toResponse(artifact)
     }
 
     /**

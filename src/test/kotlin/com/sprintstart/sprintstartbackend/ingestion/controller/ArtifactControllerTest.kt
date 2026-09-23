@@ -2,10 +2,14 @@ package com.sprintstart.sprintstartbackend.ingestion.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.PageMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
@@ -123,6 +127,129 @@ class ArtifactControllerTest(
 
         verify(exactly = 1) {
             artifactService.getArtifactContent(projectId, artifactId, "auth-user")
+        }
+    }
+
+    @Test
+    fun `getProjectArtifacts forwards criteria with repeatable params and pagination`() {
+        val projectId = UUID.randomUUID()
+        val criteria = com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria(
+            search = "test",
+            types = setOf(ArtifactType.FILE, ArtifactType.ISSUE),
+            sources = setOf(SourceSystem.GITHUB),
+            repositories = setOf("owner/repo"),
+            format = UploadFormat.PDF,
+        )
+        every {
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, projectId, "auth-user")
+        } returns response()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("page", "1")
+                    .param("size", "20")
+                    .param("search", "test")
+                    .param("types", "FILE", "ISSUE")
+                    .param("sources", "GITHUB")
+                    .param("repositories", "owner/repo")
+                    .param("format", "PDF")
+                    .with(
+                        jwt()
+                            .jwt { it.subject("auth-user") }
+                            .authorities(SimpleGrantedAuthority("ROLE_USER")),
+                    ),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].title").value("README.md"))
+
+        verify(exactly = 1) {
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, projectId, "auth-user")
+        }
+    }
+
+    @Test
+    fun `getProjectArtifactFacets returns facet counts and never binds to single artifact route`() {
+        val projectId = UUID.randomUUID()
+        val facets = ArtifactFacetsResponse(
+            types = listOf(FacetCountResponse("FILE", 10)),
+            sources = listOf(FacetCountResponse("GITHUB", 10)),
+            formats = listOf(FacetCountResponse("PDF", 2)),
+            repositories = listOf(FacetCountResponse("owner/repo", 8)),
+        )
+        every {
+            artifactQueryService.getProjectArtifactFacets(projectId, any(), "auth-user")
+        } returns facets
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts/facets")
+                    .with(
+                        jwt()
+                            .jwt { it.subject("auth-user") }
+                            .authorities(SimpleGrantedAuthority("ROLE_USER")),
+                    ),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.types[0].value").value("FILE"))
+            .andExpect(jsonPath("$.types[0].count").value(10))
+            .andExpect(jsonPath("$.sources[0].value").value("GITHUB"))
+            .andExpect(jsonPath("$.formats[0].value").value("PDF"))
+            .andExpect(jsonPath("$.repositories[0].value").value("owner/repo"))
+
+        verify(exactly = 1) {
+            artifactQueryService.getProjectArtifactFacets(projectId, any(), "auth-user")
+        }
+        verify(exactly = 0) {
+            artifactQueryService.getArtifact(any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `getArtifact returns single artifact when found`() {
+        val projectId = UUID.randomUUID()
+        val artifactId = UUID.randomUUID()
+        val artifactResponse = response().items.single().copy(id = artifactId)
+        every {
+            artifactQueryService.getArtifact(projectId, artifactId, "auth-user")
+        } returns artifactResponse
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts/$artifactId")
+                    .with(
+                        jwt()
+                            .jwt { it.subject("auth-user") }
+                            .authorities(SimpleGrantedAuthority("ROLE_USER")),
+                    ),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.id").value(artifactId.toString()))
+            .andExpect(jsonPath("$.title").value("README.md"))
+
+        verify(exactly = 1) {
+            artifactQueryService.getArtifact(projectId, artifactId, "auth-user")
+        }
+    }
+
+    @Test
+    fun `getArtifact returns 404 when artifact not found in project`() {
+        val projectId = UUID.randomUUID()
+        val artifactId = UUID.randomUUID()
+        every {
+            artifactQueryService.getArtifact(projectId, artifactId, "auth-user")
+        } throws org.springframework.web.server
+            .ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND)
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts/$artifactId")
+                    .with(
+                        jwt()
+                            .jwt { it.subject("auth-user") }
+                            .authorities(SimpleGrantedAuthority("ROLE_USER")),
+                    ),
+            ).andExpect(status().isNotFound)
+
+        verify(exactly = 1) {
+            artifactQueryService.getArtifact(projectId, artifactId, "auth-user")
         }
     }
 

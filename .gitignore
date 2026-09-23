@@ -23,3 +23,7 @@ CLAUDE.md
 # Tooling residue: Python helper scripts used while editing this repo.
 __pycache__/
 *.pyc
+
+# Hermes agent working files (per-developer)
+.worktrees/
+.worktreeinclude
