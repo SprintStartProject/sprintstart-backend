@@ -168,6 +168,28 @@ interface ArtifactRepository :
     fun findProjectIdsByArtifactIdIn(@Param("artifactIds") artifactIds: Collection<UUID>): Set<UUID>
 
     /**
+     * Returns which of [artifactIds] belong to the project.
+     *
+     * Selects ids only, so a status lookup never loads artifact content. Callers use it to drop ids
+     * from other projects before asking the AI service about them.
+     *
+     * @param artifactIds The ids to check; callers must not pass an empty collection.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a.id
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.id IN :artifactIds
+        """,
+    )
+    fun findIdsInProject(
+        @Param("projectId") projectId: UUID,
+        @Param("artifactIds") artifactIds: Collection<UUID>,
+    ): Set<UUID>
+
+    /**
      * Returns one artifact page limited to artifacts linked to the given project.
      */
     @Query(

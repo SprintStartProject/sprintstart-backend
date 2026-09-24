@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactR
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.PageMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
 import io.mockk.every
@@ -45,6 +46,10 @@ class ArtifactControllerTest(
 
     @MockkBean
     private lateinit var artifactService: ArtifactService
+
+    // Only a constructor dependency here; the ai-status endpoint is covered by ArtifactAiStatusControllerTest.
+    @MockkBean
+    private lateinit var artifactAiStatusService: ArtifactAiStatusService
 
     @Test
     fun `getAllArtifacts uses default pagination and empty filter`() {

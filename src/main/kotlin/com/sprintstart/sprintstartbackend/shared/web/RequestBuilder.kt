@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.shared.web
 import java.net.URI
 import java.net.http.HttpRequest.BodyPublishers.noBody
 import java.net.http.HttpRequest.BodyPublishers.ofString
+import java.time.Duration
 
 /**
  * Immutable accumulator for HTTP request parameters, constructed via [WebClient].
@@ -24,7 +25,11 @@ import java.net.http.HttpRequest.BodyPublishers.ofString
  *     .sync()
  *     .perform<MyResponse>()
  * ```
+ *
+ * `TooManyFunctions` is suppressed: a fluent builder is one small method per request option, and
+ * splitting it would only scatter them.
  */
+@Suppress("TooManyFunctions")
 class RequestBuilder(
     val method: String,
     val httpClient: java.net.http.HttpClient,
@@ -32,6 +37,7 @@ class RequestBuilder(
     val uri: URI? = null,
     val headers: Map<String, String> = emptyMap(),
     val rawBody: String? = null,
+    val timeout: Duration? = null,
 ) {
     // ── URI ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +76,16 @@ class RequestBuilder(
             headers = headers + ("Content-Type" to "application/json"),
         )
 
+    /**
+     * Bounds this single request (response headers must arrive within [timeout]).
+     *
+     * The shared [java.net.http.HttpClient] only has a connect timeout, and a coroutine
+     * `withTimeout` cannot interrupt the blocking `send` on [kotlinx.coroutines.Dispatchers.IO],
+     * so a caller that must answer fast even when the peer hangs sets it here. On expiry the
+     * send throws [java.net.http.HttpTimeoutException].
+     */
+    fun timeout(timeout: Duration): RequestBuilder = copy(timeout = timeout)
+
     // ── Execution context selection ───────────────────────────────────────────
 
     /**
@@ -92,6 +108,7 @@ class RequestBuilder(
         uri: URI? = this.uri,
         headers: Map<String, String> = this.headers,
         rawBody: String? = this.rawBody,
+        timeout: Duration? = this.timeout,
     ): RequestBuilder = RequestBuilder(
         method = method,
         httpClient = this.httpClient,
@@ -99,6 +116,7 @@ class RequestBuilder(
         uri = uri,
         headers = headers,
         rawBody = rawBody,
+        timeout = timeout,
     )
 
     @PublishedApi
@@ -111,11 +129,13 @@ class RequestBuilder(
             noBody()
         }
 
+        val requestTimeout = timeout
         return java.net.http.HttpRequest
             .newBuilder()
             .uri(uri)
             .method(method.uppercase(), bodyPublisher)
             .apply { headers.forEach { (k, v) -> header(k, v) } }
+            .apply { if (requestTimeout != null) timeout(requestTimeout) }
             .build()
     }
 }

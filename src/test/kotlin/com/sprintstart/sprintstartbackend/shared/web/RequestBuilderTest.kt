@@ -8,6 +8,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.http.HttpClient
+import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
@@ -138,5 +139,26 @@ class RequestBuilderTest {
         val recorded = mockWebServer.takeRequest()
         assertEquals("application/json", recorded.getHeader("Content-Type"))
         assertEquals("""{"key":"value"}""", recorded.body.readUtf8())
+    }
+
+    // ── Timeout ───────────────────────────────────────────────────────────────
+
+    @Test
+    fun `no request timeout is set unless asked for`() {
+        val request = webClient.get().uri("https://ai.test/x").buildHttpRequest()
+
+        assertEquals(false, request.timeout().isPresent)
+    }
+
+    @Test
+    fun `timeout() applies to the built request and survives further chaining`() {
+        val request = webClient
+            .get()
+            .timeout(Duration.ofSeconds(2))
+            .uri("https://ai.test/x")
+            .header("X-Trace", "1")
+            .buildHttpRequest()
+
+        assertEquals(Duration.ofSeconds(2), request.timeout().get())
     }
 }

@@ -4,14 +4,17 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactAiStatusResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
+import com.sprintstart.sprintstartbackend.ingestion.service.MAX_AI_STATUS_IDS
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -33,6 +36,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import java.net.URI
 import java.time.LocalDate
 import java.util.UUID
@@ -65,6 +69,7 @@ private const val LANGUAGES_DESCRIPTION =
 class ArtifactController(
     private val artifactService: ArtifactService,
     private val artifactQueryService: ArtifactQueryService,
+    private val artifactAiStatusService: ArtifactAiStatusService,
 ) {
     /**
      * Returns a paginated artifact list across all projects for administrative callers.
@@ -228,6 +233,46 @@ class ArtifactController(
         return ResponseEntity.ok(
             artifactQueryService.getProjectArtifactFacets(projectId, criteria, jwt.subject),
         )
+    }
+
+    /**
+     * Returns the AI index state of the artifacts shown on one Knowledge Base page.
+     *
+     * Separate from the list on purpose: the list never waits for, or fails because of, the AI
+     * service; the frontend asks for chips after the page rendered. The id cap is checked here,
+     * at the HTTP edge, before any project lookup. AI trouble is never a 5xx: it comes back as
+     * `aiAvailable = false`.
+     */
+    @GetMapping("projects/{projectId}/artifacts/ai-status")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get AI index status of project artifacts",
+        description = "Per-id AI index state; ids outside the project are omitted.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Status per visible id; aiAvailable=false when the AI could not be asked",
+            ),
+            ApiResponse(responseCode = "400", description = "More than 100 ids, or a malformed id"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+        ],
+    )
+    suspend fun getProjectArtifactAiStatus(
+        @Parameter(description = "Artifact ids to check (repeatable, at most 100)")
+        @RequestParam(required = false)
+        ids: List<UUID>?,
+        @Parameter(description = "UUID of the project the artifacts belong to")
+        @PathVariable
+        projectId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactAiStatusResponse> {
+        val requested = ids.orEmpty()
+        if (requested.size > MAX_AI_STATUS_IDS) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "At most $MAX_AI_STATUS_IDS ids per request")
+        }
+        return ResponseEntity.ok(artifactAiStatusService.getAiStatus(jwt.subject, projectId, requested))
     }
 
     @GetMapping("projects/{projectId}/artifacts/{artifactId}")
