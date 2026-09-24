@@ -10,7 +10,7 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  *
  * This is the same discipline [CompetencySource] already applies to the ledger
  * ([CompetencySource.VERIFIED] outranks [CompetencySource.ASSESSED]), extended to the evidence
- * stream the ramp and the metrics read.
+ * stream the metrics read.
  *
  * Ordered weakest-last so callers can compare: [OBSERVED] is the strongest.
  */

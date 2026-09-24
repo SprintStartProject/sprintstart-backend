@@ -22,7 +22,7 @@ import java.util.UUID
  * and nothing to backfill. Attestations are the exception, and have a table.
  *
  * This service is only the composition rule: every [EvidenceProvider] runs, and their contributions
- * become one time-ordered stream that the ramp and the metrics read.
+ * become one time-ordered stream that the metrics read.
  */
 @Service
 class ContributionService(
@@ -75,7 +75,7 @@ data class Contribution(
     val acceptedAt: Instant?,
     val returnedCount: Int,
 ) {
-    /** Accepted through the team's normal quality bar. The unit the ramp counts. */
+    /** Accepted through the team's normal quality bar. The unit the metrics count. */
     val isAccepted: Boolean
         get() = state == ContributionState.ACCEPTED
 
