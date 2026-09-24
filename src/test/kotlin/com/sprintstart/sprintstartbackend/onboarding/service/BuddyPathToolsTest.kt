@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationSt
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.QuestionAttempt
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingGenerationIssueResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
@@ -13,6 +14,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.question.Que
 import com.sprintstart.sprintstartbackend.onboarding.model.response.skip.GetOnboardingStepSkipResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -38,7 +40,12 @@ class BuddyPathToolsTest {
     private val onboardingTaskService: OnboardingTaskService = mockk {
         every { getOnboardingTasksByStepId(any()) } returns emptyList()
     }
-    private val tools = BuddyPathTools(onboardingPathService, onboardingTaskService)
+
+    // No attempts unless a case puts some there.
+    private val questionAttemptRepository: QuestionAttemptRepository = mockk {
+        every { findAllByQuestionIdAndUserIdOrderByCreatedAtDesc(any(), any()) } returns mutableListOf()
+    }
+    private val tools = BuddyPathTools(onboardingPathService, onboardingTaskService, questionAttemptRepository)
 
     private val userId = UUID.randomUUID()
 
@@ -411,6 +418,42 @@ class BuddyPathToolsTest {
         assertThat(text).contains("never the answer")
     }
 
+    /** The buddy asked for it: knowing *that* an answer was wrong gave it nothing to teach against. */
+    @Test
+    fun `a missed question carries the hire's own last answer, never the right one`() {
+        val missed = question("Who runs the retro?", QuestionStatus.RETRY)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", questions = listOf(missed)))
+        every { questionAttemptRepository.findAllByQuestionIdAndUserIdOrderByCreatedAtDesc(missed.id, userId) } returns
+            mutableListOf(attempt(missed.id, correct = false, text = "The PM"))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("their last answer, which was not right: “The PM”")
+        assertThat(text).contains("without saying what the right answer is")
+    }
+
+    @Test
+    fun `a missed choice is quoted as the options they picked`() {
+        val missed = question("Which meeting sets scope?", QuestionStatus.RETRY, options = listOf("Planning", "Retro"))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", questions = listOf(missed)))
+        every { questionAttemptRepository.findAllByQuestionIdAndUserIdOrderByCreatedAtDesc(missed.id, userId) } returns
+            mutableListOf(attempt(missed.id, correct = false, options = listOf(missed.options[1].id)))
+
+        assertThat(tools.execute(userId)).contains("their last answer, which was not right: “Retro”")
+    }
+
+    @Test
+    fun `a question that is not open after a miss carries no answer`() {
+        val passed = question("Who runs the retro?", QuestionStatus.PASSED)
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", questions = listOf(passed)))
+
+        assertThat(tools.execute(userId)).doesNotContain("their last answer")
+        verify(exactly = 0) { questionAttemptRepository.findAllByQuestionIdAndUserIdOrderByCreatedAtDesc(any(), any()) }
+    }
+
     @Test
     fun `the phase is described as a graph, with what each item opens and what is open now`() {
         // Told only about locks, the mentor read the numbers as a sequence -- "after #6 comes #7" --
@@ -438,6 +481,28 @@ class BuddyPathToolsTest {
             path(phase(0, "Setup", steps = listOf(step), questions = listOf(question)))
 
         assertThat(tools.execute(userId)).contains("The next thing waiting for them: the step “Clone the repository”")
+    }
+
+    /** The page puts the question first when the step waits on it; the buddy has to as well. */
+    @Test
+    fun `a question the step waits on is the next thing, as on the page`() {
+        val question = question("Who runs the retro?", QuestionStatus.OPEN)
+        val step = step("Run your first retro", StepStatus.WAITING, blockers = setOf(question.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Meetings", steps = listOf(step), questions = listOf(question)))
+
+        assertThat(tools.execute(userId))
+            .contains("The next thing waiting for them: the question “Who runs the retro?”")
+    }
+
+    @Test
+    fun `a step in progress is the next thing, wherever it sits in the graph`() {
+        val first = step("Clone the repository", StepStatus.WAITING)
+        val started = step("Run the tests", StepStatus.IN_PROGRESS, blockers = setOf(first.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Setup", steps = listOf(first, started)))
+
+        assertThat(tools.execute(userId)).contains("The next thing waiting for them: the step “Run the tests”")
     }
 
     @Test
@@ -679,6 +744,19 @@ class BuddyPathToolsTest {
         title = title,
         description = "",
         finished = finished,
+    )
+
+    private fun attempt(
+        questionId: UUID,
+        correct: Boolean,
+        text: String? = null,
+        options: List<UUID> = emptyList(),
+    ) = QuestionAttempt(
+        questionId = questionId,
+        userId = userId,
+        correct = correct,
+        selectedOptionIds = options.toMutableList(),
+        textAnswer = text,
     )
 
     private var questionPosition = 100

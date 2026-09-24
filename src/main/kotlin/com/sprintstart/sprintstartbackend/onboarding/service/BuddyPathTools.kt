@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnb
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.GetOnboardingQuestionForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTaskResponse
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -52,6 +53,7 @@ import java.util.UUID
 class BuddyPathTools(
     private val onboardingPathService: OnboardingPathService,
     private val onboardingTaskService: OnboardingTaskService,
+    private val questionAttemptRepository: QuestionAttemptRepository,
 ) {
     /**
      * The path tool, mounted only for a hire who has a path.
@@ -107,7 +109,7 @@ class BuddyPathTools(
                 val checklists = checklistsOf(current)
                 appendLine(standing(phases, current))
                 appendLine()
-                appendCurrentPhase(current, phases.indexOf(current), phases)
+                appendCurrentPhase(current, phases.indexOf(current), phases, lastWrongAnswers(userId, current))
                 appendReadyToClose(current, phases, checklists)
                 appendCurrentTasks(stepTheyAreOn(current), checklists)
                 appendNextItem(current, readyToClose(current, checklists).firstOrNull())
@@ -462,6 +464,7 @@ class BuddyPathTools(
         phase: GetOnboardingPhaseForUserResponse,
         index: Int,
         phases: List<GetOnboardingPhaseForUserResponse>,
+        lastAnswers: Map<UUID, String> = emptyMap(),
     ) {
         appendLine(
             "Phase ${index + 1} of ${phases.size}: ${quoted(phase.title)} " +
@@ -504,7 +507,7 @@ class BuddyPathTools(
                 "Knowledge questions. They count like steps, so a phase whose steps are done and " +
                     "whose questions are unanswered is still the phase they are standing in:",
             )
-            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, graph) }
+            questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, graph, lastAnswers[it.id]) }
             if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
         }
     }
@@ -650,6 +653,7 @@ class BuddyPathTools(
         question: GetOnboardingQuestionForUserResponse,
         phase: GetOnboardingPhaseForUserResponse,
         graph: PhaseGraph,
+        lastAnswer: String?,
     ) {
         val numbers = graph.numbers
         val state = when (question.status) {
@@ -678,6 +682,15 @@ class BuddyPathTools(
         // the material in the conversation comes first; a refresher step is for when what they
         // missed is more than one explanation, so it is still there tomorrow.
         if (question.status == QuestionStatus.RETRY) {
+            // What they actually said, so the tutoring can start from what did not land rather than
+            // from the whole of the material. Their own answer, never the correct one.
+            lastAnswer?.let {
+                appendLine(
+                    "    · their last answer, which was not right: ${quoted(it)}. Start from what it " +
+                        "shows they understood and where it went wrong -- without saying what the " +
+                        "right answer is.",
+                )
+            }
             // Placed before the question, so the refresher is what opens it, and after what the
             // question waits on now -- or, when that is nothing, after where the hire is. The same
             // inference the action applies, spelled out so the mentor passes both halves.
@@ -691,6 +704,29 @@ class BuddyPathTools(
             )
         }
     }
+
+    /**
+     * The hire's own last answer to every question of [phase] they got wrong and have not passed since.
+     *
+     * The mentor used to know only *that* an answer was wrong, which left it "let's go through the
+     * material again" and nothing sharper. The answer itself is the diagnosis: it is the one thing
+     * that says which idea did not land. Never the correct answer -- that is not on the hire-facing
+     * shape and stays out of the mentor's reach. A choice is given as the option labels they picked,
+     * which they know are wrong already.
+     */
+    private fun lastWrongAnswers(userId: UUID, phase: GetOnboardingPhaseForUserResponse): Map<UUID, String> =
+        phase.questions
+            .filter { it.status == QuestionStatus.RETRY }
+            .mapNotNull { question ->
+                val last = questionAttemptRepository
+                    .findAllByQuestionIdAndUserIdOrderByCreatedAtDesc(question.id, userId)
+                    .firstOrNull()
+                    ?.takeUnless { it.correct }
+                    ?: return@mapNotNull null
+                val labels = question.options.filter { it.id in last.selectedOptionIds }.map { it.label }
+                val answer = last.textAnswer?.takeIf { it.isNotBlank() } ?: labels.joinToString("; ")
+                answer.takeIf { it.isNotBlank() }?.let { question.id to it.take(ANSWER_SHOWN) }
+            }.toMap()
 
     /**
      * Where an item sits in its phase's graph: what it comes after, whether that has locked it, and
@@ -854,45 +890,56 @@ class BuddyPathTools(
         steps.flatMap { listOfNotNull(it.startedAt, it.completedAt) }.maxOfOrNull { it.toEpochMilli() } ?: 0L
 
     /**
-     * The first open, unlocked item in [phase], or null when the phase has nothing reachable.
+     * The item to do next in [phase], or null when the phase has nothing reachable.
      *
-     * The first open unlocked *step* by position, and only when there is none, the first open
-     * *question*. Steps and questions carry separate positions, so mixing them by position named a
-     * question as next while the page pointed at a step.
+     * The page's own rule (`nextItemInPhase` in the frontend), so "up next" on the page and the next
+     * thing the buddy names are the same item: a step already in progress first -- it is where they
+     * left off -- and then the first open item in the order the phase graph reads, steps and
+     * questions mixed, because a question is a node of the same graph and often stands between two
+     * steps. [PhaseReadingOrder] is that order.
      *
-     * Written here against the hire-facing shape rather than reusing [OnboardingPositionReader],
-     * which predates questions being first-class and still walks steps only -- a mentor using that
-     * would send a hire past the question their phase is actually waiting on.
+     * This used to take every open step by position before any question, which named a step as next
+     * while the page pointed at the question in front of it.
      */
     private fun nextItemIn(phase: GetOnboardingPhaseForUserResponse): NextItem? {
         if (phase.locked || !phase.isOpen()) return null
 
-        val step = phase.steps
-            .sortedBy { it.position }
-            .firstOrNull {
-                !it.locked &&
-                    it.status != StepStatus.FINISHED &&
-                    it.status != StepStatus.SKIPPED &&
-                    // Asked to skip and waiting on the PM: not what to tell them to do next.
-                    !it.hasPendingSkip()
-            }
-        val question = phase.questions
-            .sortedBy { it.position }
-            .firstOrNull { it.status == QuestionStatus.OPEN || it.status == QuestionStatus.RETRY }
-
-        return when {
-            step != null -> NextItem(
-                plain = "the step ${quoted(step.title)}",
-                withIds = "the step ${quoted(step.title)} [step_id: ${step.id}] [link: $STEP_LINK${step.id}]",
-            )
-            question != null -> NextItem(
-                plain = "the question ${quoted(question.question)}",
-                withIds = "the question ${quoted(question.question)} " +
-                    "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
-            )
-            else -> null
+        phase.steps.sortedBy { it.position }.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.let {
+            return stepItem(it)
         }
+
+        val steps = phase.steps.sortedBy { it.position }
+        val questions = phase.questions.sortedBy { it.position }
+        val byId = steps.associateBy { it.id }
+        val questionsById = questions.associateBy { it.id }
+        val order = PhaseReadingOrder.of(
+            steps.map { it.id to it.blockerIds } + questions.map { it.id to it.blockerIds },
+        )
+        for (id in order) {
+            val step = byId[id]
+            // Waiting, unlocked, and not asked to skip -- a step waiting on the PM's decision is not
+            // what to tell them to do next.
+            if (step != null && step.status == StepStatus.WAITING && !step.locked && !step.hasPendingSkip()) {
+                return stepItem(step)
+            }
+            val question = questionsById[id]
+            if (question != null &&
+                (question.status == QuestionStatus.OPEN || question.status == QuestionStatus.RETRY)
+            ) {
+                return NextItem(
+                    plain = "the question ${quoted(question.question)}",
+                    withIds = "the question ${quoted(question.question)} " +
+                        "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
+                )
+            }
+        }
+        return null
     }
+
+    private fun stepItem(step: GetOnboardingStepsResponse) = NextItem(
+        plain = "the step ${quoted(step.title)}",
+        withIds = "the step ${quoted(step.title)} [step_id: ${step.id}] [link: $STEP_LINK${step.id}]",
+    )
 
     /**
      * One named next thing, in the two forms it is needed in.
@@ -919,6 +966,9 @@ class BuddyPathTools(
 
         /** How many phase titles ahead are named, and how many empty phases. */
         const val AHEAD_SHOWN = 12
+
+        /** How much of a hire's own last answer is quoted -- enough to see the idea, not an essay. */
+        const val ANSWER_SHOWN = 300
 
         /** How many expected outcomes of one step are quoted. Enough to say what "done" means. */
         const val OUTCOMES_SHOWN = 3
