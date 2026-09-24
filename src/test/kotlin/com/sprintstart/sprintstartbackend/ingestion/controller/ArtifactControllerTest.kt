@@ -240,6 +240,23 @@ class ArtifactControllerTest(
     }
 
     @Test
+    fun `getProjectArtifacts binds repeated languages and returns each language`() {
+        val projectId = UUID.randomUUID()
+        val criteria = ArtifactFilterCriteria(languages = setOf("Kotlin", "yaml"))
+        every {
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, projectId, "auth-user")
+        } returns response()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("languages", "Kotlin", "yaml")
+                    .with(userJwt()),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.items[0].language").value("Markdown"))
+    }
+
+    @Test
     fun `getProjectArtifacts rejects a malformed date with 400`() {
         val projectId = UUID.randomUUID()
 
@@ -256,9 +273,10 @@ class ArtifactControllerTest(
     }
 
     @Test
-    fun `getProjectArtifactFacets binds the same date window as the list`() {
+    fun `getProjectArtifactFacets binds the same date window and languages as the list`() {
         val projectId = UUID.randomUUID()
-        val criteria = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 1))
+        val day = LocalDate.of(2026, 3, 1)
+        val criteria = ArtifactFilterCriteria(from = day, to = day, languages = setOf("Kotlin"))
         every {
             artifactQueryService.getProjectArtifactFacets(projectId, criteria, "auth-user")
         } returns facets()
@@ -268,6 +286,7 @@ class ArtifactControllerTest(
                 get("/api/v1/projects/$projectId/artifacts/facets")
                     .param("from", "2026-03-01")
                     .param("to", "2026-03-01")
+                    .param("languages", "Kotlin")
                     .with(userJwt()),
             ).andExpect(status().isOk)
 
@@ -284,6 +303,7 @@ class ArtifactControllerTest(
             sources = listOf(FacetCountResponse("GITHUB", 10)),
             formats = listOf(FacetCountResponse("PDF", 2)),
             repositories = listOf(FacetCountResponse("owner/repo", 8)),
+            languages = listOf(FacetCountResponse("Kotlin", 6)),
         )
         every {
             artifactQueryService.getProjectArtifactFacets(projectId, any(), "auth-user")
@@ -303,6 +323,8 @@ class ArtifactControllerTest(
             .andExpect(jsonPath("$.sources[0].value").value("GITHUB"))
             .andExpect(jsonPath("$.formats[0].value").value("PDF"))
             .andExpect(jsonPath("$.repositories[0].value").value("owner/repo"))
+            .andExpect(jsonPath("$.languages[0].value").value("Kotlin"))
+            .andExpect(jsonPath("$.languages[0].count").value(6))
 
         verify(exactly = 1) {
             artifactQueryService.getProjectArtifactFacets(projectId, any(), "auth-user")
@@ -374,6 +396,7 @@ class ArtifactControllerTest(
                 ingestedAt = Instant.parse("2026-01-02T03:04:05Z"),
                 lastChangedAt = Instant.parse("2026-01-09T03:04:05Z"),
                 metadata = """{"repositoryFullName":"owner/repo"}""",
+                language = "Markdown",
             ),
         ),
         page = PageMetadata(
@@ -395,5 +418,6 @@ class ArtifactControllerTest(
         sources = emptyList(),
         formats = emptyList(),
         repositories = emptyList(),
+        languages = emptyList(),
     )
 }

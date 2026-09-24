@@ -45,6 +45,9 @@ private const val FROM_DESCRIPTION =
         "Must not be after `to`, else 400."
 private const val TO_DESCRIPTION =
     "Last import day to include, ISO yyyy-MM-dd, read as a UTC calendar day (inclusive)."
+private const val LANGUAGES_DESCRIPTION =
+    "Language display names to keep (repeatable, case-insensitive), e.g. Kotlin. " +
+        "Artifacts without a language are excluded while set."
 
 /**
  * Read-only HTTP entry point for opening one artifact.
@@ -150,6 +153,9 @@ class ArtifactController(
         @RequestParam(required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
         to: LocalDate?,
+        @Parameter(description = LANGUAGES_DESCRIPTION)
+        @RequestParam(required = false)
+        languages: Set<String>?,
         @Parameter(
             description = "UUID of the project whose artifacts should be returned",
         ) @PathVariable projectId: UUID,
@@ -164,6 +170,7 @@ class ArtifactController(
             format = format,
             from = from,
             to = to,
+            languages = languages,
         )
         return ResponseEntity.ok(
             artifactQueryService.getProjectArtifacts(page, size, criteria, sort, projectId, jwt.subject),
@@ -200,6 +207,9 @@ class ArtifactController(
         @RequestParam(required = false)
         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
         to: LocalDate?,
+        @Parameter(description = LANGUAGES_DESCRIPTION)
+        @RequestParam(required = false)
+        languages: Set<String>?,
         @Parameter(
             description = "UUID of the project whose artifact facets should be calculated",
         ) @PathVariable projectId: UUID,
@@ -213,6 +223,7 @@ class ArtifactController(
             format = format,
             from = from,
             to = to,
+            languages = languages,
         )
         return ResponseEntity.ok(
             artifactQueryService.getProjectArtifactFacets(projectId, criteria, jwt.subject),

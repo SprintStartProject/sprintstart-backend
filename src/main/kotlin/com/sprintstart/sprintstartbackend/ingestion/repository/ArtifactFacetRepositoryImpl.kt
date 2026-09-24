@@ -33,9 +33,42 @@ private enum class FacetKind {
     SOURCES,
     FORMATS,
     REPOSITORIES,
+    LANGUAGES,
 }
 
 private val SOURCES_EXCLUDED_FACETS = setOf(FacetKind.SOURCES, FacetKind.FORMATS, FacetKind.REPOSITORIES)
+
+/** Lower-cased language names the facet never offers: the format facet covers documents. */
+private val DOCUMENT_LANGUAGES = setOf("markdown", "plain text")
+
+/** Selected languages, trimmed, blanks dropped, deduplicated ignoring case. */
+private fun ArtifactFilterCriteria.selectedLanguages(): List<String> =
+    languages
+        .orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { it.lowercase() }
+
+/**
+ * Shapes counted `(display name, count)` language groups into facet options.
+ *
+ * Document languages are dropped unless selected; a selected language with no match is added at
+ * count 0, so its chip stays visible. Ordered by count descending, then value ascending.
+ */
+internal fun languageFacetOptions(
+    counted: List<Pair<String, Long>>,
+    selected: List<String>,
+): List<FacetCountResponse> {
+    val selectedLower = selected.map { it.lowercase() }.toSet()
+    val countedLower = counted.map { it.first.lowercase() }.toSet()
+    val shown = counted.filter { (value, _) ->
+        value.lowercase() !in DOCUMENT_LANGUAGES || value.lowercase() in selectedLower
+    }
+    val unmatched = selected.filter { it.lowercase() !in countedLower }.map { it to 0L }
+    return (shown + unmatched)
+        .map { (value, count) -> FacetCountResponse(value, count) }
+        .sortedWith(compareByDescending<FacetCountResponse> { it.count }.thenBy { it.value })
+}
 
 @Repository
 @Transactional(readOnly = true)
@@ -151,6 +184,7 @@ class ArtifactFacetRepositoryImpl(
         root.get<Instant?>("lastChangedAt"),
         root.get<String>("metadata"),
         root.get<String?>("sourceVersion"),
+        root.get<String?>("language"),
     )
 
     override fun findFacets(
@@ -163,6 +197,7 @@ class ArtifactFacetRepositoryImpl(
             sources = computeSourceFacets(cb, projectId, criteria),
             formats = computeFormatFacets(cb, projectId, criteria),
             repositories = computeRepositoryFacets(cb, projectId, criteria),
+            languages = computeLanguageFacets(cb, projectId, criteria),
         )
     }
 
@@ -315,6 +350,32 @@ class ArtifactFacetRepositoryImpl(
             .map { (repo, count) -> FacetCountResponse(repo, count) }
     }
 
+    /**
+     * Counts artifacts per language under every active filter except the language one.
+     *
+     * Groups by lower(language) so the counts use the same case folding as the filter predicate;
+     * min(language) then picks one stored spelling to display for the group.
+     */
+    private fun computeLanguageFacets(
+        cb: CriteriaBuilder,
+        projectId: UUID,
+        criteria: ArtifactFilterCriteria,
+    ): List<FacetCountResponse> {
+        val query = cb.createQuery(Array<Any>::class.java)
+        val root = query.from(Artifact::class.java)
+        val join = root.join<Artifact, UUID>("projectIdsInternal")
+        val language = root.get<String>("language")
+        query.multiselect(cb.least(language), cb.countDistinct(root.get<UUID>("id")))
+        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.LANGUAGES)
+        query.where(*(preds + cb.isNotNull(language)).toTypedArray())
+        query.groupBy(cb.lower(language))
+
+        val counted = entityManager.createQuery(query).resultList.map { row ->
+            (row[0] as String) to (row[1] as Number).toLong()
+        }
+        return languageFacetOptions(counted, criteria.selectedLanguages())
+    }
+
     private fun buildPredicates(
         cb: CriteriaBuilder,
         root: Root<Artifact>,
@@ -352,6 +413,12 @@ class ArtifactFacetRepositoryImpl(
             val notGithub = cb.notEqual(root.get<SourceSystem>("sourceSystem"), SourceSystem.GITHUB)
             val githubMatchesRepo = buildGithubRepoPredicate(cb, root, criteria.repositories)
             predicates.add(cb.or(notGithub, githubMatchesRepo))
+        }
+
+        val languages = criteria.selectedLanguages()
+        if (exclude != FacetKind.LANGUAGES && languages.isNotEmpty()) {
+            val languageLower = cb.lower(root.get("language"))
+            predicates.add(languageLower.`in`(languages.map { it.lowercase() }))
         }
 
         // No facet counts the import date, so the window applies to every query alike -- which is

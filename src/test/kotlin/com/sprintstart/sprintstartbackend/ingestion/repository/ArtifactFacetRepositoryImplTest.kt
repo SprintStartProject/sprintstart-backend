@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -110,5 +111,17 @@ class ArtifactFacetRepositoryImplTest {
             language = null,
         )
         assertThat(other).isEqualTo(UploadFormat.OTHER)
+    }
+
+    @Test
+    fun `languageFacetOptions keeps a selected document language with its real count`() {
+        val counted = listOf("Markdown" to 3L, "Kotlin" to 3L, "Plain Text" to 9L)
+
+        val options = languageFacetOptions(counted, selected = listOf("markdown"))
+
+        assertThat(options).containsExactly(
+            FacetCountResponse("Kotlin", 3),
+            FacetCountResponse("Markdown", 3),
+        )
     }
 }

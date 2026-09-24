@@ -134,6 +134,7 @@ class ArtifactQueryServiceTest {
             sources = listOf(FacetCountResponse("GITHUB", 5)),
             formats = emptyList(),
             repositories = listOf(FacetCountResponse("owner/repo", 5)),
+            languages = emptyList(),
         )
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { artifactRepository.findFacets(projectId, criteria) } returns facets
@@ -202,7 +203,7 @@ class ArtifactQueryServiceTest {
         val criteria = ArtifactFilterCriteria(from = day, to = day)
         every { userApi.userHasAccessToProject("auth-1", projectId) } returns true
         every { artifactRepository.findFacets(projectId, criteria) } returns
-            ArtifactFacetsResponse(emptyList(), emptyList(), emptyList(), emptyList())
+            ArtifactFacetsResponse(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
 
         service.getProjectArtifactFacets(projectId, criteria, "auth-1")
 

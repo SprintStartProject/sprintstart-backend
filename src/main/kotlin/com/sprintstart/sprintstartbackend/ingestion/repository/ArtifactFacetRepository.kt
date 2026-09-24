@@ -47,7 +47,7 @@ interface ArtifactFacetRepository {
     ): ArtifactResponse?
 
     /**
-     * Calculates aggregated counts for types, sources, upload formats, and repositories
+     * Calculates aggregated counts for types, sources, upload formats, repositories, and languages
      * using the "count each would add" model (own-facet-excluded, other-facets-applied).
      *
      * @param projectId Scopes facet calculations to the target project.

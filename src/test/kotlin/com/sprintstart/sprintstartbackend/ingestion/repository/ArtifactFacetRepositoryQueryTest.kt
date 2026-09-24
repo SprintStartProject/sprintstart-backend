@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.repository
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -163,6 +164,74 @@ class ArtifactFacetRepositoryQueryTest {
 
         assertThat(facets.types.sumOf { it.count }).isEqualTo(list(window).totalElements).isEqualTo(2)
         assertThat(facets.sources.sumOf { it.count }).isEqualTo(list(window).totalElements)
+    }
+
+    // ========================== languages ==========================
+
+    @Test
+    fun `the language filter ignores case and drops artifacts without a language`() {
+        val kotlin = store(language = "Kotlin")
+        store(language = "YAML")
+        store(language = null, type = ArtifactType.ISSUE)
+        flush()
+
+        val found = list(ArtifactFilterCriteria(languages = setOf("KOTLIN")))
+
+        assertThat(found.content.map { it.id }).containsExactly(kotlin.id)
+        assertThat(found.content.single().language).isEqualTo("Kotlin")
+    }
+
+    @Test
+    fun `the language facet skips its own filter but applies the others`() {
+        store(language = "Kotlin")
+        store(language = "Kotlin")
+        store(language = "YAML")
+        store(language = "Shell", type = ArtifactType.PULL_REQUEST)
+        flush()
+        val criteria = ArtifactFilterCriteria(types = setOf(ArtifactType.FILE), languages = setOf("YAML"))
+
+        val languages = repository.findFacets(projectId, criteria).languages
+
+        // Kotlin still counts although only YAML is selected; Shell is outside the FILE type.
+        assertThat(languages).containsExactly(
+            FacetCountResponse("Kotlin", 2),
+            FacetCountResponse("YAML", 1),
+        )
+    }
+
+    @Test
+    fun `the language facet hides documents and keeps a selected language without matches`() {
+        store(language = "Kotlin")
+        store(language = "Markdown")
+        store(language = "Plain Text")
+        store(language = null, type = ArtifactType.ISSUE)
+        flush()
+
+        val languages = repository
+            .findFacets(projectId, ArtifactFilterCriteria(languages = setOf("Rust")))
+            .languages
+
+        assertThat(languages).containsExactly(
+            FacetCountResponse("Kotlin", 1),
+            FacetCountResponse("Rust", 0),
+        )
+    }
+
+    @Test
+    fun `spellings differing only in case count as one language, matching the list total`() {
+        store(language = "Kotlin")
+        store(language = "kotlin")
+        store(language = "YAML")
+        flush()
+        val criteria = ArtifactFilterCriteria(languages = setOf("KOTLIN"))
+
+        val kotlin = repository
+            .findFacets(projectId, criteria)
+            .languages
+            .filter { it.value.equals("kotlin", ignoreCase = true) }
+
+        assertThat(kotlin).hasSize(1)
+        assertThat(kotlin.single().count).isEqualTo(list(criteria).totalElements).isEqualTo(2)
     }
 
     // ========================== helpers ==========================

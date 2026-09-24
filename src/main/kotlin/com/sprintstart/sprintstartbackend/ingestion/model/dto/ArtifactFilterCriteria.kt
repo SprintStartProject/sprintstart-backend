@@ -24,6 +24,8 @@ enum class UploadFormat {
  *   `ingestedAt >= from 00:00Z` match. Null leaves the window open at the start.
  * @property to Last day (inclusive) of the import window, read as a UTC calendar day: rows with
  *   `ingestedAt < (to + 1 day) 00:00Z` match. Null leaves the window open at the end.
+ * @property languages Language display names to keep, matched case-insensitively against the
+ *   stored name. Narrows every source: artifacts without a language drop out while it is set.
  */
 data class ArtifactFilterCriteria(
     val search: String? = null,
@@ -33,4 +35,5 @@ data class ArtifactFilterCriteria(
     val format: UploadFormat? = null,
     val from: LocalDate? = null,
     val to: LocalDate? = null,
+    val languages: Set<String>? = null,
 )
