@@ -29,8 +29,8 @@ data class BuddyActionRequest(
     val competencyKey: String? = null,
     val level: String? = null,
     /**
-     * The path node a path action is aimed at: [stepId] for `complete_step`, [questionId] for
-     * `answer_question`, [phaseId] for `add_path_step`.
+     * The path node a path action is aimed at: [stepId] for `complete_step` and `request_skip`,
+     * [questionId] for `answer_question`, [phaseId] for `add_path_step`.
      *
      * Echoed back verbatim like every other payload here, and re-resolved server-side through the
      * caller's *own* path — so an id that belongs to somebody else's onboarding is not found rather

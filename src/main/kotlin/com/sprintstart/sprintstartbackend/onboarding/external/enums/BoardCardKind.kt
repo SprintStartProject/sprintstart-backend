@@ -19,10 +19,9 @@ enum class BoardCardKind(
     /**
      * What still has to be true before this hire can work: accounts, access, a machine that builds.
      *
-     * Baseline rather than mentor-placed: nobody should depend
-     * on a model noticing that somebody has been unable to clone the repository for a week. It is
-     * ensured on every board read and is the one card that is *most* useful on day one, when the
-     * board is otherwise thin.
+     * Baseline rather than mentor-placed: nobody should depend on a model noticing that somebody has
+     * been unable to clone the repository for a week. It is ensured on every board read and is the
+     * one card that is *most* useful on day one, when the board is otherwise thin.
      *
      * It shows outstanding work; it does not withhold anything. An unsettled step never
      * stops a hire claiming a task, and nothing anywhere consults these rows before serving them.
@@ -51,8 +50,8 @@ enum class BoardCardKind(
      * The task the hire is on, and where it came from.
      *
      * Not part of the baseline, because it is only true some of the time — somebody with no claimed
-     * goal is not "between tasks", they simply have no task, and a card about nothing
-     * is worse than no card. The mentor places it, and confirming `claim_goal` places it too.
+     * goal is not "between tasks", they simply have no task, and a card about nothing is worse than
+     * no card. The mentor places it, and confirming `claim_goal` places it too.
      */
     CURRENT_TASK(Placement.MENTOR),
 

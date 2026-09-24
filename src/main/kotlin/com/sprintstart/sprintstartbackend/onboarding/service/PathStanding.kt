@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStat
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
+import java.util.UUID
 
 /**
  * Where the hire stands on a path whose phases run side by side, and what comes next in a phase.
@@ -76,30 +77,41 @@ internal data class NextPathItem(
  * while the page pointed at the question in front of it.
  */
 internal fun nextItemIn(phase: GetOnboardingPhaseForUserResponse): NextPathItem? {
+    val id = nextIdIn(phase) ?: return null
+    phase.steps.firstOrNull { it.id == id }?.let { return stepItem(it) }
+    val question = phase.questions.first { it.id == id }
+    return NextPathItem(
+        plain = "the question ${BuddyPathTools.quoted(question.question)}",
+        withIds = "the question ${BuddyPathTools.quoted(question.question)} " +
+            "[question_id: ${question.id}] [link: ${BuddyPathTools.QUESTION_LINK}${question.id}]",
+    )
+}
+
+/**
+ * The step whose checklist the mentor is shown: the step [nextItemIn] names, or null when that is a
+ * question or nothing. Asked of the same rule, so the checklist in the tool result is always the
+ * checklist of the thing it calls next.
+ */
+internal fun nextStepIn(phase: GetOnboardingPhaseForUserResponse): GetOnboardingStepsResponse? =
+    nextIdIn(phase)?.let { id -> phase.steps.firstOrNull { it.id == id } }
+
+/** The id behind [nextItemIn]: a step or a question of [phase], or null. */
+private fun nextIdIn(phase: GetOnboardingPhaseForUserResponse): UUID? {
     if (phase.locked || !phase.isOpen()) return null
 
     val steps = phase.steps.sortedBy { it.position }
     val questions = phase.questions.sortedBy { it.position }
-    steps.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.let { return stepItem(it) }
+    steps.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.let { return it.id }
 
     val stepsById = steps.associateBy { it.id }
     val questionsById = questions.associateBy { it.id }
     val order = PhaseReadingOrder.of(
         steps.map { it.id to it.blockerIds } + questions.map { it.id to it.blockerIds },
     )
-    for (id in order) {
-        stepsById[id]?.takeIf { it.isReadyToStart() }?.let { return stepItem(it) }
-        questionsById[id]
-            ?.takeIf { it.status == QuestionStatus.OPEN || it.status == QuestionStatus.RETRY }
-            ?.let { question ->
-                return NextPathItem(
-                    plain = "the question ${BuddyPathTools.quoted(question.question)}",
-                    withIds = "the question ${BuddyPathTools.quoted(question.question)} " +
-                        "[question_id: ${question.id}] [link: ${BuddyPathTools.QUESTION_LINK}${question.id}]",
-                )
-            }
+    return order.firstOrNull { id ->
+        stepsById[id]?.isReadyToStart() == true ||
+            questionsById[id]?.let { it.status == QuestionStatus.OPEN || it.status == QuestionStatus.RETRY } == true
     }
-    return null
 }
 
 private fun stepItem(step: GetOnboardingStepsResponse) = NextPathItem(

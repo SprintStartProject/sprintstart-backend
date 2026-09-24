@@ -30,7 +30,7 @@ import java.util.UUID
  * - The **blueprint** is the PM's. The buddy never touches it; a mentor that could rewrite the
  *   curriculum is a mentor whose team stops trusting the curriculum.
  * - The **hire's copy** is the hire's, and the buddy may propose changes to it -- see
- *   [BuddyActionService], where every one of them waits for a button.
+ *   [BuddyPathActions], where every one of them waits for a button.
  * - **Reading really is free of consequence here**, unlike [BuddyBoardTools.execute]'s board read,
  *   which brings a board's baseline cards up to date by looking. Nothing is created by asking.
  *
@@ -71,7 +71,7 @@ class BuddyPathTools(
     /**
      * Whether this hire has a path at all.
      *
-     * Exposed so that [BuddyActionService] gates its path actions on the same question this gates
+     * Exposed so that [BuddyPathActions] gates its path actions on the same question this gates
      * its read tool on, answered by the same call. Two components deciding separately whether a path
      * exists is how a mentor ends up holding an action for a plan its read tool says is not there.
      */
@@ -111,7 +111,7 @@ class BuddyPathTools(
                 appendLine()
                 appendCurrentPhase(current, phases.indexOf(current), phases, lastWrongAnswers(userId, current))
                 appendReadyToClose(current, phases, checklists)
-                appendCurrentTasks(stepTheyAreOn(current), checklists)
+                appendCurrentTasks(nextStepIn(current), checklists)
                 appendNextItem(current, readyToClose(current, checklists).firstOrNull())
                 appendAhead(phases, current)
                 appendEmptyPhases(path)
@@ -231,21 +231,6 @@ class BuddyPathTools(
     }
 
     /**
-     * The step whose checklist is worth putting in front of the mentor: the one they have started, or
-     * else the first one they could start.
-     *
-     * Started wins over next, because a hire with something open is talking about that and not about
-     * what comes after it. Null when the phase has neither, which is when a checklist would be a
-     * heading over nothing.
-     */
-    private fun stepTheyAreOn(phase: GetOnboardingPhaseForUserResponse): GetOnboardingStepsResponse? {
-        if (phase.locked) return null
-        val ordered = phase.steps.sortedBy { it.position }.filterNot { it.locked }
-        return ordered.firstOrNull { it.status == StepStatus.IN_PROGRESS }
-            ?: ordered.firstOrNull { it.status == StepStatus.WAITING }
-    }
-
-    /**
      * The path in one or two sentences, for the opening greeting to ground itself in, or null when
      * the hire has no path.
      *
@@ -307,7 +292,7 @@ class BuddyPathTools(
      * a proposal can never be aimed at somebody else's onboarding. [findStep] and [findQuestion]
      * are the same idea for the other two kinds of node.
      *
-     * Used by [BuddyActionService] to check a proposal *before* the hire sees a button, and to put
+     * Used by [BuddyPathActions] to check a proposal *before* the hire sees a button, and to put
      * the real title on it. A button that names the thing it will change is the last chance anybody
      * has to notice the mentor meant a different step.
      */

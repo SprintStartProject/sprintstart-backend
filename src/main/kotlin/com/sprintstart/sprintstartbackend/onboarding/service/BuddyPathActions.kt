@@ -111,7 +111,8 @@ class BuddyPathActions(
             BuddyActionType.COMPLETE_TASK -> proposeCompleteTask(call, type, userId)
             BuddyActionType.ANSWER_QUESTION -> proposeAnswer(call, type, userId)
             BuddyActionType.REQUEST_SKIP -> proposeSkip(call, type, userId)
-            else -> proposeAddPathStep(call, type, userId)
+            BuddyActionType.ADD_PATH_STEP -> proposeAddPathStep(call, type, userId)
+            else -> error("${type.toolName} is not a path action")
         }
 
     /** Runs a confirmed path action. Each underlying `/me/...` operation owns its own rules. */
@@ -125,7 +126,8 @@ class BuddyPathActions(
             BuddyActionType.COMPLETE_TASK -> completeTask(authId, request.onboardingTaskId)
             BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request.questionId, request.answer)
             BuddyActionType.REQUEST_SKIP -> requestSkip(authId, request.stepId, request.reason)
-            else -> addPathStep(authId, request)
+            BuddyActionType.ADD_PATH_STEP -> addPathStep(authId, request)
+            else -> error("${type.toolName} is not a path action")
         }
 
     /**
@@ -168,7 +170,7 @@ class BuddyPathActions(
         // Finishing a step withdraws a skip request still waiting on the PM. Allowed -- somebody who
         // did the step anyway should be able to close it -- but never without saying so, on the
         // button and to the mentor, because nothing else would tell them the request is gone.
-        val pendingSkip = step.skip != null && step.skip.accepted == null
+        val pendingSkip = step.hasPendingSkip()
         val withdraws = if (pendingSkip) {
             " They asked their PM to skip this step and nobody has decided yet: finishing it withdraws " +
                 "that request, so say so plainly before they click."
@@ -297,7 +299,7 @@ class BuddyPathActions(
                 "“${step.title}” is already done, so there is nothing to skip."
             step.status == StepStatus.SKIPPED ->
                 "“${step.title}” is already skipped — their PM accepted it."
-            previous != null && previous.accepted == null ->
+            step.hasPendingSkip() ->
                 "They already asked to skip “${step.title}” and their PM has not decided yet. A second " +
                     "request cannot be sent; they can change the reason on the step's own page " +
                     "(${BuddyPathTools.STEP_PAGE_LINK}${step.id})."
@@ -402,7 +404,7 @@ class BuddyPathActions(
         }
         val entry = if (placement.entryInferred) {
             " You passed no waits_on, so it opens after what the path says it should (the button " +
-                "names it) -- if that is not where they meant, offer it again with waits_on."
+                "names it) — if that is not where they meant, offer it again with waits_on."
         } else {
             ""
         }
@@ -486,7 +488,7 @@ class BuddyPathActions(
         // The task route does not check locks; the page does, by never opening a locked step.
         if (buddyPathTools.findStep(userId, task.stepId)?.locked == true) {
             return refused(
-                "The step “${task.title}” belongs to is locked, so nothing on its checklist can be " +
+                "The step that “${task.title}” belongs to is locked, so nothing on its checklist can be " +
                     "ticked yet. Say what the step is waiting on instead.",
             )
         }

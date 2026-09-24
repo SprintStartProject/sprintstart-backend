@@ -41,7 +41,8 @@ enum class BuddyActionType(
     RECORD_ASSESSMENT("record_assessment", "Save this placement"),
 
     /**
-     * The three path actions: the mentor moving the hire along the curriculum their PM wrote.
+     * The path actions, from here to [REQUEST_SKIP]: the mentor moving the hire along the curriculum
+     * their PM wrote.
      *
      * They are what turns the buddy from a second onboarding mechanism into the tutor for the first
      * one. One line decides how far that goes, and it is worth stating here rather than only in the

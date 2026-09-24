@@ -631,11 +631,11 @@ class BuddyActionService(
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
             // Unused for the same reason again: a path is not project-scoped either.
-            BuddyActionType.COMPLETE_STEP -> "tick a step off their path"
-            BuddyActionType.COMPLETE_TASK -> "tick a line off their checklist"
+            BuddyActionType.COMPLETE_STEP -> "tick a step off your path"
+            BuddyActionType.COMPLETE_TASK -> "tick a line off your checklist"
             BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
-            BuddyActionType.ADD_PATH_STEP -> "add a step to their path"
-            BuddyActionType.REQUEST_SKIP -> "ask their PM to skip a step"
+            BuddyActionType.ADD_PATH_STEP -> "add a step to your path"
+            BuddyActionType.REQUEST_SKIP -> "ask your PM to skip a step"
             BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
             BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
             BuddyActionType.PLACE_NOTE -> "keep a note on your board"

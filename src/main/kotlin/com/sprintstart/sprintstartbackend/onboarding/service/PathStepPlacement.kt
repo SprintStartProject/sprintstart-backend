@@ -69,7 +69,7 @@ internal class PathStepPlacement(
         ).joinToString(", ")
     }
 
-    /** Whether any item in [unlocks] is a step that is already started, which placing this would re-lock. */
+    /** The titles of the steps in [unlocks] that are already started, which placing this would lock again. */
     fun relocksStarted(): List<String> =
         unlocks.mapNotNull { id -> stepsById[id]?.takeIf { it.status == StepStatus.IN_PROGRESS }?.let { titleOf(id) } }
 

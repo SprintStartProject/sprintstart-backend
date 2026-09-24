@@ -339,6 +339,32 @@ class BuddyPathToolsTest {
         assertThat(text).contains("finished with lines still open")
     }
 
+    /**
+     * The graph from `PhaseReadingOrderTest`, where the page reads `s2` before `s1`: the checklist
+     * shown is the one of the step named next, not of the first open step by position.
+     */
+    @Test
+    fun `the checklist shown is the one of the step named next`() {
+        val s1 = step("Read the handbook", StepStatus.WAITING)
+        val s2 = step("Meet the team", StepStatus.WAITING)
+        val s3 = step("Pair with a teammate", StepStatus.WAITING, locked = true, blockers = setOf(s2.id))
+        val q1 = question("Who owns deploys?", QuestionStatus.OPEN)
+        val s4 = step("Ship a fix", StepStatus.WAITING, locked = true, blockers = setOf(s1.id, q1.id))
+        val q2 = question("Who reviews?", QuestionStatus.LOCKED).copy(blockerIds = setOf(s3.id))
+        every { onboardingPathService.findPathForUserId(userId) } returns
+            path(phase(0, "Team", steps = listOf(s1, s2, s3, s4), questions = listOf(q1, q2)))
+        every { onboardingTaskService.getOnboardingTasksByStepId(s1.id) } returns
+            listOf(task("Open the handbook", finished = false))
+        every { onboardingTaskService.getOnboardingTasksByStepId(s2.id) } returns
+            listOf(task("Say hello", finished = false))
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("The next thing waiting for them: the step “Meet the team”")
+        assertThat(text).contains("The checklist of “Meet the team”, the step they are on:")
+        assertThat(text).doesNotContain("The checklist of “Read the handbook”")
+    }
+
     @Test
     fun `a step whose checklist is done but that is still open is named, with what it holds up`() {
         // Every line ticked, the step's own button never pressed: whatever waits on it stays locked
