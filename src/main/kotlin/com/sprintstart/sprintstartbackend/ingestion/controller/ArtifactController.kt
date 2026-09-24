@@ -45,10 +45,11 @@ private const val DEFAULT_PAGE = "1"
 private const val DEFAULT_SIZE = "20"
 private const val MAX_PAGE_SIZE = 100L
 private const val FROM_DESCRIPTION =
-    "First import day to include, ISO yyyy-MM-dd, read as a UTC calendar day (inclusive). " +
-        "Must not be after `to`, else 400."
+    "First activity day to include (last content change, else import), ISO yyyy-MM-dd, " +
+        "read as a UTC calendar day (inclusive). Must not be after `to`, else 400."
 private const val TO_DESCRIPTION =
-    "Last import day to include, ISO yyyy-MM-dd, read as a UTC calendar day (inclusive)."
+    "Last activity day to include (last content change, else import), ISO yyyy-MM-dd, " +
+        "read as a UTC calendar day (inclusive)."
 private const val LANGUAGES_DESCRIPTION =
     "Language display names to keep (repeatable, case-insensitive), e.g. Kotlin. " +
         "Artifacts without a language are excluded while set."

@@ -167,7 +167,7 @@ class ArtifactQueryService(
     }
 
     /**
-     * Rejects an import-date window whose start lies after its end.
+     * Rejects an activity-date window whose start lies after its end.
      *
      * Such a window can match nothing, so answering it with an empty page would hide a client bug
      * (typically swapped bounds) behind a plausible "no results". List and facets both call this,

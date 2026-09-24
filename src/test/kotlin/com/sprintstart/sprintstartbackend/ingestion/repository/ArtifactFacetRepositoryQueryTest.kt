@@ -153,6 +153,26 @@ class ArtifactFacetRepositoryQueryTest {
     }
 
     @Test
+    fun `the date window matches the last change, not the first import`() {
+        val window = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 10), to = LocalDate.of(2026, 3, 12))
+        val oldButEditedInside =
+            store(
+                ingestedAt = Instant.parse("2025-01-01T00:00:00Z"),
+                lastChangedAt = Instant.parse("2026-03-11T10:00:00Z"),
+            )
+        val importedInsideChangedAfter =
+            store(
+                ingestedAt = Instant.parse("2026-03-10T10:00:00Z"),
+                lastChangedAt = Instant.parse("2026-03-20T10:00:00Z"),
+            )
+        val neverChangedInside = store(ingestedAt = Instant.parse("2026-03-12T10:00:00Z"))
+        flush()
+
+        assertThat(listIds(window)).containsExactlyInAnyOrder(oldButEditedInside.id, neverChangedInside.id)
+        assertThat(listIds(window)).doesNotContain(importedInsideChangedAfter.id)
+    }
+
+    @Test
     fun `facets count under the same date window as the list`() {
         store(ingestedAt = Instant.parse("2026-03-10T08:00:00Z"))
         store(ingestedAt = Instant.parse("2026-03-10T09:00:00Z"), type = ArtifactType.ISSUE)

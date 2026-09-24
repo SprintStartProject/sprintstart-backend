@@ -18,12 +18,15 @@ enum class UploadFormat {
  * Filter criteria for project-scoped artifact searches and facet calculations.
  *
  * Encapsulates full-text search, type filtering, source filtering, repository selection,
- * upload format selection, and an import-date window.
+ * upload format selection, and an activity-date window.
  *
- * @property from First day (inclusive) of the import window, read as a UTC calendar day: rows with
- *   `ingestedAt >= from 00:00Z` match. Null leaves the window open at the start.
- * @property to Last day (inclusive) of the import window, read as a UTC calendar day: rows with
- *   `ingestedAt < (to + 1 day) 00:00Z` match. Null leaves the window open at the end.
+ * Activity is `COALESCE(lastChangedAt, ingestedAt)`: the last content change, or the import when
+ * the artifact never changed (the same key the `CHANGED_DESC` sort uses).
+ *
+ * @property from First day (inclusive) of the activity window, read as a UTC calendar day: rows
+ *   with `activity >= from 00:00Z` match. Null leaves the window open at the start.
+ * @property to Last day (inclusive) of the activity window, read as a UTC calendar day: rows with
+ *   `activity < (to + 1 day) 00:00Z` match. Null leaves the window open at the end.
  * @property languages Language display names to keep, matched case-insensitively against the
  *   stored name. Narrows every source: artifacts without a language drop out while it is set.
  */

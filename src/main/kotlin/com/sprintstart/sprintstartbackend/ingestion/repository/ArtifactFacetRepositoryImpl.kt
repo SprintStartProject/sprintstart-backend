@@ -421,29 +421,35 @@ class ArtifactFacetRepositoryImpl(
             predicates.add(languageLower.`in`(languages.map { it.lowercase() }))
         }
 
-        // No facet counts the import date, so the window applies to every query alike -- which is
+        // No facet counts the activity date, so the window applies to every query alike -- which is
         // what keeps facet counts equal to the list's totalElements under the same filter.
-        predicates.addAll(buildIngestedWindowPredicates(cb, root, criteria.from, criteria.to))
+        predicates.addAll(buildActivityWindowPredicates(cb, root, criteria.from, criteria.to))
 
         return predicates
     }
 
     /**
-     * Restricts `ingestedAt` to the inclusive UTC calendar-day window `[from, to]`.
+     * Restricts an artifact's last activity to the inclusive UTC calendar-day window `[from, to]`.
      *
-     * The end bound is `< start of the day after [to]` rather than `<= end of [to]`, so an import
+     * Activity is `COALESCE(lastChangedAt, ingestedAt)`: the last content change, or the import for
+     * an artifact that never changed. It is the same key `CHANGED_DESC` sorts by, so "changed in
+     * the last 7 days" and "most recently changed first" always agree. An artifact imported long
+     * ago but edited inside the window matches; one imported inside the window and changed after
+     * it does not, because its latest activity lies outside.
+     *
+     * The end bound is `< start of the day after [to]` rather than `<= end of [to]`, so activity
      * in the last microsecond of that day still matches, whatever precision the column keeps.
      */
-    private fun buildIngestedWindowPredicates(
+    private fun buildActivityWindowPredicates(
         cb: CriteriaBuilder,
         root: Root<Artifact>,
         from: LocalDate?,
         to: LocalDate?,
     ): List<Predicate> {
-        val ingestedAt = root.get<Instant>("ingestedAt")
+        val activityAt = cb.coalesce(root.get<Instant>("lastChangedAt"), root.get<Instant>("ingestedAt"))
         return listOfNotNull(
-            from?.let { cb.greaterThanOrEqualTo(ingestedAt, it.atStartOfDay(ZoneOffset.UTC).toInstant()) },
-            to?.let { cb.lessThan(ingestedAt, it.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()) },
+            from?.let { cb.greaterThanOrEqualTo(activityAt, it.atStartOfDay(ZoneOffset.UTC).toInstant()) },
+            to?.let { cb.lessThan(activityAt, it.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()) },
         )
     }
 
