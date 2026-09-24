@@ -70,5 +70,6 @@ fun OnboardingSkip.toStepResponse(): GetOnboardingStepSkipResponse {
         },
         reviewComment = this.reviewComment,
         reviewedAt = this.resolvedAt,
+        answerSeenAt = this.answerSeenAt,
     )
 }

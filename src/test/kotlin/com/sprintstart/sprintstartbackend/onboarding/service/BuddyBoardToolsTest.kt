@@ -30,7 +30,8 @@ class BuddyBoardToolsTest {
     private val boardService: BoardService = mockk()
     private val boardStructureService: BoardStructureService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val tools = BuddyBoardTools(boardService, boardStructureService, userApi)
+    private val pathStepReader: PathStepReader = mockk()
+    private val tools = BuddyBoardTools(boardService, boardStructureService, userApi, pathStepReader)
 
     private val userId = UUID.randomUUID()
     private val projectId = UUID.randomUUID()
@@ -99,20 +100,45 @@ class BuddyBoardToolsTest {
         val result = tools.execute(placeCall("DIAGRAM"), userId)
 
         // A tool that fails quietly is a tool the model reports as having worked.
-        assertThat(result).contains("diagram of something")
+        assertThat(result).contains("needs a subject")
         assertThat(result).contains("how a request reaches the database")
     }
 
     @Test
-    fun `the tool advertises subject as belonging to diagrams only`() {
+    fun `the tool advertises subject as belonging to diagrams and path steps only`() {
         val spec = placeCardSpec()
 
         val subject = spec.parameters["properties"]!!.jsonObject["subject"]!!.jsonObject
-        assertThat(subject["description"]!!.jsonPrimitive.content).contains("DIAGRAM only")
+        assertThat(subject["description"]!!.jsonPrimitive.content)
+            .contains("Required for DIAGRAM and PATH_STEP")
         // Not required at the schema level: every other kind takes no subject at all, and a schema
         // demanding one would make them all invalid.
         assertThat(spec.parameters["required"]!!.jsonArray.map { it.jsonPrimitive.content })
             .containsExactly("kind")
+    }
+
+    @Test
+    fun `a path step card carries the step title the mentor chose`() {
+        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") } returns
+            BoardService.PlacementOutcome.PLACED
+
+        val result = tools.execute(placeCall("PATH_STEP", "Set up your laptop"), userId)
+
+        assertThat(result).contains("Placed")
+        verify { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") }
+    }
+
+    @Test
+    fun `an unknown step title lists the hire's real steps back`() {
+        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Deploy pipeline") } returns
+            BoardService.PlacementOutcome.NO_SUCH_STEP
+        every { pathStepReader.titlesFor(userId) } returns listOf("Set up your laptop", "Meet your team")
+
+        val result = tools.execute(placeCall("PATH_STEP", "Deploy pipeline"), userId)
+
+        // The refusal names the real titles so the model can retry correctly without a second tool.
+        assertThat(result).contains("Set up your laptop")
+        assertThat(result).contains("Meet your team")
     }
 
     @Test

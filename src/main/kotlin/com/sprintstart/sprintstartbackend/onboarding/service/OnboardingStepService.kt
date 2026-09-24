@@ -428,8 +428,8 @@ class OnboardingStepService(
      * Blocker edges are a many-to-many between subgraph nodes, and deleting a step removes only the
      * rows it owns -- the ones saying what *it* waits on. The rows saying what waits on *it* belong to
      * the other nodes and outlived it: the delete failed on the join table, or the items after it
-     * stayed locked behind a step nobody could finish any more. Steps a hire adds with their buddy are
-     * placed inside the graph, and they are told they can delete them, so this is not a corner case.
+     * stayed locked behind a step nobody could finish any more. PMs add and delete steps right in the
+     * graph, and a hire can delete the ones they add with their buddy, so this is not a corner case.
      *
      * Bridged rather than only cut: for A -> X -> B, deleting X leaves A -> B, so B still opens after
      * what it opened after before X was put in the way -- instead of suddenly opening at once.
@@ -443,6 +443,11 @@ class OnboardingStepService(
             node.blockedBy += step.blockedBy.filter { it.id != node.id }
         }
         step.blockedBy.clear()
+        // Loading the siblings above put the step's phase collection in play, and that collection
+        // cascades: while it still holds the step, Hibernate quietly un-schedules the delete at flush,
+        // and the request "succeeds" with the step still there. Out of the collection, orphan removal
+        // and the delete agree.
+        phase.steps.removeIf { it.id == step.id }
     }
 
     /**

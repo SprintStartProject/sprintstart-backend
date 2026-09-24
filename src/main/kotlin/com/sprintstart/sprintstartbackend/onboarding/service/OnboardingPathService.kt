@@ -91,13 +91,13 @@ class OnboardingPathService(
     fun hasPath(userId: UUID): Boolean = onboardingPathRepository.existsByUserId(userId)
 
     /**
-     * The hire's own path as they see it, by user id, or `null` when they have none.
+     * A user's path as they see it, by user id, or `null` when they have none.
      *
-     * The same read as [getOnboardingPathForMe] — question attempts included, so the statuses are
-     * the ones on their screen — reached by user id and without the 404. Having no path yet is an
-     * ordinary state for a caller that is deciding what to say about it, not an error to catch: the
-     * buddy needs "there is nothing here" as an answer, and a thrown 404 would make every reader
-     * wrap this in a try.
+     * The same read as [getOnboardingPathForMe] -- question attempts included, so the statuses are
+     * the ones on their screen -- reached by user id and without the 404, for the buddy and for a
+     * reviewer looking at somebody's path. Having no path yet is an ordinary state for a caller that
+     * is deciding what to say about it, not an error to catch: the buddy needs "there is nothing
+     * here" as an answer, and a thrown 404 would make every reader wrap this in a try.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding path by user id")

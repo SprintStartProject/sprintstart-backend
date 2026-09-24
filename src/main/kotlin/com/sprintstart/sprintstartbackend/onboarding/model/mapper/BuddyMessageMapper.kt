@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 
 fun BuddyMessage.toResponse(): BuddyMessageResponse =
@@ -23,6 +24,18 @@ fun BuddyMessage.toResponse(): BuddyMessageResponse =
  * value if the enum were ever renamed.
  */
 fun BuddyMessage.toAgentMessage(): BuddyAgentMessageDto =
+    BuddyAgentMessageDto(role = role.toHistoryRole(), content = content)
+
+/** A team-mode message in the same client shape as the hire's, so one transcript view renders both. */
+fun BuddyTeamMessage.toResponse(): BuddyMessageResponse =
+    BuddyMessageResponse(
+        role = role,
+        content = content,
+        createdAt = createdAt,
+    )
+
+/** A team-mode message as the AI expects it, spelled by the same role mapping as the hire's. */
+fun BuddyTeamMessage.toAgentMessage(): BuddyAgentMessageDto =
     BuddyAgentMessageDto(role = role.toHistoryRole(), content = content)
 
 private fun BuddyMessageRole.toHistoryRole(): String =

@@ -297,23 +297,7 @@ class BuddyService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            // The agent turn returns the answer whole; emit it in word-sized chunks so the client
-            // still renders it progressively. This is paced emission, not true token streaming --
-            // streaming the model's tokens through a tool-calling turn is a separate change.
-            for (chunk in TOKEN_CHUNK.split(reply).filter { it.isNotEmpty() }) {
-                emit(BuddyStreamEvent(type = "token", content = chunk))
-            }
-            for (citation in citations) {
-                emit(
-                    BuddyStreamEvent(
-                        type = "citation",
-                        artifactId = citation.artifactId,
-                        startLine = citation.startLine,
-                        startPage = citation.startPage,
-                    ),
-                )
-            }
-            emit(BuddyStreamEvent(type = "done"))
+            emitAgentReply(reply, citations)
 
             buddyMessageRepository.save(
                 BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
@@ -418,6 +402,12 @@ class BuddyService(
                         reason = proposal.reason,
                         waitsOnIds = proposal.waitsOnIds.takeIf { it.isNotEmpty() }?.map { it.toString() },
                         unlocksIds = proposal.unlocksIds.takeIf { it.isNotEmpty() }?.map { it.toString() },
+                        checklistTitle = proposal.checklistTitle,
+                        checklistItems = proposal.checklistItems,
+                        cardId = proposal.cardId?.toString(),
+                        noteText = proposal.noteText,
+                        lineBefore = proposal.lineBefore,
+                        lineAfter = proposal.lineAfter,
                     ),
                 )
             }
@@ -436,7 +426,9 @@ class BuddyService(
         // How many agent round-trips (AI reason -> backend tool -> AI reason) before we stop and
         // answer with what we have. The AI service has its own internal search budget; this bounds
         // only the backend-tool hops so a loop can never run unbounded.
-        private const val MAX_AGENT_STEPS = 5
+        //
+        // Visible to BuddyTeamService, whose loop is bounded by the same budget.
+        const val MAX_AGENT_STEPS = 5
 
         // The most messages (user + assistant) the AI is ever sent; older turns reach it only
         // through the session's running summary. 20 keeps ~10 exchanges verbatim.

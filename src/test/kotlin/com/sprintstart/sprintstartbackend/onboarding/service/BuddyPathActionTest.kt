@@ -73,6 +73,7 @@ class BuddyPathActionTest {
         boardService = mockk(relaxed = true),
         competencyPlacementService = mockk(relaxed = true),
         buddyPathActions = pathActions,
+        boardWrites = BuddyBoardWriteActions(mockk(relaxed = true)),
     )
 
     private val userId = UUID.randomUUID()

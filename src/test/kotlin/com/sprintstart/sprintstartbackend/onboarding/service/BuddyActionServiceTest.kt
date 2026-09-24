@@ -55,6 +55,7 @@ class BuddyActionServiceTest {
         boardService,
         competencyPlacementService,
         buddyPathActions,
+        BuddyBoardWriteActions(boardService),
     )
 
     private val userId = UUID.randomUUID()
@@ -103,6 +104,11 @@ class BuddyActionServiceTest {
             "request_attestation",
             "set_github_login",
             "record_assessment",
+            "place_checklist",
+            "amend_checklist",
+            "place_note",
+            "tick_checklist_items",
+            "reword_checklist_item",
         )
     }
 

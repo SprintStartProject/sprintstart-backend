@@ -5,8 +5,11 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepos
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyActionProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserCompetencyStateRepository
@@ -36,11 +39,20 @@ import java.util.UUID
  *
  * The competency catalogue, the starter-work pool and canonical answers are the team's, not the
  * user's, and are untouched.
+ *
+ * A manager's team conversations that *mention* the deleted user stay too. They are the manager's
+ * record — what they asked about their team and what they were told, like notes they took — and
+ * the deleted user's own team conversations, which are theirs, are erased below. This is a decision,
+ * not an oversight: the event carries only the user id and their memberships are already gone, so
+ * finding those mentions would mean erasing every manager's whole conversation on those projects.
  */
 @Component
 class UserDeletedListener(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository,
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
+    private val buddyActionProposalRepository: BuddyActionProposalRepository,
     private val userCompetencyStateRepository: UserCompetencyStateRepository,
     private val arrivalStepStateRepository: ArrivalStepStateRepository,
     private val boardRepository: BoardRepository,
@@ -74,6 +86,16 @@ class UserDeletedListener(
             buddyMessageRepository.deleteAllBySessionId(it.id)
         }
         buddySessionRepository.deleteAllByUserId(userId)
+
+        // A manager's team conversations are theirs too: what they asked about their team, and the
+        // note the model kept about those conversations. They go with the account.
+        buddyTeamSessionRepository.findAllByUserId(userId).forEach {
+            buddyTeamMessageRepository.deleteAllBySessionId(it.id)
+        }
+        buddyTeamSessionRepository.deleteAllByUserId(userId)
+
+        // What the buddy offered them in team mode, and what they decided.
+        buddyActionProposalRepository.deleteAllByUserId(userId)
     }
 
     private fun eraseBoards(userId: UUID) {

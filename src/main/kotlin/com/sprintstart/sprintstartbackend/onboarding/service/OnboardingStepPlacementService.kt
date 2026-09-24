@@ -15,7 +15,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
- * Adds a step to a phase of the hire's own path *inside its dependency graph*, not only at the end
+ * Adds a step to a phase of a member's path *inside its dependency graph*, not only at the end
  * of its list.
  *
  * A phase is not a pipeline. Its steps and questions form a graph: an item opens once everything it
@@ -31,7 +31,7 @@ import java.util.UUID
  * new step anyway -- but it draws a shortcut past the step that was just put in the way, and reads
  * as "B does not really need it".
  *
- * Only the hire's own copy is touched. The blueprint the path was copied from knows nothing of this.
+ * Only the member's own copy is touched. The blueprint the path was copied from knows nothing of this.
  */
 @Service
 class OnboardingStepPlacementService(
@@ -39,10 +39,10 @@ class OnboardingStepPlacementService(
     private val onboardingStepRepository: OnboardingStepRepository,
 ) {
     /**
-     * Creates the step, then connects it: it waits on [waitsOn], and every item in [unlocks] waits on
-     * it. Both sets must be items of the same phase, and no item in [unlocks] may be something the
-     * new step would itself (transitively) wait on -- that would be a cycle, and a cycle is a phase
-     * nobody can ever finish.
+     * Creates the hire's own step, then connects it: it waits on [waitsOn], and every item in
+     * [unlocks] waits on it. Both sets must be items of the same phase, and no item in [unlocks] may
+     * be something the new step would itself (transitively) wait on -- that would be a cycle, and a
+     * cycle is a phase nobody can ever finish.
      *
      * One transaction, so a step never exists half-connected.
      */
@@ -57,9 +57,42 @@ class OnboardingStepPlacementService(
         unlocks: Set<UUID>,
     ): CreateOnboardingStepResponse {
         val created = onboardingStepService.createOnboardingStepForMe(authId, phaseId, request, origin)
+        return connect(created.id, waitsOn, unlocks, pinnedAt = null)
+    }
+
+    /**
+     * The same for a PM adding a step to a member's phase. [graphX]/[graphY], when both are given,
+     * is where the PM dropped the step on the canvas and wins over the position worked out from its
+     * neighbours.
+     *
+     * One transaction, so a step never exists half-connected.
+     */
+    @Transactional
+    @Tracked("Creating a connected onboarding step")
+    fun createConnectedStepForPhase(
+        phaseId: UUID,
+        request: CreateOnboardingStepRequest,
+        waitsOn: Set<UUID>,
+        unlocks: Set<UUID>,
+        graphX: Double?,
+        graphY: Double?,
+    ): CreateOnboardingStepResponse {
+        val created = onboardingStepService.createOnboardingStepForPhaseId(phaseId, request)
+        val pinnedAt = graphX?.takeIf { it.isFinite() }?.let { x ->
+            graphY?.takeIf { it.isFinite() }?.let { y -> x to y }
+        }
+        return connect(created.id, waitsOn, unlocks, pinnedAt)
+    }
+
+    private fun connect(
+        stepId: UUID,
+        waitsOn: Set<UUID>,
+        unlocks: Set<UUID>,
+        pinnedAt: Pair<Double, Double>?,
+    ): CreateOnboardingStepResponse {
         val step = onboardingStepRepository
-            .findById(created.id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: ${created.id}") }
+            .findById(stepId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
         val phase = step.phase
         val nodes: Map<UUID, OnboardingSubGraphNode> =
@@ -82,7 +115,12 @@ class OnboardingStepPlacementService(
             node.blockedBy.removeIf { it.id in waitsOn }
             node.blockedBy += step
         }
-        placeOnCanvas(step, before, after)
+        if (pinnedAt != null) {
+            step.graphX = pinnedAt.first
+            step.graphY = pinnedAt.second
+        } else {
+            placeOnCanvas(step, before, after)
+        }
 
         return step.toCreateResponse()
     }

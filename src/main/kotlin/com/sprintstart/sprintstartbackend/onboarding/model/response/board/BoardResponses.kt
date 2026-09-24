@@ -4,7 +4,10 @@ import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import java.time.Instant
 import java.util.UUID
 
@@ -60,6 +63,7 @@ data class BoardCardResponse(
     JsonSubTypes.Type(value = CompetencyProgressContent::class, name = "COMPETENCY_PROGRESS"),
     JsonSubTypes.Type(value = MemoryRecapContent::class, name = "MEMORY_RECAP"),
     JsonSubTypes.Type(value = DiagramContent::class, name = "DIAGRAM"),
+    JsonSubTypes.Type(value = PathStepContent::class, name = "PATH_STEP"),
     JsonSubTypes.Type(value = NoteContent::class, name = "NOTE"),
     JsonSubTypes.Type(value = LinkContent::class, name = "LINK"),
     JsonSubTypes.Type(value = ChecklistContent::class, name = "CHECKLIST"),
@@ -261,6 +265,34 @@ data class BoardDiagramSourceResponse(
     val sourceUrl: String?,
     val artifactType: String?,
 )
+
+/**
+ * One step of the hire's onboarding path, hydrated live from it.
+ *
+ * A projection: [tasks] and [resources] are the same response shapes the path page itself serves,
+ * from the same mappers, so the board and the path page cannot describe the same step differently.
+ *
+ * [expectedOutcomes] is always exactly one element — [OnboardingStep.expectedOutcome] is a single
+ * column — kept as a list for the same reason the path's own step response does: room for more than
+ * one without a shape change.
+ *
+ * All-nullable, with [reason], because a path can be regenerated out from under a card that still
+ * points at a step which no longer exists. The card degrades rather than vanishing.
+ */
+data class PathStepContent(
+    override val kind: BoardCardKind = BoardCardKind.PATH_STEP,
+    val stepId: UUID?,
+    val phaseTitle: String?,
+    val title: String?,
+    val description: String?,
+    val status: StepStatus?,
+    val isAiAssisted: Boolean,
+    val expectedOutcomes: List<String>,
+    val tasks: List<GetOnboardingTasksResponse>,
+    val resources: List<GetOnboardingResourcesResponse>,
+    /** Why there is no step, when there is none. Null whenever [stepId] is set. */
+    val reason: String?,
+) : BoardCardContent
 
 /**
  * What the mentor remembers about this hire, in the mentor's own words.

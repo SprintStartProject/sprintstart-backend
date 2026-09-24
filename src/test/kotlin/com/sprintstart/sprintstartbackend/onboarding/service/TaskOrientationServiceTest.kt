@@ -55,7 +55,7 @@ import kotlin.test.assertTrue
 
 class TaskOrientationServiceTest {
     private val packetRepository: TaskOrientationPacketRepository = mockk(relaxed = true)
-    private val currentTaskReader: CurrentTaskReader = mockk()
+    private val currentTaskReader: CurrentTaskReader = mockk(relaxed = true)
     private val proposalRepository: StarterWorkTaskProposalRepository = mockk(relaxed = true)
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
@@ -272,6 +272,31 @@ class TaskOrientationServiceTest {
         coVerify(exactly = 0) { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) }
     }
 
+    /**
+     * The bug this reader was introduced to prevent, found by a hire rather than by a test.
+     *
+     * Orientation used to read the Task 0 assignment table directly, so a hire who had *claimed a
+     * goal* — the ordinary path, and the one the mentor itself offers — had a current task on their
+     * board and no current task here. They were told to their face that they had claimed nothing.
+     *
+     * Asserted through the reader rather than through a goal fixture on purpose: the reader is
+     * where "which task is this person on" is answered, and the whole point is that this service
+     * does not get to answer it a second way.
+     */
+    @Test
+    fun `orients on a claimed goal, not only on an assigned Task 0`() = runTest {
+        hasTask()
+        // Stubbed like every other test that lets `getForHire` run to the end: `hasTask` leaves no
+        // cached packet, so the call reaches the AI client, and that mock is strict.
+        coEvery { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) } returns
+            assembled(section("SET_UP"))
+
+        val result = service.getForHire(hireId, projectId)
+
+        assertEquals(proposal.id, result.taskId)
+        coVerify(exactly = 1) { currentTaskReader.currentTaskFor(hireId, projectId) }
+    }
+
     @Test
     fun `assembles from the issue's own words and labels, not the mined summary`() = runTest {
         hasTask()
@@ -325,6 +350,17 @@ class TaskOrientationServiceTest {
 
         assertEquals("Fix the stale cache header", title.captured)
         assertEquals("The header is computed once at boot.", body.captured)
+    }
+
+    @Test
+    fun `reading orientation never assigns a task`() = runTest {
+        hasTask()
+        coEvery { onboardingAiClient.assembleOrientation(any(), any(), any(), any(), any(), any()) } returns
+            assembled(section("SET_UP"))
+
+        service.getForHire(hireId, projectId)
+
+        verify(exactly = 0) { proposalRepository.save(any()) }
     }
 
     @Test
