@@ -8,6 +8,8 @@ import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.Uploa
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchFinishedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadFileDeletedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadFailure
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
@@ -15,6 +17,7 @@ import com.sprintstart.sprintstartbackend.upload.repository.LinkedImageRepositor
 import com.sprintstart.sprintstartbackend.upload.repository.UploadedArtifactRepository
 import com.sprintstart.sprintstartbackend.upload.service.storage.ArtifactStorageService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -23,6 +26,14 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import java.security.MessageDigest
 import java.util.UUID
+
+/**
+ * Client-facing reason for a storage failure during deletion.
+ *
+ * Exception messages can leak storage paths or driver internals, so the HTTP response always
+ * uses this text; the raw message stays in the deletion event outcome and the warn log.
+ */
+private const val DELETE_FAILED_REASON = "Artifact could not be deleted."
 
 /**
  * Coordinates project upload storage, upload metadata persistence, and ingestion events.
@@ -41,6 +52,8 @@ class UploadService(
     private val artifactLinkingService: ArtifactLinkingService,
     private val publisher: ApplicationEventPublisher,
 ) {
+    private val logger = LoggerFactory.getLogger(javaClass)
+
     /**
      * Uploads artifacts into a project as the authenticated PM or admin.
      *
@@ -177,6 +190,10 @@ class UploadService(
      * @param authId The authenticated user's external auth id.
      * @param artifactIds The uploaded artifact ids requested for deletion.
      * @param projectId The project that owns the artifacts being deleted.
+     * @return The ids deleted, in request order, and one failure entry (id and reason) for every
+     *   id that was skipped. Not-found ids report which id was missing; storage failures always
+     *   report the generic [DELETE_FAILED_REASON], while the raw exception message goes only to
+     *   the batch-finished event outcome and a warn log.
      * @throws ResponseStatusException `403` when the authenticated user cannot access the project.
      * @throws ResponseStatusException `404` when the authenticated user has no local projection.
      */
@@ -186,11 +203,13 @@ class UploadService(
         authId: String,
         artifactIds: Set<UUID>,
         projectId: UUID,
-    ) {
+    ): DeleteUploadsResponse {
         val removerId = resolveCurrentUserId(userApi, authId)
         requireProjectAccess(userApi, authId, projectId)
 
         val deleteArtifactOutcomes = mutableSetOf<UploadArtifactOperationOutcome>()
+        val deletedIds = mutableListOf<UUID>()
+        val failed = mutableListOf<DeleteUploadFailure>()
         val transactionId = UUID.randomUUID()
 
         publisher.publishEvent(UploadStartedEvent(transactionId = transactionId, projectId = projectId))
@@ -198,14 +217,16 @@ class UploadService(
         artifactIds.forEach { artifactId ->
             val artifact = uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId)
             if (artifact == null) {
+                val reason = "Artifact with id $artifactId not found."
                 deleteArtifactOutcomes.add(
                     UploadArtifactOperationOutcome(
                         id = artifactId,
                         filename = "unknown",
                         status = UploadArtifactStatus.FAILED,
-                        error = "Artifact with id $artifactId not found.",
+                        error = reason,
                     ),
                 )
+                failed.add(DeleteUploadFailure(artifactId = artifactId, error = reason))
                 return@forEach
             }
 
@@ -223,6 +244,8 @@ class UploadService(
                         error = e.message,
                     ),
                 )
+                logger.warn("Storage delete failed for artifact {}: {}", artifactId, e.message)
+                failed.add(DeleteUploadFailure(artifactId = artifactId, error = DELETE_FAILED_REASON))
                 return@forEach
             }
 
@@ -233,6 +256,7 @@ class UploadService(
                 ),
             )
             uploadedArtifactRepository.delete(artifact)
+            deletedIds.add(artifactId)
         }
 
         publisher.publishEvent(
@@ -242,6 +266,8 @@ class UploadService(
                 deleteArtifactOutcomes = deleteArtifactOutcomes,
             ),
         )
+
+        return DeleteUploadsResponse(deletedIds = deletedIds, failed = failed)
     }
 
     /**

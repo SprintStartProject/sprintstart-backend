@@ -1,6 +1,9 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchDeletionFinishedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadFailure
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
 import com.sprintstart.sprintstartbackend.upload.model.entity.UploadedArtifact
 import com.sprintstart.sprintstartbackend.upload.repository.LinkedImageRepository
 import com.sprintstart.sprintstartbackend.upload.repository.UploadedArtifactRepository
@@ -146,8 +149,9 @@ class UploadServiceTest {
         every { storageService.delete("uploads/guide.md") } returns Unit
         every { uploadedArtifactRepository.delete(artifact) } returns Unit
 
-        service.deleteUpload(authId, setOf(artifactId), projectId)
+        val result = service.deleteUpload(authId, setOf(artifactId), projectId)
 
+        assertEquals(DeleteUploadsResponse(deletedIds = listOf(artifactId), failed = emptyList()), result)
         verify(exactly = 1) { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) }
         verify(exactly = 1) { storageService.delete("uploads/guide.md") }
         verify(exactly = 1) { uploadedArtifactRepository.delete(artifact) }
@@ -159,21 +163,55 @@ class UploadServiceTest {
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) } returns null
 
-        service.deleteUpload(authId, setOf(artifactId), projectId)
+        val result = service.deleteUpload(authId, setOf(artifactId), projectId)
 
+        assertEquals(emptyList(), result.deletedIds)
+        assertEquals(
+            listOf(DeleteUploadFailure(artifactId, "Artifact with id $artifactId not found.")),
+            result.failed,
+        )
         verify(exactly = 1) { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) }
         verify(exactly = 0) { storageService.delete(any()) }
         verify(exactly = 0) { uploadedArtifactRepository.delete(any()) }
     }
 
-    private fun artifact(): UploadedArtifact =
+    @Test
+    fun `deleteUpload reports a storage failure with the generic reason and keeps the raw one in the event`() {
+        val brokenId = UUID.randomUUID()
+        val broken = artifact(id = brokenId, storagePath = "uploads/broken.md")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { uploadedArtifactRepository.findByIdAndProjectId(brokenId, projectId) } returns broken
+        every { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) } returns artifact()
+        every { storageService.delete("uploads/broken.md") } throws IllegalStateException("disk gone: /srv/uploads")
+        every { storageService.delete("uploads/guide.md") } returns Unit
+        every { uploadedArtifactRepository.delete(any()) } returns Unit
+
+        val result = service.deleteUpload(authId, linkedSetOf(brokenId, artifactId), projectId)
+
+        assertEquals(listOf(artifactId), result.deletedIds)
+        assertEquals(listOf(DeleteUploadFailure(brokenId, "Artifact could not be deleted.")), result.failed)
+        verify(exactly = 1) {
+            publisher.publishEvent(
+                match<UploadBatchDeletionFinishedEvent> { event ->
+                    event.deleteArtifactOutcomes.map { it.id to it.error } ==
+                        listOf(brokenId to "disk gone: /srv/uploads")
+                },
+            )
+        }
+    }
+
+    private fun artifact(
+        id: UUID = artifactId,
+        storagePath: String = "uploads/guide.md",
+    ): UploadedArtifact =
         UploadedArtifact(
-            id = artifactId,
+            id = id,
             filename = "guide.md",
             hash = "hash",
             uploadedAt = Instant.now(),
             mime = "text/markdown",
-            storagePath = "uploads/guide.md",
+            storagePath = storagePath,
             uploaderId = userId,
             projectId = projectId,
         )
