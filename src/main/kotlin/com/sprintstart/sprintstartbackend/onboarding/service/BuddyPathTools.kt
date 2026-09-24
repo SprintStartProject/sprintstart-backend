@@ -88,10 +88,10 @@ class BuddyPathTools(
         val phases = path.phases.sortedBy { it.position }
         if (phases.isEmpty()) return NO_PHASES
 
-        return when (val where = standingOf(phases)) {
+        return when (val where = PathStanding.of(phases)) {
             // A path whose phases all came back empty was never started, let alone finished: say
             // what is actually there, which is nothing, rather than congratulate them.
-            Standing.Finished -> if (phases.all { it.steps.isEmpty() && it.questions.isEmpty() }) {
+            PathStanding.Finished -> if (phases.all { it.steps.isEmpty() && it.questions.isEmpty() }) {
                 buildString {
                     appendCurrentPhase(phases.last(), phases.lastIndex, phases)
                     appendEmptyPhases(path)
@@ -99,12 +99,12 @@ class BuddyPathTools(
             } else {
                 FINISHED_PATH.format(phases.size)
             }
-            is Standing.Choosing -> buildString {
+            is PathStanding.Choosing -> buildString {
                 appendChoice(where.phases, phases)
                 appendEmptyPhases(path)
                 append(NEWLINE + CLOSING)
             }
-            is Standing.In -> buildString {
+            is PathStanding.In -> buildString {
                 val current = where.phase
                 val checklists = checklistsOf(current)
                 appendLine(standing(phases, current))
@@ -118,49 +118,6 @@ class BuddyPathTools(
                 append(NEWLINE + CLOSING)
             }
         }
-    }
-
-    /**
-     * Where the hire stands on a path whose phases run side by side.
-     *
-     * The rule the hire's own page follows (`resolveNextAction` in the frontend), so the mentor and
-     * the page cannot disagree about it: a phase they have already started, most recently touched
-     * first; else the only phase that is open; else a real choice between the open phases. Locked
-     * phases are never candidates.
-     *
-     * This used to be "the first phase with anything open, by position", which read a blueprint as a
-     * line: a hire who finished phase 1 and picked phase 3 on their page was told to start phase 2,
-     * and told it again when they said otherwise.
-     *
-     * A phase picked on the page but not started yet is invisible here -- the choice is page state,
-     * not stored anywhere -- which is why [Standing.Choosing] tells the mentor to take the hire's word
-     * for which phase they are doing.
-     */
-    private fun standingOf(phases: List<GetOnboardingPhaseForUserResponse>): Standing {
-        val candidates = phases.filter { !it.locked && nextItemIn(it) != null }
-        if (candidates.isEmpty()) {
-            // Nothing reachable: either done, or everything left is locked or waiting on a skip
-            // decision -- then the first unfinished phase is still what there is to talk about.
-            return phases.firstOrNull { it.isOpen() }?.let { Standing.In(it) } ?: Standing.Finished
-        }
-        val started = candidates.filter { it.isStarted() }.maxByOrNull { it.lastActivity() }
-        val pick = started ?: candidates.singleOrNull()
-        return pick?.let { Standing.In(it) } ?: Standing.Choosing(candidates)
-    }
-
-    /** The three answers to "where are they on their path". */
-    private sealed interface Standing {
-        /** Working in one phase -- the one to describe in full. */
-        data class In(
-            val phase: GetOnboardingPhaseForUserResponse,
-        ) : Standing
-
-        /** Several phases open and none of them started: the hire picks. */
-        data class Choosing(
-            val phases: List<GetOnboardingPhaseForUserResponse>,
-        ) : Standing
-
-        data object Finished : Standing
     }
 
     /**
@@ -306,14 +263,14 @@ class BuddyPathTools(
 
         return buildString {
             appendLine("Onboarding path:")
-            when (val where = standingOf(phases)) {
-                Standing.Finished -> appendLine("They have finished every phase of their path.")
-                is Standing.Choosing -> appendLine(
+            when (val where = PathStanding.of(phases)) {
+                PathStanding.Finished -> appendLine("They have finished every phase of their path.")
+                is PathStanding.Choosing -> appendLine(
                     "${where.phases.size} phases are open to them and nothing in them is started yet: " +
                         where.phases.joinToString(", ") { quoted(it.title) } + ". Which one comes next is " +
                         "their choice -- phases are not taken in number order.",
                 )
-                is Standing.In -> {
+                is PathStanding.In -> {
                     val current = where.phase
                     appendLine(
                         "They are in phase ${phases.indexOf(current) + 1} of ${phases.size}: " +
@@ -867,91 +824,9 @@ class BuddyPathTools(
         )
     }
 
-    /** Whether the hire asked to skip this step and their PM has not decided yet. */
-    private fun GetOnboardingStepsResponse.hasPendingSkip(): Boolean = skip != null && skip.accepted == null
-
     /** Whether a step can still be finished: not locked, and neither finished nor skipped. */
     private fun GetOnboardingStepsResponse.isFinishable(): Boolean =
         !locked && (status == StepStatus.WAITING || status == StepStatus.IN_PROGRESS)
-
-    /** Whether a phase still has anything open: an unfinished step, or an unpassed question. */
-    private fun GetOnboardingPhaseForUserResponse.isOpen(): Boolean {
-        val openStep = steps.any { it.status != StepStatus.FINISHED && it.status != StepStatus.SKIPPED }
-        return openStep || questions.any { it.status != QuestionStatus.PASSED }
-    }
-
-    /** Whether the hire has done anything in a phase yet: a step moved on, or a question answered. */
-    private fun GetOnboardingPhaseForUserResponse.isStarted(): Boolean =
-        steps.any { it.status != StepStatus.WAITING } ||
-            questions.any { it.status == QuestionStatus.PASSED || it.status == QuestionStatus.RETRY }
-
-    /** When the hire last did something in a phase, as epoch millis; 0 when never. */
-    private fun GetOnboardingPhaseForUserResponse.lastActivity(): Long =
-        steps.flatMap { listOfNotNull(it.startedAt, it.completedAt) }.maxOfOrNull { it.toEpochMilli() } ?: 0L
-
-    /**
-     * The item to do next in [phase], or null when the phase has nothing reachable.
-     *
-     * The page's own rule (`nextItemInPhase` in the frontend), so "up next" on the page and the next
-     * thing the buddy names are the same item: a step already in progress first -- it is where they
-     * left off -- and then the first open item in the order the phase graph reads, steps and
-     * questions mixed, because a question is a node of the same graph and often stands between two
-     * steps. [PhaseReadingOrder] is that order.
-     *
-     * This used to take every open step by position before any question, which named a step as next
-     * while the page pointed at the question in front of it.
-     */
-    private fun nextItemIn(phase: GetOnboardingPhaseForUserResponse): NextItem? {
-        if (phase.locked || !phase.isOpen()) return null
-
-        phase.steps.sortedBy { it.position }.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.let {
-            return stepItem(it)
-        }
-
-        val steps = phase.steps.sortedBy { it.position }
-        val questions = phase.questions.sortedBy { it.position }
-        val byId = steps.associateBy { it.id }
-        val questionsById = questions.associateBy { it.id }
-        val order = PhaseReadingOrder.of(
-            steps.map { it.id to it.blockerIds } + questions.map { it.id to it.blockerIds },
-        )
-        for (id in order) {
-            val step = byId[id]
-            // Waiting, unlocked, and not asked to skip -- a step waiting on the PM's decision is not
-            // what to tell them to do next.
-            if (step != null && step.status == StepStatus.WAITING && !step.locked && !step.hasPendingSkip()) {
-                return stepItem(step)
-            }
-            val question = questionsById[id]
-            if (question != null &&
-                (question.status == QuestionStatus.OPEN || question.status == QuestionStatus.RETRY)
-            ) {
-                return NextItem(
-                    plain = "the question ${quoted(question.question)}",
-                    withIds = "the question ${quoted(question.question)} " +
-                        "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
-                )
-            }
-        }
-        return null
-    }
-
-    private fun stepItem(step: GetOnboardingStepsResponse) = NextItem(
-        plain = "the step ${quoted(step.title)}",
-        withIds = "the step ${quoted(step.title)} [step_id: ${step.id}] [link: $STEP_LINK${step.id}]",
-    )
-
-    /**
-     * One named next thing, in the two forms it is needed in.
-     *
-     * The greeting gets [plain] and the tool result gets [withIds], because an id in a greeting is
-     * an identifier in front of the hire and an id missing from a tool result is an action the
-     * mentor cannot offer.
-     */
-    private data class NextItem(
-        val plain: String,
-        val withIds: String,
-    )
 
     /**
      * Not private, for the same reason [BuddyToolExecutor]'s tool names are not: the chip catalog in
@@ -1000,7 +875,7 @@ class BuddyPathTools(
         const val PHASE_LINK = "/onboarding?phase="
 
         /** Titles are somebody else's text, so they are quoted rather than run into the sentence. */
-        private fun quoted(text: String): String = "“" + text + "”"
+        internal fun quoted(text: String): String = "“" + text + "”"
 
         const val NO_PATH =
             "The hire has no onboarding path yet -- nobody has generated one from their project's " +
