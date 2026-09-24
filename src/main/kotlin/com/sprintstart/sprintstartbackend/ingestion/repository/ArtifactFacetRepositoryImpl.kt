@@ -24,6 +24,8 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.UUID
 
 private enum class FacetKind {
@@ -352,7 +354,30 @@ class ArtifactFacetRepositoryImpl(
             predicates.add(cb.or(notGithub, githubMatchesRepo))
         }
 
+        // No facet counts the import date, so the window applies to every query alike -- which is
+        // what keeps facet counts equal to the list's totalElements under the same filter.
+        predicates.addAll(buildIngestedWindowPredicates(cb, root, criteria.from, criteria.to))
+
         return predicates
+    }
+
+    /**
+     * Restricts `ingestedAt` to the inclusive UTC calendar-day window `[from, to]`.
+     *
+     * The end bound is `< start of the day after [to]` rather than `<= end of [to]`, so an import
+     * in the last microsecond of that day still matches, whatever precision the column keeps.
+     */
+    private fun buildIngestedWindowPredicates(
+        cb: CriteriaBuilder,
+        root: Root<Artifact>,
+        from: LocalDate?,
+        to: LocalDate?,
+    ): List<Predicate> {
+        val ingestedAt = root.get<Instant>("ingestedAt")
+        return listOfNotNull(
+            from?.let { cb.greaterThanOrEqualTo(ingestedAt, it.atStartOfDay(ZoneOffset.UTC).toInstant()) },
+            to?.let { cb.lessThan(ingestedAt, it.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()) },
+        )
     }
 
     private fun buildUploadFormatPredicate(

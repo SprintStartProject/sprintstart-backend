@@ -32,6 +32,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPat
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 @WebMvcTest(controllers = [ArtifactController::class])
@@ -218,6 +219,64 @@ class ArtifactControllerTest(
     }
 
     @Test
+    fun `getProjectArtifacts binds from and to as ISO calendar days`() {
+        val projectId = UUID.randomUUID()
+        val criteria = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 31))
+        every {
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, projectId, "auth-user")
+        } returns response()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("from", "2026-03-01")
+                    .param("to", "2026-03-31")
+                    .with(userJwt()),
+            ).andExpect(status().isOk)
+
+        verify(exactly = 1) {
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, projectId, "auth-user")
+        }
+    }
+
+    @Test
+    fun `getProjectArtifacts rejects a malformed date with 400`() {
+        val projectId = UUID.randomUUID()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("from", "01.03.2026")
+                    .with(userJwt()),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) {
+            artifactQueryService.getProjectArtifacts(any(), any(), any(), any(), any(), any())
+        }
+    }
+
+    @Test
+    fun `getProjectArtifactFacets binds the same date window as the list`() {
+        val projectId = UUID.randomUUID()
+        val criteria = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 1), to = LocalDate.of(2026, 3, 1))
+        every {
+            artifactQueryService.getProjectArtifactFacets(projectId, criteria, "auth-user")
+        } returns facets()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts/facets")
+                    .param("from", "2026-03-01")
+                    .param("to", "2026-03-01")
+                    .with(userJwt()),
+            ).andExpect(status().isOk)
+
+        verify(exactly = 1) {
+            artifactQueryService.getProjectArtifactFacets(projectId, criteria, "auth-user")
+        }
+    }
+
+    @Test
     fun `getProjectArtifactFacets returns facet counts and never binds to single artifact route`() {
         val projectId = UUID.randomUUID()
         val facets = ArtifactFacetsResponse(
@@ -330,4 +389,11 @@ class ArtifactControllerTest(
     private fun userJwt() = jwt()
         .jwt { it.subject("auth-user") }
         .authorities(SimpleGrantedAuthority("ROLE_USER"))
+
+    private fun facets() = ArtifactFacetsResponse(
+        types = emptyList(),
+        sources = emptyList(),
+        formats = emptyList(),
+        repositories = emptyList(),
+    )
 }

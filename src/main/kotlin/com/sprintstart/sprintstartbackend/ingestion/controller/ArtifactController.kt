@@ -19,6 +19,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -33,11 +34,17 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.net.URI
+import java.time.LocalDate
 import java.util.UUID
 
 private const val DEFAULT_PAGE = "1"
 private const val DEFAULT_SIZE = "20"
 private const val MAX_PAGE_SIZE = 100L
+private const val FROM_DESCRIPTION =
+    "First import day to include, ISO yyyy-MM-dd, read as a UTC calendar day (inclusive). " +
+        "Must not be after `to`, else 400."
+private const val TO_DESCRIPTION =
+    "Last import day to include, ISO yyyy-MM-dd, read as a UTC calendar day (inclusive)."
 
 /**
  * Read-only HTTP entry point for opening one artifact.
@@ -102,7 +109,10 @@ class ArtifactController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Project artifact page returned successfully"),
-            ApiResponse(responseCode = "400", description = "Invalid query or pagination parameters"),
+            ApiResponse(
+                responseCode = "400",
+                description = "Invalid query or pagination parameters, unknown sort, malformed date, or from after to",
+            ),
             ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
         ],
     )
@@ -132,6 +142,14 @@ class ArtifactController(
         )
         @RequestParam(defaultValue = "ADDED_DESC")
         sort: ArtifactSort,
+        @Parameter(description = FROM_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        from: LocalDate?,
+        @Parameter(description = TO_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        to: LocalDate?,
         @Parameter(
             description = "UUID of the project whose artifacts should be returned",
         ) @PathVariable projectId: UUID,
@@ -144,6 +162,8 @@ class ArtifactController(
             sources = sources,
             repositories = repositories,
             format = format,
+            from = from,
+            to = to,
         )
         return ResponseEntity.ok(
             artifactQueryService.getProjectArtifacts(page, size, criteria, sort, projectId, jwt.subject),
@@ -159,7 +179,10 @@ class ArtifactController(
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Facet counts returned successfully"),
-            ApiResponse(responseCode = "400", description = "Invalid facet query parameters"),
+            ApiResponse(
+                responseCode = "400",
+                description = "Invalid facet query parameters, malformed date, or from after to",
+            ),
             ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
         ],
     )
@@ -169,6 +192,14 @@ class ArtifactController(
         @RequestParam(required = false) sources: Set<SourceSystem>?,
         @RequestParam(required = false) repositories: Set<String>?,
         @RequestParam(required = false) format: UploadFormat?,
+        @Parameter(description = FROM_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        from: LocalDate?,
+        @Parameter(description = TO_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        to: LocalDate?,
         @Parameter(
             description = "UUID of the project whose artifact facets should be calculated",
         ) @PathVariable projectId: UUID,
@@ -180,6 +211,8 @@ class ArtifactController(
             sources = sources,
             repositories = repositories,
             format = format,
+            from = from,
+            to = to,
         )
         return ResponseEntity.ok(
             artifactQueryService.getProjectArtifactFacets(projectId, criteria, jwt.subject),

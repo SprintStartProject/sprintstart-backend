@@ -19,10 +19,14 @@ import io.mockk.slot
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 class ArtifactQueryServiceTest {
@@ -141,6 +145,31 @@ class ArtifactQueryServiceTest {
     }
 
     @Test
+    fun `getProjectArtifacts rejects from after to with 400 before any lookup`() {
+        val criteria = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 2), to = LocalDate.of(2026, 3, 1))
+
+        val error = assertThrows<ResponseStatusException> {
+            service.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, UUID.randomUUID(), "auth-1")
+        }
+
+        assertThat(error.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        verify(exactly = 0) { userApi.userHasAccessToProject(any(), any()) }
+        verify(exactly = 0) { artifactRepository.findProjectArtifactsWithCriteria(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `getProjectArtifactFacets rejects from after to with 400 like the list`() {
+        val criteria = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 2), to = LocalDate.of(2026, 3, 1))
+
+        val error = assertThrows<ResponseStatusException> {
+            service.getProjectArtifactFacets(UUID.randomUUID(), criteria, "auth-1")
+        }
+
+        assertThat(error.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        verify(exactly = 0) { artifactRepository.findFacets(any(), any()) }
+    }
+
+    @Test
     fun `getArtifact returns the projected artifact when found`() {
         val projectId = UUID.randomUUID()
         val artifactId = UUID.randomUUID()
@@ -164,6 +193,20 @@ class ArtifactQueryServiceTest {
 
         assertThat(result.id).isEqualTo(artifactId)
         assertThat(result.title).isEqualTo("README.md")
+    }
+
+    @Test
+    fun `a one-day window where from equals to is accepted`() {
+        val projectId = UUID.randomUUID()
+        val day = LocalDate.of(2026, 3, 1)
+        val criteria = ArtifactFilterCriteria(from = day, to = day)
+        every { userApi.userHasAccessToProject("auth-1", projectId) } returns true
+        every { artifactRepository.findFacets(projectId, criteria) } returns
+            ArtifactFacetsResponse(emptyList(), emptyList(), emptyList(), emptyList())
+
+        service.getProjectArtifactFacets(projectId, criteria, "auth-1")
+
+        verify(exactly = 1) { artifactRepository.findFacets(projectId, criteria) }
     }
 
     @Test

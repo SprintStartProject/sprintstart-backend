@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.model.dto
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import java.time.LocalDate
 
 /**
  * File formats recognized for UPLOAD-sourced artifacts.
@@ -17,7 +18,12 @@ enum class UploadFormat {
  * Filter criteria for project-scoped artifact searches and facet calculations.
  *
  * Encapsulates full-text search, type filtering, source filtering, repository selection,
- * and upload format selection.
+ * upload format selection, and an import-date window.
+ *
+ * @property from First day (inclusive) of the import window, read as a UTC calendar day: rows with
+ *   `ingestedAt >= from 00:00Z` match. Null leaves the window open at the start.
+ * @property to Last day (inclusive) of the import window, read as a UTC calendar day: rows with
+ *   `ingestedAt < (to + 1 day) 00:00Z` match. Null leaves the window open at the end.
  */
 data class ArtifactFilterCriteria(
     val search: String? = null,
@@ -25,4 +31,6 @@ data class ArtifactFilterCriteria(
     val sources: Set<SourceSystem>? = null,
     val repositories: Set<String>? = null,
     val format: UploadFormat? = null,
+    val from: LocalDate? = null,
+    val to: LocalDate? = null,
 )

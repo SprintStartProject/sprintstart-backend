@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageRequest
 import org.springframework.test.context.ActiveProfiles
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 
 /**
@@ -120,6 +121,48 @@ class ArtifactFacetRepositoryQueryTest {
         ArtifactSort.entries.forEach { sort ->
             assertThat(list(sort = sort).totalElements).isEqualTo(3)
         }
+    }
+
+    // ========================== date window ==========================
+
+    @Test
+    fun `the date window includes both boundary days in full and nothing beyond`() {
+        val justBefore = store(ingestedAt = Instant.parse("2026-03-09T23:59:59.999999Z"))
+        val firstInstant = store(ingestedAt = Instant.parse("2026-03-10T00:00:00Z"))
+        val lastInstant = store(ingestedAt = Instant.parse("2026-03-12T23:59:59.999999Z"))
+        val justAfter = store(ingestedAt = Instant.parse("2026-03-13T00:00:00Z"))
+        flush()
+
+        val window = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 10), to = LocalDate.of(2026, 3, 12))
+
+        assertThat(listIds(window)).containsExactlyInAnyOrder(firstInstant.id, lastInstant.id)
+        assertThat(listIds(window)).doesNotContain(justBefore.id, justAfter.id)
+    }
+
+    @Test
+    fun `an open bound leaves that side of the window unrestricted`() {
+        val early = store(ingestedAt = Instant.parse("2020-01-01T00:00:00Z"))
+        val onDay = store(ingestedAt = Instant.parse("2026-03-10T08:00:00Z"))
+        val late = store(ingestedAt = Instant.parse("2030-01-01T00:00:00Z"))
+        flush()
+        val day = LocalDate.of(2026, 3, 10)
+
+        assertThat(listIds(ArtifactFilterCriteria(from = day))).containsExactlyInAnyOrder(onDay.id, late.id)
+        assertThat(listIds(ArtifactFilterCriteria(to = day))).containsExactlyInAnyOrder(early.id, onDay.id)
+    }
+
+    @Test
+    fun `facets count under the same date window as the list`() {
+        store(ingestedAt = Instant.parse("2026-03-10T08:00:00Z"))
+        store(ingestedAt = Instant.parse("2026-03-10T09:00:00Z"), type = ArtifactType.ISSUE)
+        store(ingestedAt = Instant.parse("2026-03-11T08:00:00Z"))
+        flush()
+        val window = ArtifactFilterCriteria(from = LocalDate.of(2026, 3, 10), to = LocalDate.of(2026, 3, 10))
+
+        val facets = repository.findFacets(projectId, window)
+
+        assertThat(facets.types.sumOf { it.count }).isEqualTo(list(window).totalElements).isEqualTo(2)
+        assertThat(facets.sources.sumOf { it.count }).isEqualTo(list(window).totalElements)
     }
 
     // ========================== helpers ==========================

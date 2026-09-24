@@ -82,7 +82,8 @@ class ArtifactQueryService(
      * @param projectId The SprintStart project that scopes the artifact listing.
      * @param authId The authenticated caller subject from the JWT.
      * @return One project-scoped artifact page together with pagination metadata.
-     * @throws ResponseStatusException `403` when the caller has no access to the project.
+     * @throws ResponseStatusException `400` when `from` is after `to`, `403` when the caller has no
+     *   access to the project.
      * @throws IllegalArgumentException when Spring Data rejects the requested page or page size.
      */
     @Transactional(readOnly = true)
@@ -95,6 +96,7 @@ class ArtifactQueryService(
         projectId: UUID,
         authId: String,
     ): ArtifactPageResponse {
+        requireValidDateWindow(criteria)
         ensureAccessToProject(authId, projectId)
         // Unsorted on purpose: the criteria repository owns ORDER BY (see ArtifactSort) and
         // would ignore a Pageable sort, so passing one here would only suggest otherwise.
@@ -122,6 +124,8 @@ class ArtifactQueryService(
      * @param criteria Active filter criteria.
      * @param authId The authenticated caller subject from the JWT.
      * @return Aggregated facet counts.
+     * @throws ResponseStatusException `400` when `from` is after `to`, `403` when the caller has no
+     *   access to the project.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving artifact facets for project")
@@ -130,6 +134,7 @@ class ArtifactQueryService(
         criteria: ArtifactFilterCriteria,
         authId: String,
     ): ArtifactFacetsResponse {
+        requireValidDateWindow(criteria)
         ensureAccessToProject(authId, projectId)
         return artifactRepository.findFacets(projectId, criteria)
     }
@@ -159,6 +164,24 @@ class ArtifactQueryService(
                 HttpStatus.NOT_FOUND,
                 "Artifact $artifactId not found in project $projectId",
             )
+    }
+
+    /**
+     * Rejects an import-date window whose start lies after its end.
+     *
+     * Such a window can match nothing, so answering it with an empty page would hide a client bug
+     * (typically swapped bounds) behind a plausible "no results". List and facets both call this,
+     * so the two endpoints can never disagree on whether a window is valid.
+     *
+     * @param criteria The filter whose `from`/`to` bounds are checked; open bounds always pass.
+     * @throws ResponseStatusException `400` when `from` is after `to`.
+     */
+    private fun requireValidDateWindow(criteria: ArtifactFilterCriteria) {
+        val from = criteria.from ?: return
+        val to = criteria.to ?: return
+        if (from.isAfter(to)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "`from` ($from) must not be after `to` ($to)")
+        }
     }
 
     /**
