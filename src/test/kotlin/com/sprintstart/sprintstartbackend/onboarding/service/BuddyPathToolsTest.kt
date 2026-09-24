@@ -101,6 +101,60 @@ class BuddyPathToolsTest {
         assertThat(text).doesNotContain("Ship something")
     }
 
+    /**
+     * The testing session this came from: phase 1 done, phase 3 picked on the page and started, and
+     * the mentor sending the hire back to phase 2 -- again after being told otherwise.
+     */
+    @Test
+    fun `the phase they are working in wins over a lower-numbered open one`() {
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            phase(0, "Overview", steps = listOf(step("Read the wiki", StepStatus.FINISHED))),
+            phase(1, "Meetings", steps = listOf(step("Sit in on a standup", StepStatus.WAITING))),
+            phase(2, "Deployment", steps = listOf(step("Ship something", StepStatus.IN_PROGRESS))),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("standing in phase 3")
+        assertThat(text).contains("Ship something")
+        // Phase 2 is open beside it, and said to be -- never as something to finish first.
+        assertThat(text).contains("open alongside it")
+        assertThat(text).contains("never tell them to finish a lower-numbered phase first")
+        assertThat(text).contains("“Meetings”")
+    }
+
+    @Test
+    fun `several open phases with nothing started are a choice, not phase 2`() {
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            phase(0, "Overview", steps = listOf(step("Read the wiki", StepStatus.FINISHED))),
+            phase(1, "Meetings", steps = listOf(step("Sit in on a standup", StepStatus.WAITING))),
+            phase(2, "Deployment", steps = listOf(step("Ship something", StepStatus.WAITING))),
+        )
+
+        val text = tools.execute(userId)
+
+        assertThat(text).contains("which one comes next is the hire's choice")
+        assertThat(text).doesNotContain("standing in phase")
+        // Where each option starts, with the ids, so "I'll take 3" can be answered straight away.
+        assertThat(text).contains("Sit in on a standup").contains("Ship something")
+        assertThat(text).contains("if they say which phase they are doing, that is the phase they are in")
+        assertThat(tools.snapshotFor(userId)).contains("their choice")
+    }
+
+    @Test
+    fun `the phase touched last is the one they are in when several are started`() {
+        val earlier = step("Sit in on a standup", StepStatus.IN_PROGRESS)
+            .copy(startedAt = Instant.parse("2026-09-01T10:00:00Z"))
+        val later = step("Ship something", StepStatus.IN_PROGRESS)
+            .copy(startedAt = Instant.parse("2026-09-20T10:00:00Z"))
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            phase(0, "Meetings", steps = listOf(earlier)),
+            phase(1, "Deployment", steps = listOf(later)),
+        )
+
+        assertThat(tools.execute(userId)).contains("standing in phase 2")
+    }
+
     @Test
     fun `the ids every path action needs are carried, for the current phase`() {
         val step = step("Set up the repo", StepStatus.WAITING)
