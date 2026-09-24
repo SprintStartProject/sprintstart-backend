@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import org.springframework.data.domain.Page
@@ -18,12 +19,15 @@ interface ArtifactFacetRepository {
      *
      * @param projectId Scopes artifacts to the target project.
      * @param criteria Filter criteria containing search text, types, sources, repos, and formats.
-     * @param pageable Requested pagination and sorting.
+     * @param sort Row order. Applied here rather than through [pageable], whose sort is ignored:
+     *   the criteria query owns ordering so every [ArtifactSort] keeps its `id ASC` tie-break.
+     * @param pageable Requested page number and size.
      * @return Paginated page of artifact response projections.
      */
     fun findProjectArtifactsWithCriteria(
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
+        sort: ArtifactSort,
         pageable: Pageable,
     ): Page<ArtifactResponse>
 

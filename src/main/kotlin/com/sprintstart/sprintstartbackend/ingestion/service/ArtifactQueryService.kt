@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
@@ -77,6 +78,7 @@ class ArtifactQueryService(
      * @param page The 1-based page number to return.
      * @param size The maximum number of artifacts to include in one page.
      * @param criteria Filter criteria containing search string, types, sources, repos, and formats.
+     * @param sort Row order; the repository applies it together with the `id ASC` tie-break.
      * @param projectId The SprintStart project that scopes the artifact listing.
      * @param authId The authenticated caller subject from the JWT.
      * @return One project-scoped artifact page together with pagination metadata.
@@ -89,18 +91,17 @@ class ArtifactQueryService(
         page: Int,
         size: Int,
         criteria: ArtifactFilterCriteria,
+        sort: ArtifactSort,
         projectId: UUID,
         authId: String,
     ): ArtifactPageResponse {
         ensureAccessToProject(authId, projectId)
-        val pageable = PageRequest.of(
-            page - 1,
-            size,
-            Sort.by("ingestedAt").descending().and(Sort.by("id").ascending()),
-        )
+        // Unsorted on purpose: the criteria repository owns ORDER BY (see ArtifactSort) and
+        // would ignore a Pageable sort, so passing one here would only suggest otherwise.
+        val pageable = PageRequest.of(page - 1, size)
 
         val result: Page<ArtifactResponse> =
-            artifactRepository.findProjectArtifactsWithCriteria(projectId, criteria, pageable)
+            artifactRepository.findProjectArtifactsWithCriteria(projectId, criteria, sort, pageable)
         return ArtifactPageResponse(
             items = result.content,
             page = PageMetadata(

@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.controller
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
@@ -141,7 +142,7 @@ class ArtifactControllerTest(
             format = UploadFormat.PDF,
         )
         every {
-            artifactQueryService.getProjectArtifacts(1, 20, criteria, projectId, "auth-user")
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, projectId, "auth-user")
         } returns response()
 
         mockMvc
@@ -163,7 +164,56 @@ class ArtifactControllerTest(
             .andExpect(jsonPath("$.items[0].title").value("README.md"))
 
         verify(exactly = 1) {
-            artifactQueryService.getProjectArtifacts(1, 20, criteria, projectId, "auth-user")
+            artifactQueryService.getProjectArtifacts(1, 20, criteria, ArtifactSort.ADDED_DESC, projectId, "auth-user")
+        }
+    }
+
+    @Test
+    fun `getProjectArtifacts binds an explicit sort`() {
+        val projectId = UUID.randomUUID()
+        every {
+            artifactQueryService.getProjectArtifacts(
+                1,
+                20,
+                ArtifactFilterCriteria(),
+                ArtifactSort.CHANGED_DESC,
+                projectId,
+                "auth-user",
+            )
+        } returns response()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("sort", "CHANGED_DESC")
+                    .with(userJwt()),
+            ).andExpect(status().isOk)
+
+        verify(exactly = 1) {
+            artifactQueryService.getProjectArtifacts(
+                1,
+                20,
+                ArtifactFilterCriteria(),
+                ArtifactSort.CHANGED_DESC,
+                projectId,
+                "auth-user",
+            )
+        }
+    }
+
+    @Test
+    fun `getProjectArtifacts rejects an unknown sort with 400`() {
+        val projectId = UUID.randomUUID()
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/artifacts")
+                    .param("sort", "RANDOM")
+                    .with(userJwt()),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) {
+            artifactQueryService.getProjectArtifacts(any(), any(), any(), any(), any(), any())
         }
     }
 
@@ -276,4 +326,8 @@ class ArtifactControllerTest(
             hasPrevious = false,
         ),
     )
+
+    private fun userJwt() = jwt()
+        .jwt { it.subject("auth-user") }
+        .authorities(SimpleGrantedAuthority("ROLE_USER"))
 }

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.repository
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
@@ -13,6 +14,8 @@ import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.CompoundSelection
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Join
+import jakarta.persistence.criteria.Nulls
+import jakarta.persistence.criteria.Order
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
 import org.springframework.data.domain.Page
@@ -34,12 +37,16 @@ private val SOURCES_EXCLUDED_FACETS = setOf(FacetKind.SOURCES, FacetKind.FORMATS
 
 @Repository
 @Transactional(readOnly = true)
+// One function per facet dimension plus the shared predicate/order builders; splitting them would
+// scatter the own-dimension exclusion rule that must stay identical across list and facets.
+@Suppress("TooManyFunctions")
 class ArtifactFacetRepositoryImpl(
     @PersistenceContext private val entityManager: EntityManager,
 ) : ArtifactFacetRepository {
     override fun findProjectArtifactsWithCriteria(
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
+        sort: ArtifactSort,
         pageable: Pageable,
     ): Page<ArtifactResponse> {
         val cb = entityManager.criteriaBuilder
@@ -54,11 +61,8 @@ class ArtifactFacetRepositoryImpl(
         val predicates = buildPredicates(cb, root, projectJoin, projectId, criteria, null)
         query.where(*predicates.toTypedArray())
 
-        // D2: Deterministic sort (ingestedAt DESC, id ASC)
-        query.orderBy(
-            cb.desc(root.get<Instant>("ingestedAt")),
-            cb.asc(root.get<UUID>("id")),
-        )
+        // D2: Deterministic sort -- the requested key, then id ASC as the tie-break.
+        query.orderBy(orderFor(cb, root, sort))
 
         val typedQuery = entityManager.createQuery(query)
         typedQuery.firstResult = pageable.offset.toInt()
@@ -77,6 +81,28 @@ class ArtifactFacetRepositoryImpl(
         val totalElements = entityManager.createQuery(countQuery).singleResult ?: 0L
 
         return PageImpl(items, pageable, totalElements)
+    }
+
+    /**
+     * Builds the ORDER BY clause for [sort], always ending in `id ASC`.
+     *
+     * The id tie-break keeps offset pagination stable: rows sharing the leading key (same
+     * import instant, same title, or no title at all) keep one fixed order across pages.
+     */
+    private fun orderFor(
+        cb: CriteriaBuilder,
+        root: Root<Artifact>,
+        sort: ArtifactSort,
+    ): List<Order> {
+        val leading = when (sort) {
+            ArtifactSort.ADDED_DESC -> cb.desc(root.get<Instant>("ingestedAt"))
+            ArtifactSort.CHANGED_DESC -> cb.desc(
+                cb.coalesce(root.get<Instant>("lastChangedAt"), root.get<Instant>("ingestedAt")),
+            )
+            // Nulls.LAST is spelled out: databases disagree on where NULL sorts by default.
+            ArtifactSort.TITLE_ASC -> cb.asc(cb.lower(root.get("title")), Nulls.LAST)
+        }
+        return listOf(leading, cb.asc(root.get<UUID>("id")))
     }
 
     override fun findProjectArtifactById(

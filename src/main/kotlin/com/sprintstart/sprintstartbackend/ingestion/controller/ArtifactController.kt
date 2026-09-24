@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.controller
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
@@ -125,6 +126,13 @@ class ArtifactController(
         @RequestParam(required = false) repositories: Set<String>?,
         @RequestParam(required = false) format: UploadFormat?,
         @Parameter(
+            description = "Row order: ADDED_DESC (newest import first, the default), " +
+                "CHANGED_DESC (latest content change first, falling back to the import time) or " +
+                "TITLE_ASC (case-insensitive, untitled last). Any other value is rejected with 400.",
+        )
+        @RequestParam(defaultValue = "ADDED_DESC")
+        sort: ArtifactSort,
+        @Parameter(
             description = "UUID of the project whose artifacts should be returned",
         ) @PathVariable projectId: UUID,
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -138,7 +146,7 @@ class ArtifactController(
             format = format,
         )
         return ResponseEntity.ok(
-            artifactQueryService.getProjectArtifacts(page, size, criteria, projectId, jwt.subject),
+            artifactQueryService.getProjectArtifacts(page, size, criteria, sort, projectId, jwt.subject),
         )
     }
 

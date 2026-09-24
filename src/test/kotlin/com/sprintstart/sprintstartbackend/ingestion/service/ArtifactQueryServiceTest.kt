@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
@@ -101,23 +102,22 @@ class ArtifactQueryServiceTest {
         )
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every {
-            artifactRepository.findProjectArtifactsWithCriteria(projectId, criteria, capture(pageable))
+            artifactRepository.findProjectArtifactsWithCriteria(
+                projectId,
+                criteria,
+                ArtifactSort.TITLE_ASC,
+                capture(pageable),
+            )
         } returns PageImpl(listOf(responseItem), PageRequest.of(0, 20), 1)
 
-        val result = service.getProjectArtifacts(1, 20, criteria, projectId, authId)
+        val result = service.getProjectArtifacts(1, 20, criteria, ArtifactSort.TITLE_ASC, projectId, authId)
 
         assertThat(result.items).hasSize(1)
         assertThat(result.items.single().title).isEqualTo("doc.md")
-        assertThat(
-            pageable.captured.sort
-                .getOrderFor("ingestedAt")
-                ?.isDescending,
-        ).isTrue()
-        assertThat(
-            pageable.captured.sort
-                .getOrderFor("id")
-                ?.isAscending,
-        ).isTrue()
+        // The repository owns ORDER BY, so the Pageable carries only the page window.
+        assertThat(pageable.captured.pageNumber).isEqualTo(0)
+        assertThat(pageable.captured.pageSize).isEqualTo(20)
+        assertThat(pageable.captured.sort.isUnsorted).isTrue()
     }
 
     @Test
