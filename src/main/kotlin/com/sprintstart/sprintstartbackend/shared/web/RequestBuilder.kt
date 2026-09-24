@@ -25,11 +25,7 @@ import java.time.Duration
  *     .sync()
  *     .perform<MyResponse>()
  * ```
- *
- * `TooManyFunctions` is suppressed: a fluent builder is one small method per request option, and
- * splitting it would only scatter them.
  */
-@Suppress("TooManyFunctions")
 class RequestBuilder(
     val method: String,
     val httpClient: java.net.http.HttpClient,
@@ -76,23 +72,21 @@ class RequestBuilder(
             headers = headers + ("Content-Type" to "application/json"),
         )
 
-    /**
-     * Bounds this single request (response headers must arrive within [timeout]).
-     *
-     * The shared [java.net.http.HttpClient] only has a connect timeout, and a coroutine
-     * `withTimeout` cannot interrupt the blocking `send` on [kotlinx.coroutines.Dispatchers.IO],
-     * so a caller that must answer fast even when the peer hangs sets it here. On expiry the
-     * send throws [java.net.http.HttpTimeoutException].
-     */
-    fun timeout(timeout: Duration): RequestBuilder = copy(timeout = timeout)
-
     // ── Execution context selection ───────────────────────────────────────────
 
     /**
      * Returns a [SyncExecution] context for a standard request/response cycle.
      * Call `.perform<ResponseType>()` on the result to fire the request.
+     *
+     * @param timeout Optional bound for this single request (response headers must arrive within
+     *   it). The shared [java.net.http.HttpClient] only has a connect timeout, and a coroutine
+     *   `withTimeout` cannot interrupt the blocking `send` on [kotlinx.coroutines.Dispatchers.IO],
+     *   so a caller that must answer fast even when the peer hangs passes one here. On expiry the
+     *   send throws [java.net.http.HttpTimeoutException]. It is a parameter of the execution step
+     *   rather than a builder method because it says how to run the request, not what to send.
      */
-    fun sync(): SyncExecution = SyncExecution(this)
+    fun sync(timeout: Duration? = null): SyncExecution =
+        SyncExecution(if (timeout == null) this else copy(timeout = timeout))
 
     /**
      * Returns a [StreamExecution] context for SSE / chunked streaming responses.

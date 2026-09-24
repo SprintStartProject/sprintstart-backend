@@ -126,8 +126,7 @@ class ArtifactIngestionClient(
             webClient
                 .get()
                 .uri(uri("/api/v1/ingest/status?$query"))
-                .timeout(INGEST_STATUS_TIMEOUT)
-                .sync()
+                .sync(timeout = INGEST_STATUS_TIMEOUT)
                 .perform<ArtifactIngestStatusAiResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             throw IngestionResponseException("Failed to read ingest status (HTTP ${e.statusCode}): ${e.body}")

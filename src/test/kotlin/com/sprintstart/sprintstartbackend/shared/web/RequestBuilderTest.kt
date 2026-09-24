@@ -151,14 +151,28 @@ class RequestBuilderTest {
     }
 
     @Test
-    fun `timeout() applies to the built request and survives further chaining`() {
-        val request = webClient
+    fun `sync(timeout) applies the timeout to the built request`() {
+        val execution = webClient
             .get()
-            .timeout(Duration.ofSeconds(2))
             .uri("https://ai.test/x")
             .header("X-Trace", "1")
+            .sync(timeout = Duration.ofSeconds(2))
+
+        val request = execution.builder
             .buildHttpRequest()
 
         assertEquals(Duration.ofSeconds(2), request.timeout().get())
+    }
+
+    @Test
+    fun `sync() without a timeout leaves the request unbounded`() {
+        val request = webClient
+            .get()
+            .uri("https://ai.test/x")
+            .sync()
+            .builder
+            .buildHttpRequest()
+
+        assertEquals(false, request.timeout().isPresent)
     }
 }
