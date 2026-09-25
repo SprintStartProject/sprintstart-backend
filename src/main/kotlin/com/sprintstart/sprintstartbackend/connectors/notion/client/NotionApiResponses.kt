@@ -28,6 +28,8 @@ data class NotionBlockResponse(
     val heading2: NotionHeadingPayload? = null,
     @SerialName("heading_3")
     val heading3: NotionHeadingPayload? = null,
+    @SerialName("heading_4")
+    val heading4: NotionHeadingPayload? = null,
     @SerialName("bulleted_list_item")
     val bulletedListItem: NotionTextBlockPayload? = null,
     @SerialName("numbered_list_item")

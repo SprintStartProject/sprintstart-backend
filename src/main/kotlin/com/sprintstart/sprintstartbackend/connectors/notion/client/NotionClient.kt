@@ -69,6 +69,43 @@ internal class NotionClient(
         }
     }
 
+    /**
+     * Loads a complete block tree without crossing child-page or database boundaries.
+     *
+     * Pagination is completed at every level. Failed descendants, cyclic responses and
+     * trees deeper than 128 containers fail the operation instead of returning partial content.
+     */
+    suspend fun getBlockTree(token: String, blockId: String): List<NotionBlockNode> {
+        return loadBlockTree(token, blockId, mutableSetOf())
+    }
+
+    private suspend fun loadBlockTree(
+        token: String,
+        blockId: String,
+        ancestors: MutableSet<String>,
+    ): List<NotionBlockNode> {
+        if (ancestors.size >= 128 || !ancestors.add(blockId)) {
+            throw NotionInvalidResponseException("loading the block tree")
+        }
+        val nodes = mutableListOf<NotionBlockNode>()
+        for (response in getAllBlockChildren(token, blockId)) {
+            if (response.id.isBlank() || response.id in ancestors) {
+                throw NotionInvalidResponseException("loading the block tree")
+            }
+            var children = emptyList<NotionBlockNode>()
+            if (
+                response.hasChildren &&
+                response.type != "child_page" &&
+                response.type != "child_database"
+            ) {
+                children = loadBlockTree(token, response.id, ancestors)
+            }
+            nodes.add(NotionBlockNode(response, children))
+        }
+        ancestors.remove(blockId)
+        return nodes
+    }
+
     suspend fun getPage(token: String, pageId: String): NotionPageResponse {
         return performGet(notionPageUri(baseUri, pageId), token, "retrieving page")
     }

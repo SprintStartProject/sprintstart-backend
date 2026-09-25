@@ -4,5 +4,6 @@ enum class SourceSystem {
     CONFLUENCE,
     GITHUB,
     JIRA,
+    NOTION,
     UPLOAD,
 }
