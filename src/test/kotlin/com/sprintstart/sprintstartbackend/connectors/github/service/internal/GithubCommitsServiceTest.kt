@@ -11,9 +11,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.util.CustomOnDiskCache
-import com.sprintstart.sprintstartbackend.connectors.github.util.GitOperationRunner
-import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
+import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -33,7 +32,7 @@ import java.util.UUID
 class GithubCommitsServiceTest {
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val onDiskOperations = OnDiskOperations()
-    private val customCache = mockk<CustomOnDiskCache>()
+    private val customCache = mockk<ICustomOnDiskCache>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
     private val gitRunner = mockk<GitOperationRunner>()
 
@@ -56,7 +55,7 @@ class GithubCommitsServiceTest {
             eventPublisher = eventPublisher,
             gitRunner = gitRunner,
         )
-        coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+        coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
     }
 
     // ── git command routing ───────────────────────────────────────────────────
