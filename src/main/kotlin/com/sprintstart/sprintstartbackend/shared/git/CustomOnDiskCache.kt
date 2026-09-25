@@ -1,6 +1,5 @@
-package com.sprintstart.sprintstartbackend.connectors.github.util
+package com.sprintstart.sprintstartbackend.shared.git
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -15,41 +14,32 @@ import kotlin.io.path.absolutePathString
 import kotlin.io.path.exists
 
 /**
- * Interface for running Git CLI commands. Used for mocking in tests.
- */
-interface GitOperationRunner {
-    fun exec(path: Path, op: ProcessBuilder): String
-}
-
-/**
- * Default implementation of [GitOperationRunner] that uses [OnDiskOperations].
- */
-@Service
-class DefaultGitOperationRunner : GitOperationRunner {
-    override fun exec(path: Path, op: ProcessBuilder): String =
-        OnDiskOperations.exec(path, op)
-}
-
-/**
- * On-disk cache for GitHub repositories.
+ * On-disk cache of remote Git repositories, shared by every repository connector.
  *
- * Maintains a local clone of each repository under [cacheBasePath], keyed by owner and name
- * (e.g. `/repos/SprintStartProject/sprintstart-backend`). On first access the repository is cloned from GitHub;
- * later accesses return the cached path immediately without any network calls.
+ * Keeps one local clone per hosted repository under `cacheBasePath/<host>/<namespace>/<name>`
+ * (e.g. `/repos/github.com/SprintStartProject/sprintstart-backend`). The host is part of the
+ * location because the same namespace and name can exist on several providers at once: without
+ * it, a Bitbucket `workspace/slug` would be served an existing GitHub clone.
+ *
+ * On first access the repository is cloned over HTTPS with the credentials from
+ * [GitRepositoryCoordinates]; later accesses return the cached path without any network call.
+ * Which connector is asking is not a concept here, which is why this class builds the clone URL
+ * from the coordinates rather than from a connection entity.
+ *
+ * Cache validity is verified by running `git status` on the local directory rather than relying on
+ * directory existence alone, so interrupted or corrupted clones are detected and re-cloned
+ * automatically. A clone whose `HEAD` is invalid is repaired by checking out the first remote
+ * branch rather than being thrown away.
  *
  * Designed to be used alongside [OnDiskOperations], which handles diffing and file reading.
  *
- * Cache validity is verified by running `git status` on the local directory rather than relying
- * on directory existence alone, so interrupted or corrupted clones are detected and re-cloned
- * automatically.
- *
- * @property cacheBasePath Root directory for all cached repositories.
+ * @property cacheBasePath Root directory for all cached repositories, shared by all connectors.
  *                         Defaults to `/repos`, which maps to the Kubernetes PVC mount.
- *                         Override via `sprintstart.github.cache-path` for local development.
+ *                         Override via `sprintstart.git.cache-path` for local development.
  */
 @Service
 class CustomOnDiskCache(
-    @Value("\${sprintstart.github.cache-path:/repos}")
+    @Value("\${sprintstart.git.cache-path:/repos}")
     private val cacheBasePath: String,
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
@@ -60,24 +50,21 @@ class CustomOnDiskCache(
     /**
      * Returns the local filesystem path for the given repository, cloning it first if not cached.
      *
-     * @param repository The repository to get the path for.
+     * @param coordinates The repository to materialize locally, including its credentials.
      * @return Absolute path to the local clone, ready for filesystem operations
      */
-    suspend fun getLocalRepositoryPath(repository: GithubRepositoryConnection): Path {
-        val localFsPath = Path.of(cacheBasePath, repository.owner, repository.name)
-        val remoteUri = buildRemoteUri(repository.owner, repository.name, repository.user.token)
-        val safeUri = buildRemoteUri(repository.owner, repository.name, "***")
+    suspend fun getLocalRepositoryPath(coordinates: GitRepositoryCoordinates): Path {
+        val localFsPath = Path.of(cacheBasePath, coordinates.host, coordinates.namespace, coordinates.name)
+        val remoteUri = buildRemoteUri(coordinates, coordinates.secret)
+        val safeUri = buildRemoteUri(coordinates, MASKED_SECRET)
 
         return getLocalRepositoryPath(localFsPath, remoteUri, safeUri)
     }
 
     /**
-     * Returns the path to the local GitHub repository copy.
+     * Returns the path to the local copy of a repository, cloning it if that has not happened yet.
      *
-     * This function returns the path to the local copy of a given
-     * GitHub repository, caching it if not happened already.
-     *
-     * @param localFsPath The path to the local copy of the GitHub repository.
+     * @param localFsPath The path to the local copy of the repository.
      * @param remoteUri The remote uri of the repository to clone from if needed.
      * @param safeUri The remote uri, but safe for printing, e.g. without credentials.
      */
@@ -126,7 +113,7 @@ class CustomOnDiskCache(
      *
      * The [remoteUri] contains the auth token inline and is never logged.
      *
-     * @param localFsPath The path to the local copy of the GitHub repository.
+     * @param localFsPath The path to the local copy of the repository.
      * @param remoteUri The uri to clone the repository from, if not already cached.
      */
     private suspend fun cloneRepository(localFsPath: Path, remoteUri: String) {
@@ -181,21 +168,28 @@ class CustomOnDiskCache(
     }
 
     /**
-     * Constructs a remote URI for accessing a GitHub repository using a personal access token.
+     * Constructs the HTTPS remote URI of a repository, with the credentials embedded.
      *
-     * @param owner The owner of the GitHub repository.
-     * @param name The name of the GitHub repository.
-     * @param token The personal access token used for authentication.
-     * @return A string representing the constructed remote URI in ASCII format.
+     * The result contains [secret] in cleartext and must never be logged; passing [MASKED_SECRET]
+     * instead produces the URI that is safe to print.
+     *
+     * @param coordinates The repository to address.
+     * @param secret The secret to embed, either the real one or [MASKED_SECRET].
+     * @return The remote URI in ASCII format, as `git clone` accepts it.
      */
-    private fun buildRemoteUri(owner: String, name: String, token: String): String =
+    private fun buildRemoteUri(coordinates: GitRepositoryCoordinates, secret: String): String =
         URI(
             "https",
-            "x-access-token:$token",
-            "github.com",
+            "${coordinates.username}:$secret",
+            coordinates.host,
             -1,
-            "/$owner/$name.git",
+            "/${coordinates.namespace}/${coordinates.name}.git",
             null,
             null,
         ).toASCIIString()
+
+    private companion object {
+        /** Placeholder that replaces a credential wherever the URI is displayed. */
+        const val MASKED_SECRET = "***"
+    }
 }

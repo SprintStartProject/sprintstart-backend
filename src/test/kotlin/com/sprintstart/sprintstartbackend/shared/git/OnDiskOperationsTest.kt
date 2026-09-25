@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.util
+package com.sprintstart.sprintstartbackend.shared.git
 
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy

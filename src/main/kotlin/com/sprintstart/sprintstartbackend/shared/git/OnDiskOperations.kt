@@ -1,6 +1,5 @@
-package com.sprintstart.sprintstartbackend.connectors.github.util
+package com.sprintstart.sprintstartbackend.shared.git
 
-import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations.Companion.exec
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.nio.file.Path
@@ -23,6 +22,10 @@ import java.time.Instant
  * Requires the `git` CLI to be present on the container's PATH. All commands are run against
  * the repository at the path provided to [exec] — none of the factory methods encode a path
  * themselves.
+ *
+ * Every operation here works on any hosted Git repository — GitHub and Bitbucket clones are
+ * cloned, diffed, and read with the same commands. Provider-specific concerns, such as the
+ * clone URL or the API used for discovery, deliberately live outside this class.
  */
 @Service
 class OnDiskOperations {
@@ -32,9 +35,10 @@ class OnDiskOperations {
     /**
      * Clones [remoteUri] into [localFsPath].
      *
-     * [remoteUri] is expected to contain an inline auth token
-     * (`https://<token>@github.com/...`). Never pass this URI to a logger — use a sanitized
-     * version with the token replaced by `***` instead.
+     * [remoteUri] is expected to contain credentials inline
+     * (`https://<username>:<secret>@<host>/<namespace>/<name>.git`). The exact user name and
+     * secret are provider-specific and are supplied by the caller. Never pass this URI to a
+     * logger — use a sanitized version with the secret replaced by `***` instead.
      */
     fun gitClone(remoteUri: String, localFsPath: String) = ProcessBuilder("git", "clone", remoteUri, localFsPath)
 

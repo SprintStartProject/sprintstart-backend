@@ -22,8 +22,12 @@ sprintstart:
       # exponential backoff between them.
       max-attempts: ${INGESTION_AI_SYNC_MAX_ATTEMPTS:5}
       retry-base-seconds: ${INGESTION_AI_SYNC_RETRY_BASE_SECONDS:30}
-  github:
+  git:
+    # Shared clone root for every repository connector. Clones are stored under
+    # <cache-path>/<host>/<namespace>/<name>, so GitHub and Bitbucket repositories with the
+    # same owner/name cannot collide on one directory.
     cache-path: ${REPO_CACHE_PATH:${java.io.tmpdir}/repos}
+  github:
     base-url: "https://api.github.com"
     cron: "0 2 * * 1"
   bitbucket:

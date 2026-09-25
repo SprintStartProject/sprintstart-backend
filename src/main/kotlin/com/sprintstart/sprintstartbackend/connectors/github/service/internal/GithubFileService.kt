@@ -17,10 +17,11 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.Gi
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.util.CustomOnDiskCache
-import com.sprintstart.sprintstartbackend.connectors.github.util.GitOperationRunner
-import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.connectors.github.util.toGitRepositoryCoordinates
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.git.CustomOnDiskCache
+import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
+import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
@@ -131,7 +132,7 @@ class GithubFileService(
             )
         }
 
-        val path = customCache.getLocalRepositoryPath(githubRepository.get())
+        val path = customCache.getLocalRepositoryPath(githubRepository.get().toGitRepositoryCoordinates())
         val currentRevision = gitRunner.exec(path, onDiskOperations.gitRevParse()).trim()
 
         streamFilesFromDiskAndIngest(transactionId, githubRepository.get(), path, currentRevision)
@@ -213,7 +214,7 @@ class GithubFileService(
             ),
         )
 
-        val localFsPath = customCache.getLocalRepositoryPath(githubRepository)
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.toGitRepositoryCoordinates())
 
         if (!isRepositoryUpToDate(localFsPath)) {
             githubRepository.connectionState = ConnectionState.OUT_OF_DATE
@@ -511,7 +512,7 @@ class GithubFileService(
         githubRepository: GithubRepositoryConnection,
         transactionId: UUID,
     ) {
-        val localFsPath = customCache.getLocalRepositoryPath(githubRepository)
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.toGitRepositoryCoordinates())
         val latestSha = updateLocalRepository(localFsPath)
 
         if (githubRepository.lastSha == latestSha) {

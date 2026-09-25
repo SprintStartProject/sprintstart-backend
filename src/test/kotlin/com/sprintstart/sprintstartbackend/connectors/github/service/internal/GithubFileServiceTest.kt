@@ -12,9 +12,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.util.CustomOnDiskCache
-import com.sprintstart.sprintstartbackend.connectors.github.util.GitOperationRunner
-import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
+import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -40,7 +39,7 @@ class GithubFileServiceTest {
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val fileSnapshotRepository = mockk<GithubFileSnapshotRepository>(relaxed = true)
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
-    private val customCache = mockk<CustomOnDiskCache>()
+    private val customCache = mockk<ICustomOnDiskCache>()
     private val gitRunner = mockk<GitOperationRunner>()
     private lateinit var service: GithubFileService
 
@@ -90,7 +89,7 @@ class GithubFileServiceTest {
             val sha = "abc123"
             val repo = repoConnection(lastSha = sha)
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
             every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "$sha\n"
@@ -104,7 +103,7 @@ class GithubFileServiceTest {
         fun `publishes GithubFileFetchedEvent for modified file`() = runTest {
             val repo = repoConnection(lastSha = "old-sha")
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
             every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
@@ -116,7 +115,7 @@ class GithubFileServiceTest {
             val localRepoPath = tempFile.parent
             val fileName = tempFile.fileName.toString()
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns localRepoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns localRepoPath
             every { gitRunner.exec(localRepoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(localRepoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(localRepoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
@@ -139,7 +138,7 @@ class GithubFileServiceTest {
             val repo = repoConnection(lastSha = "old-sha")
             val nonExistentFile = "deleted/file.kt"
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
             every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
@@ -158,7 +157,7 @@ class GithubFileServiceTest {
         fun `skips binary files in diff output`() = runTest {
             val repo = repoConnection(lastSha = "old-sha")
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
             every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
@@ -177,7 +176,7 @@ class GithubFileServiceTest {
         fun `updates lastSha on repository after successful update`() = runTest {
             val repo = repoConnection(lastSha = "old-sha")
 
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoPath
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
             every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
             every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
@@ -198,7 +197,7 @@ class GithubFileServiceTest {
             // Use a real temp dir with no files so streamFilesFromDiskAndIngest finishes immediately
             val emptyDir = Files.createTempDirectory("empty-repo")
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns emptyDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns emptyDir
             every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
 
             service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
@@ -214,7 +213,7 @@ class GithubFileServiceTest {
             val emptyDir = Files.createTempDirectory("empty-repo")
             every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns emptyDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns emptyDir
 
             service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
 
@@ -266,7 +265,7 @@ class GithubFileServiceTest {
             repoDir.resolve("code.kt").writeText("real code")
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(
@@ -289,7 +288,7 @@ class GithubFileServiceTest {
             repoDir.resolve("code.kt").writeText("content")
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(
@@ -311,7 +310,7 @@ class GithubFileServiceTest {
             srcDir.resolve("Main.kt").writeText("content")
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(
@@ -333,7 +332,7 @@ class GithubFileServiceTest {
             repoDir.resolve("code.kt").writeText("fun main() {}")
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(
@@ -354,7 +353,7 @@ class GithubFileServiceTest {
             repoDir.resolve("code.kt").writeText("content")
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(
@@ -374,7 +373,7 @@ class GithubFileServiceTest {
             repoDir.resolve("code.kt").writeText("content", StandardCharsets.UTF_8)
 
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(repo) } returns repoDir
+            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
 
             service.fetchAndIngestAllFiles(

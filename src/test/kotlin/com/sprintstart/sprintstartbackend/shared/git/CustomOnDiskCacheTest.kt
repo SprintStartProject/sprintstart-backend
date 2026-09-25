@@ -1,8 +1,5 @@
-package com.sprintstart.sprintstartbackend.connectors.github.util
+package com.sprintstart.sprintstartbackend.shared.git
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -39,20 +36,37 @@ class CustomOnDiskCacheTest {
         tempDir.toFile().deleteRecursively()
     }
 
+    private fun githubCoordinates(
+        namespace: String = "owner",
+        name: String = "repo",
+        secret: String = "test-token",
+    ) = GitRepositoryCoordinates(
+        host = "github.com",
+        namespace = namespace,
+        name = name,
+        username = "x-access-token",
+        secret = secret,
+    )
+
+    private fun githubPath(namespace: String = "owner", name: String = "repo"): Path =
+        Path.of(tempDir.toString(), "github.com", namespace, name)
+
+    private fun cloneCommands(): List<List<String>> = mutableListOf<List<String>>().also { commands ->
+        every { gitRunner.exec(any(), any()) } answers {
+            val pb = secondArg<ProcessBuilder>()
+            if (pb.command().contains("clone")) commands.add(pb.command())
+            ""
+        }
+    }
+
     @Nested
     inner class CacheMiss {
         @Test
         fun `clones repository when no local directory exists`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
             every { gitRunner.exec(any(), any()) } returns ""
 
-            runBlocking { cache.getLocalRepositoryPath(repository) }
+            runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
-            // clone command should have been called
             verify {
                 gitRunner.exec(
                     any(),
@@ -65,25 +79,16 @@ class CustomOnDiskCacheTest {
 
         @Test
         fun `returns correct path after cloning`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
             every { gitRunner.exec(any(), any()) } returns ""
 
-            val result = runBlocking { cache.getLocalRepositoryPath(repository) }
+            val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
-            assertThat(result).isEqualTo(Path.of(tempDir.toString(), "owner", "repo"))
+            assertThat(result).isEqualTo(githubPath())
         }
 
         @Test
         fun `concurrent requests clone repository only once`() {
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
+            val coordinates = githubCoordinates()
             every {
                 gitRunner.exec(any(), match { it.command().contains("clone") })
             } answers {
@@ -99,12 +104,12 @@ class CustomOnDiskCacheTest {
 
             val results = runBlocking {
                 awaitAll(
-                    async { cache.getLocalRepositoryPath(repository) },
-                    async { cache.getLocalRepositoryPath(repository) },
+                    async { cache.getLocalRepositoryPath(coordinates) },
+                    async { cache.getLocalRepositoryPath(coordinates) },
                 )
             }
 
-            assertThat(results).allMatch { it == Path.of(tempDir.toString(), "owner", "repo") }
+            assertThat(results).allMatch { it == githubPath() }
             verify(exactly = 1) {
                 gitRunner.exec(any(), match { pb -> pb.command().contains("clone") })
             }
@@ -115,19 +120,14 @@ class CustomOnDiskCacheTest {
     inner class CacheHit {
         @Test
         fun `returns cached path without cloning when repository is valid`() {
-            val repoDir = tempDir.resolve("owner/repo").also {
+            val repoDir = githubPath().also {
                 Files.createDirectories(it)
             }
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
 
             every { gitRunner.exec(repoDir, match { it.command().contains("status") }) } returns ""
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
 
-            val result = runBlocking { cache.getLocalRepositoryPath(repository) }
+            val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
             assertThat(result).isEqualTo(repoDir)
             verify(exactly = 0) {
@@ -140,14 +140,9 @@ class CustomOnDiskCacheTest {
     inner class CorruptedClone {
         @Test
         fun `re-clones when directory exists but git status fails`() {
-            val repoDir = tempDir.resolve("owner/repo").also {
+            val repoDir = githubPath().also {
                 Files.createDirectories(it)
             }
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
 
             every {
                 gitRunner.exec(repoDir, match { it.command().contains("status") })
@@ -160,7 +155,7 @@ class CustomOnDiskCacheTest {
                 gitRunner.exec(any(), match { it.command().contains("rev-parse") })
             } returns "abc123\n"
 
-            runBlocking { cache.getLocalRepositoryPath(repository) }
+            runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
             verify {
                 gitRunner.exec(any(), match { pb -> pb.command().contains("clone") })
@@ -169,14 +164,9 @@ class CustomOnDiskCacheTest {
 
         @Test
         fun `repairs cached clone when git status succeeds but HEAD is invalid`() {
-            val repoDir = tempDir.resolve("owner/repo").also {
+            val repoDir = githubPath().also {
                 Files.createDirectories(it)
             }
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
 
             every { gitRunner.exec(repoDir, match { it.command().contains("status") }) } returns ""
             every {
@@ -198,7 +188,7 @@ class CustomOnDiskCacheTest {
                 )
             } returns ""
 
-            val result = runBlocking { cache.getLocalRepositoryPath(repository) }
+            val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
             assertThat(result).isEqualTo(repoDir)
             verify(exactly = 0) {
@@ -214,50 +204,76 @@ class CustomOnDiskCacheTest {
     }
 
     @Nested
-    inner class TokenSafety {
+    inner class CloneUri {
         @Test
-        fun `clone uri contains token but safe uri does not`() {
+        fun `clone uri carries the credentials of the coordinates`() {
             val cloneUris = mutableListOf<String>()
-            val repository = GithubRepositoryConnection(
-                owner = "owner",
-                name = "repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
-            )
-
             every { gitRunner.exec(any(), any()) } answers {
-                // capture the clone command arguments
                 val pb = secondArg<ProcessBuilder>()
-                if (pb.command().contains("clone")) {
-                    cloneUris.addAll(pb.command())
-                }
+                if (pb.command().contains("clone")) cloneUris.addAll(pb.command())
                 ""
             }
 
-            runBlocking { cache.getLocalRepositoryPath(repository) }
+            runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
-            // The real URI with the token should be in the clone command
             assertThat(cloneUris).anyMatch { it.contains("x-access-token:test-token") }
-            // But it should never appear in log output — we can't assert logs directly,
-            // so we verify the safe URI does NOT contain the token
-            assertThat("https://x-access-token:***@github.com/owner/repo.git").doesNotContain("test-token")
+            assertThat(cloneUris).anyMatch { it.contains("@github.com/owner/repo.git") }
+        }
+
+        @Test
+        fun `clone uri of a bitbucket repository uses the bitbucket host and static user name`() {
+            val cloneUris = mutableListOf<String>()
+            every { gitRunner.exec(any(), any()) } answers {
+                val pb = secondArg<ProcessBuilder>()
+                if (pb.command().contains("clone")) cloneUris.addAll(pb.command())
+                ""
+            }
+
+            val coordinates = GitRepositoryCoordinates(
+                host = "bitbucket.org",
+                namespace = "sprintstart",
+                name = "sprintstart-backend",
+                username = "x-bitbucket-api-token-auth",
+                secret = "api-token",
+            )
+
+            runBlocking { cache.getLocalRepositoryPath(coordinates) }
+
+            assertThat(cloneUris)
+                .anyMatch { it.contains("x-bitbucket-api-token-auth:api-token") }
+            assertThat(cloneUris).anyMatch { it.contains("@bitbucket.org/sprintstart/sprintstart-backend.git") }
         }
     }
 
     @Nested
     inner class PathStructure {
         @Test
-        fun `local path is structured as cacheBasePath-owner-name`() {
+        fun `local path is structured as cacheBasePath-host-namespace-name`() {
             every { gitRunner.exec(any(), any()) } returns ""
-            val repository = GithubRepositoryConnection(
-                owner = "my-org",
-                name = "my-repo",
-                user = GithubUser(id = GithubUserPat("some-id", "test-pat"), token = "test-token"),
+
+            val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates("my-org", "my-repo")) }
+
+            assertThat(result.toString().replace("\\", "/")).endsWith("github.com/my-org/my-repo")
+            assertThat(result.toString()).startsWith(tempDir.toString())
+        }
+
+        @Test
+        fun `repositories of different providers never share a directory`() {
+            val cloneUris = cloneCommands()
+            val github = githubCoordinates()
+            val bitbucket = GitRepositoryCoordinates(
+                host = "bitbucket.org",
+                namespace = github.namespace,
+                name = github.name,
+                username = "x-bitbucket-api-token-auth",
+                secret = "api-token",
             )
 
-            val result = runBlocking { cache.getLocalRepositoryPath(repository) }
+            val githubPath = runBlocking { cache.getLocalRepositoryPath(github) }
+            val bitbucketPath = runBlocking { cache.getLocalRepositoryPath(bitbucket) }
 
-            assertThat(result.toString().replace("\\", "/")).endsWith("my-org/my-repo")
-            assertThat(result.toString()).startsWith(tempDir.toString())
+            assertThat(githubPath).isNotEqualTo(bitbucketPath)
+            assertThat(cloneUris).hasSize(2)
         }
     }
 }

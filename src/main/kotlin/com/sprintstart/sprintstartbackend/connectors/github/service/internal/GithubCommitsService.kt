@@ -11,10 +11,10 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubReposit
 import com.sprintstart.sprintstartbackend.connectors.github.models.client.dto.Commit
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.util.CustomOnDiskCache
-import com.sprintstart.sprintstartbackend.connectors.github.util.GitOperationRunner
-import com.sprintstart.sprintstartbackend.connectors.github.util.OnDiskOperations
+import com.sprintstart.sprintstartbackend.connectors.github.util.toGitRepositoryCoordinates
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
+import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -27,7 +27,7 @@ import java.util.UUID
 class GithubCommitsService(
     private val repoConnectionRepository: GithubRepositoryConnectionRepository,
     private val onDiskOperations: OnDiskOperations,
-    private val customCache: CustomOnDiskCache,
+    private val customCache: ICustomOnDiskCache,
     private val eventPublisher: ApplicationEventPublisher,
     private val gitRunner: GitOperationRunner,
 ) {
@@ -106,7 +106,7 @@ class GithubCommitsService(
             ),
         )
 
-        val localFsPath = customCache.getLocalRepositoryPath(githubRepository)
+        val localFsPath = customCache.getLocalRepositoryPath(githubRepository.toGitRepositoryCoordinates())
 
         if (!isRepositoryUpToDate(localFsPath)) {
             githubRepository.connectionState = ConnectionState.OUT_OF_DATE
@@ -203,7 +203,7 @@ class GithubCommitsService(
         doSyncAll: Boolean,
     ): String = runCatching {
         val localCopyPath = customCache.getLocalRepositoryPath(
-            latestSnapshot.repository,
+            latestSnapshot.repository.toGitRepositoryCoordinates(),
         )
         if (doSyncAll) {
             gitRunner.exec(localCopyPath, onDiskOperations.gitCommits())
