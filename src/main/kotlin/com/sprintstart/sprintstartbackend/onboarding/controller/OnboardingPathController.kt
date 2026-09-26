@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
@@ -193,6 +194,7 @@ class OnboardingPathController(
 class ProjectOnboardingPathController(
     private val onboardingPersonalizationService: OnboardingPersonalizationService,
     private val onboardingGenerationRegistry: OnboardingGenerationRegistry,
+    private val onboardingPathService: OnboardingPathService,
     private val userApi: UserApi,
 ) {
     /**
@@ -245,14 +247,18 @@ class ProjectOnboardingPathController(
      * template. The service rejects a project the user is not assigned to. Any existing path is
      * replaced. A project must have exactly one active blueprint.
      *
+     * A member builds their *first* path here; rebuilding one they already have is the project
+     * manager's call ([personalizePathForUser]), because it throws away the member's progress. The
+     * project's manager and admins may still replace their own path from here.
+     *
      * The generation runs detached from this request (see [OnboardingGenerationRegistry]): closing
      * the stream does not cancel it, and a request while one is running watches that one instead of
      * starting another.
      *
      * @param projectId The project whose active blueprint seeds the path.
      * @return A stream of progress events ending in the new path plus a `done` event.
-     * @throws ResponseStatusException `403` when the user is not assigned to the project,
-     * `404` when the user does not exist.
+     * @throws ResponseStatusException `403` when the user is not assigned to the project, or already
+     * has a path and does not manage the project; `404` when the user does not exist.
      */
     @Operation(
         summary = "Create onboarding path from blueprint",
@@ -269,7 +275,8 @@ class ProjectOnboardingPathController(
             ApiResponse(
                 responseCode = "403",
                 description = "Insufficient role to create an onboarding path, " +
-                    "or the authenticated user is not assigned to the given project",
+                    "the authenticated user is not assigned to the given project, " +
+                    "or the user already has a path and does not manage the project",
             ),
             ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
         ],
@@ -283,6 +290,64 @@ class ProjectOnboardingPathController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<OnboardingSseEvent> {
+        // Watching a running generation stays open to everyone -- including one a PM started for this
+        // member. Only starting a new one over an existing path is the manager's call.
+        val startsNewRun = onboardingGenerationRegistry.status(jwt.subject) == null
+        if (startsNewRun &&
+            onboardingPathService.hasPathForMe(jwt.subject) &&
+            !userApi.canManageProject(jwt.subject, projectId)
+        ) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the project manager can rebuild an existing onboarding path",
+            )
+        }
         return onboardingGenerationRegistry.startOrAttach(jwt.subject, projectId)
+    }
+
+    /**
+     * Rebuilds a member's onboarding path from [projectId]'s active blueprint, on the project
+     * manager's behalf.
+     *
+     * The same generation as [personalizePath], run for the member: it replaces their path (and
+     * with it their progress), and the member's own onboarding page attaches to it like to one they
+     * started. Closing this stream does not cancel it.
+     *
+     * @param projectId The project whose active blueprint seeds the path.
+     * @param userId The member whose path is rebuilt.
+     * @return A stream of progress events ending in the new path plus a `done` event.
+     * @throws ResponseStatusException `403` when the member is not assigned to the project, `404`
+     * when the member does not exist.
+     */
+    @Operation(
+        summary = "Rebuild a member's onboarding path",
+        description = "Rebuilds the member's onboarding path from the project's active blueprint, " +
+            "replacing the path they have. For the project's manager and admins. Failures after the " +
+            "stream has opened are reported as an `error` event inside the `200` stream.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "SSE stream of personalization events"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(
+                responseCode = "403",
+                description = "Caller does not manage the project, or the member is not assigned to it",
+            ),
+            ApiResponse(responseCode = "404", description = "No user found with the given ID"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/users/{userId}/path/personalize", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PreAuthorize("@projectAuth.canManageProject(authentication, #projectId)")
+    fun personalizePathForUser(
+        @Parameter(description = "UUID of the project whose active blueprint seeds the path")
+        @PathVariable projectId: UUID,
+        @Parameter(description = "UUID of the member whose path is rebuilt")
+        @PathVariable userId: UUID,
+    ): Flow<OnboardingSseEvent> {
+        val authId = userApi.getAuthIdByUserId(userId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
+        }
+        return onboardingGenerationRegistry.startOrAttach(authId, projectId)
     }
 }

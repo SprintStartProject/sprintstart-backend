@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class OnboardingPathServiceTest {
@@ -250,6 +251,24 @@ class OnboardingPathServiceTest {
             assertThrows<ResponseStatusException> {
                 service.deleteOnboardingPathForMe(authId)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
+    inner class HasPathForMe {
+        @Test
+        fun `is true when the user has a path`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.existsByUserId(userId) } returns true
+
+            assertTrue(service.hasPathForMe(authId))
+        }
+
+        @Test
+        fun `is false for an unknown user`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            assertFalse(service.hasPathForMe(authId))
         }
     }
 

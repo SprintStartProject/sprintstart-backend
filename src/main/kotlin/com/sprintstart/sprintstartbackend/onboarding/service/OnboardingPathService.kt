@@ -67,6 +67,20 @@ class OnboardingPathService(
     }
 
     /**
+     * Whether the authenticated user already has an onboarding path. An unknown user has none.
+     *
+     * @param authId External authentication identifier.
+     * @return `true` when a path exists for the user.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Checking whether the user has an onboarding path")
+    fun hasPathForMe(authId: String): Boolean =
+        userApi
+            .getUserIdByAuthId(authId)
+            .map { userId -> onboardingPathRepository.existsByUserId(userId) }
+            .orElse(false)
+
+    /**
      * Deletes the onboarding path owned by the authenticated user.
      *
      * @param authId External authentication identifier.

@@ -35,6 +35,16 @@ interface UserApi {
      */
     fun getUserIdByAuthId(authId: String): Optional<UUID>
 
+    /**
+     * Resolves the Keycloak authentication subject for an internal SprintStart user ID -- the
+     * reverse of [getUserIdByAuthId], for acting on somebody else's behalf (a PM rebuilding a
+     * member's onboarding path).
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @return The matching auth ID when present.
+     */
+    fun getAuthIdByUserId(userId: UUID): Optional<String>
+
     fun getUserByAuthId(authId: String): UserDto
 
     fun searchUsers(

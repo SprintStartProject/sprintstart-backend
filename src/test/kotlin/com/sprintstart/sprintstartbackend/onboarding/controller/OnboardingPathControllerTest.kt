@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathServi
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -55,6 +56,9 @@ class OnboardingPathControllerTest(
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
+
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuthorization: ProjectAuthorization
 
     private val pathId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
@@ -191,6 +195,8 @@ class OnboardingPathControllerTest(
 
     @Test
     fun `personalizePath passes the selected project path variable to the generation registry`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { onboardingPathService.hasPathForMe(authId) } returns false
         every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
             ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
 
@@ -203,6 +209,107 @@ class OnboardingPathControllerTest(
         verify(exactly = 1) {
             onboardingGenerationRegistry.startOrAttach(authId, projectId)
         }
+    }
+
+    @Test
+    fun `personalizePath refuses a member rebuilding a path they already have`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { onboardingPathService.hasPathForMe(authId) } returns true
+        every { userApi.canManageProject(authId, projectId) } returns false
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any()) }
+    }
+
+    @Test
+    fun `personalizePath lets the project's manager rebuild their own path`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { onboardingPathService.hasPathForMe(authId) } returns true
+        every { userApi.canManageProject(authId, projectId) } returns true
+        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId) }
+    }
+
+    @Test
+    fun `personalizePath still attaches a member to a running rebuild over their path`() {
+        every { onboardingGenerationRegistry.status(authId) } returns
+            OnboardingGenerationRegistry.GenerationRun(projectId = projectId, startedAt = Instant.now())
+        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { onboardingPathService.hasPathForMe(any()) }
+        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId) }
+    }
+
+    // ========================== PM rebuild of a member's path ==========================
+
+    @Test
+    fun `personalizePathForUser starts the generation under the member's auth id`() {
+        val memberAuthId = "member-auth-id"
+        every { projectAuthorization.canManageProject(any(), projectId) } returns true
+        every { userApi.getAuthIdByUserId(userId) } returns Optional.of(memberAuthId)
+        every { onboardingGenerationRegistry.startOrAttach(memberAuthId, projectId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(adminJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(memberAuthId, projectId) }
+    }
+
+    @Test
+    fun `personalizePathForUser is refused to anyone who does not manage the project`() {
+        every { projectAuthorization.canManageProject(any(), projectId) } returns false
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any()) }
+    }
+
+    @Test
+    fun `personalizePathForUser returns 404 for an unknown member`() {
+        every { projectAuthorization.canManageProject(any(), projectId) } returns true
+        every { userApi.getAuthIdByUserId(userId) } returns Optional.empty()
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(adminJwt),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `personalizePathForUser should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize"),
+            ).andExpect(status().isUnauthorized)
     }
 
     @Test

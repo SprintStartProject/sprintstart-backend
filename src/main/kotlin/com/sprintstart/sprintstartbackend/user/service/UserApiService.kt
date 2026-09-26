@@ -70,6 +70,18 @@ class UserApiService(
     }
 
     /**
+     * Resolves the external authentication identifier for an internal user ID.
+     *
+     * @param userId Internal user identifier.
+     * @return The matching auth ID when present.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Resolving auth ID by user ID")
+    override fun getAuthIdByUserId(userId: UUID): Optional<String> {
+        return userRepository.findAuthIdById(userId)
+    }
+
+    /**
      * Retrieves a user by their external authentication identifier.
      *
      * @param authId The external authentication identifier of the user.
