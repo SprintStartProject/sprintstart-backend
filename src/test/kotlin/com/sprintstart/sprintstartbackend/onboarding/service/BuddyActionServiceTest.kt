@@ -122,6 +122,16 @@ class BuddyActionServiceTest {
     }
 
     @Test
+    fun `tells the mentor that a hire asking to flag something is reason enough`() {
+        // "Last resort" alone had the mentor refuse an explicit "flag this to my PM".
+        every { buddyPathActions.specs(userId) } returns emptyList()
+        val flag = service.actionSpecs(userId).single { it.name == "flag_to_pm" }
+
+        assertThat(flag.description).contains("the hire ASKS you to flag")
+        assertThat(flag.description).contains("never decide for them that it is not a PM matter")
+    }
+
+    @Test
     fun `recognises action tools and rejects read tools`() {
         assertThat(service.isAction("open_orientation")).isTrue()
         assertThat(service.isAction("get_my_metrics")).isFalse()

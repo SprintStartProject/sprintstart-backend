@@ -903,7 +903,8 @@ class BuddyPathActions(
                 "knowledge question they got wrong, once you have gone through the material, when " +
                 "what they missed is bigger than one explanation — then one short refresher step in " +
                 "that question's phase, saying what to revisit and where, and never the answer. " +
-                "Offer it; do not add one after every wrong answer. Give a title " +
+                "Offer it; do not add one after every wrong answer. And whenever the hire ASKS you to " +
+                "add a step: it is their copy, so their asking is enough — offer it, do not argue. Give a title " +
                 "of a few words and a description saying what doing it involves. Do not offer a " +
                 "step for something already on their path, do not add several at once, and do not " +
                 "add one just to have added something.\n" +

@@ -724,16 +724,24 @@ class BuddyActionService(
 
         val FLAG_TO_PM_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.FLAG_TO_PM.toolName,
-            description = "Offer to escalate the hire's question to their project's PM, when neither the docs " +
-                "nor the canonical answers cover it. This does NOT send anything — it shows the hire a confirm " +
-                "button, and only they can send it. Provide the question to ask, phrased clearly, in `question`. " +
-                "Use this as the last resort when you genuinely cannot ground an answer.",
+            description = "Offer to pass something from the hire to their project's PM. Two cases: " +
+                "(1) the hire ASKS you to flag, raise or pass something to their PM — a question, a problem, a " +
+                "blocker, feedback on their path. Their asking is the reason: offer it straight away, and never " +
+                "decide for them that it is not a PM matter or that the docs answer it first. " +
+                "(2) Neither the docs nor the canonical answers cover a question, as the last resort when you " +
+                "genuinely cannot ground an answer. " +
+                "This does NOT send anything — it shows the hire a confirm button, and only they can send it. " +
+                "Put what should reach the PM in `question`, phrased clearly and in the hire's sense.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("question") {
                         put("type", "string")
-                        put("description", "The question to send to the PM, phrased clearly for a person to answer.")
+                        put(
+                            "description",
+                            "What to send to the PM — a question, or what the hire wants them to know — phrased " +
+                                "clearly for a person to answer.",
+                        )
                     }
                 }
                 putJsonArray("required") { add("question") }
