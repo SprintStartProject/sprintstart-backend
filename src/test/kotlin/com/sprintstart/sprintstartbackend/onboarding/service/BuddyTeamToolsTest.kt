@@ -276,7 +276,6 @@ class BuddyTeamToolsTest {
             every { stalled } returns false
             every { stalledReason } returns null
             every { returnedContributionCount } returns 0
-            every { autonomyReachedAt } returns null
         }
         every { myCompetencyService.getCompetenciesForUser(memberId) } returns listOf(
             competency(label = "Kotlin", level = 3, target = 3),

@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
@@ -31,6 +32,7 @@ class OnboardingStepPlacementServiceTest {
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
     private val service = OnboardingStepPlacementService(onboardingStepService, onboardingStepRepository)
 
+    private val authId = "auth|hire"
     private val path = OnboardingPath(userId = UUID.randomUUID())
     private val phase = OnboardingPhase(path = path, position = 0, title = "Setup", description = "d")
 
@@ -40,13 +42,13 @@ class OnboardingStepPlacementServiceTest {
         val later = step(1, graphX = 0.0, graphY = 400.0).also { it.blockedBy += current }
         val added = arrange(position = 1)
 
-        service.createConnectedStepForPhase(
+        service.createConnectedStepForMe(
+            authId,
             phase.id,
             request(1),
+            StepOrigin.BUDDY,
             waitsOn = setOf(current.id),
             unlocks = setOf(later.id),
-            graphX = null,
-            graphY = null,
         )
 
         assertThat(added.blockedBy.map { it.id }).containsExactly(current.id)
@@ -68,13 +70,13 @@ class OnboardingStepPlacementServiceTest {
         ).also { phase.checkQuestions += it }
         val added = arrange(position = 0)
 
-        service.createConnectedStepForPhase(
+        service.createConnectedStepForMe(
+            authId,
             phase.id,
             request(0),
+            StepOrigin.BUDDY,
             waitsOn = emptySet(),
             unlocks = setOf(question.id),
-            graphX = null,
-            graphY = null,
         )
 
         assertThat(question.blockedBy.map { it.id }).containsExactly(added.id)
@@ -87,13 +89,13 @@ class OnboardingStepPlacementServiceTest {
         arrange(position = 2)
 
         assertThatThrownBy {
-            service.createConnectedStepForPhase(
+            service.createConnectedStepForMe(
+                authId,
                 phase.id,
                 request(2),
+                StepOrigin.BUDDY,
                 waitsOn = setOf(second.id),
                 unlocks = setOf(first.id),
-                graphX = null,
-                graphY = null,
             )
         }.isInstanceOf(ResponseStatusException::class.java)
     }
@@ -103,13 +105,13 @@ class OnboardingStepPlacementServiceTest {
         arrange(position = 0)
 
         assertThatThrownBy {
-            service.createConnectedStepForPhase(
+            service.createConnectedStepForMe(
+                authId,
                 phase.id,
                 request(0),
+                StepOrigin.BUDDY,
                 waitsOn = setOf(UUID.randomUUID()),
                 unlocks = emptySet(),
-                graphX = null,
-                graphY = null,
             )
         }.isInstanceOf(ResponseStatusException::class.java)
     }
@@ -151,7 +153,7 @@ class OnboardingStepPlacementServiceTest {
     /** Stubs the plain creation to hand back a real entity in [phase], the way the repository would. */
     private fun arrange(position: Int): OnboardingStep {
         val added = step(position, title = "Refresher")
-        every { onboardingStepService.createOnboardingStepForPhaseId(phase.id, any()) } returns
+        every { onboardingStepService.createOnboardingStepForMe(authId, phase.id, any(), StepOrigin.BUDDY) } returns
             CreateOnboardingStepResponse(
                 id = added.id,
                 phaseId = phase.id,

@@ -56,10 +56,6 @@ data class BoardCardResponse(
     visible = true,
 )
 @JsonSubTypes(
-    JsonSubTypes.Type(
-        value = PathToFirstContributionContent::class,
-        name = "PATH_TO_FIRST_CONTRIBUTION",
-    ),
     JsonSubTypes.Type(value = ArrivalStepsContent::class, name = "ARRIVAL_STEPS"),
     JsonSubTypes.Type(value = OpenPullRequestsContent::class, name = "OPEN_PULL_REQUESTS"),
     JsonSubTypes.Type(value = CurrentTaskContent::class, name = "CURRENT_TASK"),
@@ -77,24 +73,6 @@ sealed interface BoardCardContent {
 }
 
 /**
- * The moments between joining and a first accepted piece of work.
- *
- * Composed from the hire's contribution timeline, so it holds for every track.
- * Every timestamp is nullable: "has not happened yet" is the normal state mid-onboarding, and it
- * is not the same as zero.
- */
-data class PathToFirstContributionContent(
-    override val kind: BoardCardKind = BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
-    val moments: List<BoardMomentResponse>,
-    /** How much accepted work there is so far — the ramp's only real counter. */
-    val acceptedCount: Int,
-    /** When onboarding ended for this hire, dated. Null while it is still going. */
-    val autonomyReachedAt: Instant?,
-    /** Why this hire currently reads as stalled, in plain words, or null when they do not. */
-    val stalledReason: String?,
-) : BoardCardContent
-
-/**
  * What still has to be true before this hire can work, and what they have already settled.
  *
  * Counts are per rigor and there is no total to divide by — never add a completion
@@ -107,26 +85,6 @@ data class ArrivalStepsContent(
     val declaredCount: Int,
     val outstandingCount: Int,
 ) : BoardCardContent
-
-/**
- * One moment on the path, and whether it has happened.
- *
- * [key] is a stable identifier the client maps to its own copy. [reachedAt] null means not yet;
- * the client renders it as a dash, not a zero.
- */
-data class BoardMomentResponse(
-    val key: BoardMomentKey,
-    val reachedAt: Instant?,
-)
-
-/** The moments a path card reports, in the order they normally happen. */
-enum class BoardMomentKey {
-    JOINED,
-    TASK_CLAIMED,
-    WORK_SUBMITTED,
-    FIRST_RESPONSE,
-    WORK_ACCEPTED,
-}
 
 /**
  * The hire's still-open pull requests, longest-waiting first.
@@ -169,8 +127,6 @@ data class CurrentTaskContent(
     val title: String?,
     val summary: String?,
     val url: String?,
-    /** True when the hire claimed this as their goal, false for a Task 0 they were handed. */
-    val chosen: Boolean,
     /**
      * True once the issue behind this task is closed where it lives.
      *

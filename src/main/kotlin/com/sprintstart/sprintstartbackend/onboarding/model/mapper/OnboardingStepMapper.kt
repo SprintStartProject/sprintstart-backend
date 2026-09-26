@@ -20,7 +20,10 @@ fun OnboardingStep.toGetAllResponse(locked: Boolean = false): GetOnboardingSteps
         type = this.type,
         estimatedMinutes = this.estimatedMinutes,
         isAiAssisted = this.aiAssisted,
-        expectedOutcomes = listOf(this.expectedOutcome),
+        origin = this.origin,
+        // A step with no expected outcome -- one a hire or their buddy added -- stores "", and a
+        // list holding "" rendered as an empty "Expected outcomes" bullet on the step page.
+        expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
         status = this.status,
         startedAt = this.startedAt,
         completedAt = this.completedAt,
@@ -43,7 +46,10 @@ fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
         estimatedMinutes = this.estimatedMinutes,
         type = this.type,
         isAiAssisted = this.aiAssisted,
-        expectedOutcomes = listOf(this.expectedOutcome),
+        origin = this.origin,
+        // A step with no expected outcome -- one a hire or their buddy added -- stores "", and a
+        // list holding "" rendered as an empty "Expected outcomes" bullet on the step page.
+        expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
         tasks = this.tasks.map { task -> task.toGetAllResponse() },
         resources = this.resources.map { resource -> resource.toGetAllResponse() },
         status = this.status,
@@ -67,6 +73,7 @@ fun OnboardingStep.toCreateResponse(): CreateOnboardingStepResponse {
         type = this.type,
         estimatedMinutes = this.estimatedMinutes,
         isAiAssisted = this.aiAssisted,
+        origin = this.origin,
         expectedOutcome = this.expectedOutcome,
         status = this.status,
         graphX = this.graphX,
@@ -84,6 +91,7 @@ fun OnboardingStep.toUpdateResponse(): UpdateOnboardingStepResponse {
         description = this.description,
         estimatedMinutes = this.estimatedMinutes,
         isAiAssisted = this.aiAssisted,
+        origin = this.origin,
         expectedOutcome = this.expectedOutcome,
         status = this.status,
         startedAt = this.startedAt,

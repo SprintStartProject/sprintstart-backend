@@ -29,6 +29,44 @@ data class BuddyActionRequest(
     val competencyKey: String? = null,
     val level: String? = null,
     /**
+     * The path node a path action is aimed at: [stepId] for `complete_step` and `request_skip`,
+     * [questionId] for `answer_question`, [phaseId] for `add_path_step`.
+     *
+     * Echoed back verbatim like every other payload here, and re-resolved server-side through the
+     * caller's *own* path — so an id that belongs to somebody else's onboarding is not found rather
+     * than acted on.
+     */
+    val stepId: UUID? = null,
+    val questionId: UUID? = null,
+    val phaseId: UUID? = null,
+    /**
+     * The checklist line `complete_task` would tick off.
+     *
+     * Its own field rather than [taskId], which already means a *starter-work* task for `claim_goal`.
+     * Two different things called a task is confusing enough in the product without one wire field
+     * standing for both.
+     */
+    val onboardingTaskId: UUID? = null,
+    /**
+     * The hire's answer to a knowledge question, in their own words, for `answer_question`.
+     *
+     * Matched to an option server-side for a multiple-choice question rather than being sent as an
+     * option id, for the same reason `record_assessment` re-reads the level from its word: what is
+     * recorded should be derived from what the hire was shown, not from something a client
+     * substituted afterwards.
+     */
+    val answer: String? = null,
+    /** What a step added by `add_path_step` is about, one or two sentences. */
+    val description: String? = null,
+    /** The reason `request_skip` sends to the PM, in the words the hire confirmed. */
+    val reason: String? = null,
+    /**
+     * Where `add_path_step` puts the new step in its phase's graph: the items it waits on, and the
+     * items that will wait on it instead. Re-checked against the caller's own path at confirm time.
+     */
+    val waitsOnIds: List<UUID> = emptyList(),
+    val unlocksIds: List<UUID> = emptyList(),
+    /**
      * The checklist to keep, for `place_checklist` — echoed back exactly as it was proposed.
      *
      * Capped server-side rather than trusted: this is the one action whose payload is free text

@@ -72,7 +72,7 @@ class BuddyServiceTest {
     fun stubActionDefaults() {
         // Default: no action tools, and every tool the AI calls is a read-only one. Tests that
         // exercise an action override these.
-        every { buddyActionService.actionSpecs() } returns emptyList()
+        every { buddyActionService.actionSpecs(any()) } returns emptyList()
         every { buddyActionService.isAction(any()) } returns false
         // Retrieval is scoped to the hire's projects, so every turn resolves them. Default: none,
         // which means the AI narrows nothing -- the behaviour before scoping existed.
@@ -494,7 +494,7 @@ class BuddyServiceTest {
             every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
             )
-            every { buddyActionService.actionSpecs() } returns listOf(
+            every { buddyActionService.actionSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
             )
             val requests = mutableListOf<BuddyAgentRequest>()
@@ -512,7 +512,7 @@ class BuddyServiceTest {
             every { buddyToolExecutor.toolSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "get_arrival_steps", description = "", parameters = JsonObject(emptyMap())),
             )
-            every { buddyActionService.actionSpecs() } returns listOf(
+            every { buddyActionService.actionSpecs(any()) } returns listOf(
                 BuddyToolSpecDto(name = "escalate", description = "", parameters = JsonObject(emptyMap())),
             )
             val requests = mutableListOf<BuddyAgentRequest>()
@@ -742,7 +742,7 @@ class BuddyServiceTest {
             every { buddyMessageRepository.save(any()) } answers { firstArg() }
             every { buddyToolExecutor.toolSpecs(any()) } returns emptyList()
 
-            val actionCall = BuddyToolCallDto(id = "call_0", name = "claim_task_zero")
+            val actionCall = BuddyToolCallDto(id = "call_0", name = "open_orientation")
             val paused = BuddyAgentResponse(
                 final = false,
                 messages = listOf(
@@ -753,15 +753,15 @@ class BuddyServiceTest {
             val requests = mutableListOf<BuddyAgentRequest>()
             coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
                 paused,
-                finalReply("I can start Task 0 for you — confirm below."),
+                finalReply("I can open the task packet for you — confirm below."),
             )
-            every { buddyActionService.isAction("claim_task_zero") } returns true
+            every { buddyActionService.isAction("open_orientation") } returns true
             every { buddyActionService.propose(actionCall, userId) } returns
                 BuddyActionService.ProposeOutcome(
                     toolResult = "Proposed to the hire; awaiting confirmation.",
                     proposal = BuddyActionService.BuddyActionProposal(
-                        action = "claim_task_zero",
-                        label = "Start Task 0",
+                        action = "open_orientation",
+                        label = "Open the task packet",
                         question = null,
                     ),
                 )
@@ -770,8 +770,8 @@ class BuddyServiceTest {
 
             // The proposal is emitted as its own gate-able event, carrying the action + button label...
             val proposal = events.first { it.type == "action_proposal" }
-            assertThat(proposal.action).isEqualTo("claim_task_zero")
-            assertThat(proposal.label).isEqualTo("Start Task 0")
+            assertThat(proposal.action).isEqualTo("open_orientation")
+            assertThat(proposal.label).isEqualTo("Open the task packet")
             // ...the tool result (not a mutation) is threaded back into the resume conversation...
             assertThat(requests[1].messages).contains(
                 BuddyAgentMessageDto(

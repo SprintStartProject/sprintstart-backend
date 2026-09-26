@@ -253,7 +253,6 @@ class BuddyTeamTools(
             val stall = if (timeline.stalled) "yes" + (timeline.stalledReason?.let { " ($it)" } ?: "") else "no"
             appendLine("- Stalled: $stall")
             appendLine("- Pull requests sent back for changes: ${timeline.returnedContributionCount}")
-            timeline.autonomyReachedAt?.let { appendLine("- Reached autonomy at: $it") }
         }.trim()
     }
 

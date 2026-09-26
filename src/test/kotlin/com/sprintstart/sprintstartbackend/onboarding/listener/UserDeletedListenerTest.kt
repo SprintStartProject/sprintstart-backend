@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.ArrivalStepStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
@@ -16,7 +15,6 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserCompetencyStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserGoalRepository
 import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
@@ -40,8 +38,6 @@ class UserDeletedListenerTest {
     private val boardCardRepository: BoardCardRepository = mockk(relaxed = true)
     private val boardStructureRepository: BoardStructureRepository = mockk(relaxed = true)
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
-    private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository = mockk(relaxed = true)
-    private val autonomyMilestoneRepository: AutonomyMilestoneRepository = mockk(relaxed = true)
     private val attestationRepository: AttestationRepository = mockk(relaxed = true)
     private val knowledgeRequestRepository: KnowledgeRequestRepository = mockk(relaxed = true)
     private val githubHistoryPriorRepository: GithubHistoryPriorRepository = mockk(relaxed = true)
@@ -58,8 +54,6 @@ class UserDeletedListenerTest {
         boardCardRepository,
         boardStructureRepository,
         userGoalRepository,
-        taskZeroAssignmentRepository,
-        autonomyMilestoneRepository,
         attestationRepository,
         knowledgeRequestRepository,
         githubHistoryPriorRepository,
@@ -119,8 +113,6 @@ class UserDeletedListenerTest {
         verify { userCompetencyStateRepository.deleteAllByUserId(userId) }
         verify { arrivalStepStateRepository.deleteAllByUserId(userId) }
         verify { userGoalRepository.deleteAllByUserId(userId) }
-        verify { taskZeroAssignmentRepository.deleteAllByHireId(userId) }
-        verify { autonomyMilestoneRepository.deleteAllByHireId(userId) }
         verify { attestationRepository.deleteAllByHireId(userId) }
         verify { knowledgeRequestRepository.deleteAllByHireId(userId) }
         verify { githubHistoryPriorRepository.deleteAllByUserId(userId) }

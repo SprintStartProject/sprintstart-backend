@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.onboarding.listener
 
 import com.sprintstart.sprintstartbackend.onboarding.repository.ArrivalStepStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
@@ -13,7 +12,6 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserCompetencyStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserGoalRepository
 import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
@@ -61,8 +59,6 @@ class UserDeletedListener(
     private val boardCardRepository: BoardCardRepository,
     private val boardStructureRepository: BoardStructureRepository,
     private val userGoalRepository: UserGoalRepository,
-    private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository,
-    private val autonomyMilestoneRepository: AutonomyMilestoneRepository,
     private val attestationRepository: AttestationRepository,
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val githubHistoryPriorRepository: GithubHistoryPriorRepository,
@@ -80,8 +76,6 @@ class UserDeletedListener(
         userCompetencyStateRepository.deleteAllByUserId(userId)
         arrivalStepStateRepository.deleteAllByUserId(userId)
         userGoalRepository.deleteAllByUserId(userId)
-        taskZeroAssignmentRepository.deleteAllByHireId(userId)
-        autonomyMilestoneRepository.deleteAllByHireId(userId)
         attestationRepository.deleteAllByHireId(userId)
         knowledgeRequestRepository.deleteAllByHireId(userId)
         githubHistoryPriorRepository.deleteAllByUserId(userId)

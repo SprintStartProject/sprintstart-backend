@@ -25,7 +25,7 @@ import java.util.UUID
 class StarterWorkTeamActionsTest {
     private val repository: StarterWorkTaskProposalRepository = mockk()
     private val service: StarterWorkTaskProposalService = mockk(relaxed = true)
-    private val taskZeroService: TaskZeroService = mockk(relaxed = true)
+    private val starterWorkTaskProposalService: StarterWorkTaskProposalService = mockk(relaxed = true)
     private val reconciler: StarterWorkPoolReconciler = mockk()
     private val ingestion: ArtifactIngestionApi = mockk()
     private val scope: StarterWorkScope = mockk()
@@ -36,7 +36,7 @@ class StarterWorkTeamActionsTest {
     private val review = MarkStarterWorkReviewedAction(repository, service, scope)
     private val reject = RejectStarterWorkAction(repository, service, scope)
     private val promote = PromoteCandidateAction(ingestion, repository, service, scope)
-    private val taskZero = SetTaskZeroEligibleAction(repository, taskZeroService, scope)
+    private val taskZero = SetTaskZeroEligibleAction(repository, starterWorkTaskProposalService, scope)
 
     private val mineSource = "github:acme/shop:ISSUE:42"
 
@@ -289,9 +289,9 @@ class StarterWorkTeamActionsTest {
         ).contains("already a Task 0 candidate")
     }
 
-    /** Task 0 is picked for a hire on any project the task's repository is linked to. */
+    /** The label shows on every project the task's repository is linked to, and assigns nobody. */
     @Test
-    fun `flagging for Task 0 says a hire on any linked project may be given it`() = runTest {
+    fun `flagging for Task 0 says it is a label that shows on every linked project`() = runTest {
         val open = task()
         val proposed = taskZero
             .draft(
@@ -299,9 +299,9 @@ class StarterWorkTeamActionsTest {
                 context,
             ).proposed()
 
-        assertThat(proposed.preview).contains("may be on any project linked to")
+        assertThat(proposed.preview).contains("not an assignment").contains("every project linked to")
         taskZero.perform(proposed.params, context)
-        verify { taskZeroService.setEligibility(open.id, true) }
+        verify { starterWorkTaskProposalService.setTaskZeroEligibility(open.id, true) }
     }
 
     @Test
@@ -313,9 +313,9 @@ class StarterWorkTeamActionsTest {
                 context,
             ).proposed()
 
-        assertThat(proposed.preview).contains("already has it as their Task 0 keeps it")
+        assertThat(proposed.preview).contains("a hire who already claimed it keeps it")
         taskZero.perform(proposed.params, context)
-        verify { taskZeroService.setEligibility(flagged.id, false) }
+        verify { starterWorkTaskProposalService.setTaskZeroEligibility(flagged.id, false) }
     }
 
     @Test

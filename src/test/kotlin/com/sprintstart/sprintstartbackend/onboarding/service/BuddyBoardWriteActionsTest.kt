@@ -38,15 +38,15 @@ class BuddyBoardWriteActionsTest {
     private val boardWrites = BuddyBoardWriteActions(boardService)
 
     private val service = BuddyActionService(
-        mockk(relaxed = true),
-        mockk(relaxed = true),
-        mockk(relaxed = true),
-        mockk(relaxed = true),
-        userApi,
-        mockk(relaxed = true),
-        boardService,
-        mockk(relaxed = true),
-        boardWrites,
+        taskOrientationService = mockk(relaxed = true),
+        knowledgeBaseService = mockk(relaxed = true),
+        userGoalService = mockk(relaxed = true),
+        userApi = userApi,
+        attestationService = mockk(relaxed = true),
+        boardService = boardService,
+        competencyPlacementService = mockk(relaxed = true),
+        buddyPathActions = mockk(relaxed = true),
+        boardWrites = boardWrites,
     )
 
     private val userId = UUID.randomUUID()

@@ -4,7 +4,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 interface BoardCardRepository : JpaRepository<BoardCard, UUID> {
@@ -28,4 +30,22 @@ interface BoardCardRepository : JpaRepository<BoardCard, UUID> {
     fun findLockedById(id: UUID): BoardCard?
 
     fun deleteAllByBoardId(boardId: UUID)
+
+    /**
+     * Removes the cards of kinds the catalog no longer has.
+     *
+     * Native, because these rows cannot be loaded at all: their `kind` is not a [BoardCardKind] any
+     * more, so any read through the entity would fail on them. `PATH_TO_FIRST_CONTRIBUTION` was the
+     * joined -> first-accepted-work card, retired when onboarding became the blueprint path (#311).
+     *
+     * Compared as text: where the column is a database enum (H2) the old value is no longer one of
+     * its members, and comparing the enum with it directly is an error rather than no match.
+     */
+    @Modifying
+    @Transactional
+    @Query(
+        "DELETE FROM board_cards WHERE CAST(kind AS VARCHAR(64)) IN ('PATH_TO_FIRST_CONTRIBUTION')",
+        nativeQuery = true,
+    )
+    fun deleteRetiredKinds(): Int
 }

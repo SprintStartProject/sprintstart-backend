@@ -43,6 +43,22 @@ data class BuddyStreamEvent(
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
     /**
+     * Path-action confirm payloads: which node of the hire's own onboarding path the action is aimed
+     * at, the answer `answer_question` will send in the hire's own words, and the description of a
+     * step `add_path_step` would add.
+     */
+    @SerialName("step_id") val stepId: String? = null,
+    @SerialName("question_id") val questionId: String? = null,
+    @SerialName("phase_id") val phaseId: String? = null,
+    @SerialName("onboarding_task_id") val onboardingTaskId: String? = null,
+    val answer: String? = null,
+    val description: String? = null,
+    /** `request_skip` confirm payload: the reason that goes to the PM. */
+    val reason: String? = null,
+    /** `add_path_step` confirm payload: where the step goes in its phase's graph. */
+    @SerialName("waits_on_ids") val waitsOnIds: List<String>? = null,
+    @SerialName("unlocks_ids") val unlocksIds: List<String>? = null,
+    /**
      * `place_checklist` confirm payload: the list the mentor offered to keep, as it was offered.
      *
      * Echoed back on confirm like every other payload here, and for a sharper reason: these lines

@@ -8,12 +8,10 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardDiagramService
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -81,15 +79,16 @@ class BoardControllerTest(
         cards = listOf(
             BoardCardResponse(
                 id = UUID.randomUUID(),
-                kind = BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                kind = BoardCardKind.CURRENT_TASK,
                 owner = BoardCardOwner.AI,
                 position = 0,
                 placedAt = null,
-                content = PathToFirstContributionContent(
-                    moments = listOf(BoardMomentResponse(BoardMomentKey.JOINED, null)),
-                    acceptedCount = 0,
-                    autonomyReachedAt = null,
-                    stalledReason = null,
+                content = CurrentTaskContent(
+                    taskId = null,
+                    title = null,
+                    summary = null,
+                    url = null,
+                    closedAtSource = false,
                 ),
             ),
         ),
@@ -114,9 +113,8 @@ class BoardControllerTest(
             .andExpect(status().isOk)
             // The card's kind must survive onto the wire as the content's discriminator, or a
             // client cannot tell which card it is rendering.
-            .andExpect(jsonPath("$.cards[0].content.kind").value("PATH_TO_FIRST_CONTRIBUTION"))
-            .andExpect(jsonPath("$.cards[0].content.moments[0].key").value("JOINED"))
-            .andExpect(jsonPath("$.cards[0].content.moments[0].reachedAt").doesNotExist())
+            .andExpect(jsonPath("$.cards[0].content.kind").value("CURRENT_TASK"))
+            .andExpect(jsonPath("$.cards[0].content.taskId").doesNotExist())
     }
 
     @Test

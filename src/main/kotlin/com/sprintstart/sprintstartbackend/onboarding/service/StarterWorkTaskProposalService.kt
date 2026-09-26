@@ -239,6 +239,26 @@ class StarterWorkTaskProposalService(
     }
 
     /**
+     * Records a PM's judgement that this task is a good first one for somebody ("Task 0").
+     *
+     * The flag rides on the pool entry and nothing acts on it: the pool filters and badges by it so
+     * a PM can see which tasks they vouched for as gentle starts, and that is the whole of it.
+     * Nothing assigns a flagged task to anybody -- #311 left the path their PM's blueprint
+     * prescribes as the one thing that onboards a hire, and picking up work is a hire's own move.
+     * Idempotent.
+     *
+     * @throws ResponseStatusException 404 if no task matches [id]; 409 if it is no longer live --
+     * vouching for a task nobody can claim is a judgement about nothing.
+     */
+    @Transactional
+    fun setTaskZeroEligibility(id: UUID, eligible: Boolean): StarterWorkTaskProposalResponse {
+        val proposal = findLiveProposal(id)
+        proposal.taskZeroEligible = eligible
+        proposal.decidedAt = Instant.now()
+        return proposal.toResponse()
+    }
+
+    /**
      * Creates a hand-authored starter-work task, with no AI mining in the loop.
      *
      * Born reviewed: writing a task is vouching for it, so it never joins the unreviewed queue.

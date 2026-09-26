@@ -38,15 +38,15 @@ import java.util.UUID
  * project, re-resolved server-side at confirm time — a client can never confirm an action against a
  * project the buddy did not scope it to, nor act as another hire.
  *
- * Seven wrapped actions live here, each with a propose and a perform half — hence the suppressed
+ * Six wrapped actions live here, each with a propose and a perform half — hence the suppressed
  * function count. The five that put the mentor's *own words* on a board are in
- * [BuddyBoardWriteActions]: what the actions here do is wrap an existing `/me/...` operation one
- * for one, and those five do something different enough to be worth reading on their own.
+ * [BuddyBoardWriteActions], and the ones that walk the hire's path are in [BuddyPathActions]: what
+ * the actions here do is wrap an existing `/me/...` operation one for one, and those do something
+ * different enough to be worth reading on their own.
  */
 @Service
 @Suppress("TooManyFunctions")
 class BuddyActionService(
-    private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
     private val knowledgeBaseService: KnowledgeBaseService,
     private val userGoalService: UserGoalService,
@@ -54,19 +54,25 @@ class BuddyActionService(
     private val attestationService: AttestationService,
     private val boardService: BoardService,
     private val competencyPlacementService: CompetencyPlacementService,
+    private val buddyPathActions: BuddyPathActions,
     private val boardWrites: BuddyBoardWriteActions,
 ) {
-    /** The action tools the AI reasoner is told it may propose, alongside the read-only tools. */
-    fun actionSpecs(): List<BuddyToolSpecDto> =
+    /**
+     * The action tools the AI reasoner is told it may propose, alongside the read-only tools.
+     *
+     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the
+     * path actions have a subject that may not exist. A mentor handed `complete_step` for somebody
+     * with no onboarding path will offer to tick a step off a plan they have not got.
+     */
+    fun actionSpecs(userId: UUID): List<BuddyToolSpecDto> =
         listOf(
             FLAG_TO_PM_SPEC,
-            CLAIM_TASK_ZERO_SPEC,
             OPEN_ORIENTATION_SPEC,
             CLAIM_GOAL_SPEC,
             REQUEST_ATTESTATION_SPEC,
             SET_GITHUB_LOGIN_SPEC,
             RECORD_ASSESSMENT_SPEC,
-        ) + boardWrites.specs()
+        ) + buddyPathActions.specs(userId) + boardWrites.specs()
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
     fun isAction(toolName: String): Boolean = BuddyActionType.fromToolName(toolName) != null
@@ -79,6 +85,7 @@ class BuddyActionService(
      * action can be offered. When it can't (no project, or a missing question), there is no proposal
      * and the tool result is the legible reason.
      */
+    @Suppress("CyclomaticComplexMethod") // The person-scoped gates first, then one branch per action.
     fun propose(call: BuddyToolCallDto, userId: UUID): ProposeOutcome {
         val type = BuddyActionType.fromToolName(call.name)
             ?: return ProposeOutcome("Unknown action: ${call.name}.", null)
@@ -96,6 +103,14 @@ class BuddyActionService(
         // somebody on day one, who is exactly the hire it exists for.
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return proposeAssessment(call, type)
+        }
+
+        // Also before the project gate, and for a reason worth stating: an onboarding path belongs
+        // to a *person*. It is generated from one project's blueprint, but the path itself is not
+        // project-scoped, so gating these would refuse a hire onboarding on two projects — and they
+        // still have exactly one path, sitting on the page they are looking at.
+        if (buddyPathActions.handles(type)) {
+            return buddyPathActions.propose(call, type, userId)
         }
 
         val project = when (val resolution = resolveProject(userId)) {
@@ -299,7 +314,7 @@ class BuddyActionService(
     /**
      * Runs a confirmed action on behalf of [jwt]'s user, scoped to their re-resolved project.
      *
-     * Never throws for a handled outcome: an expected precondition failure ("no eligible Task 0",
+     * Never throws for a handled outcome: an expected precondition failure ("no current task",
      * "not a member") comes back as `ok = false` with a legible message, so the buddy always has a
      * line to relay. Only a genuinely unexpected failure propagates. Blocking work runs on the IO
      * dispatcher; opening orientation is itself suspend and manages its own transactions.
@@ -326,6 +341,17 @@ class BuddyActionService(
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return withContext(Dispatchers.IO) {
                 recordAssessment(authId, request.competencyKey, request.level)
+            }
+        }
+
+        // And again: a path belongs to a person, not to a project. See the note in `propose`.
+        if (buddyPathActions.handles(type)) {
+            return try {
+                withContext(Dispatchers.IO) { buddyPathActions.perform(type, authId, request) }
+            } catch (ex: ResponseStatusException) {
+                // A precondition the underlying route owns (a step that is already finished, a
+                // question that is not theirs). Relay its sentence rather than failing the confirm.
+                BuddyActionResponse(ok = false, message = ex.reason ?: "That didn't go through.")
             }
         }
 
@@ -361,7 +387,6 @@ class BuddyActionService(
             BuddyActionType.OPEN_ORIENTATION -> openOrientation(resolved.userId, resolved.projectId)
             else -> withContext(Dispatchers.IO) {
                 when (type) {
-                    BuddyActionType.CLAIM_TASK_ZERO -> claimTaskZero(resolved.userId, resolved.projectId)
                     BuddyActionType.FLAG_TO_PM -> flagToPm(authId, resolved.projectId, request.question)
                     BuddyActionType.CLAIM_GOAL ->
                         claimGoal(resolved.userId, authId, resolved.projectId, request.taskId)
@@ -390,26 +415,15 @@ class BuddyActionService(
                     // sits behind.
                     BuddyActionType.SET_GITHUB_LOGIN,
                     BuddyActionType.RECORD_ASSESSMENT,
+                    BuddyActionType.COMPLETE_STEP,
+                    BuddyActionType.COMPLETE_TASK,
+                    BuddyActionType.ANSWER_QUESTION,
+                    BuddyActionType.ADD_PATH_STEP,
+                    BuddyActionType.REQUEST_SKIP,
                     -> error("handled above")
                 }
             }
         }
-
-    private fun claimTaskZero(userId: UUID, projectId: UUID): BuddyActionResponse {
-        val result = taskZeroService.getForHire(userId, projectId)
-        val task = result.task
-        return if (task != null) {
-            BuddyActionResponse(
-                ok = true,
-                message = "Task 0 is yours: “${task.title}”. Open the task packet when you're ready to start.",
-            )
-        } else {
-            BuddyActionResponse(
-                ok = false,
-                message = "There's no eligible Task 0 to start yet — your PM marks a starter task as Task 0.",
-            )
-        }
-    }
 
     private suspend fun openOrientation(userId: UUID, projectId: UUID): BuddyActionResponse {
         val orientation = taskOrientationService.getForHire(userId, projectId)
@@ -493,7 +507,7 @@ class BuddyActionService(
             BuddyActionResponse(
                 ok = true,
                 message = "Asked them to confirm “${attestation.title}”. " +
-                    "It counts once they do — you will see it on your ramp.",
+                    "It counts once they do — you will see it in what you have shown.",
             )
         } catch (e: ResponseStatusException) {
             // A handled precondition ("not on this project", "that is you") is a sentence the buddy
@@ -601,11 +615,11 @@ class BuddyActionService(
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
         runCatching { UUID.fromString(stringArg(name)) }.getOrNull()
 
-    /** A verb phrase for the reason lines, e.g. "start Task 0", "flag this to a PM". */
+    /** A verb phrase for the reason lines, e.g. "claim a goal", "flag this to a PM". */
+    @Suppress("CyclomaticComplexMethod") // One flat branch per action type, and the enum is exhaustive.
     private fun BuddyActionType.gerund(): String =
         when (this) {
             BuddyActionType.FLAG_TO_PM -> "flag this to a PM"
-            BuddyActionType.CLAIM_TASK_ZERO -> "start Task 0"
             BuddyActionType.OPEN_ORIENTATION -> "open a task packet"
             BuddyActionType.CLAIM_GOAL -> "claim a goal"
             BuddyActionType.REQUEST_ATTESTATION -> "ask somebody to confirm your work"
@@ -616,6 +630,12 @@ class BuddyActionService(
             // Unused for the same reason: not project-scoped, so it never reaches the no-project
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
+            // Unused for the same reason again: a path is not project-scoped either.
+            BuddyActionType.COMPLETE_STEP -> "tick a step off your path"
+            BuddyActionType.COMPLETE_TASK -> "tick a line off your checklist"
+            BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
+            BuddyActionType.ADD_PATH_STEP -> "add a step to your path"
+            BuddyActionType.REQUEST_SKIP -> "ask your PM to skip a step"
             BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
             BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
             BuddyActionType.PLACE_NOTE -> "keep a note on your board"
@@ -644,6 +664,23 @@ class BuddyActionService(
         /** `record_assessment` confirm payload: which competency, and the level in words. */
         val competencyKey: String? = null,
         val level: String? = null,
+        /**
+         * Path-action confirm payloads: the node of the hire's own path the action names, the answer
+         * `answer_question` would send in the hire's own words, and the description of a step
+         * `add_path_step` would add.
+         */
+        val stepId: UUID? = null,
+        val questionId: UUID? = null,
+        val phaseId: UUID? = null,
+        /** The checklist line `complete_task` would tick off. See the request DTO for why not [taskId]. */
+        val onboardingTaskId: UUID? = null,
+        val answer: String? = null,
+        val description: String? = null,
+        /** The reason `request_skip` would send to the PM. */
+        val reason: String? = null,
+        /** Where `add_path_step` would put the step in its phase's graph. */
+        val waitsOnIds: List<UUID> = emptyList(),
+        val unlocksIds: List<UUID> = emptyList(),
         /** `place_checklist` confirm payload: the list as the hire will read it before confirming. */
         val checklistTitle: String? = null,
         val checklistItems: List<String>? = null,
@@ -687,33 +724,33 @@ class BuddyActionService(
 
         val FLAG_TO_PM_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.FLAG_TO_PM.toolName,
-            description = "Offer to escalate the hire's question to their project's PM, when neither the docs " +
-                "nor the canonical answers cover it. This does NOT send anything — it shows the hire a confirm " +
-                "button, and only they can send it. Provide the question to ask, phrased clearly, in `question`. " +
-                "Use this as the last resort when you genuinely cannot ground an answer.",
+            description = "Offer to pass something from the hire to their project's PM. Two cases: " +
+                "(1) the hire ASKS you to flag, raise or pass something to their PM — a question, a problem, a " +
+                "blocker, feedback on their path. Their asking is the reason: offer it straight away, and never " +
+                "decide for them that it is not a PM matter or that the docs answer it first. " +
+                "(2) Neither the docs nor the canonical answers cover a question, as the last resort when you " +
+                "genuinely cannot ground an answer. " +
+                "This does NOT send anything — it shows the hire a confirm button, and only they can send it. " +
+                "Put what should reach the PM in `question`, phrased clearly and in the hire's sense.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("question") {
                         put("type", "string")
-                        put("description", "The question to send to the PM, phrased clearly for a person to answer.")
+                        put(
+                            "description",
+                            "What to send to the PM — a question, or what the hire wants them to know — phrased " +
+                                "clearly for a person to answer.",
+                        )
                     }
                 }
                 putJsonArray("required") { add("question") }
             },
         )
 
-        val CLAIM_TASK_ZERO_SPEC = BuddyToolSpecDto(
-            name = BuddyActionType.CLAIM_TASK_ZERO.toolName,
-            description = "Offer to start the hire's Task 0 — their first assigned starter task. This does NOT " +
-                "assign anything by itself; it shows the hire a confirm button and runs only if they click. Use " +
-                "when the hire is ready to begin their first piece of real work. Takes no arguments.",
-            parameters = noArgs(),
-        )
-
         val OPEN_ORIENTATION_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.OPEN_ORIENTATION.toolName,
-            description = "Offer to assemble the task orientation packet for the hire's current task — a " +
+            description = "Offer to assemble the task orientation packet for the task the hire claimed — a " +
                 "step-by-step, cited guide to setting up, finding the code, making the change, and opening the " +
                 "PR. Proposes only; the hire confirms. Use when they ask how to start the task they have. Takes " +
                 "no arguments.",

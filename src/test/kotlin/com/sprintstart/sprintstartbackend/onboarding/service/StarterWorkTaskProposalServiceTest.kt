@@ -47,6 +47,7 @@ import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -321,6 +322,41 @@ class StarterWorkTaskProposalServiceTest {
             every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
 
             val ex = assertThrows<ResponseStatusException> { service.markReviewed(proposal.id) }
+
+            assertEquals(HttpStatus.CONFLICT, ex.statusCode)
+        }
+    }
+
+    @Nested
+    inner class TaskZeroFlag {
+        @Test
+        fun `flags a live task and clears the flag again`() {
+            val proposal = StarterWorkTaskProposal(sourceId = "s1", title = "Fix the typo")
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+
+            assertTrue(service.setTaskZeroEligibility(proposal.id, eligible = true).taskZeroEligible)
+            assertFalse(service.setTaskZeroEligibility(proposal.id, eligible = false).taskZeroEligible)
+        }
+
+        @Test
+        fun `throws 404 when no proposal matches`() {
+            val id = UUID.randomUUID()
+            every { starterWorkTaskProposalRepository.findById(id) } returns Optional.empty()
+
+            val ex = assertThrows<ResponseStatusException> { service.setTaskZeroEligibility(id, eligible = true) }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+        }
+
+        @Test
+        fun `refuses a task that left the pool`() {
+            // Vouching for a task nobody can claim is a judgement about nothing.
+            val proposal = StarterWorkTaskProposal(sourceId = "s1", title = "t1", status = ProposalStatus.STALE)
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+
+            val ex = assertThrows<ResponseStatusException> {
+                service.setTaskZeroEligibility(proposal.id, eligible = true)
+            }
 
             assertEquals(HttpStatus.CONFLICT, ex.statusCode)
         }

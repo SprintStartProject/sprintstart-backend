@@ -30,9 +30,15 @@ class OnboardingPathServiceTest {
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
     private val questionAttemptRepository: QuestionAttemptRepository = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val onboardingPositionReader: OnboardingPositionReader = mockk(relaxed = true)
-    private val service =
-        OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi, onboardingPositionReader)
+
+    // The real reader: it now owns the active-step and progress rules this service's team
+    // overview reports, so stubbing it would hollow out exactly what these tests assert.
+    private val service = OnboardingPathService(
+        onboardingPathRepository,
+        questionAttemptRepository,
+        userApi,
+        OnboardingPositionReader(onboardingPathRepository),
+    )
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()

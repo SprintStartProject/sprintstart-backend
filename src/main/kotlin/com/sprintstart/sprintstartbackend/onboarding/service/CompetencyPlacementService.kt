@@ -26,8 +26,7 @@ import java.util.UUID
  * A weak prior, and the code says so rather than the prose. Every entry written here is
  * [CompetencySource.ASSESSED], and a row already carrying [CompetencySource.VERIFIED] is left
  * untouched: accepted work outranks anything somebody said about themselves, never the other way
- * round. That is the same rule [RampService] states from the other side, enforced here so a
- * conversation cannot walk a proven competency back.
+ * round. Enforced here so a conversation cannot walk a proven competency back.
  *
  * Otherwise the write is the monotonic find-or-create every ledger writer uses — a placement can
  * raise a level, never lower one. A hire who undersells themselves in chat loses nothing they had
