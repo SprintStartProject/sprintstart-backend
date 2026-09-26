@@ -47,6 +47,22 @@ interface UserApi {
     fun getUsersByIds(ids: List<UUID>): List<UserDto>
 
     /**
+     * The one person whose email or GitHub login is exactly [query], if there is exactly one.
+     *
+     * For callers that need to name somebody they are not already looking at — adding a person to a
+     * project, say — without being handed the ability to browse everybody. Three rules hold it to
+     * that:
+     *
+     * - **Exact, case-insensitively.** A partial identifier matches nobody, so the caller cannot
+     *   walk the directory by trying prefixes.
+     * - **At most one.** Two people matching is answered as nobody, because picking one of them
+     *   would be a guess about which person the caller meant.
+     * - **Two fields only.** Enough to act on, and nothing that was not already known to whoever
+     *   typed the identifier.
+     */
+    fun findByExactEmailOrGithubLogin(query: String): Optional<DirectoryMatch>
+
+    /**
      * Returns the onboarding-relevant profile for a user identified by auth ID.
      *
      * @param authId External authentication identifier.
@@ -136,6 +152,17 @@ interface UserApi {
      */
     fun recordGithubLoginVerification(userId: UUID, verification: GithubLoginVerification)
 }
+
+/**
+ * The little that a lookup by identifier gives back: enough to name somebody and act on them.
+ *
+ * Deliberately not a [UserDto]. A caller looking somebody up by an identifier they already hold has
+ * no claim on that person's projects, roles or skills.
+ */
+data class DirectoryMatch(
+    val userId: UUID,
+    val displayName: String,
+)
 
 /**
  * The user-module facts a consent-gated history prior is built from.
