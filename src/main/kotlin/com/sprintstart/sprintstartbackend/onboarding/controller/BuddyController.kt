@@ -230,9 +230,10 @@ class BuddyController(
 
     @Operation(
         summary = "Confirm a buddy-proposed action",
-        description = "Runs an action the buddy proposed, on the hire's explicit confirmation — start Task 0, " +
-            "open the task packet, log buddy contact, or flag a question to the PM. The action is re-scoped to " +
-            "the caller server-side. Returns a single line to relay; a handled failure is `ok = false`, not an error.",
+        description = "Runs an action the buddy proposed, on the hire's explicit confirmation — for example " +
+            "start Task 0, open the task packet, flag a question to the PM, or keep, extend, tick or reword a " +
+            "checklist on the hire's board. The full set is `BuddyActionType`. The action is re-scoped to the " +
+            "caller server-side. Returns a single line to relay; a handled failure is `ok = false`, not an error.",
     )
     @ApiResponses(
         value = [

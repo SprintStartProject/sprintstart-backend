@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -31,9 +32,20 @@ import java.util.UUID
  * to; they are never called from here, and the three-argument forms always are.
  */
 
-/** The member [memberId] names on [projectId], or null. */
-private fun ProjectMembershipApi.memberOn(memberId: UUID?, projectId: UUID): ProjectMember? =
+/** The member [memberId] names on [projectId], or null. Shared with [TeamMemberTools]. */
+internal fun ProjectMembershipApi.memberOn(memberId: UUID?, projectId: UUID): ProjectMember? =
     memberId?.let { id -> getProjectMembers(projectId).firstOrNull { it.userId == id } }
+
+/**
+ * The roles [userId] holds on [projectId], and an empty list when they hold none.
+ *
+ * `getRolesOnProject` answers 404 for somebody who is not on the project, which every caller here
+ * has already ruled out by resolving the member first. Anything else is a real failure and is
+ * rethrown rather than read as "no roles".
+ */
+private fun ProjectRoleApi.rolesHeldOn(userId: UUID, projectId: UUID): List<ProjectRoleShortDto> =
+    runCatching { getRolesOnProject(userId, projectId) }
+        .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
 
 private const val NOT_A_MEMBER =
     "That person is not on this project. Call find_member for the people who are, and pass the member_id " +
@@ -87,20 +99,21 @@ class AddMembersAction(
         }
 
         val alreadyHere = projectMembershipApi.getProjectMembers(context.projectId).map { it.userId }.toSet()
-        val people = mutableListOf<Pair<UUID, String>>()
-        for (id in ids.filterNotNull().distinct()) {
-            if (id in alreadyHere) {
-                return TeamActionDraft.Refused(
-                    "Somebody in that list is already on this project. Call find_member to see who is here.",
-                )
-            }
-            // Resolved for the preview: a manager confirming "add two people" has to be told which two.
-            val person = userApi.getUsersByIds(listOf(id)).firstOrNull()
+        val wanted = ids.filterNotNull().distinct()
+        if (wanted.any { it in alreadyHere }) {
+            return TeamActionDraft.Refused(
+                "Somebody in that list is already on this project. Call find_member to see who is here.",
+            )
+        }
+        // Resolved for the preview, in one read: a manager confirming "add two people" has to be
+        // told which two.
+        val found = userApi.getUsersByIds(wanted).associateBy { it.id }
+        val people = wanted.map { id ->
+            val person = found[id]
                 ?: return TeamActionDraft.Refused(
                     "One of those user_ids is not a person any more. Call find_user_to_add again.",
                 )
-            val name = "${person.firstname} ${person.lastname}".trim().ifBlank { person.username }
-            people += id to name
+            id to "${person.firstname} ${person.lastname}".trim().ifBlank { person.username }
         }
 
         return TeamActionDraft.Proposed(
@@ -121,8 +134,13 @@ class AddMembersAction(
     override fun recheck(params: JsonObject, context: TeamToolContext): String? {
         val alreadyHere = projectMembershipApi.getProjectMembers(context.projectId).map { it.userId }.toSet()
         val ids = params.textArray("user_ids").mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
-        return "Somebody in that list joined this project since, so nothing was changed."
-            .takeIf { ids.any { id -> id in alreadyHere } }
+        if (ids.any { it in alreadyHere }) {
+            return "Somebody in that list joined this project since, so nothing was changed."
+        }
+        // An account deleted in the meantime would otherwise reach the manager as the service's 404.
+        val found = userApi.getUsersByIds(ids).map { it.id }.toSet()
+        return "Somebody in that list is not a person any more, so nothing was changed."
+            .takeIf { ids.any { id -> id !in found } }
     }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
@@ -215,8 +233,7 @@ class RemoveMemberAction(
     }
 
     private fun rolesOf(userId: UUID, projectId: UUID): List<String> =
-        runCatching { projectRoleApi.getRolesOnProject(userId, projectId).map { it.name } }
-            .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
+        projectRoleApi.rolesHeldOn(userId, projectId).map { it.name }
 }
 
 /** Offers to give somebody a role on this project. */
@@ -247,7 +264,7 @@ class AssignProjectRoleAction(
             ?: return TeamActionDraft.Refused(
                 "There is no such role. Call list_project_roles and pass a role_id from it.",
             )
-        if (heldBy(member.userId, context.projectId).any { it == role.id }) {
+        if (projectRoleApi.rolesHeldOn(member.userId, context.projectId).any { it.id == role.id }) {
             return TeamActionDraft.Refused(
                 "${member.displayName} already holds “${role.name}” on this project, so there is nothing " +
                     "to change.",
@@ -266,8 +283,19 @@ class AssignProjectRoleAction(
         )
     }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? =
-        LEFT_SINCE.takeIf { projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId) == null }
+    /**
+     * They are still here, and still without the role.
+     *
+     * Assigning a role twice is not an error, so a stale confirm would otherwise report as its own
+     * a change that had already happened elsewhere.
+     */
+    override fun recheck(params: JsonObject, context: TeamToolContext): String? {
+        val member = projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId)
+            ?: return LEFT_SINCE
+        val roleId = params.uuid("role_id")
+        return "They were given “${params.text("role_name")}” on this project since, so nothing was changed."
+            .takeIf { projectRoleApi.rolesHeldOn(member.userId, context.projectId).any { it.id == roleId } }
+    }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         projectRoleApi.assignRoleOnProject(
@@ -277,10 +305,6 @@ class AssignProjectRoleAction(
         )
         return "Done. They hold “${params.text("role_name")}” on this project now."
     }
-
-    private fun heldBy(userId: UUID, projectId: UUID): List<UUID> =
-        runCatching { projectRoleApi.getRolesOnProject(userId, projectId).map { it.id } }
-            .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
 }
 
 /** Offers to take a role off somebody on this project. */
@@ -309,8 +333,7 @@ class UnassignProjectRoleAction(
         val roleId = call.uuidArgument("role_id")
         // The service removes by id without complaining when nothing matches, so a role they do not
         // hold would confirm as a change and change nothing. Checked here instead.
-        val held = runCatching { projectRoleApi.getRolesOnProject(member.userId, context.projectId) }
-            .getOrElse { if (it is ResponseStatusException) emptyList() else throw it }
+        val held = projectRoleApi.rolesHeldOn(member.userId, context.projectId)
         val role = held.firstOrNull { it.id == roleId }
             ?: return TeamActionDraft.Refused(
                 "${member.displayName} does not hold that role on this project. Call get_member_roles for " +
@@ -338,8 +361,19 @@ class UnassignProjectRoleAction(
             else -> " and keep their other ${heldNow - 1} roles here"
         }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? =
-        LEFT_SINCE.takeIf { projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId) == null }
+    /**
+     * They are still here, and still hold the role.
+     *
+     * The same reason the draft checks it: the service removes by id without complaining, so a role
+     * taken off in the meantime would confirm as a change that had already happened.
+     */
+    override fun recheck(params: JsonObject, context: TeamToolContext): String? {
+        val member = projectMembershipApi.memberOn(params.uuid("member_id"), context.projectId)
+            ?: return LEFT_SINCE
+        val roleId = params.uuid("role_id")
+        return "“${params.text("role_name")}” is already off them on this project, so nothing was changed."
+            .takeIf { projectRoleApi.rolesHeldOn(member.userId, context.projectId).none { it.id == roleId } }
+    }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         projectRoleApi.unassignRoleOnProject(

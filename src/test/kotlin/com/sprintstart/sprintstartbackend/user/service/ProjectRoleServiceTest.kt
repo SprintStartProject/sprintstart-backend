@@ -1,21 +1,32 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
+import com.sprintstart.sprintstartbackend.user.external.SkillSuggestionAiClient
+import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
+import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionItemDto
+import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionResponseDto
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.Skill
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.exceptions.SkillSuggestionAiException
+import com.sprintstart.sprintstartbackend.user.model.request.AcceptSkillSuggestionRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.SuggestSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRoleRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.SkillRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.http.HttpStatus
@@ -23,6 +34,8 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ProjectRoleServiceTest {
@@ -30,11 +43,16 @@ class ProjectRoleServiceTest {
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val skillRepository: SkillRepository = mockk()
     private val userRepository: UserRepository = mockk()
+    private val projectIndustryApi: ProjectIndustryApi = mockk()
+    private val skillSuggestionAiClient: SkillSuggestionAiClient = mockk()
+
     private val service = ProjectRoleService(
         projectRoleRepository,
         assignmentRepository,
         skillRepository,
         userRepository,
+        projectIndustryApi,
+        skillSuggestionAiClient,
     )
 
     private fun assignmentFor(userId: UUID, projectId: UUID): ProjectUserAssignment {
@@ -69,6 +87,268 @@ class ProjectRoleServiceTest {
 
         assertEquals("Dev", result.name)
         verify(exactly = 1) { projectRoleRepository.save(any()) }
+    }
+
+    @Test
+    fun `suggestSkillsForRole returns reviewable suggestions without saving to database`() = runTest {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val activeSkill = Skill(
+            id = UUID.randomUUID(),
+            name = "Kotlin",
+            category = "Languages & Paradigms",
+            status = SkillStatus.ACTIVE,
+        )
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findAll() } returns listOf(activeSkill)
+        every { skillRepository.findByNormalizedName("Docker") } returns null
+
+        val suggestions = listOf(
+            SkillSuggestionItemDto(name = "Kotlin", category = "Languages & Paradigms", isNew = false),
+            SkillSuggestionItemDto(name = "Docker", category = "DevOps", isNew = true),
+        )
+        coEvery { skillSuggestionAiClient.suggestSkills(any()) } returns SkillSuggestionResponseDto(suggestions)
+
+        val result = service.suggestSkillsForRole(roleId)
+
+        assertEquals(2, result.size)
+        assertEquals(activeSkill.id, result[0].skillId)
+        assertEquals("Kotlin", result[0].name)
+        assertFalse(result[0].isNew)
+
+        assertNull(result[1].skillId)
+        assertEquals("Docker", result[1].name)
+        assertTrue(result[1].isNew)
+
+        verify(exactly = 0) { skillRepository.save(any()) }
+    }
+
+    @Test
+    fun `suggestSkillsForRole uses lazy industry evaluation when projectId is present`() = runTest {
+        val roleId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val request = SuggestSkillsRequest(projectId = projectId)
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findAll() } returns emptyList()
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns "Fintech"
+        coEvery {
+            skillSuggestionAiClient.suggestSkills(
+                match { it.projectIndustry == "Fintech" && it.projectId == projectId.toString() },
+            )
+        } returns SkillSuggestionResponseDto(emptyList())
+
+        val result = service.suggestSkillsForRole(roleId, request)
+
+        assertTrue(result.isEmpty())
+        coVerify(exactly = 1) { projectIndustryApi.getOrEvaluateIndustry(projectId) }
+        coVerify(exactly = 1) {
+            skillSuggestionAiClient.suggestSkills(
+                match { it.projectIndustry == "Fintech" && it.projectId == projectId.toString() },
+            )
+        }
+    }
+
+    @Test
+    fun `suggestSkillsForRole uses fallback industry when projectId is null`() = runTest {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val request = SuggestSkillsRequest(projectId = null, industry = "Healthcare")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findAll() } returns emptyList()
+        coEvery {
+            skillSuggestionAiClient.suggestSkills(
+                match { it.projectIndustry == "Healthcare" && it.projectId == null },
+            )
+        } returns SkillSuggestionResponseDto(emptyList())
+
+        val result = service.suggestSkillsForRole(roleId, request)
+
+        assertTrue(result.isEmpty())
+        coVerify(exactly = 0) { projectIndustryApi.getOrEvaluateIndustry(any()) }
+        coVerify(exactly = 1) {
+            skillSuggestionAiClient.suggestSkills(
+                match { it.projectIndustry == "Healthcare" && it.projectId == null },
+            )
+        }
+    }
+
+    @Test
+    fun `suggestSkillsForRole drops suggestions matching retired skills`() = runTest {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val retiredSkill = Skill(name = "OldFramework", category = "Old", status = SkillStatus.RETIRED)
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findAll() } returns emptyList()
+        every { skillRepository.findByNormalizedName("OldFramework") } returns retiredSkill
+        every { skillRepository.findByNormalizedName("Docker") } returns null
+
+        val suggestions = listOf(
+            SkillSuggestionItemDto(name = "OldFramework", category = "Old", isNew = true),
+            SkillSuggestionItemDto(name = "Docker", category = "DevOps", isNew = true),
+        )
+        coEvery { skillSuggestionAiClient.suggestSkills(any()) } returns SkillSuggestionResponseDto(suggestions)
+
+        val result = service.suggestSkillsForRole(roleId)
+
+        assertEquals(1, result.size)
+        assertEquals("Docker", result[0].name)
+    }
+
+    @Test
+    fun `suggestSkillsForRole throws 404 when role does not exist`() = runTest {
+        val roleId = UUID.randomUUID()
+        every { projectRoleRepository.findById(roleId) } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> { service.suggestSkillsForRole(roleId) }
+        assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+    }
+
+    @Test
+    fun `suggestSkillsForRole propagates AI exceptions`() = runTest {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findAll() } returns emptyList()
+        coEvery {
+            skillSuggestionAiClient.suggestSkills(any())
+        } throws SkillSuggestionAiException(502, "error", "message")
+
+        val ex = assertThrows<SkillSuggestionAiException> { service.suggestSkillsForRole(roleId) }
+        assertEquals(502, ex.statusCode)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion links existing active skill by skillId`() {
+        val roleId = UUID.randomUUID()
+        val skillId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val skill = Skill(
+            id = skillId,
+            name = "Kotlin",
+            category = "Languages & Paradigms",
+            status = SkillStatus.ACTIVE,
+        )
+        val request = AcceptSkillSuggestionRequest(skillId = skillId)
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findById(skillId) } returns Optional.of(skill)
+        every { skillRepository.save(any()) } answers { firstArg() }
+        every { skillRepository.findAllByProjectRolesId(roleId) } returns listOf(skill)
+
+        val result = service.acceptSkillSuggestion(roleId, request)
+
+        assertEquals(1, result.size)
+        assertEquals("Kotlin", result[0].name)
+        assertTrue(skill.projectRoles.contains(role))
+        verify(exactly = 1) { skillRepository.save(skill) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion throws 400 when skillId is retired`() {
+        val roleId = UUID.randomUUID()
+        val skillId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val retiredSkill = Skill(
+            id = skillId,
+            name = "Kotlin",
+            category = "Languages & Paradigms",
+            status = SkillStatus.RETIRED,
+        )
+        val request = AcceptSkillSuggestionRequest(skillId = skillId)
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findById(skillId) } returns Optional.of(retiredSkill)
+
+        val ex = assertThrows<ResponseStatusException> { service.acceptSkillSuggestion(roleId, request) }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion links existing active skill by name`() {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val existingSkill = Skill(name = "Kotlin", category = "Languages & Paradigms", status = SkillStatus.ACTIVE)
+        val request = AcceptSkillSuggestionRequest(name = "Kotlin")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findByNormalizedName("Kotlin") } returns existingSkill
+        every { skillRepository.save(any()) } answers { firstArg() }
+        every { skillRepository.findAllByProjectRolesId(roleId) } returns listOf(existingSkill)
+
+        val result = service.acceptSkillSuggestion(roleId, request)
+
+        assertEquals(1, result.size)
+        assertTrue(existingSkill.projectRoles.contains(role))
+        verify(exactly = 1) { skillRepository.save(existingSkill) }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion throws 400 when skill by name is retired`() {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val retiredSkill = Skill(name = "Kotlin", category = "Languages & Paradigms", status = SkillStatus.RETIRED)
+        val request = AcceptSkillSuggestionRequest(name = "Kotlin")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findByNormalizedName("Kotlin") } returns retiredSkill
+
+        val ex = assertThrows<ResponseStatusException> { service.acceptSkillSuggestion(roleId, request) }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion creates new non-universal skill when name not in database`() {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val request = AcceptSkillSuggestionRequest(name = "Docker", category = "DevOps")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+        every { skillRepository.findByNormalizedName("Docker") } returns null
+        every { skillRepository.save(any()) } answers { firstArg() }
+        every { skillRepository.findAllByProjectRolesId(roleId) } returns listOf(
+            Skill(name = "Docker", category = "DevOps", projectRoles = mutableSetOf(role)),
+        )
+
+        val result = service.acceptSkillSuggestion(roleId, request)
+
+        assertEquals(1, result.size)
+        assertEquals("Docker", result[0].name)
+        verify(exactly = 1) {
+            skillRepository.save(
+                match {
+                    it.name == "Docker" && it.category == "DevOps" && !it.universal && it.projectRoles.contains(role)
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `acceptSkillSuggestion throws 400 when both skillId and name are blank`() {
+        val roleId = UUID.randomUUID()
+        val role = ProjectRole(id = roleId, name = "Dev", description = "Test")
+        val request = AcceptSkillSuggestionRequest(name = "  ")
+
+        every { projectRoleRepository.findById(roleId) } returns Optional.of(role)
+
+        val ex = assertThrows<ResponseStatusException> { service.acceptSkillSuggestion(roleId, request) }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+    }
+
+    @Test
+    fun `acceptSkillSuggestion throws 404 when role not found`() {
+        val roleId = UUID.randomUUID()
+        every { projectRoleRepository.findById(roleId) } returns Optional.empty()
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.acceptSkillSuggestion(roleId, AcceptSkillSuggestionRequest(name = "Docker"))
+        }
+        assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
     }
 
     @Test
