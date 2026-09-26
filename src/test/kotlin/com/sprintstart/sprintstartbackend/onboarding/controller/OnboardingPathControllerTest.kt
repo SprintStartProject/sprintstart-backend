@@ -86,6 +86,7 @@ class OnboardingPathControllerTest(
     private val userJwt = jwtWithSubject(authId, "USER")
     private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
     private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
+    private val pmJwt = jwtWithSubject(authId, "USER", "PM")
 
     // ========================== /me endpoints ==========================
 
@@ -151,7 +152,7 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/me/path")
-                    .with(userJwt),
+                    .with(pmJwt),
             ).andExpect(status().isNoContent)
 
         verify(exactly = 1) {
@@ -176,6 +177,17 @@ class OnboardingPathControllerTest(
     }
 
     @Test
+    fun `deleteOnboardingPathForMe is refused to a plain member`() {
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/path")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingPathService.deleteOnboardingPathForMe(any()) }
+    }
+
+    @Test
     fun `deleteOnboardingPathForMe should return 404 when not found`() {
         every { onboardingPathService.deleteOnboardingPathForMe(authId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
@@ -183,7 +195,7 @@ class OnboardingPathControllerTest(
         mockMvc
             .perform(
                 delete("/api/v1/onboarding/me/path")
-                    .with(userJwt),
+                    .with(pmJwt),
             ).andExpect(status().isNotFound)
 
         verify(exactly = 1) {

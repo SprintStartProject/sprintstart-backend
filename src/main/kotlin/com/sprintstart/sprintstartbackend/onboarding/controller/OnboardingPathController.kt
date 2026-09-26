@@ -88,11 +88,15 @@ class OnboardingPathController(
      * This removes the hierarchy root at depth 0. Any nested descendants below that
      * root are deleted according to the persistence rules of the underlying model.
      *
+     * PM and admin only: a member deleting their path and building a new one would be the rebuild
+     * that is the project manager's call (see [ProjectOnboardingPathController.personalizePathForUser]).
+     *
      * @param jwt Authenticated JWT used to resolve the current user.
      */
     @Operation(
         summary = "Delete current user's onboarding path",
-        description = "Deletes the onboarding path at hierarchy depth 0 for the authenticated user.",
+        description = "Deletes the onboarding path at hierarchy depth 0 for the authenticated user. " +
+            "PM and admin only: members cannot discard their own path.",
     )
     @ApiResponses(
         value = [
@@ -104,7 +108,7 @@ class OnboardingPathController(
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/me/path")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     fun deletePathForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
