@@ -24,6 +24,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class OnboardingPathServiceTest {
@@ -250,6 +251,42 @@ class OnboardingPathServiceTest {
             assertThrows<ResponseStatusException> {
                 service.deleteOnboardingPathForMe(authId)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
+    inner class HasBuiltPathForMe {
+        @Test
+        fun `is true when the user's path has phases`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(mockk { every { phases } returns mutableListOf(mockk()) })
+
+            assertTrue(service.hasBuiltPathForMe(authId))
+        }
+
+        @Test
+        fun `is false when every phase failed to generate`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(mockk { every { phases } returns mutableListOf() })
+
+            assertFalse(service.hasBuiltPathForMe(authId))
+        }
+
+        @Test
+        fun `is false for a user without a path`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
+
+            assertFalse(service.hasBuiltPathForMe(authId))
+        }
+
+        @Test
+        fun `is false for an unknown user`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            assertFalse(service.hasBuiltPathForMe(authId))
         }
     }
 
