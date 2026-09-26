@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.UserGoal
@@ -30,6 +31,7 @@ class UserGoalServiceTest {
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository = mockk()
     private val userApi: UserApi = mockk()
+    private val boardService: BoardService = mockk(relaxed = true)
 
     // Claiming reconciles the one row against its source first. Default to "nothing changed"; the
     // tests that care about the closed case override it.
@@ -41,6 +43,7 @@ class UserGoalServiceTest {
         starterWorkTaskProposalRepository,
         starterWorkPoolReconciler,
         userApi,
+        boardService,
     )
 
     private val userId: UUID = UUID.randomUUID()
@@ -92,6 +95,19 @@ class UserGoalServiceTest {
             assertEquals(userId, saved.captured.userId)
             assertEquals(projectId, saved.captured.projectId)
             assertEquals(proposal.id, saved.captured.sourceProposalId)
+        }
+
+        @Test
+        fun `pins the current-task card, however the task was grabbed`() {
+            stageUser()
+            val proposal = approvedProposal()
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+            every { userGoalRepository.findByUserIdAndProjectId(userId, projectId) } returns null
+            every { userGoalRepository.save(any()) } answers { firstArg() }
+
+            service.claimForMe(authId, projectId, proposal.id)
+
+            verify { boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK) }
         }
 
         @Test

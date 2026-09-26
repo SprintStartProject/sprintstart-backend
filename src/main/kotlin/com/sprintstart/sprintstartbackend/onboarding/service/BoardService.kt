@@ -26,6 +26,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardC
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPoolTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardSuggestedTaskResponse
@@ -40,6 +41,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPu
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.SuggestedTasksContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.TaskPoolContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
@@ -597,6 +599,7 @@ class BoardService(
         BoardCardKind.OPEN_PULL_REQUESTS -> openPullRequestsContent(member, projectId)
         BoardCardKind.CURRENT_TASK -> currentTaskContent(member.userId, projectId)
         BoardCardKind.SUGGESTED_TASKS -> suggestedTasksContent(member.userId, projectId)
+        BoardCardKind.TASK_POOL -> taskPoolContent(member.userId, projectId)
         BoardCardKind.COMPETENCY_PROGRESS -> competencyProgressContent(member.userId)
         BoardCardKind.MEMORY_RECAP -> memoryRecapContent(member.userId)
         // The one card served from a cache: its content costs a model call.
@@ -774,6 +777,32 @@ class BoardService(
                         reasons = match.reasons,
                     )
                 },
+        )
+
+    /**
+     * The whole pool, ranked, for the hire to pick from themselves.
+     *
+     * Uncapped on purpose — the point of the card is that nothing is hidden behind "ask your buddy".
+     * The client scrolls and filters.
+     */
+    private fun taskPoolContent(userId: UUID, projectId: UUID): TaskPoolContent =
+        TaskPoolContent(
+            tasks = starterWorkTaskProposalService
+                .matchForUserId(userId, projectId)
+                .mapIndexed { index, match ->
+                    BoardPoolTaskResponse(
+                        taskId = match.task.id,
+                        title = match.task.title,
+                        summary = match.task.summary,
+                        rationale = match.task.rationale,
+                        url = match.task.sourceUrl,
+                        taskType = match.taskType,
+                        reasons = match.reasons,
+                        bestFit = index < MAX_SUGGESTED_TASKS && match.score > 0,
+                        sourceHasAssignee = match.task.sourceHasAssignee,
+                    )
+                },
+            currentTaskId = currentTaskReader.currentTaskFor(userId, projectId)?.id,
         )
 
     /**

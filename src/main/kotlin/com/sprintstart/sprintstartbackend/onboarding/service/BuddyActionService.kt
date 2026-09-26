@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -52,7 +51,6 @@ class BuddyActionService(
     private val userGoalService: UserGoalService,
     private val userApi: UserApi,
     private val attestationService: AttestationService,
-    private val boardService: BoardService,
     private val competencyPlacementService: CompetencyPlacementService,
     private val boardWrites: BuddyBoardWriteActions,
 ) {
@@ -364,7 +362,7 @@ class BuddyActionService(
                     BuddyActionType.CLAIM_TASK_ZERO -> claimTaskZero(resolved.userId, resolved.projectId)
                     BuddyActionType.FLAG_TO_PM -> flagToPm(authId, resolved.projectId, request.question)
                     BuddyActionType.CLAIM_GOAL ->
-                        claimGoal(resolved.userId, authId, resolved.projectId, request.taskId)
+                        claimGoal(authId, resolved.projectId, request.taskId)
                     BuddyActionType.REQUEST_ATTESTATION ->
                         requestAttestation(resolved, request.title, request.attesterId)
                     BuddyActionType.PLACE_CHECKLIST,
@@ -447,7 +445,6 @@ class BuddyActionService(
     }
 
     private fun claimGoal(
-        userId: UUID,
         authId: String,
         projectId: UUID,
         taskId: UUID?,
@@ -455,11 +452,9 @@ class BuddyActionService(
         if (taskId == null) {
             return BuddyActionResponse(ok = false, message = "No task was proposed to claim.")
         }
+        // Claiming also pins the current-task card (see `UserGoalService.claimForMe`), so the
+        // message below can promise it is on the board.
         val goal = userGoalService.claimForMe(authId, projectId, taskId)
-        // Pin the task the moment it becomes theirs, rather than hoping the mentor thinks to. This
-        // conversation is gone by the next visit; the board is what carries "this is what you are
-        // working on" across the gap, and the one instant we know for certain it is true is now.
-        boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK)
         return BuddyActionResponse(
             ok = true,
             message = "You're now working toward “${goal.title}” — I'll shape your next steps around it. " +

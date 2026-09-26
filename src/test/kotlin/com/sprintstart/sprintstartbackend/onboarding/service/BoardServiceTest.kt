@@ -36,6 +36,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPu
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.SuggestedTasksContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.TaskPoolContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
@@ -217,13 +218,17 @@ class BoardServiceTest {
     }
 
     @Test
-    fun `an engineering hire gets the path card and the open pull request card`() {
+    fun `an engineering hire gets the path, open pull request and task pool cards`() {
         noBoardYet()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
         assertEquals(
-            listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, BoardCardKind.OPEN_PULL_REQUESTS),
+            listOf(
+                BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                BoardCardKind.OPEN_PULL_REQUESTS,
+                BoardCardKind.TASK_POOL,
+            ),
             kinds,
         )
     }
@@ -335,7 +340,11 @@ class BoardServiceTest {
         // Underneath, their own arrangement is untouched -- the pin is a sort on read, never a
         // write to `position`, which is what makes overriding it acceptable rather than destructive.
         assertEquals(
-            listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, BoardCardKind.OPEN_PULL_REQUESTS),
+            listOf(
+                BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                BoardCardKind.OPEN_PULL_REQUESTS,
+                BoardCardKind.TASK_POOL,
+            ),
             kinds.drop(1),
         )
     }
@@ -363,6 +372,7 @@ class BoardServiceTest {
                 BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
                 BoardCardKind.OPEN_PULL_REQUESTS,
                 BoardCardKind.CURRENT_TASK,
+                BoardCardKind.TASK_POOL,
             ),
             kinds,
         )
@@ -418,6 +428,7 @@ class BoardServiceTest {
             BoardCardKind.SUGGESTED_TASKS,
             BoardCardKind.COMPETENCY_PROGRESS,
             BoardCardKind.MEMORY_RECAP,
+            BoardCardKind.TASK_POOL,
         )
         every { boardCardRepository.findAllByBoardId(board.id) } returns kindsOnBoard
             .mapIndexed { index, kind -> card(board, kind, position = index) }
@@ -459,6 +470,12 @@ class BoardServiceTest {
                 owner = BoardCardOwner.AI,
                 position = 1,
             ),
+            BoardCard(
+                boardId = board.id,
+                kind = BoardCardKind.TASK_POOL,
+                owner = BoardCardOwner.AI,
+                position = 2,
+            ),
         )
 
         service.getBoard(hireId, projectId)
@@ -483,7 +500,7 @@ class BoardServiceTest {
 
         // The dismissed row is what makes the removal stick: the path card is added because it is
         // missing, the pull-request card is not re-added because the hire said no to it.
-        assertEquals(listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION), kinds)
+        assertEquals(listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, BoardCardKind.TASK_POOL), kinds)
     }
 
     @Test
@@ -501,8 +518,10 @@ class BoardServiceTest {
         val cards = service.getBoard(hireId, projectId)?.cards.orEmpty()
 
         // Ensuring a card exists must never reshuffle a board the hire has arranged.
-        assertEquals(BoardCardKind.OPEN_PULL_REQUESTS, cards.last().kind)
-        assertEquals(8, cards.last().position)
+        assertEquals(
+            listOf(BoardCardKind.OPEN_PULL_REQUESTS to 8, BoardCardKind.TASK_POOL to 9),
+            cards.drop(1).map { it.kind to it.position },
+        )
     }
 
     @Test
@@ -768,6 +787,28 @@ class BoardServiceTest {
         assertEquals(listOf("You have worked in this repository before"), tasks.first().reasons)
     }
 
+    @Test
+    fun `the task pool card lists the whole pool in rank order and marks the current task`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.TASK_POOL),
+        )
+        val pool = (1..5).map { ranked("Task $it", listOf("reason $it")) }
+        every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns pool
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns StarterWorkTaskProposal(
+            id = pool[3].task.id,
+            sourceId = "src-Task 4",
+            title = "Task 4",
+        )
+
+        val content = service.taskPoolCard()
+
+        // Uncapped, unlike the suggestions card: nothing is hidden behind "ask your buddy".
+        assertEquals(pool.map { it.task.title }, content.tasks.map { it.title })
+        assertEquals(listOf(true, true, true, false, false), content.tasks.map { it.bestFit })
+        assertEquals(pool[3].task.id, content.currentTaskId)
+    }
+
     // ---- what the mentor's other cards say (slice 3) ----
 
     @Test
@@ -904,6 +945,12 @@ class BoardServiceTest {
             .cards
             .first { it.kind == BoardCardKind.SUGGESTED_TASKS }
             .content as SuggestedTasksContent
+
+    private fun BoardService.taskPoolCard(): TaskPoolContent =
+        getBoard(hireId, projectId)!!
+            .cards
+            .first { it.kind == BoardCardKind.TASK_POOL }
+            .content as TaskPoolContent
 
     private fun BoardService.pathCard(): PathToFirstContributionContent =
         getBoard(hireId, projectId)!!
