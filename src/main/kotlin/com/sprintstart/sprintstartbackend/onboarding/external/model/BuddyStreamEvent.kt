@@ -43,6 +43,23 @@ data class BuddyStreamEvent(
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
     /**
+     * `place_checklist` confirm payload: the list the mentor offered to keep, as it was offered.
+     *
+     * Echoed back on confirm like every other payload here, and for a sharper reason: these lines
+     * are content rather than a target id, so re-deriving them at confirm time would mean writing
+     * a card the hire never read. What they saw is what gets kept.
+     */
+    @SerialName("checklist_title") val checklistTitle: String? = null,
+    @SerialName("checklist_items") val checklistItems: List<String>? = null,
+    /** `amend_checklist`: which card of theirs the lines would be added to. */
+    @SerialName("card_id") val cardId: String? = null,
+    /** `place_note` confirm payload: the note's text, as the hire will read it on the offer. */
+    @SerialName("note_text") val noteText: String? = null,
+    /** `reword_checklist_item`: the line as it reads now, and as it would read. Both, so the
+     *  hire confirms a change they can see rather than one they would have to go looking for. */
+    @SerialName("line_before") val lineBefore: String? = null,
+    @SerialName("line_after") val lineAfter: String? = null,
+    /**
      * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
      * instead of per-action payload fields — the client echoes nothing back but this.
      */

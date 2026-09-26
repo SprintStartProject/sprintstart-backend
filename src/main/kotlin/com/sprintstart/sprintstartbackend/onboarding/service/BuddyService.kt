@@ -393,6 +393,12 @@ class BuddyService(
                         githubLogin = proposal.githubLogin,
                         competencyKey = proposal.competencyKey,
                         level = proposal.level,
+                        checklistTitle = proposal.checklistTitle,
+                        checklistItems = proposal.checklistItems,
+                        cardId = proposal.cardId?.toString(),
+                        noteText = proposal.noteText,
+                        lineBefore = proposal.lineBefore,
+                        lineAfter = proposal.lineAfter,
                     ),
                 )
             }
