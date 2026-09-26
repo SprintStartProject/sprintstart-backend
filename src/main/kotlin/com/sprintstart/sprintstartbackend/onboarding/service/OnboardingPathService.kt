@@ -67,17 +67,20 @@ class OnboardingPathService(
     }
 
     /**
-     * Whether the authenticated user already has an onboarding path. An unknown user has none.
+     * Whether the authenticated user has an onboarding path with anything in it. An unknown user
+     * has none; neither does one whose every phase failed to generate -- an empty path holds no
+     * progress, so building it again takes nothing away.
      *
      * @param authId External authentication identifier.
-     * @return `true` when a path exists for the user.
+     * @return `true` when the user's path has at least one phase.
      */
     @Transactional(readOnly = true)
-    @Tracked("Checking whether the user has an onboarding path")
-    fun hasPathForMe(authId: String): Boolean =
+    @Tracked("Checking whether the user has a built onboarding path")
+    fun hasBuiltPathForMe(authId: String): Boolean =
         userApi
             .getUserIdByAuthId(authId)
-            .map { userId -> onboardingPathRepository.existsByUserId(userId) }
+            .flatMap { userId -> onboardingPathRepository.findByUserId(userId) }
+            .map { path -> path.phases.isNotEmpty() }
             .orElse(false)
 
     /**

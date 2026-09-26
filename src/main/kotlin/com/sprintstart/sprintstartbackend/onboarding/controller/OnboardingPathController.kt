@@ -247,9 +247,10 @@ class ProjectOnboardingPathController(
      * template. The service rejects a project the user is not assigned to. Any existing path is
      * replaced. A project must have exactly one active blueprint.
      *
-     * A member builds their *first* path here; rebuilding one they already have is the project
-     * manager's call ([personalizePathForUser]), because it throws away the member's progress. The
-     * project's manager and admins may still replace their own path from here.
+     * A member builds their *first* path here (or retries one whose every phase failed); rebuilding
+     * a path with phases in it is the project manager's call ([personalizePathForUser]), because it
+     * throws away the member's progress. The project's manager and admins may still replace their
+     * own path from here.
      *
      * The generation runs detached from this request (see [OnboardingGenerationRegistry]): closing
      * the stream does not cancel it, and a request while one is running watches that one instead of
@@ -294,7 +295,7 @@ class ProjectOnboardingPathController(
         // member. Only starting a new one over an existing path is the manager's call.
         val startsNewRun = onboardingGenerationRegistry.status(jwt.subject) == null
         if (startsNewRun &&
-            onboardingPathService.hasPathForMe(jwt.subject) &&
+            onboardingPathService.hasBuiltPathForMe(jwt.subject) &&
             !userApi.canManageProject(jwt.subject, projectId)
         ) {
             throw ResponseStatusException(

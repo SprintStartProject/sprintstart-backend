@@ -196,7 +196,7 @@ class OnboardingPathControllerTest(
     @Test
     fun `personalizePath passes the selected project path variable to the generation registry`() {
         every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasPathForMe(authId) } returns false
+        every { onboardingPathService.hasBuiltPathForMe(authId) } returns false
         every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
             ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
 
@@ -214,7 +214,7 @@ class OnboardingPathControllerTest(
     @Test
     fun `personalizePath refuses a member rebuilding a path they already have`() {
         every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasPathForMe(authId) } returns true
+        every { onboardingPathService.hasBuiltPathForMe(authId) } returns true
         every { userApi.canManageProject(authId, projectId) } returns false
 
         mockMvc
@@ -229,7 +229,7 @@ class OnboardingPathControllerTest(
     @Test
     fun `personalizePath lets the project's manager rebuild their own path`() {
         every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasPathForMe(authId) } returns true
+        every { onboardingPathService.hasBuiltPathForMe(authId) } returns true
         every { userApi.canManageProject(authId, projectId) } returns true
         every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
             ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
@@ -256,7 +256,7 @@ class OnboardingPathControllerTest(
                     .with(userJwt),
             ).andExpect(status().isBadRequest)
 
-        verify(exactly = 0) { onboardingPathService.hasPathForMe(any()) }
+        verify(exactly = 0) { onboardingPathService.hasBuiltPathForMe(any()) }
         verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId) }
     }
 

@@ -255,20 +255,38 @@ class OnboardingPathServiceTest {
     }
 
     @Nested
-    inner class HasPathForMe {
+    inner class HasBuiltPathForMe {
         @Test
-        fun `is true when the user has a path`() {
+        fun `is true when the user's path has phases`() {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { onboardingPathRepository.existsByUserId(userId) } returns true
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(mockk { every { phases } returns mutableListOf(mockk()) })
 
-            assertTrue(service.hasPathForMe(authId))
+            assertTrue(service.hasBuiltPathForMe(authId))
+        }
+
+        @Test
+        fun `is false when every phase failed to generate`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(mockk { every { phases } returns mutableListOf() })
+
+            assertFalse(service.hasBuiltPathForMe(authId))
+        }
+
+        @Test
+        fun `is false for a user without a path`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
+
+            assertFalse(service.hasBuiltPathForMe(authId))
         }
 
         @Test
         fun `is false for an unknown user`() {
             every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
 
-            assertFalse(service.hasPathForMe(authId))
+            assertFalse(service.hasBuiltPathForMe(authId))
         }
     }
 
