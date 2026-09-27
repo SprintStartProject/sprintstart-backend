@@ -1,14 +1,15 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.update.GithubAllRepositoriesUpdateStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.update.GithubRepositoryUpdateFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.update.GithubRepositoryUpdateStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.update.GithubAllRepositoriesUpdateStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.update.GithubRepositoryUpdateFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.update.GithubRepositoryUpdateStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdateRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.UpdateRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
@@ -16,7 +17,6 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
-import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import io.mockk.coJustRun
 import io.mockk.coVerify
@@ -113,7 +113,7 @@ class GithubUpdatesServiceTest {
             every { repoConnectionRepository.save(repo1) } returns repo1
             every { repoConnectionRepository.save(repo2) } returns repo2
             coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
-            coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
+            coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
             coJustRun { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
@@ -167,7 +167,7 @@ class GithubUpdatesServiceTest {
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             every { repoConnectionRepository.save(any()) } returns repo
             coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
-            coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
+            coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
             every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs
@@ -185,7 +185,7 @@ class GithubUpdatesServiceTest {
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             every { repoConnectionRepository.save(any()) } returns repo
             coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
-            coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
+            coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
             every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs
@@ -216,7 +216,7 @@ class GithubUpdatesServiceTest {
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             every { repoConnectionRepository.save(any()) } returns repo
             coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
-            coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
+            coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
             coJustRun { githubOrgService.connectGithubOrgIfNecessary(any(), any(), any()) }
@@ -235,7 +235,7 @@ class GithubUpdatesServiceTest {
                 )
             }
             assertThat(transactionId.captured).isNotNull()
-            coVerify { commitsService.fetchAndIngestLatestCommits(repo.snapshot!!, any()) }
+            coVerify { commitsService.fetchAndIngestCommits(repo, any()) }
             coVerify { issuesService.fetchAndIngestAllIssues(repo.id, "owner", "repo", any(), true, any()) }
             coVerify {
                 pullRequestsService.fetchAndIngestAllPullRequests(
@@ -299,7 +299,7 @@ class GithubUpdatesServiceTest {
             every { repoConnectionRepository.findByOwnerAndName("owner", "repo") } returns repo
             every { repoConnectionRepository.save(any()) } returns repo
             coJustRun { fileService.fetchAndIngestFileUpdatesIncremental(any(), any()) }
-            coJustRun { commitsService.fetchAndIngestLatestCommits(any(), any()) }
+            coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
             coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any(), any()) }
             coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any(), any()) }
             every { repoSnapshotRepository.updateSyncTimestamps(any(), any()) } just runs

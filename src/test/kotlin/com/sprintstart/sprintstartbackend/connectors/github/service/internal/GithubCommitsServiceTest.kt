@@ -1,405 +1,195 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositorySnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubCommitsFetchFailedPartiallyException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
-import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.git.GitCommit
+import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.springframework.context.ApplicationEventPublisher
-import java.nio.file.Path
 import java.time.Instant
 import java.util.UUID
+import kotlin.test.assertFailsWith
 
 class GithubCommitsServiceTest {
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
-    private val onDiskOperations = OnDiskOperations()
-    private val customCache = mockk<ICustomOnDiskCache>()
+    private val coordinatesFactory = mockk<GithubRepositoryCoordinatesFactory>()
+    private val ingestionEngine = mockk<GitIngestionEngine>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
-    private val gitRunner = mockk<GitOperationRunner>()
 
-    private lateinit var service: GithubCommitsService
+    private val service = GithubCommitsService(
+        repoConnectionRepository = repoConnectionRepository,
+        coordinatesFactory = coordinatesFactory,
+        ingestionEngine = ingestionEngine,
+        eventPublisher = eventPublisher,
+    )
 
     private val transactionId = UUID.randomUUID()
-    private val repoPath = Path.of("/fake/repo")
-    private val user = GithubUser(
-        id = GithubUserPat("auth-id", "token-name"),
-        token = "test-token",
-    )
-    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo", user = user)
+    private val sink = slot<GitCommitSink>()
 
-    @BeforeEach
-    fun setUp() {
-        service = GithubCommitsService(
-            repoConnectionRepository = repoConnectionRepository,
-            onDiskOperations = onDiskOperations,
-            customCache = customCache,
-            eventPublisher = eventPublisher,
-            gitRunner = gitRunner,
-        )
-        coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
+    private val coordinates = GitRepositoryCoordinates(
+        host = "github.com",
+        namespace = "owner",
+        name = "repo",
+        username = "x-access-token",
+        secret = "test-token",
+    )
+
+    private val connection = GithubRepositoryConnection(
+        owner = "owner",
+        name = "repo",
+        user = GithubUser(id = GithubUserPat("auth-id", "token-name"), token = "test-token"),
+    )
+
+    private fun givenIngestSucceeds(revision: String = NEW_REVISION) {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        every { repoConnectionRepository.save(any()) } returns connection
+        coEvery {
+            ingestionEngine.ingestCommitsSince(coordinates, any(), capture(sink))
+        } returns GitIngestOutcome(revision, emptyList())
     }
 
-    // ── git command routing ───────────────────────────────────────────────────
+    // ── full versus incremental ───────────────────────────────────────────────
 
-    @Nested
-    inner class GitCommandRouting {
-        @Test
-        fun `fetchAndIngestAllCommits uses git log without --after`() = runTest {
-            every {
-                gitRunner.exec(
-                    repoPath,
-                    match {
-                        it.command() ==
-                            listOf("git", "log", "--pretty=format:%cI - %H - %an - %s")
-                    },
-                )
-            } returns ""
+    @Test
+    fun `reads the whole history when no cursor is stored`() = runTest {
+        givenIngestSucceeds()
 
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
+        service.fetchAndIngestCommits(connection, transactionId)
 
-            verify {
-                gitRunner.exec(
-                    repoPath,
-                    match { pb ->
-                        pb.command() == listOf("git", "log", "--pretty=format:%cI - %H - %an - %s")
-                    },
-                )
-            }
+        coVerify { ingestionEngine.ingestCommitsSince(coordinates, "", any()) }
+    }
+
+    @Test
+    fun `advances from the commit cursor the last run stored`() = runTest {
+        connection.lastCommitsSyncedSha = PREVIOUS_REVISION
+        givenIngestSucceeds()
+
+        service.fetchAndIngestCommits(connection, transactionId)
+
+        coVerify { ingestionEngine.ingestCommitsSince(coordinates, PREVIOUS_REVISION, any()) }
+    }
+
+    @Test
+    fun `stores the revision the run reached`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestCommits(connection, transactionId)
+
+        assertThat(connection.lastCommitsSyncedSha).isEqualTo(NEW_REVISION)
+        verify { repoConnectionRepository.save(connection) }
+    }
+
+    // ── terminal events ───────────────────────────────────────────────────────
+
+    @Test
+    fun `publishes one started and one completed event on success`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestCommits(connection, transactionId)
+
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubCommitsFetchStartedEvent })
+        }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubCommitsFetchCompletedEvent })
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubCommitsFetchFailedEvent })
+        }
+    }
+
+    @Test
+    fun `fails without advancing the cursor when the ingest throws`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery { ingestionEngine.ingestCommitsSince(coordinates, any(), any()) } throws
+            RuntimeException("git fetch failed (exit 128)")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestCommits(connection, transactionId)
         }
 
-        @Test
-        fun `fetchAndIngestLatestCommits uses git log --after`() = runTest {
-            val syncAt = Instant.parse("2024-01-01T00:00:00Z")
-            every {
-                gitRunner.exec(repoPath, match { it.command().any { arg -> arg.contains("--after") } })
-            } returns ""
-
-            service.fetchAndIngestLatestCommits(
-                snapshot(lastCommitsSyncAt = syncAt),
-                transactionId,
+        assertThat(connection.lastCommitsSyncedSha).isEmpty()
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubCommitsFetchFailedEvent && it.reason.contains("exit 128") },
             )
-
-            verify {
-                gitRunner.exec(
-                    repoPath,
-                    match { pb ->
-                        pb.command().any { it.contains("--after=") }
-                    },
-                )
-            }
-        }
-
-        @Test
-        fun `passes lastCommitsSyncAt timestamp to git log --after`() = runTest {
-            val syncAt = Instant.parse("2024-06-15T10:00:00Z")
-            every {
-                gitRunner.exec(repoPath, match { it.command().any { arg -> arg.contains("--after") } })
-            } returns ""
-
-            service.fetchAndIngestLatestCommits(snapshot(lastCommitsSyncAt = syncAt), transactionId)
-
-            verify {
-                gitRunner.exec(
-                    repoPath,
-                    match { pb ->
-                        pb.command().any { it.contains(syncAt.toString()) }
-                    },
-                )
-            }
         }
     }
 
-    // ── event publishing ──────────────────────────────────────────────────────
+    // ── the provider binding ──────────────────────────────────────────────────
 
-    @Nested
-    inner class EventPublishing {
-        @Test
-        fun `publishes one commit event per commit line plus summary`() = runTest {
-            every {
-                gitRunner.exec(repoPath, any())
-            } returns
-                """
-                2024-01-01T00:00:00Z - abc123 - alice - fix bug
-                2024-01-02T00:00:00Z - def456 - bob - add feature
-                2024-01-03T00:00:00Z - ghi789 - carol - refactor
-                """.trimIndent()
+    @Test
+    fun `maps a commit onto a github commit event`() = runTest {
+        givenIngestSucceeds()
+        service.fetchAndIngestCommits(connection, transactionId)
 
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
+        val committedAt = Instant.parse("2026-03-04T05:06:07Z")
+        sink.captured.onCommit(GitCommit("sha-1", "Ada", committedAt, "Fix the bug"))
 
-            verify(exactly = 5) { eventPublisher.publishEvent(any<GithubCommitFetchedEvent>()) }
-        }
-
-        @Test
-        fun `publishes lifecycle events when output is empty`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns ""
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            val events = mutableListOf<Any>()
-            verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
-            assertThat(events).anyMatch { it is GithubCommitsFetchStartedEvent }
-            assertThat(events).anyMatch { it is GithubCommitsFetchCompletedEvent }
-        }
-
-        @Test
-        fun `publishes lifecycle events when output contains only blank lines`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns "\n\n\n"
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            val events = mutableListOf<Any>()
-            verify(exactly = 2) { eventPublisher.publishEvent(capture(events)) }
-            assertThat(events).anyMatch { it is GithubCommitsFetchStartedEvent }
-            assertThat(events).anyMatch { it is GithubCommitsFetchCompletedEvent }
-        }
-
-        @Test
-        fun `publishes GithubCommitsFetchingStartedEvent on start`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns ""
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchStartedEvent>()) }
-        }
-
-        @Test
-        fun `publishes GithubCommitsFetchingCompletedEvent on completion`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns ""
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchCompletedEvent>()) }
-        }
-
-        @Test
-        fun `publishes GithubCommitFetchFailedEvent on parse failure`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns "malformed"
-
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestAllCommits(
-                    snapshot(),
-                    transactionId,
-                )
-            }
-
-            verify { eventPublisher.publishEvent(any<GithubCommitFetchFailedEvent>()) }
-        }
-
-        @Test
-        fun `collects partial failure and throws`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns
-                """
-                2024-01-01T00:00:00Z - sha1 - alice - good commit
-                bad-line-without-separators
-                2024-01-03T00:00:00Z - sha3 - carol - another good commit
-                """.trimIndent()
-
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestAllCommits(snapshot(), transactionId)
-            }
-
-            val events = mutableListOf<Any>()
-            verify(exactly = 5) { eventPublisher.publishEvent(capture(events)) }
-            val fetchedEvents = events.filterIsInstance<GithubCommitFetchedEvent>()
-            assertThat(fetchedEvents).hasSize(2)
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> {
+                    it is GithubCommitFetchedEvent &&
+                        it.sha == "sha-1" &&
+                        it.author == "Ada" &&
+                        it.msg == "Fix the bug" &&
+                        it.date == committedAt &&
+                        it.repositoryId == connection.id &&
+                        it.repositoryOwner == "owner" &&
+                        it.repositoryName == "repo"
+                },
+            )
         }
     }
 
-    // ── event field mapping ───────────────────────────────────────────────────
+    // ── verifyCommitSyncStatus ────────────────────────────────────────────────
 
-    @Nested
-    inner class EventFieldMapping {
-        @Test
-        fun `maps commit fields to event correctly`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns
-                "2024-01-15T10:30:00Z - abc123def456 - alice - fix authentication bug"
+    @Test
+    fun `marks the repository out of date when the clone no longer matches the remote`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        every { repoConnectionRepository.save(connection) } returns connection
+        coEvery { ingestionEngine.isUpToDate(coordinates) } returns false
 
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
+        service.verifyCommitSyncStatus(connection, transactionId)
 
-            val eventSlot = slot<GithubCommitFetchedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-
-            with(eventSlot.captured) {
-                assertThat(sha).isEqualTo("abc123def456")
-                assertThat(author).isEqualTo("alice")
-                assertThat(msg).isEqualTo("fix authentication bug")
-                assertThat(date).isEqualTo(Instant.parse("2024-01-15T10:30:00Z"))
-                assertThat(this.transactionId).isEqualTo(transactionId)
-            }
-        }
-
-        @Test
-        fun `passes same transactionId to all commit events`() = runTest {
-            every {
-                gitRunner.exec(repoPath, any())
-            } returns
-                """
-                2024-01-01T00:00:00Z - sha1 - alice - commit one
-                2024-01-02T00:00:00Z - sha2 - bob - commit two
-                """.trimIndent()
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            val capturedEvents = mutableListOf<GithubCommitFetchedEvent>()
-            verify(exactly = 2) { eventPublisher.publishEvent(capture(capturedEvents)) }
-
-            assertThat(capturedEvents).allMatch { it.transactionId == transactionId }
-        }
+        assertThat(connection.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
+        verify { repoConnectionRepository.save(connection) }
     }
 
-    // ── parseCommit ───────────────────────────────────────────────────────────
+    @Test
+    fun `leaves an up-to-date repository untouched`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery { ingestionEngine.isUpToDate(coordinates) } returns true
 
-    @Nested
-    inner class ParseCommit {
-        @Test
-        fun `throws GithubCommitsFetchFailedPartiallyException when commit line has wrong number of parts`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns "malformed-line-without-separators"
+        service.verifyCommitSyncStatus(connection, transactionId)
 
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestAllCommits(snapshot(), transactionId)
-            }
-        }
-
-        @Test
-        fun `throws GithubCommitsFetchFailedPartiallyException when commit line has too few parts`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns "2024-01-01T00:00:00Z - sha123"
-
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestAllCommits(snapshot(), transactionId)
-            }
-        }
-
-        @Test
-        fun `throws GithubCommitsFetchFailedPartiallyException when date string is malformed`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns "not-a-date - sha123 - alice - message"
-
-            assertThrows<GithubCommitsFetchFailedPartiallyException> {
-                service.fetchAndIngestAllCommits(snapshot(), transactionId)
-            }
-        }
-
-        @Test
-        fun `handles commit message containing dash correctly`() = runTest {
-            every { gitRunner.exec(repoPath, any()) } returns
-                "2024-01-01T00:00:00Z - sha123 - alice - fix bug - with dash in message"
-
-            service.fetchAndIngestAllCommits(snapshot(), transactionId)
-
-            val eventSlot = slot<GithubCommitFetchedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-
-            assertThat(eventSlot.captured.msg).isEqualTo("fix bug - with dash in message")
-        }
+        assertThat(connection.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify { eventPublisher.publishEvent(any<GithubCommitsFetchStartedEvent>()) }
+        verify { eventPublisher.publishEvent(any<GithubCommitsFetchCompletedEvent>()) }
     }
 
-    // ── verifyCommitSyncStatus ─────────────────────────────────────────────────
-
-    @Nested
-    inner class VerifyCommitSyncStatus {
-        @Test
-        fun `marks repository OUT_OF_DATE when local and remote HEAD differ`() = runTest {
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "rev-parse", "HEAD") })
-            } returns "local-sha\n"
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "ls-remote", "origin", "HEAD") })
-            } returns "remote-sha\n"
-            every { repoConnectionRepository.save(any()) } answers { firstArg() }
-
-            service.verifyCommitSyncStatus(repo, transactionId)
-
-            assertThat(repo.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
-            verify { repoConnectionRepository.save(repo) }
-        }
-
-        @Test
-        fun `does NOT mark repository OUT_OF_DATE when local and remote HEAD match`() = runTest {
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "rev-parse", "HEAD") })
-            } returns "same-sha\n"
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "ls-remote", "origin", "HEAD") })
-            } returns "same-sha\n"
-
-            service.verifyCommitSyncStatus(repo, transactionId)
-
-            assertThat(repo.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
-            verify(exactly = 0) { repoConnectionRepository.save(any()) }
-        }
-
-        @Test
-        fun `publishes lifecycle events`() = runTest {
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "rev-parse", "HEAD") })
-            } returns "local-sha\n"
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "ls-remote", "origin", "HEAD") })
-            } returns "same-sha\n"
-            every { repoConnectionRepository.save(any()) } answers { firstArg() }
-
-            service.verifyCommitSyncStatus(repo, transactionId)
-
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchStartedEvent>()) }
-            verify { eventPublisher.publishEvent(any<GithubCommitsFetchCompletedEvent>()) }
-        }
-
-        @Test
-        fun `parses git ls-remote output with tab and ref correctly`() = runTest {
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "rev-parse", "HEAD") })
-            } returns "abc123def\n"
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "ls-remote", "origin", "HEAD") })
-            } returns "abc123def\tHEAD\n"
-            every { repoConnectionRepository.save(any()) } answers { firstArg() }
-
-            service.verifyCommitSyncStatus(repo, transactionId)
-
-            assertThat(repo.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
-            verify(exactly = 0) { repoConnectionRepository.save(any()) }
-        }
-
-        @Test
-        fun `strips trailing whitespace from git output`() = runTest {
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "rev-parse", "HEAD") })
-            } returns "abc123  \n"
-            every {
-                gitRunner.exec(repoPath, match { it.command() == listOf("git", "ls-remote", "origin", "HEAD") })
-            } returns "abc123\tHEAD\n"
-
-            service.verifyCommitSyncStatus(repo, transactionId)
-
-            assertThat(repo.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
-            verify(exactly = 0) { repoConnectionRepository.save(any()) }
-        }
+    private companion object {
+        const val NEW_REVISION = "abc123def456"
+        const val PREVIOUS_REVISION = "000111222333"
     }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    private fun snapshot(
-        lastCommitsSyncAt: Instant = Instant.parse("2024-01-01T00:00:00Z"),
-    ) = GithubRepositorySnapshot(
-        repository = repo,
-        lastCommitsSyncAt = lastCommitsSyncAt,
-    )
 }

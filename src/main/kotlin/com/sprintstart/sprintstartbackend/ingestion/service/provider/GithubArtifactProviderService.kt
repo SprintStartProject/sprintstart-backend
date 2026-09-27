@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -145,10 +147,14 @@ class GithubArtifactProviderService(
             // link is ever worth acting on.
             ArtifactType.COMMIT,
             ArtifactType.ORG_METADATA,
-            -> ArtifactChange.NOTHING
+            -> {
+                ArtifactChange.NOTHING
+            }
 
             // Confluence pages never reach this provider; they have one of their own.
-            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+            ArtifactType.PAGE -> {
+                error("GitHub artifact commands do not support PAGE artifacts")
+            }
 
             ArtifactType.FILE -> {
                 if (artifact.hash == command.hash) {

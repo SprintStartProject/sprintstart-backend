@@ -2,18 +2,18 @@ package com.sprintstart.sprintstartbackend.connectors.github.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.RepositoryConnectionOutcome
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoriesRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdateRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.ConnectRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoverRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoveredRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.UpdateAllRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.UpdateRepositoryResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.UpdateRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.ConnectRepositoriesResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.UpdateAllRepositoriesResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.UpdateRepositoryResponse
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotConnectedException

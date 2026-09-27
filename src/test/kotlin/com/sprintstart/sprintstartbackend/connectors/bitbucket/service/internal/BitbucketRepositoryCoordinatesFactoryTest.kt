@@ -3,7 +3,8 @@ package com.sprintstart.sprintstartbackend.connectors.bitbucket.service.internal
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.every
 import io.mockk.mockk
@@ -14,7 +15,7 @@ import org.junit.jupiter.api.Test
 
 class BitbucketRepositoryCoordinatesFactoryTest {
     private val credentialApi = mockk<AtlassianCredentialApi>()
-    private val factory = BitbucketRepositoryCoordinatesFactory(credentialApi)
+    private val factory = BitbucketRepositoryCoordinatesFactory(credentialApi, BitbucketGitProvider())
 
     @Test
     fun `maps a connection onto bitbucket clone coordinates`() {

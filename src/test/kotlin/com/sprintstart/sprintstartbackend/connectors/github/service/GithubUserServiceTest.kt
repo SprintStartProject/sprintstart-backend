@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.AddPatRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.RemovePatRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatNameRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatRequest
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.AddPatRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.RemovePatRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.UpdatePatNameRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.UpdatePatRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNameAlreadyExistsException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatStillInUseException

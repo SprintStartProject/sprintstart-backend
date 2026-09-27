@@ -3,14 +3,18 @@ package com.sprintstart.sprintstartbackend.connectors.bitbucket.service
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.BitbucketClient
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketConnection
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.request.ConnectBitbucketRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.repository.BitbucketConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.service.internal.BitbucketFileService
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.bitbucket.repository.BitbucketRepositoryConfigRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClient
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketConnectionService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -27,8 +31,10 @@ import org.springframework.context.ApplicationEventPublisher
 
 class BitbucketConnectionServiceTest {
     private val connectionRepository = mockk<BitbucketConnectionRepository>()
+    private val configRepository = mockk<BitbucketRepositoryConfigRepository>()
     private val bitbucketClient = mockk<BitbucketClient>()
     private val bitbucketFileService = mockk<BitbucketFileService>(relaxed = true)
+    private val bitbucketCommitsService = mockk<BitbucketCommitsService>(relaxed = true)
     private val credentialApi = mockk<AtlassianCredentialApi>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
@@ -37,8 +43,10 @@ class BitbucketConnectionServiceTest {
 
     private val service = BitbucketConnectionService(
         connectionRepository = connectionRepository,
+        configRepository = configRepository,
         bitbucketClient = bitbucketClient,
         bitbucketFileService = bitbucketFileService,
+        bitbucketCommitsService = bitbucketCommitsService,
         credentialApi = credentialApi,
         applicationScope = applicationScope,
         eventPublisher = eventPublisher,
@@ -57,6 +65,8 @@ class BitbucketConnectionServiceTest {
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns null
         val saved = slot<BitbucketConnection>()
         every { connectionRepository.save(capture(saved)) } answers { firstArg() }
+        val savedConfig = slot<BitbucketRepositoryConfig>()
+        every { configRepository.save(capture(savedConfig)) } answers { firstArg() }
 
         val response = service.connectRepositoryIfExists("auth-id", request)
 
@@ -72,6 +82,9 @@ class BitbucketConnectionServiceTest {
                 response.transactionId,
             )
         }
+        assertThat(savedConfig.captured.repository).isSameAs(saved.captured)
+        assertThat(savedConfig.captured.autoUpdate).isTrue()
+        assertThat(savedConfig.captured.nextSyncAt).isNotNull()
         verify { eventPublisher.publishEvent(any<BitbucketRepositoryConnectionInitiatedEvent>()) }
     }
 
@@ -91,6 +104,7 @@ class BitbucketConnectionServiceTest {
 
         verify { eventPublisher.publishEvent(any<BitbucketRepositoryAlreadyConnectedEvent>()) }
         verify(exactly = 0) { connectionRepository.save(any()) }
+        verify(exactly = 0) { configRepository.save(any()) }
         coVerify(exactly = 0) { bitbucketFileService.fetchAndIngestFilesOfRepository(any(), any()) }
     }
 

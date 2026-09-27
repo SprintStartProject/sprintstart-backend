@@ -5,7 +5,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.net.URI
 import java.nio.file.Path
@@ -39,11 +38,10 @@ import kotlin.io.path.exists
  */
 @Service
 class CustomOnDiskCache(
-    @Value("\${sprintstart.git.cache-path:/repos}")
-    private val cacheBasePath: String,
+    private val config: GitConfig,
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
-) {
+) : GitRepositoryCache {
     private val logger = LoggerFactory.getLogger(CustomOnDiskCache::class.java)
     private val repositoryLocks = ConcurrentHashMap<Path, Mutex>()
 
@@ -53,8 +51,10 @@ class CustomOnDiskCache(
      * @param coordinates The repository to materialize locally, including its credentials.
      * @return Absolute path to the local clone, ready for filesystem operations
      */
-    suspend fun getLocalRepositoryPath(coordinates: GitRepositoryCoordinates): Path {
-        val localFsPath = Path.of(cacheBasePath, coordinates.host, coordinates.namespace, coordinates.name)
+    override suspend fun getLocalRepositoryPath(coordinates: GitRepositoryCoordinates): Path {
+        val localFsPath = coordinates.namespacePath
+            .fold(Path.of(config.cachePath, coordinates.host)) { path, segment -> path.resolve(segment) }
+            .resolve(coordinates.name)
         val remoteUri = buildRemoteUri(coordinates, coordinates.secret)
         val safeUri = buildRemoteUri(coordinates, MASKED_SECRET)
 
@@ -183,7 +183,7 @@ class CustomOnDiskCache(
             "${coordinates.username}:$secret",
             coordinates.host,
             -1,
-            "/${coordinates.namespace}/${coordinates.name}.git",
+            "/${coordinates.namespacePath.joinToString("/")}/${coordinates.name}.git",
             null,
             null,
         ).toASCIIString()
