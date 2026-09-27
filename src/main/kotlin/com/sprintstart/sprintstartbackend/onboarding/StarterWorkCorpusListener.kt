@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssuesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssuesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingCompleteEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component

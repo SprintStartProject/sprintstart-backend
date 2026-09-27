@@ -25,7 +25,7 @@ class CustomOnDiskCacheTest {
     fun setUp() {
         tempDir = Files.createTempDirectory("cache-test")
         cache = CustomOnDiskCache(
-            cacheBasePath = tempDir.toString(),
+            config = GitConfig(cachePath = tempDir.toString()),
             onDiskOperations = onDiskOperations,
             gitRunner = gitRunner,
         )

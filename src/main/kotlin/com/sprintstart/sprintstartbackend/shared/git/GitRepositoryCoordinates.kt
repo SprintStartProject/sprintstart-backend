@@ -29,6 +29,17 @@ data class GitRepositoryCoordinates(
     val username: String,
     val secret: String,
 ) {
+    /**
+     * The namespace split into its hierarchical segments, outermost first.
+     *
+     * Most providers address a repository by a single owning account, so this is normally a
+     * one-element list. Providers that allow nested groups, such as GitLab's `group/subgroup`, are
+     * the reason it is a list rather than a string: the cache and the clone URL both need the
+     * segments, and neither should have to guess at how a separator was meant.
+     */
+    val namespacePath: List<String>
+        get() = namespace.split('/').filter(String::isNotBlank)
+
     /** Renders the coordinates with the secret masked, so they can be logged safely. */
     override fun toString(): String =
         "GitRepositoryCoordinates(host=$host, namespace=$namespace, name=$name, " +

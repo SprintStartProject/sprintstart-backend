@@ -1,10 +1,18 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service.internal
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileChange
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileSink
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestFailure
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
+import com.sprintstart.sprintstartbackend.connectors.github.GithubGitProvider
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
@@ -12,390 +20,280 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubFileSnapshotRepository
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.shared.git.GitOperationRunner
-import com.sprintstart.sprintstartbackend.shared.git.OnDiskOperations
+import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
-import org.junit.jupiter.api.io.TempDir
 import org.springframework.context.ApplicationEventPublisher
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
 import java.util.Optional
 import java.util.UUID
-import kotlin.io.path.writeText
+import kotlin.test.assertFailsWith
 
 class GithubFileServiceTest {
-    private val onDiskOperations = OnDiskOperations()
     private val repoConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
     private val fileSnapshotRepository = mockk<GithubFileSnapshotRepository>(relaxed = true)
+    private val coordinatesFactory = mockk<GithubRepositoryCoordinatesFactory>()
+    private val ingestionEngine = mockk<GitIngestionEngine>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
-    private val customCache = mockk<ICustomOnDiskCache>()
-    private val gitRunner = mockk<GitOperationRunner>()
-    private lateinit var service: GithubFileService
+
+    private val service = GithubFileService(
+        repoConnectionRepository = repoConnectionRepository,
+        fileSnapshotRepository = fileSnapshotRepository,
+        coordinatesFactory = coordinatesFactory,
+        provider = GithubGitProvider(),
+        ingestionEngine = ingestionEngine,
+        eventPublisher = eventPublisher,
+    )
 
     private val transactionId = UUID.randomUUID()
-    private val repoPath = Path.of("/fake/repo")
+    private val sink = slot<GitFileSink>()
 
-    private val user = GithubUser(
-        id = GithubUserPat("auth-id", "token-name"),
-        token = "test-token",
+    private val coordinates = GitRepositoryCoordinates(
+        host = "github.com",
+        namespace = "owner",
+        name = "repo",
+        username = "x-access-token",
+        secret = "test-token",
     )
-    private val repo = GithubRepositoryConnection(owner = "owner", name = "repo", user = user)
 
-    @BeforeEach
-    fun setUp() {
-        service = GithubFileService(
-            onDiskOperations = onDiskOperations,
-            repoConnectionRepository = repoConnectionRepository,
-            fileSnapshotRepository = fileSnapshotRepository,
-            eventPublisher = eventPublisher,
-            customCache = customCache,
-            gitRunner = gitRunner,
-        )
-        every { repoConnectionRepository.save(any()) } answers { firstArg() }
-        every { fileSnapshotRepository.save(any()) } answers { firstArg() }
-    }
-
-    @Nested
-    inner class FetchAndIngestFileUpdatesIncremental {
-        @Test
-        fun `throws RepositoryNotInitializedException when lastSha is blank`() = runTest {
-            val repo = repoConnection(lastSha = "")
-
-            var thrown: Exception? = null
-            try {
-                service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-            } catch (e: RepositoryNotInitializedException) {
-                thrown = e
-            }
-
-            assertThat(thrown)
-                .isNotNull()
-                .hasMessageContaining("owner/repo")
-        }
-
-        @Test
-        fun `does nothing when repository is already up to date`() = runTest {
-            val sha = "abc123"
-            val repo = repoConnection(lastSha = sha)
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "$sha\n"
-
-            service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-
-            verify(exactly = 0) { eventPublisher.publishEvent(any()) }
-        }
-
-        @Test
-        fun `publishes GithubFileFetchedEvent for modified file`() = runTest {
-            val repo = repoConnection(lastSha = "old-sha")
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(repoPath, match { it.command().contains("diff") }) } returns "src/Main.kt\n"
-
-            // Create a real temp file so fetchFileUpdate can read it
-            val tempFile = Files.createTempFile("Main", ".kt")
-            tempFile.writeText("fun main() {}")
-            val localRepoPath = tempFile.parent
-            val fileName = tempFile.fileName.toString()
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns localRepoPath
-            every { gitRunner.exec(localRepoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(localRepoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(localRepoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(localRepoPath, match { it.command().contains("diff") }) } returns "$fileName\n"
-
-            service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-
-            val eventSlot = slot<GithubFileFetchedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-            with(eventSlot.captured) {
-                assertThat(path).isEqualTo(fileName)
-                assertThat(content).isEqualTo("fun main() {}")
-            }
-
-            Files.delete(tempFile)
-        }
-
-        @Test
-        fun `publishes GithubFileDeletedEvent for deleted file`() = runTest {
-            val repo = repoConnection(lastSha = "old-sha")
-            val nonExistentFile = "deleted/file.kt"
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(repoPath, match { it.command().contains("diff") }) } returns "$nonExistentFile\n"
-
-            service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-
-            val eventSlot = slot<GithubFileDeletedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-
-            assertThat(eventSlot.captured.path).isEqualTo(nonExistentFile)
-            assertThat(eventSlot.captured.transactionId).isEqualTo(transactionId)
-        }
-
-        @Test
-        fun `skips binary files in diff output`() = runTest {
-            val repo = repoConnection(lastSha = "old-sha")
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(repoPath, match { it.command().contains("diff") }) } returns
-                "image.png\narchive.zip\n"
-
-            service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-
-            val allEvents = mutableListOf<Any>()
-            verify(exactly = 2) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents).anyMatch { it is GithubFilesFetchStartedEvent }
-            assertThat(allEvents).anyMatch { it is GithubFilesFetchCompletedEvent }
-        }
-
-        @Test
-        fun `updates lastSha on repository after successful update`() = runTest {
-            val repo = repoConnection(lastSha = "old-sha")
-
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoPath
-            every { gitRunner.exec(repoPath, match { it.command().contains("fetch") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("merge") }) } returns ""
-            every { gitRunner.exec(repoPath, match { it.command().contains("rev-parse") }) } returns "new-sha\n"
-            every { gitRunner.exec(repoPath, match { it.command().contains("diff") }) } returns ""
-
-            service.fetchAndIngestFileUpdatesIncremental(repo, transactionId)
-
-            assertThat(repo.lastSha).isEqualTo("new-sha")
-        }
-    }
-
-    @Nested
-    inner class FetchAndIngestAllFiles {
-        @Test
-        fun `updates lastSha after successful ingestion`() = runTest {
-            val repo = repoConnection()
-
-            // Use a real temp dir with no files so streamFilesFromDiskAndIngest finishes immediately
-            val emptyDir = Files.createTempDirectory("empty-repo")
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns emptyDir
-            every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
-
-            service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
-
-            assertThat(repo.lastSha).isEqualTo("abc123")
-            Files.delete(emptyDir)
-        }
-
-        @Test
-        fun `publishes lifecycle events on successful ingestion`() = runTest {
-            val repo = repoConnection()
-
-            val emptyDir = Files.createTempDirectory("empty-repo")
-            every { gitRunner.exec(emptyDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns emptyDir
-
-            service.fetchAndIngestAllFiles(repo.id, repo.owner, repo.name, transactionId)
-
-            verify { eventPublisher.publishEvent(any<GithubFilesFetchStartedEvent>()) }
-            verify { eventPublisher.publishEvent(any<GithubFilesFetchCompletedEvent>()) }
-            Files.delete(emptyDir)
-        }
-
-        @Test
-        fun `throws ResponseStatusException when repository is not found`() = runTest {
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.empty()
-
-            assertThrows<Exception> {
-                service.fetchAndIngestAllFiles(UUID.randomUUID(), "", "", transactionId)
-            }
-        }
-    }
-
-    @Nested
-    inner class StreamFilesFromDiskAndIngest {
-        @TempDir
-        lateinit var repoDir: Path
-
-        @Test
-        fun `publishes one GithubFileFetchedEvent per text file`() = runTest {
-            repoDir.resolve("file1.kt").writeText("content 1")
-            repoDir.resolve("file2.kt").writeText("content 2")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val allEvents = mutableListOf<Any>()
-            verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(2)
-        }
-
-        @Test
-        fun `skips binary files`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            repoDir.resolve("image.png").writeText("fake binary")
-            repoDir.resolve("code.kt").writeText("real code")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val allEvents = mutableListOf<Any>()
-            verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(1)
-        }
-
-        @Test
-        fun `skips dot-git directory`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            val gitDir = repoDir.resolve(".git").also { Files.createDirectories(it) }
-            gitDir.resolve("config").writeText("git internals")
-            repoDir.resolve("code.kt").writeText("content")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val allEvents = mutableListOf<Any>()
-            verify(exactly = 3) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(1)
-        }
-
-        @Test
-        fun `publishes correct sourceUrl for nested file`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            val srcDir = repoDir.resolve("src").also { Files.createDirectories(it) }
-            srcDir.resolve("Main.kt").writeText("content")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val eventSlot = slot<GithubFileFetchedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-            assertThat(eventSlot.captured.sourceUrl)
-                .isEqualTo("https://github.com/owner/repo/blob/sha/src/Main.kt")
-        }
-
-        @Test
-        fun `publishes correct file content`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            repoDir.resolve("code.kt").writeText("fun main() {}")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val eventSlot = slot<GithubFileFetchedEvent>()
-            verify { eventPublisher.publishEvent(capture(eventSlot)) }
-            assertThat(eventSlot.captured.content).isEqualTo("fun main() {}")
-        }
-
-        @Test
-        fun `saves file snapshot for each ingested file`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            repoDir.resolve("code.kt").writeText("content")
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            verify { fileSnapshotRepository.saveAll(any<Iterable<GithubFileSnapshot>>()) }
-        }
-
-        @Test
-        fun `skips files that are not valid UTF-8`() = runTest {
-            val repo = repoConnection(lastSha = "")
-            Files.write(repoDir.resolve("notes.txt"), byteArrayOf(0xC3.toByte(), 0x28))
-            repoDir.resolve("code.kt").writeText("content", StandardCharsets.UTF_8)
-
-            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
-            coEvery { customCache.getLocalRepositoryPath(any()) } returns repoDir
-            every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "sha\n"
-
-            service.fetchAndIngestAllFiles(
-                repoConnection().id,
-                repoConnection().owner,
-                repoConnection().name,
-                transactionId,
-            )
-
-            val allEvents = mutableListOf<Any>()
-            verify(exactly = 4) { eventPublisher.publishEvent(capture(allEvents)) }
-            assertThat(allEvents.filterIsInstance<GithubFileFetchedEvent>()).hasSize(2)
-            assertThat(allEvents.filterIsInstance<GithubFileFetchFailedEvent>()).isEmpty()
-        }
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    private fun repoConnection(lastSha: String = "abc123") = GithubRepositoryConnection(
+    private val connection = GithubRepositoryConnection(
         owner = "owner",
         name = "repo",
-        lastSha = lastSha,
         user = GithubUser(id = GithubUserPat("auth-id", "token-name"), token = "test-token"),
     )
+
+    private fun givenIngestSucceeds(
+        revision: String = NEW_REVISION,
+        failures: List<GitIngestFailure> = emptyList(),
+    ) {
+        every { repoConnectionRepository.findById(connection.id) } returns Optional.of(connection)
+        every { repoConnectionRepository.save(any()) } returns connection
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery {
+            ingestionEngine.ingestFileChangesSince(coordinates, any(), capture(sink))
+        } returns GitIngestOutcome(revision, failures)
+    }
+
+    // ── full versus incremental ───────────────────────────────────────────────
+
+    @Test
+    fun `reads a repository in full when it has never been ingested`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        coVerify { ingestionEngine.ingestFileChangesSince(coordinates, "", any()) }
+    }
+
+    @Test
+    fun `incremental update advances from the revision the last run stored`() = runTest {
+        connection.lastSha = PREVIOUS_REVISION
+        givenIngestSucceeds()
+
+        service.fetchAndIngestFileUpdatesIncremental(connection, transactionId)
+
+        coVerify { ingestionEngine.ingestFileChangesSince(coordinates, PREVIOUS_REVISION, any()) }
+    }
+
+    @Test
+    fun `stores the revision the run reached`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
+        verify { repoConnectionRepository.save(connection) }
+    }
+
+    @Test
+    fun `incremental update without a cursor fails without calling the engine`() = runTest {
+        assertFailsWith<RepositoryNotInitializedException> {
+            service.fetchAndIngestFileUpdatesIncremental(connection, transactionId)
+        }
+
+        coVerify(exactly = 0) { ingestionEngine.ingestFileChangesSince(any(), any(), any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchFailedEvent })
+        }
+    }
+
+    // ── terminal events ───────────────────────────────────────────────────────
+
+    @Test
+    fun `publishes exactly one started and one completed event on success`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchStartedEvent })
+        }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchFailedEvent })
+        }
+    }
+
+    @Test
+    fun `completes and advances the cursor when only some files failed`() = runTest {
+        givenIngestSucceeds(failures = listOf(GitIngestFailure("huge.json", "above the ingest size limit")))
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+    }
+
+    @Test
+    fun `fails without advancing the cursor when the ingest throws`() = runTest {
+        every { repoConnectionRepository.findById(connection.id) } returns Optional.of(connection)
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery { ingestionEngine.ingestFileChangesSince(coordinates, any(), any()) } throws
+            RuntimeException("git clone failed (exit 128)")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+        }
+
+        assertThat(connection.lastSha).isEmpty()
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("exit 128") },
+            )
+        }
+    }
+
+    @Test
+    fun `reports an unknown repository without calling the engine`() = runTest {
+        every { repoConnectionRepository.findById(any()) } returns Optional.empty()
+
+        assertFailsWith<Exception> {
+            service.fetchAndIngestAllFiles(UUID.randomUUID(), "owner", "repo", transactionId)
+        }
+
+        coVerify(exactly = 0) { ingestionEngine.ingestFileChangesSince(any(), any(), any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchFailedEvent })
+        }
+    }
+
+    // ── verifyFileSyncStatus ──────────────────────────────────────────────────
+
+    @Test
+    fun `marks the repository out of date when the clone no longer matches the remote`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        every { repoConnectionRepository.save(connection) } returns connection
+        coEvery { ingestionEngine.isUpToDate(coordinates) } returns false
+
+        service.verifyFileSyncStatus(connection, transactionId)
+
+        assertThat(connection.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
+        verify { repoConnectionRepository.save(connection) }
+    }
+
+    @Test
+    fun `leaves an up-to-date repository untouched`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery { ingestionEngine.isUpToDate(coordinates) } returns true
+
+        service.verifyFileSyncStatus(connection, transactionId)
+
+        assertThat(connection.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify { eventPublisher.publishEvent(any<GithubFilesFetchStartedEvent>()) }
+        verify { eventPublisher.publishEvent(any<GithubFilesFetchCompletedEvent>()) }
+    }
+
+    // ── the provider binding ──────────────────────────────────────────────────
+
+    @Test
+    fun `maps a modified file onto a github file event with a github source url`() = runTest {
+        givenIngestSucceeds()
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        sink.captured.onBatch(
+            listOf(GitFileChange.Modified("src/Main.kt", NEW_REVISION, "fun main() {}", "content-hash")),
+        )
+
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> {
+                    it is GithubFileFetchedEvent &&
+                        it.path == "src/Main.kt" &&
+                        it.content == "fun main() {}" &&
+                        it.repositoryId == connection.id &&
+                        it.repositoryOwner == "owner" &&
+                        it.repositoryName == "repo" &&
+                        it.sourceUrl ==
+                        "https://github.com/owner/repo/blob/$NEW_REVISION/src/Main.kt"
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `records a file snapshot keyed by the repository-relative path`() = runTest {
+        givenIngestSucceeds()
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        sink.captured.onBatch(
+            listOf(GitFileChange.Modified("src/Main.kt", NEW_REVISION, "fun main() {}", "content-hash")),
+        )
+
+        val snapshots = slot<Iterable<GithubFileSnapshot>>()
+        verify { fileSnapshotRepository.saveAll(capture(snapshots)) }
+        val snapshot = snapshots.captured.single()
+        assertThat(snapshot.id.path).isEqualTo("src/Main.kt")
+        assertThat(snapshot.sha).isEqualTo("content-hash")
+        assertThat(snapshot.repository).isSameAs(connection)
+    }
+
+    @Test
+    fun `maps a deleted file onto a deletion event without a snapshot`() = runTest {
+        givenIngestSucceeds()
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        sink.captured.onBatch(listOf(GitFileChange.Deleted("src/Old.kt", NEW_REVISION)))
+
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFileDeletedEvent && it.path == "src/Old.kt" },
+            )
+        }
+        verify(exactly = 0) { fileSnapshotRepository.saveAll(any<Iterable<GithubFileSnapshot>>()) }
+    }
+
+    @Test
+    fun `reports a file the engine could not read`() = runTest {
+        givenIngestSucceeds()
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        sink.captured.onFailure("huge.json", "file is 9000000 bytes, above the ingest size limit")
+
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> {
+                    it is GithubFileFetchFailedEvent &&
+                        it.path == "huge.json" &&
+                        it.reason.contains("above the ingest size limit")
+                },
+            )
+        }
+    }
+
+    private companion object {
+        const val NEW_REVISION = "abc123def456"
+        const val PREVIOUS_REVISION = "000111222333"
+    }
 }

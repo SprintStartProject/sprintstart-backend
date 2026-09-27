@@ -1,17 +1,18 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoverRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoveredRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoverRepositoriesResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.DiscoveredRepository
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.SourceNotFoundException
@@ -21,7 +22,6 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubCommitsService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubFileService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubIssuesService
-import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubOrgService
 import com.sprintstart.sprintstartbackend.connectors.github.service.internal.GithubPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -309,7 +309,7 @@ class GithubConnectorServiceTest {
             advanceUntilIdle()
 
             coVerify { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
-            coVerify { commitsService.fetchAndIngestAllCommits(any(), any()) }
+            coVerify { commitsService.fetchAndIngestCommits(any(), any()) }
             coVerify { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any()) }
             coVerify { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any()) }
             coVerify { orgService.connectGithubOrgIfNecessary("owner", "test-token", any()) }
@@ -325,7 +325,7 @@ class GithubConnectorServiceTest {
             val fileTransactionId = slot<UUID>()
             val commitsTransactionId = slot<UUID>()
             coVerify { fileService.fetchAndIngestAllFiles(any(), any(), any(), capture(fileTransactionId)) }
-            coVerify { commitsService.fetchAndIngestAllCommits(any(), capture(commitsTransactionId)) }
+            coVerify { commitsService.fetchAndIngestCommits(any(), capture(commitsTransactionId)) }
 
             assertThat(fileTransactionId.captured).isEqualTo(commitsTransactionId.captured)
         }
@@ -348,7 +348,7 @@ class GithubConnectorServiceTest {
             assertThat(repository.projectIds).contains(testProjectId)
             coVerify(exactly = 0) { githubClient.repositoryExists(any()) }
             coVerify(exactly = 0) { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
-            coVerify(exactly = 0) { commitsService.fetchAndIngestAllCommits(any(), any()) }
+            coVerify(exactly = 0) { commitsService.fetchAndIngestCommits(any(), any()) }
             coVerify(exactly = 0) { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
             coVerify(exactly = 0) {
                 pullRequestsService.fetchAndIngestAllPullRequests(
@@ -604,7 +604,7 @@ class GithubConnectorServiceTest {
         every { repoConnectionRepository.save(any()) } answers { firstArg() }
         every { repoConfigRepository.save(any()) } answers { firstArg() }
         coJustRun { fileService.fetchAndIngestAllFiles(any(), any(), any(), any()) }
-        coJustRun { commitsService.fetchAndIngestAllCommits(any(), any()) }
+        coJustRun { commitsService.fetchAndIngestCommits(any(), any()) }
         coJustRun { issuesService.fetchAndIngestAllIssues(any(), any(), any(), any(), any()) }
         coJustRun { pullRequestsService.fetchAndIngestAllPullRequests(any(), any(), any(), any(), any()) }
         coJustRun { orgService.connectGithubOrgIfNecessary(any(), any(), any()) }

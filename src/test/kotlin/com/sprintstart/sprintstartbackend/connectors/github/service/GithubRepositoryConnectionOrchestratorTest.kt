@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.RepositoryConnectionOutcome
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoriesRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoryRequest
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
