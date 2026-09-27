@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.RepositoryConnectionOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConnectRepositoriesRequest

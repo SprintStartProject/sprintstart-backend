@@ -1,10 +1,14 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service.internal
+package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssueComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssuesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssuesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssuesFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.AssigneesCollection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentsConnection
@@ -12,11 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Issue
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.LabelNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.LabelsConnection
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk

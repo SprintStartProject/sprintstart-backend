@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.controller
+package com.sprintstart.sprintstartbackend.connectors.git.github.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
@@ -7,10 +7,10 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.reque
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.RemovePatRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatNameRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNameAlreadyExistsException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatStillInUseException
-import com.sprintstart.sprintstartbackend.connectors.github.service.GithubUserService
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatNameAlreadyExistsException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatStillInUseException
+import com.sprintstart.sprintstartbackend.connectors.git.github.service.GithubUserService
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just

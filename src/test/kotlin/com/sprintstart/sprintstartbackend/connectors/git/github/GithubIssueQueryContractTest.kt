@@ -1,7 +1,7 @@
-package com.sprintstart.sprintstartbackend.connectors.github
+package com.sprintstart.sprintstartbackend.connectors.git.github
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubIssuesResponse
-import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
+import com.sprintstart.sprintstartbackend.connectors.git.github.util.GithubQueryLoader
 import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

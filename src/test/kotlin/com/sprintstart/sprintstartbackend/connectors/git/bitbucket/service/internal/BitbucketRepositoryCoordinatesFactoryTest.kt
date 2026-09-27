@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.service.internal
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret

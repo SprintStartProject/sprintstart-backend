@@ -1,5 +1,6 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service.internal
+package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
@@ -7,6 +8,9 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentsConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubActor
@@ -19,11 +23,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewsConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ThreadCommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ThreadCommentsConnection
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.slot

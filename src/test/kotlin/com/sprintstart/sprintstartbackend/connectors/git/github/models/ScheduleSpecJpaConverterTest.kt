@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.models
+package com.sprintstart.sprintstartbackend.connectors.git.github.models
 
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpecJpaConverter

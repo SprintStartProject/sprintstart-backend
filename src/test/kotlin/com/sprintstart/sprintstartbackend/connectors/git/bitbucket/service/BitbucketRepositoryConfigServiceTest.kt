@@ -1,12 +1,12 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.service
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.request.ConfigureBitbucketRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConfigureBitbucketRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.mockk.every

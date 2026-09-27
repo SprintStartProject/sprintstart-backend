@@ -1,17 +1,17 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service.internal
+package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.coEvery

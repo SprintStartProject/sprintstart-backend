@@ -1,7 +1,7 @@
-package com.sprintstart.sprintstartbackend.connectors.github.controller
+package com.sprintstart.sprintstartbackend.connectors.git.github.controller
 
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.SourceNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.ProjectAccessDeniedException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.SourceNotFoundException
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
