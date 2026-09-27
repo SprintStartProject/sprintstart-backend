@@ -1,10 +1,10 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.ProjectAccessDeniedException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.ProjectAccessDeniedException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk

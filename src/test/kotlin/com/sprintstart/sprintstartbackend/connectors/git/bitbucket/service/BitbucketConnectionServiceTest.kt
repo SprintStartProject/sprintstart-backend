@@ -1,17 +1,17 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.service
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClient
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketConnectionService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService

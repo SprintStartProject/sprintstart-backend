@@ -1,7 +1,7 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.service
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService

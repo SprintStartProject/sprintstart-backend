@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github
+package com.sprintstart.sprintstartbackend.connectors.git.github
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
@@ -6,10 +6,10 @@ import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.UploadConfig
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.util.GithubQueryLoader
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.git.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import io.mockk.every

@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig

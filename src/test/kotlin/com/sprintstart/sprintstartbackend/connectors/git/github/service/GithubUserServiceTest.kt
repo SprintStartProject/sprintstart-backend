@@ -1,17 +1,17 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.AddPatRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.RemovePatRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatNameRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.UpdatePatRequest
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNameAlreadyExistsException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatStillInUseException
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUserRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatNameAlreadyExistsException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatStillInUseException
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubUserRepository
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk

@@ -3,13 +3,13 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataMember
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataTeam
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataTeamMember
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataMember
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeam
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeamMember
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata

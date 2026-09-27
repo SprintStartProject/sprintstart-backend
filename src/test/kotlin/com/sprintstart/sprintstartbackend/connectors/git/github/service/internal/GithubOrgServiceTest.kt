@@ -1,5 +1,10 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service.internal
+package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingStartedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubOrganization
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMemberResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMembersResponse

@@ -1,12 +1,12 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.controller
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.request.ConfigureBitbucketRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.response.GetBitbucketRepositoryConfigResponse
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.service.BitbucketRepositoryConfigService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConfigureBitbucketRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.GetBitbucketRepositoryConfigResponse
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketRepositoryConfigService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.mockk.every
 import io.mockk.just

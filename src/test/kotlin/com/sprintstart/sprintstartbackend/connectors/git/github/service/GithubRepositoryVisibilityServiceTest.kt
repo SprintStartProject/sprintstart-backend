@@ -1,13 +1,13 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUserRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.GithubUserPatNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubUserRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.every

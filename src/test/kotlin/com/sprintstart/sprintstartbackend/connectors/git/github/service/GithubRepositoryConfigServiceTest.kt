@@ -1,15 +1,15 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConfigureRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.GetRepositoryConfigRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.GetRepositoryConfigResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConfigureRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.GetRepositoryConfigRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryConfigNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConfigRepository
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryConfigNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConfigRepository
+import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.mockk.every

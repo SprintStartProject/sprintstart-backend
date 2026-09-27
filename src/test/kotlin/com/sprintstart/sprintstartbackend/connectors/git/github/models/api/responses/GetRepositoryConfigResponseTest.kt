@@ -1,10 +1,10 @@
-package com.sprintstart.sprintstartbackend.connectors.github.models.api.responses
+package com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.GetRepositoryConfigResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubRepositoryConnection
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import kotlin.test.Test
 
 class GetRepositoryConfigResponseTest {

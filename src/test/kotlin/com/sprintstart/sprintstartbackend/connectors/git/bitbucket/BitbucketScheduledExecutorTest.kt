@@ -1,10 +1,10 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.model.entity.BitbucketRepositoryConfig
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.service.BitbucketRepositoryConfigService
-import com.sprintstart.sprintstartbackend.connectors.bitbucket.service.BitbucketUpdatesService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketScheduledExecutor
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketRepositoryConfigService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketUpdatesService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import io.mockk.coVerify
 import io.mockk.every

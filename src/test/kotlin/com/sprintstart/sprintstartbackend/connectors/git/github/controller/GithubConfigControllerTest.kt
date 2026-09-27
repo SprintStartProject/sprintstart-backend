@@ -1,13 +1,13 @@
-package com.sprintstart.sprintstartbackend.connectors.github.controller
+package com.sprintstart.sprintstartbackend.connectors.git.github.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.ConfigureRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.requests.GetRepositoryConfigRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.GetRepositoryConfigResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConfigureRepositoryRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.GetRepositoryConfigRequest
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryConfigNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.RepositoryNotConnectedException
-import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryConfigService
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryConfigNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.git.github.service.GithubRepositoryConfigService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import io.mockk.every
 import io.mockk.just

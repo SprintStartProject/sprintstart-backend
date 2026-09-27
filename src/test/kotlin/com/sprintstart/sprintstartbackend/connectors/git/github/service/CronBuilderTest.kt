@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.github.service
+package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec

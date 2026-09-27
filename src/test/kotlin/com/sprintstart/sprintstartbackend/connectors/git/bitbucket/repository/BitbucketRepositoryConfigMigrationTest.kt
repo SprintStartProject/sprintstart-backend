@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.connectors.bitbucket.repository
+package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
