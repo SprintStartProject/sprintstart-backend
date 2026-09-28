@@ -12,13 +12,11 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class BitbucketAccount(
-    val uuid: String? = null,
     @SerialName("account_id")
     val accountId: String? = null,
     val nickname: String? = null,
     @SerialName("display_name")
     val displayName: String? = null,
-    val links: BitbucketLinks? = null,
 )
 
 /**

@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,8 +38,9 @@ internal class BitbucketConnectionService(
     private val connectionRepository: BitbucketConnectionRepository,
     private val configRepository: BitbucketRepositoryConfigRepository,
     private val bitbucketClient: BitbucketClient,
-    private val bitbucketFileService: BitbucketFileService,
-    private val bitbucketCommitsService: BitbucketCommitsService,
+    private val fileService: BitbucketFileService,
+    private val commitsService: BitbucketCommitsService,
+    private val prService: BitbucketPullRequestsService,
     private val credentialApi: AtlassianCredentialApi,
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
@@ -88,8 +90,14 @@ internal class BitbucketConnectionService(
     /**
      * Stores the connection and starts collecting the repository's data.
      *
+     * A repository that is already connected is not stored a second time: the connection already
+     * carries every project linked to it, so connecting it again to another project adds that
+     * project to the existing row and shares the artifacts it has already collected. No fetch is
+     * started in that case, because the repository's data is already being collected under the
+     * existing connection.
+     *
      * @param authId The authenticated user the credential belongs to.
-     * @param request The repository coordinates and the name of the credential to use.
+     * @param request The repository coordinates, the credential to use and the project to link.
      * @param transactionId The id of the overall connection transaction.
      * @return [transactionId], unchanged, so the caller can correlate the asynchronous ingestion.
      */
@@ -102,6 +110,7 @@ internal class BitbucketConnectionService(
             connectionRepository.findByWorkspaceAndSlug(request.workspace, request.slug)
         }
         if (alreadyConnected != null) {
+            linkProject(alreadyConnected, request.projectId)
             eventPublisher.publishEvent(BitbucketRepositoryAlreadyConnectedEvent(transactionId))
             return transactionId
         }
@@ -111,6 +120,7 @@ internal class BitbucketConnectionService(
             slug = request.slug,
             credentialAuthId = authId,
             credentialName = request.credentialName,
+            projectIdsInternal = mutableSetOf(request.projectId),
         )
         // The config shares the connection's id and is what the scheduled executor reads, so it is
         // written together with the connection. Auto-update defaults on, keeping a connected
@@ -126,12 +136,30 @@ internal class BitbucketConnectionService(
         // Launch data collectors. Both read the same clone but take turns on it, so the commit read
         // sees the revision the file read left behind rather than one it is halfway through creating.
         applicationScope.launch {
-            bitbucketFileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
+            fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
         }
         applicationScope.launch {
-            bitbucketCommitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+            commitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+        }
+        applicationScope.launch {
+            prService.fetchAndIngestPullRequests(connection.id, transactionId)
         }
 
         return transactionId
+    }
+
+    /**
+     * Links a project to an existing connection, writing only when the link is new.
+     *
+     * The guard keeps a repeated connect of an already-linked repository free of writes, so the
+     * idempotent case does not dirty the row on every call.
+     */
+    private suspend fun linkProject(connection: BitbucketConnection, projectId: UUID) {
+        if (!connection.projectIdsInternal.add(projectId)) {
+            return
+        }
+        withContext(Dispatchers.IO) {
+            connectionRepository.save(connection)
+        }
     }
 }

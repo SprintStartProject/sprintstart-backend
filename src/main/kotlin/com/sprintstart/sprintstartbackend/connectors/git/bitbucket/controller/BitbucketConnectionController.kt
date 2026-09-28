@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
@@ -44,6 +45,7 @@ internal class BitbucketConnectionController(
                 description = "Connection accepted",
                 content = [Content(schema = Schema(implementation = ConnectBitbucketRepositoryResponse::class))],
             ),
+            ApiResponse(responseCode = "400", description = "Request body is invalid"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "404", description = "The named credential does not exist"),
         ],
@@ -51,7 +53,7 @@ internal class BitbucketConnectionController(
     @PostMapping
     suspend fun connect(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-        @RequestBody request: ConnectBitbucketRepositoryRequest,
+        @Valid @RequestBody request: ConnectBitbucketRepositoryRequest,
     ): ResponseEntity<ConnectBitbucketRepositoryResponse> {
         val response = service.connectRepositoryIfExists(jwt.subject, request)
         return ResponseEntity.ok(response)
