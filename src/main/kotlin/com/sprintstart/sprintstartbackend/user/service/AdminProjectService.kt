@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
@@ -46,6 +47,7 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val bitbucketRepositoryApi: BitbucketRepositoryApi,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceApi: JiraInstanceApi,
 ) {
@@ -177,6 +179,7 @@ class AdminProjectService(
         val assignments = assignmentRepository.findAllByProjectId(project.id)
         assignmentRepository.deleteAll(assignments)
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
+        bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id)
         jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
         eventPublisher.publishEvent(ProjectDeletedEvent(project.id))

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.excepti
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -22,6 +23,7 @@ class BitbucketUpdatesServiceTest {
     private val connectionRepository = mockk<BitbucketConnectionRepository>()
     private val fileService = mockk<BitbucketFileService>(relaxed = true)
     private val commitsService = mockk<BitbucketCommitsService>(relaxed = true)
+    private val prService = mockk<BitbucketPullRequestsService>(relaxed = true)
 
     // Unconfined so the launched ingests run inline and can be verified without waiting.
     private val applicationScope = CoroutineScope(Dispatchers.Unconfined)
@@ -30,22 +32,26 @@ class BitbucketUpdatesServiceTest {
         connectionRepository = connectionRepository,
         fileService = fileService,
         commitsService = commitsService,
+        prService = prService,
         applicationScope = applicationScope,
     )
 
     @Test
-    fun `re-ingests files and commits of the connection under one transaction`() = runTest {
+    fun `re-ingests files, commits and pull requests of the connection under one transaction`() = runTest {
         val connection = connection("sprintstart", "backend")
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
         val fileTransaction = slot<UUID>()
         val commitTransaction = slot<UUID>()
+        val prTransaction = slot<UUID>()
 
         val transactionId = service.updateRepository(connection.id)
 
         coVerify { fileService.fetchAndIngestFilesOfRepository(connection.id, capture(fileTransaction)) }
         coVerify { commitsService.fetchAndIngestCommitsOfRepository(connection.id, capture(commitTransaction)) }
+        coVerify { prService.fetchAndIngestPullRequests(connection.id, capture(prTransaction)) }
         assertThat(fileTransaction.captured).isEqualTo(transactionId)
         assertThat(commitTransaction.captured).isEqualTo(transactionId)
+        assertThat(prTransaction.captured).isEqualTo(transactionId)
     }
 
     @Test
@@ -59,6 +65,7 @@ class BitbucketUpdatesServiceTest {
 
         coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }
         coVerify(exactly = 0) { commitsService.fetchAndIngestCommitsOfRepository(any(), any()) }
+        coVerify(exactly = 0) { prService.fetchAndIngestPullRequests(any(), any()) }
     }
 
     private fun connection(workspace: String, slug: String) = BitbucketConnection(

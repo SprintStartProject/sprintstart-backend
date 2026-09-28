@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.excepti
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -12,23 +13,25 @@ import org.springframework.stereotype.Service
 import java.util.UUID
 
 /**
- * Re-ingests the files and commits of a connected Bitbucket repository through the shared engine.
+ * Re-ingests the files, commits and pull requests of a connected Bitbucket repository.
  *
  * This is the update counterpart of [BitbucketConnectionService], which ingests a repository once.
- * It adds no ingestion logic of its own: the file and commit services already read only what changed
- * since each connection's stored cursor, so a repository that has not moved costs one fetch and one
- * revision check and reads no file.
+ * It adds no ingestion logic of its own: each collector already reads only what changed since the
+ * cursor it owns on the connection — a revision for files and commits, a timestamp for pull
+ * requests — so a repository that has not moved costs one fetch and one check per collector and
+ * reads no file.
  *
- * Both ingests of the repository are launched on the application scope, so the caller returns as
- * soon as the work is queued rather than after the clone. They share a clone and take turns on it
- * through the engine's per-repository lock, so the commit read sees the revision the file read left
- * behind instead of one it is halfway through creating.
+ * All three ingests of the repository are launched on the application scope, so the caller returns
+ * as soon as the work is queued rather than after the clone. The file and commit reads share a clone
+ * and take turns on it through the engine's per-repository lock, so the commit read sees the
+ * revision the file read left behind instead of one it is halfway through creating.
  */
 @Service
 internal class BitbucketUpdatesService(
     private val connectionRepository: BitbucketConnectionRepository,
     private val fileService: BitbucketFileService,
     private val commitsService: BitbucketCommitsService,
+    private val prService: BitbucketPullRequestsService,
     private val applicationScope: CoroutineScope,
 ) {
     /**
@@ -38,7 +41,7 @@ internal class BitbucketUpdatesService(
      * caller can see it, rather than inside a background job whose failure only reaches the log.
      *
      * @param repositoryId The id of the connected repository to update.
-     * @return The id of the update transaction, shared by the file and commit events.
+     * @return The id of the update transaction, shared by the file, commit and pull-request events.
      * @throws BitbucketRepositoryNotConnectedException if no connection with [repositoryId] exists.
      */
     suspend fun updateRepository(repositoryId: UUID): UUID {
@@ -52,6 +55,9 @@ internal class BitbucketUpdatesService(
         }
         applicationScope.launch {
             commitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+        }
+        applicationScope.launch {
+            prService.fetchAndIngestPullRequests(connection.id, transactionId)
         }
 
         return transactionId

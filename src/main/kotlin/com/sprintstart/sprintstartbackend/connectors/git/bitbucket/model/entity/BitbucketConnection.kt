@@ -1,12 +1,16 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import jakarta.persistence.CollectionTable
 import jakarta.persistence.Column
+import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
+import jakarta.persistence.JoinColumn
 import jakarta.persistence.Table
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -15,13 +19,21 @@ import java.util.UUID
  * The connection stores the credentials to read the repository by name rather than by value, so
  * revoking a credential in one place stops every repository that used it.
  *
- * The two revision cursors are what make an ingest incremental. Each holds the revision the last
- * ingest of that kind reached, and an empty value means "never ingested", which the ingestion engine
- * treats as "read everything". Files and commits are tracked separately because their ingests are
- * independent: reading one fully must not make the other look already done.
+ * Each collector owns its own cursor, which is what makes an ingest incremental: files and commits
+ * hold the revision their last ingest reached, and pull requests hold the instant theirs started.
+ * An empty revision means "never ingested", which the ingestion engine treats as "read everything";
+ * a null timestamp means the same for pull requests. They are tracked separately because the
+ * ingests are independent: reading one fully must not make the others look already done.
+ *
+ * [projectIdsInternal] is what makes the repository's artifacts visible to the AI index. Artifacts
+ * are shared across every project the connection is linked to, so connecting the same repository to
+ * a second project reuses this connection instead of storing a second one.
  *
  * @property lastSha The revision whose files were last ingested.
  * @property lastCommitsSyncedSha The revision whose commits were last ingested.
+ * @property lastPullRequestsSyncAt When the last successful pull-request fetch started, or `null`
+ *           when pull requests have never been read.
+ * @property projectIdsInternal The SprintStart projects this repository is connected to.
  */
 @Entity
 @Table(name = "bitbucket_repositories")
@@ -45,4 +57,17 @@ class BitbucketConnection(
     var lastSha: String = "",
     @Column(name = "last_commits_synced_sha", nullable = false)
     var lastCommitsSyncedSha: String = "",
-)
+    @Column(name = "last_pr_sync")
+    var lastPullRequestsSyncAt: Instant? = null,
+    @ElementCollection
+    @CollectionTable(
+        name = "bitbucket_repository_projects",
+        joinColumns = [JoinColumn(name = "repository_id")],
+    )
+    @Column(name = "project_id", nullable = false)
+    var projectIdsInternal: MutableSet<UUID> = mutableSetOf(),
+) {
+    /** The projects this repository is connected to, as an immutable view. */
+    val projectIds: Set<UUID>
+        get() = projectIdsInternal.toSet()
+}
