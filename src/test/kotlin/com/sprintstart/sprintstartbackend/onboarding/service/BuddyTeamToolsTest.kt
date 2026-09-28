@@ -396,13 +396,13 @@ class BuddyTeamToolsTest {
     }
 
     @Test
-    fun `open_area's definition says an area stays open for one more message, and forbids inventing a confirmation`() {
+    fun `open_area's definition says an area stays open for the visit, and forbids inventing a confirmation`() {
         val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
 
         val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
 
-        assertThat(description).contains("stays open for the manager's next message too")
-        assertThat(description).contains("open the area again first")
+        assertThat(description).contains("stays open for the rest of this visit")
+        assertThat(description).contains("open its area first")
         assertThat(description).contains("Never say something has been offered for confirmation unless a tool")
     }
 }

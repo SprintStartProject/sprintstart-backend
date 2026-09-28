@@ -146,13 +146,9 @@ class BuddyTeamService(
         // Read before saving the new message so it is not sent to the AI twice.
         val transcript = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
         val history = transcript.drop(session.summarizedCount).map { it.toAgentMessage() }
-        // The last reply is the one this message answers, so it decides what is still open. It is the whole
-        // transcript, not the unfolded part: a fold must not close what the last reply opened.
-        val carriedOver = transcript
-            .lastOrNull()
-            ?.takeIf { it.role == BuddyMessageRole.ASSISTANT }
-            ?.openedAreas
-            .toTeamAreas()
+        // Everything the visit has opened, from the whole transcript rather than the unfolded part: a fold
+        // must not close an area the manager is still working in.
+        val carriedOver = transcript.areasOpenedThisVisit()
 
         buddyTeamMessageRepository.save(
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
@@ -170,7 +166,7 @@ class BuddyTeamService(
             while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
                 step++
                 // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
-                // one opened by the previous *reply* is mounted from the first.
+                // one opened earlier in the visit is mounted from the first.
                 val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
                 val response = onboardingAiClient.buddyAgentTurn(
                     BuddyAgentRequest(
@@ -185,7 +181,14 @@ class BuddyTeamService(
                     ),
                 )
                 citations = response.citations
-                if (response.final) {
+                if (response.final && response.text.writesOutAToolCall()) {
+                    // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
+                    // and if the budget runs out the reply is the fallback, never the raw call.
+                    logger.warn("Team buddy wrote a tool call out as its reply; asking again")
+                    messages = response.messages.ifEmpty {
+                        messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
+                    } + BuddyAgentMessageDto(role = "user", content = TOOL_CALL_WRITTEN_OUT)
+                } else if (response.final) {
                     answer = response.text
                 } else {
                     val mounted = tools.map { it.name }.toSet()
@@ -211,8 +214,7 @@ class BuddyTeamService(
                     session = session,
                     role = BuddyMessageRole.ASSISTANT,
                     content = reply,
-                    // Only what this reply opened, not what it inherited: an area stays open for one more
-                    // message, so a conversation does not slowly mount every area's tools.
+                    // Only what this reply opened; the visit's areas are read back from these.
                     openedAreas = areas.openedThisTurn.encoded(),
                 ),
             )

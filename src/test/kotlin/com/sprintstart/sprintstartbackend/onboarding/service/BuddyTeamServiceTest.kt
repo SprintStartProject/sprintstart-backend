@@ -285,7 +285,7 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `opening the area again keeps it open for one more message`() = runTest {
+    fun `an area opened again is stored again with the reply that opened it`() = runTest {
         asTranscript(reply(opened = "KNOWLEDGE"))
         val saved = savedReplies()
         mountedOnEachHop()
@@ -312,27 +312,98 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `nothing is carried over from anything but the reply just before`() = runTest {
+    fun `an area stays mounted through a discussion, however many messages come before the approval`() = runTest {
+        asTranscript(
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "can you answer Ada?"),
+            reply(opened = "KNOWLEDGE"),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "make it shorter"),
+            reply(content = "Shorter draft."),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "friendlier please"),
+            reply(content = "Friendlier draft."),
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
+    @Test
+    fun `every area the visit opened stays mounted`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"), reply(opened = "TEAM,ARRIVAL"))
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "go ahead").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE, TeamArea.TEAM, TeamArea.ARRIVAL))
+    }
+
+    @Test
+    fun `a new visit starts with nothing mounted`() = runTest {
         val mountedSets = mountedOnEachHop()
         coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
 
-        // An older reply opened an area, but a later one did not: the area has closed.
-        asTranscript(
-            reply(opened = "KNOWLEDGE"),
-            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "thanks"),
-            reply(content = "You are welcome."),
-        )
-        service.sendMessageForMe(authId, projectId, "and now?").toList()
-
-        // The last message is a greeting that opens a visit.
-        asTranscript(reply(content = "Hi again.", opening = true))
+        // What an earlier visit opened is closed by the greeting that begins the next one.
+        asTranscript(reply(opened = "KNOWLEDGE"), reply(content = "Hi again.", opening = true))
         service.sendMessageForMe(authId, projectId, "hello").toList()
 
-        // The last message is the manager's own, so there is no reply to inherit from.
+        // No reply yet in this visit, only the manager's own message.
         asTranscript(BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "hello?"))
         service.sendMessageForMe(authId, projectId, "anyone there?").toList()
 
-        assertThat(mountedSets).containsExactly(emptySet(), emptySet(), emptySet())
+        assertThat(mountedSets).containsExactly(emptySet(), emptySet())
+    }
+
+    @Test
+    fun `an area opened in this visit survives a greeting that came before it`() = runTest {
+        asTranscript(reply(opened = "TEAM"), reply(content = "Hi again.", opening = true), reply(opened = "KNOWLEDGE"))
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
+    /**
+     * Seen live: the model answered with `{"name":"find_member","parameters":{...}}` as its reply. Nothing
+     * ran, and the manager was shown a broken request as if it were an answer.
+     */
+    @Test
+    fun `a tool call written out as the reply is sent back rather than shown`() = runTest {
+        val requests = mutableListOf<BuddyAgentRequest>()
+        val written = """I'll look them up. {"name":"find_member","parameters":{"query":"Ada"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = true,
+                text = written,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant", content = written)),
+            ),
+            finalReply("Ada is on the project."),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
+
+        assertThat(requests).hasSize(2)
+        assertThat(requests[1].messages.map { it.role }.takeLast(2)).containsExactly("assistant", "user")
+        assertThat(requests[1].messages.last().content).isEqualTo(TOOL_CALL_WRITTEN_OUT)
+        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo("Ada is on the project.")
+    }
+
+    @Test
+    fun `a model that keeps writing the call out ends in the fallback reply, never the raw call`() = runTest {
+        val saved = savedReplies()
+        val written = """{"name":"find_member","parameters":{"query":"Ada"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply(written)
+
+        val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
+
+        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo(BuddyService.FALLBACK_REPLY)
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.content)
+            .isEqualTo(BuddyService.FALLBACK_REPLY)
+        coVerify(exactly = BuddyService.MAX_AGENT_STEPS) { onboardingAiClient.buddyAgentTurn(any()) }
     }
 
     @Test

@@ -279,9 +279,9 @@ class BuddyTeamTools(
             name = OPEN_AREA,
             description = "Open one area of the manager's work so its tools become available on your next " +
                 "step. Open an area only when the manager asks about something in it; its tools are not " +
-                "available until you have opened it. An area stays open for the manager's next message too, " +
-                "and no longer: if they ask you to act on something from earlier and the tool is not there, " +
-                "open the area again first. Never say something has been offered for confirmation unless a " +
+                "available until you have opened it. An area stays open for the rest of this visit, so you " +
+                "do not open it again to act on something you discussed. If a tool you need is not there, " +
+                "open its area first. Never say something has been offered for confirmation unless a " +
                 "tool of an opened area did it.\n\nThe areas:\n" +
                 openableAreas().sorted().joinToString("\n") { "- ${it.name.lowercase()}: ${it.summary}" },
             parameters = buildJsonObject {

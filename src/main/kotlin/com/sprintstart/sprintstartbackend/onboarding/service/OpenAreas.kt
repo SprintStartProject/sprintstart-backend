@@ -1,16 +1,18 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
+
 /**
  * The team areas whose tools are mounted while one manager message is answered.
  *
- * Two things put an area here. The manager's previous message may have opened it ([carriedOver]), which is
- * what makes "yes, send it" work: drafting something opens an area, approving it comes a message later,
- * and the transcript is text only, so nothing else remembers that the area was open. And the model can open
- * one itself during this turn ([open]).
+ * Two things put an area here. Earlier in the visit a reply may have opened it ([carriedOver]), which is
+ * what makes "yes, send it" work however long the discussion before it ran: drafting something opens an
+ * area, and approving it comes messages later, and the transcript is text only, so nothing else remembers
+ * that the area was open. And the model can open one itself during this turn ([open]).
  *
- * Only what this turn opened is remembered for the next one ([openedThisTurn]). What was carried over is not
- * carried again, so an area stays open for one further message and a long conversation does not slowly
- * mount every area's tools — the reason areas exist.
+ * Only what this turn opened is stored with its reply ([openedThisTurn]); the visit's set is read back
+ * from those ([areasOpenedThisVisit]), so nothing inherited is stored twice.
  */
 internal class OpenAreas(
     carriedOver: Set<TeamArea> = emptySet(),
@@ -26,6 +28,19 @@ internal class OpenAreas(
         openedThisTurn.add(area)
     }
 }
+
+/**
+ * The areas any reply of the current visit opened, for the transcript read oldest first.
+ *
+ * A visit begins at the last greeting, the same boundary the manager sees, so a new visit starts with
+ * nothing mounted. Within one, an area stays open: an area is only ever opened because the manager asked
+ * about something in it, so what accumulates is what they have actually been working on.
+ */
+internal fun List<BuddyTeamMessage>.areasOpenedThisVisit(): Set<TeamArea> =
+    drop(indexOfLast { it.opening }.coerceAtLeast(0))
+        .filter { it.role == BuddyMessageRole.ASSISTANT }
+        .flatMap { it.openedAreas.toTeamAreas() }
+        .toSet()
 
 /** The stored form of the areas a reply opened: their names, comma-separated and sorted; null when none. */
 internal fun Set<TeamArea>.encoded(): String? =
