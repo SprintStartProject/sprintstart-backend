@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -45,6 +46,34 @@ class GithubRepositoryConnectionListenerTest {
                 sourceInstanceRef = "owner/repo",
             )
         }
+    }
+
+    @Test
+    fun `already connected event starts and finishes an empty github run`() {
+        val runId = UUID.randomUUID()
+        val repositoryId = UUID.randomUUID()
+        every { ingestionRunLifeCycleService.startOrUpdateRun(any(), any(), any(), any(), any(), any()) } just runs
+        every { ingestionRunLifeCycleService.finishEmptyRun(runId) } just runs
+        every { githubRepositoryApi.getRepositoryIdByOwnerAndName("owner", "repo") } returns repositoryId
+
+        listener.on(
+            GithubRepositoryAlreadyConnectedEvent(
+                transactionId = runId,
+                owner = "owner",
+                name = "repo",
+            ),
+        )
+
+        verify(exactly = 1) {
+            ingestionRunLifeCycleService.startOrUpdateRun(
+                transactionId = runId,
+                sourceSystem = SourceSystem.GITHUB,
+                status = IngestionRunStatus.CONNECTED,
+                sourceInstanceId = repositoryId,
+                sourceInstanceRef = "owner/repo",
+            )
+        }
+        verify(exactly = 1) { ingestionRunLifeCycleService.finishEmptyRun(runId) }
     }
 
     @Test

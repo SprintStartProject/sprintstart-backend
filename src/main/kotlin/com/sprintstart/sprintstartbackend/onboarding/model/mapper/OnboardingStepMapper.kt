@@ -6,7 +6,11 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.step.UpdateOnboardingStepResponse
 
-fun OnboardingStep.toGetAllResponse(): GetOnboardingStepsResponse {
+/**
+ * @param locked The step's derived availability (see [OnboardingAvailability]); defaults to
+ * unlocked for the admin-facing views that do not compute it.
+ */
+fun OnboardingStep.toGetAllResponse(locked: Boolean = false): GetOnboardingStepsResponse {
     return GetOnboardingStepsResponse(
         id = this.id,
         phaseId = this.phase.id,
@@ -22,6 +26,10 @@ fun OnboardingStep.toGetAllResponse(): GetOnboardingStepsResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        locked = locked,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -43,6 +51,9 @@ fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -58,6 +69,9 @@ fun OnboardingStep.toCreateResponse(): CreateOnboardingStepResponse {
         isAiAssisted = this.aiAssisted,
         expectedOutcome = this.expectedOutcome,
         status = this.status,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }
 
@@ -76,5 +90,8 @@ fun OnboardingStep.toUpdateResponse(): UpdateOnboardingStepResponse {
         completedAt = this.completedAt,
         feedback = this.feedback.lastOrNull()?.toGetResponse(),
         skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
     )
 }

@@ -2,9 +2,13 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory
@@ -12,6 +16,8 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.time.Instant
+import java.util.UUID
 
 /**
  * Owns writes to the ingestion artifact store and the mutable parts of `IngestionRun`.
@@ -35,7 +41,9 @@ class GithubArtifactProviderService(
      * Business rules:
      * - commits are idempotent by `sourceId`; an already-known commit is ignored
      * - files are updated only when the incoming content hash changes
-     * - issues are updated only when the computed issue hash changes
+     * - issues are updated only when the computed issue hash changes; `state`/`labels` are the
+     *   exception -- they refresh on every fetch regardless of the hash, since a label or
+     *   open/closed change doesn't move title/body
      * - pull requests are always treated as mutable and overwrite title/body on re-fetch
      *
      * Counter side effects happen inside the same transaction:
@@ -48,73 +56,177 @@ class GithubArtifactProviderService(
     @Transactional
     fun persistArtifact(command: GithubArtifactCommand) {
         val runId = command.ingestionRunId
-        val projectIds = githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
-        var artifact: Artifact?
+        val projectIds = when (command.metadata) {
+            is GithubArtifactMetadata ->
+                githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
+            is GithubOrgMetadataArtifactMetadata ->
+                githubRepositoryApi.getProjectIdsByOwner(command.metadata.login).toMutableSet()
+            else -> mutableSetOf()
+        }
+
+        val existing = artifactRepository.findBySourceId(command.sourceId)
+        if (existing != null) {
+            updateExisting(existing, command, projectIds, runId)
+            return
+        }
+
+        storeNew(command, projectIds, runId)
+    }
+
+    /**
+     * Reconciles project memberships for an already stored GitHub organization metadata artifact
+     * during an active ingestion run.
+     *
+     * Invoked when a repository is connected whose organization has already been fetched by an earlier
+     * connection. If any new project IDs are associated with the organization, the artifact is updated
+     * and marked for re-ingestion so the new project memberships are synchronized to the AI index.
+     *
+     * @param runId The active ingestion run ID.
+     * @param orgLogin The organization login or owner name.
+     */
+    @Transactional
+    fun syncOrgArtifactProjects(runId: UUID, orgLogin: String) {
+        val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, orgLogin) ?: return
+        val currentProjectIds = githubRepositoryApi.getProjectIdsByOwner(orgLogin)
+        val linked = artifact.addProjectIds(currentProjectIds)
+        if (linked) {
+            val run = lockRun(runId)
+            run.artifactIdsToReingest.add(artifact.id)
+        }
+    }
+
+    /**
+     * Applies a re-fetch to an artifact an earlier run already stored.
+     *
+     * Everything the AI payload carries has to reach the index, so a newly linked project, changed
+     * content, and a changed `state` or label set all mark the artifact for re-ingestion. Only a
+     * content change counts as an update of the run: linking a repository to a second project, or
+     * closing an issue, does not change what was fetched.
+     *
+     * @param artifact The stored artifact matching the command's source id.
+     * @param command The mapped GitHub artifact command.
+     * @param projectIds The projects the artifact's repository is currently linked to.
+     * @param runId The active ingestion run.
+     */
+    private fun updateExisting(
+        artifact: Artifact,
+        command: GithubArtifactCommand,
+        projectIds: Set<UUID>,
+        runId: UUID,
+    ) {
+        val linked = artifact.addProjectIds(projectIds)
+        // Backfills rows ingested before the column existed. Not part of the AI payload, so it
+        // deliberately does not mark the artifact for re-embedding.
+        if (artifact.authorLogin == null) {
+            artifact.authorLogin = command.authorLogin
+        }
+        val change = applyChange(artifact, command)
+
+        if (!linked && !change.reachesTheIndex) return
+
+        val ingestionRun = lockRun(runId)
+        if (change.content) {
+            artifact.lastChangedAt = Instant.now()
+            ingestionRun.updatedCount++
+        }
+        ingestionRun.artifactIdsToReingest.add(artifact.id)
+    }
+
+    /**
+     * Overwrites the stored fields the source changed, per artifact type.
+     *
+     * @param artifact The stored artifact to update in place.
+     * @param command The mapped GitHub artifact command carrying the freshly fetched content.
+     * @return What changed, see [ArtifactChange].
+     */
+    private fun applyChange(artifact: Artifact, command: GithubArtifactCommand): ArtifactChange =
         when (command.artifactType) {
+            // Immutable once fetched: a re-fetch yields the same content, so only a new project
+            // link is ever worth acting on.
             ArtifactType.COMMIT,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    return
+            ArtifactType.ORG_METADATA,
+            -> ArtifactChange.NOTHING
+
+            // Confluence pages never reach this provider; they have one of their own.
+            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+
+            ArtifactType.FILE -> {
+                if (artifact.hash == command.hash) {
+                    ArtifactChange.NOTHING
+                } else {
+                    artifact.content = command.bodyText
+                    artifact.hash = command.hash
+                    ArtifactChange(content = true)
                 }
             }
 
-            ArtifactType.FILE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
+            // State and labels are refreshed on every fetch, regardless of the hash: an issue being
+            // closed or re-labeled doesn't move its title or body, so gating them on hash equality
+            // would silently miss exactly the updates they exist for. Neither counts as a content
+            // change -- they leave `lastChangedAt` and the run's update count alone -- but both
+            // travel in the AI payload, so they still have to reach the index.
+            ArtifactType.ISSUE -> {
+                // Compared as sets: GitHub returns an issue's labels in no guaranteed order, and a
+                // list comparison would call a pure reordering a change -- putting every issue in
+                // the repository up for re-embedding on a nightly run that altered nothing.
+                val trackingChanged =
+                    artifact.state != command.state ||
+                        artifact.labels.toSet() != command.labels.toSet()
+                artifact.state = command.state
+                artifact.labels.clear()
+                artifact.labels.addAll(command.labels)
 
-            ArtifactType.ISSUE,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
-                    if (artifact.hash != command.hash) {
-                        artifact.title = command.title
-                        artifact.content = command.bodyText
-                        artifact.hash = command.hash
-                        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                            IngestionRunNotFoundException(runId)
-                        }
-                        ingestionRun.updatedCount++
-                    }
-                    return
-                }
-            }
-
-            ArtifactType.PULL_REQUEST,
-            -> {
-                artifact = artifactRepository.findBySourceId(command.sourceId)
-                if (artifact != null) {
-                    artifact.addProjectIds(projectIds)
+                val contentChanged = artifact.hash != command.hash
+                if (contentChanged) {
                     artifact.title = command.title
                     artifact.content = command.bodyText
-                    val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                        IngestionRunNotFoundException(runId)
-                    }
-                    ingestionRun.updatedCount++
-                    return
+                    artifact.hash = command.hash
                 }
+                ArtifactChange(content = contentChanged, tracking = trackingChanged)
+            }
+
+            // Pull requests carry no content hash, so the stored title and body are compared
+            // directly. Overwriting them unconditionally, as this did before, counted every
+            // re-fetch as an update: it inflated the run's update count, re-sent unchanged pull
+            // requests to be embedded again, and would make `lastChangedAt` move on a sync that
+            // changed nothing.
+            ArtifactType.PULL_REQUEST -> {
+                val trackingChanged = artifact.state != command.state
+                // Refreshed on every fetch, for the same reason as an issue's state: a pull request
+                // being merged or reviewed moves none of its text.
+                artifact.state = command.state
+                artifact.mergedAtSource = command.mergedAtSource
+                artifact.firstResponseAtSource = command.firstResponseAtSource
+                artifact.changesRequestedCount = command.changesRequestedCount
+                // Backfills rows written before these were persisted; a source creation time never changes.
+                if (artifact.createdAtSource == null) {
+                    artifact.createdAtSource = command.createdAtSource
+                }
+
+                val contentChanged =
+                    artifact.title != command.title || artifact.content != command.bodyText
+                if (contentChanged) {
+                    artifact.title = command.title
+                    artifact.content = command.bodyText
+                }
+                ArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
         }
 
-        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-            IngestionRunNotFoundException(runId)
-        }
-        artifact = Artifact(
+    /**
+     * Stores an artifact this run is the first to see.
+     *
+     * @param command The mapped GitHub artifact command.
+     * @param projectIds The projects the artifact's repository is currently linked to.
+     * @param runId The active ingestion run.
+     */
+    private fun storeNew(
+        command: GithubArtifactCommand,
+        projectIds: MutableSet<UUID>,
+        runId: UUID,
+    ) {
+        val ingestionRun = lockRun(runId)
+        val artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = command.sourceUrl,
@@ -123,16 +235,35 @@ class GithubArtifactProviderService(
             content = command.bodyText,
             mime = command.mime,
             language = command.language,
+            state = command.state,
+            labels = command.labels.toMutableList(),
             projectIdsInternal = projectIds,
             ingestionRun = ingestionRun,
             hash = command.hash,
             metadata = artifactMetadataJsonMapper.toJson(command.metadata),
-            createdAtSource = null,
-            updatedAtSource = null,
+            createdAtSource = command.createdAtSource,
+            updatedAtSource = command.updatedAtSource,
+            authorLogin = command.authorLogin,
+            mergedAtSource = command.mergedAtSource,
+            firstResponseAtSource = command.firstResponseAtSource,
+            changesRequestedCount = command.changesRequestedCount,
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
     }
+
+    /**
+     * Loads the active run with a write lock, the way every counter and collection mutation here
+     * needs it.
+     *
+     * @param runId The ingestion run to lock.
+     * @return The locked run.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    private fun lockRun(runId: UUID): IngestionRun =
+        ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
+            IngestionRunNotFoundException(runId)
+        }
 
     /**
      * Removes an ingestion file artifact when GitHub reports that the source file was deleted and
@@ -161,5 +292,28 @@ class GithubArtifactProviderService(
         artifactRepository.deleteById(artifact.id)
         run.deletedCount++
         run.artifactIdsToDeindex.add(artifact.id.toString())
+    }
+}
+
+/**
+ * What a re-fetch changed about a stored artifact.
+ *
+ * The two are tracked apart because they answer different questions. [content] is what the run
+ * reports as an update and what moves `lastChangedAt`: it means new text was fetched. [tracking] is
+ * the issue-tracker state around that text -- `state`, labels -- which no amount of re-labelling
+ * makes a content change, but which the AI payload carries and starter-work mining reads.
+ *
+ * @property content Whether the artifact's text changed.
+ * @property tracking Whether its issue-tracker state changed.
+ */
+private data class ArtifactChange(
+    val content: Boolean = false,
+    val tracking: Boolean = false,
+) {
+    /** Whether anything changed that the AI service has to be told about. */
+    val reachesTheIndex: Boolean get() = content || tracking
+
+    companion object {
+        val NOTHING = ArtifactChange()
     }
 }

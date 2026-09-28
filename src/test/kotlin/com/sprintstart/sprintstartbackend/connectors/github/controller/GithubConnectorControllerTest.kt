@@ -4,6 +4,7 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
+import com.sprintstart.sprintstartbackend.connectors.github.models.RepositoryConnectionOutcome
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.ConnectRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.DiscoverRepositoriesRequest
@@ -22,10 +23,13 @@ import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUse
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubConnectorService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryConnectionOrchestrator
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryProjectService
+import com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryVisibilityService
 import com.sprintstart.sprintstartbackend.connectors.github.service.GithubUpdatesService
 import io.mockk.coEvery
+import io.mockk.coJustRun
 import io.mockk.every
 import io.mockk.slot
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -72,6 +76,9 @@ class GithubConnectorControllerTest {
     @MockkBean
     private lateinit var githubRepositoryProjectService: GithubRepositoryProjectService
 
+    @MockkBean
+    private lateinit var visibilityService: GithubRepositoryVisibilityService
+
     private val objectMapper = jacksonObjectMapper()
 
     private val pmJwt = jwt()
@@ -98,11 +105,11 @@ class GithubConnectorControllerTest {
             val expectedTransactionId = UUID.randomUUID()
 
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(
+                githubConnectorService.connectRepositoryIfNecessary(
                     "mockId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
@@ -120,6 +127,67 @@ class GithubConnectorControllerTest {
         }
 
         @Test
+        fun `should report a reused connection so the caller can say nothing is being fetched`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+            val expectedTransactionId = UUID.randomUUID()
+
+            coEvery {
+                githubConnectorService.connectRepositoryIfNecessary("mockId", request)
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = true)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.transactionId").value(expectedTransactionId.toString()))
+                // A bare flag, and nothing else: a PM must not be able to work out which other
+                // project the repository was already connected to (#257).
+                .andExpect(jsonPath("$.wasReused").value(true))
+                .andExpect(jsonPath("$.length()").value(2))
+        }
+
+        @Test
+        fun `should report a fresh connection as not reused`() {
+            val request = ConnectRepositoryRequest(
+                owner = "spring-projects",
+                name = "spring-modulith",
+                tokenName = validTokenName,
+                projectId = projectId,
+            )
+
+            coEvery {
+                githubConnectorService.connectRepositoryIfNecessary("mockId", request)
+            } returns RepositoryConnectionOutcome(UUID.randomUUID(), wasReused = false)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connect")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request))
+                        .with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isAccepted)
+                .andExpect(jsonPath("$.wasReused").value(false))
+        }
+
+        @Test
         fun `should return 202 Accepted when authenticated as ADMIN`() {
             val request = ConnectRepositoryRequest(
                 owner = "spring-projects",
@@ -130,11 +198,11 @@ class GithubConnectorControllerTest {
             val expectedTransactionId = UUID.randomUUID()
 
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(
+                githubConnectorService.connectRepositoryIfNecessary(
                     "adminId",
                     request,
                 )
-            } returns expectedTransactionId
+            } returns RepositoryConnectionOutcome(expectedTransactionId, wasReused = false)
 
             val asyncResult = mockMvc
                 .perform(
@@ -174,7 +242,7 @@ class GithubConnectorControllerTest {
                 ),
             )
             coEvery {
-                githubConnectorService.connectRepositoryIfExists(any(), any())
+                githubConnectorService.connectRepositoryIfNecessary(any(), any())
             } throws RepositoryNotFoundException(owner, name)
 
             val asyncResult = mockMvc
@@ -523,6 +591,54 @@ class GithubConnectorControllerTest {
                         .content(objectMapper.writeValueAsString(request))
                         .with(pmJwt),
                 ).andExpect(status().isBadRequest)
+        }
+    }
+
+    @Nested
+    inner class AddRepositoryToProject {
+        @Test
+        fun `should return 200 with the resulting project ids`() {
+            val repositoryId = UUID.randomUUID()
+            coJustRun { visibilityService.requireCallerCanSeeConnection("mockId", repositoryId) }
+            every {
+                githubRepositoryProjectService.addProjectToRepository("mockId", repositoryId, projectId)
+            } returns setOf(projectId)
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connections/$repositoryId/projects/$projectId").with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.projectIds[0]").value(projectId.toString()))
+        }
+
+        @Test
+        fun `should refuse a caller who cannot see the repository behind the connection`() {
+            val repositoryId = UUID.randomUUID()
+            coEvery {
+                visibilityService.requireCallerCanSeeConnection("mockId", repositoryId)
+            } throws RepositoryNotFoundException("acme", "private-repo")
+
+            val asyncResult = mockMvc
+                .perform(
+                    post("/api/v1/github/connections/$repositoryId/projects/$projectId").with(pmJwt),
+                ).andExpect(request().asyncStarted())
+                .andReturn()
+
+            mockMvc
+                .perform(asyncDispatch(asyncResult))
+                .andExpect(status().isNotFound)
+
+            // The link must not happen: connection ids are handed out by the source overview, so
+            // without this a PM holding one could pull another team's private repository into
+            // their own project -- and the propagation would carry its artifacts along.
+            verify(exactly = 0) {
+                githubRepositoryProjectService.addProjectToRepository(any(), any(), any())
+            }
         }
     }
 

@@ -3,9 +3,11 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
+import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonalizationService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
@@ -24,13 +26,16 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
+import java.util.Optional
 import java.util.UUID
 
-@WebMvcTest(OnboardingPathController::class)
+@WebMvcTest(OnboardingPathController::class, ProjectOnboardingPathController::class)
 @Import(SecurityConfig::class)
 @AutoConfigureMockMvc
 class OnboardingPathControllerTest(
@@ -43,10 +48,17 @@ class OnboardingPathControllerTest(
     private lateinit var onboardingPersonalizationService: OnboardingPersonalizationService
 
     @MockkBean
+    private lateinit var onboardingGenerationRegistry: OnboardingGenerationRegistry
+
+    @MockkBean
+    private lateinit var userApi: UserApi
+
+    @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
     private val pathId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
 
     private val authId = "test-auth-id"
     private val adminAuthId = "test-admin-auth-id"
@@ -175,11 +187,111 @@ class OnboardingPathControllerTest(
         }
     }
 
+    // ========================== /me personalize (project-scoped) ==========================
+
+    @Test
+    fun `personalizePath passes the selected project path variable to the generation registry`() {
+        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
+
+        verify(exactly = 1) {
+            onboardingGenerationRegistry.startOrAttach(authId, projectId)
+        }
+    }
+
+    @Test
+    fun `getGenerationStatus reports a running generation and the project's blueprint`() {
+        val startedAt = Instant.parse("2026-09-15T10:00:00Z")
+        every { onboardingGenerationRegistry.status(authId) } returns
+            OnboardingGenerationRegistry.GenerationRun(projectId = projectId, startedAt = startedAt)
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 1
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.running").value(true))
+            .andExpect(jsonPath("$.runningProjectId").value(projectId.toString()))
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(true))
+            .andExpect(jsonPath("$.activeBlueprintCount").value(1))
+    }
+
+    @Test
+    fun `getGenerationStatus says nothing is running when no generation is`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 0
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.running").value(false))
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(false))
+    }
+
+    @Test
+    fun `getGenerationStatus tells several active blueprints apart from none`() {
+        every { onboardingGenerationRegistry.status(authId) } returns null
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.activeBlueprintCount(projectId) } returns 2
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.hasActiveBlueprint").value(false))
+            .andExpect(jsonPath("$.activeBlueprintCount").value(2))
+    }
+
+    @Test
+    fun `getGenerationStatus answers only for a project the caller is assigned to`() {
+        every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profileIn(UUID.randomUUID()))
+
+        mockMvc
+            .perform(
+                get("/api/v1/projects/$projectId/onboarding/me/path/generation")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingGenerationRegistry.activeBlueprintCount(any()) }
+    }
+
+    @Test
+    fun `personalizePath should return 401 when not authenticated`() {
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize"),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `personalizePath should return 403 when authenticated with wrong role`() {
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
+                    .with(noUserRoleJwt),
+            ).andExpect(status().isForbidden)
+    }
+
     // ========================== Admin endpoints ==========================
 
     @Test
-    fun `getOnboardingPathForUserId should return 200 and path overview`() {
-        val response = GetOnboardingPathResponse(
+    fun `getOnboardingPathForUserId should return 200 and the path as its owner has it`() {
+        // The hire-shaped response, not the summary: a reviewer looking at somebody's onboarding
+        // needs the phases' contents and the per-question status, and every client that tried to
+        // rebuild those from the summary shape got it wrong or crashed.
+        val response = GetOnboardingPathForUserResponse(
             id = pathId,
             userId = userId,
             createdAt = Instant.now(),
@@ -278,4 +390,7 @@ class OnboardingPathControllerTest(
             onboardingPathService.deleteOnboardingPathByUserId(userId)
         }
     }
+
+    private fun profileIn(project: UUID) =
+        UserOnboardingProfile(id = userId, projectIds = setOf(project), projectRoles = emptyMap())
 }

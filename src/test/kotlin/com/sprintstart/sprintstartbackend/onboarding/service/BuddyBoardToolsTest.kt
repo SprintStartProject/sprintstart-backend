@@ -1,0 +1,351 @@
+package com.sprintstart.sprintstartbackend.onboarding.service
+
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.HighlightColor
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.CardMarkPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
+import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import java.util.UUID
+
+class BuddyBoardToolsTest {
+    private val boardService: BoardService = mockk()
+    private val boardStructureService: BoardStructureService = mockk(relaxed = true)
+    private val userApi: UserApi = mockk()
+    private val pathStepReader: PathStepReader = mockk()
+    private val tools = BuddyBoardTools(boardService, boardStructureService, userApi, pathStepReader)
+
+    private val userId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
+
+    @BeforeEach
+    fun setUp() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith(project("Apollo")))
+    }
+
+    private fun project(name: String, id: UUID = projectId) = ProjectDto(projectId = id, name = name, description = "")
+
+    private fun userWith(vararg projects: ProjectDto) = UserDto(
+        id = userId,
+        username = "hire",
+        firstname = "Sam",
+        lastname = "Hire",
+        avatarUrl = null,
+        profileIcon = null,
+        projects = projects.toSet(),
+        projectRoles = emptyList(),
+    )
+
+    /**
+     * The place_card spec, by name.
+     *
+     * Named rather than taken as the only one: this component offers a second tool now, and a test
+     * that reached for "the spec" would have started asserting about whichever one came first.
+     */
+    private fun placeCardSpec() = tools.toolSpecs().first { it.name == "place_card" }
+
+    private fun readCall() = BuddyToolCallDto(id = "r0", name = "read_board", arguments = buildJsonObject {})
+
+    private fun boardOf(cards: List<BoardCardResponse>) = BoardResponse(
+        boardId = UUID.randomUUID(),
+        projectId = projectId,
+        cards = cards,
+    )
+
+    private fun placeCall(kind: String, subject: String? = null) = BuddyToolCallDto(
+        id = "c0",
+        name = "place_card",
+        arguments = buildJsonObject {
+            put("kind", kind)
+            subject?.let { put("subject", it) }
+        },
+    )
+
+    @Test
+    fun `a diagram carries the question the mentor chose`() {
+        every { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, "how auth flows here") } returns
+            BoardService.PlacementOutcome.PLACED
+
+        val result = tools.execute(placeCall("DIAGRAM", "how auth flows here"), userId)
+
+        // The one argument any kind takes beyond its kind: the model chooses the question, and the
+        // picture is still derived from the project's own material.
+        assertThat(result).contains("Placed")
+        verify { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, "how auth flows here") }
+    }
+
+    @Test
+    fun `a diagram with no subject comes back as a sentence, not silence`() {
+        every { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, null) } returns
+            BoardService.PlacementOutcome.NEEDS_A_SUBJECT
+
+        val result = tools.execute(placeCall("DIAGRAM"), userId)
+
+        // A tool that fails quietly is a tool the model reports as having worked.
+        assertThat(result).contains("needs a subject")
+        assertThat(result).contains("how a request reaches the database")
+    }
+
+    @Test
+    fun `the tool advertises subject as belonging to diagrams and path steps only`() {
+        val spec = placeCardSpec()
+
+        val subject = spec.parameters["properties"]!!.jsonObject["subject"]!!.jsonObject
+        assertThat(subject["description"]!!.jsonPrimitive.content)
+            .contains("Required for DIAGRAM and PATH_STEP")
+        // Not required at the schema level: every other kind takes no subject at all, and a schema
+        // demanding one would make them all invalid.
+        assertThat(spec.parameters["required"]!!.jsonArray.map { it.jsonPrimitive.content })
+            .containsExactly("kind")
+    }
+
+    @Test
+    fun `a path step card carries the step title the mentor chose`() {
+        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") } returns
+            BoardService.PlacementOutcome.PLACED
+
+        val result = tools.execute(placeCall("PATH_STEP", "Set up your laptop"), userId)
+
+        assertThat(result).contains("Placed")
+        verify { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") }
+    }
+
+    @Test
+    fun `an unknown step title lists the hire's real steps back`() {
+        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Deploy pipeline") } returns
+            BoardService.PlacementOutcome.NO_SUCH_STEP
+        every { pathStepReader.titlesFor(userId) } returns listOf("Set up your laptop", "Meet your team")
+
+        val result = tools.execute(placeCall("PATH_STEP", "Deploy pipeline"), userId)
+
+        // The refusal names the real titles so the model can retry correctly without a second tool.
+        assertThat(result).contains("Set up your laptop")
+        assertThat(result).contains("Meet your team")
+    }
+
+    @Test
+    fun `places a card and tells the mentor it will stay there`() {
+        every { boardService.place(userId, projectId, BoardCardKind.SUGGESTED_TASKS) } returns
+            BoardService.PlacementOutcome.PLACED
+
+        val result = tools.execute(placeCall("SUGGESTED_TASKS"), userId)
+
+        assertThat(result).contains("Placed")
+        assertThat(result).contains("Apollo")
+        verify { boardService.place(userId, projectId, BoardCardKind.SUGGESTED_TASKS) }
+    }
+
+    @Test
+    fun `a card already there is not reported as newly added`() {
+        every { boardService.place(any(), any(), any()) } returns
+            BoardService.PlacementOutcome.ALREADY_THERE
+
+        // The distinction matters: a mentor that cannot tell "added" from "was already there" will
+        // claim it added something on every turn.
+        assertThat(tools.execute(placeCall("CURRENT_TASK"), userId))
+            .contains("already on their board")
+    }
+
+    @Test
+    fun `a dismissed card comes back as a refusal the mentor is told not to retry`() {
+        every { boardService.place(any(), any(), any()) } returns
+            BoardService.PlacementOutcome.DISMISSED_BY_HIRE
+
+        val result = tools.execute(placeCall("SUGGESTED_TASKS"), userId)
+
+        assertThat(result).contains("took that card off")
+        assertThat(result).contains("Do not add it")
+    }
+
+    @Test
+    fun `the mentor cannot place a card the board already keeps by itself`() {
+        val result = tools.execute(placeCall("PATH_TO_FIRST_CONTRIBUTION"), userId)
+
+        // Offering a baseline kind would only let the model take credit for a card that was there
+        // anyway.
+        assertThat(result).contains("not a card I can place")
+        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+    }
+
+    @Test
+    fun `an unrecognised kind lists the ones that exist`() {
+        val result = tools.execute(placeCall("A_DIAGRAM_OF_MY_FEELINGS"), userId)
+
+        assertThat(result).contains("CURRENT_TASK")
+        assertThat(result).contains("SUGGESTED_TASKS")
+        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a hire on more than one project is asked which board, not guessed at`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(
+            userWith(project("Apollo"), project("Gemini", UUID.randomUUID())),
+        )
+
+        assertThat(tools.execute(placeCall("CURRENT_TASK"), userId)).contains("Ask which one")
+        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a hire on no project has no board to put anything on`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+
+        assertThat(tools.execute(placeCall("CURRENT_TASK"), userId)).contains("not on a project")
+        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+    }
+
+    /**
+     * The two questions a hire actually asked this tool, and could not get an answer to.
+     *
+     * "What have I pinned" came back as a general description of the board, because the read never
+     * mentioned the pins. "Which cards did I highlight something on" came back as an apology, with
+     * the mentor saying the board does not tell it — because it reported a count and no names.
+     * Both facts were in the stored arrangement the whole time.
+     */
+    @Test
+    fun `the read names what is pinned and what carries a highlight`() {
+        val kept = UUID.randomUUID()
+        val marked = UUID.randomUUID()
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns
+            BoardResponse(
+                boardId = UUID.randomUUID(),
+                projectId = projectId,
+                cards = listOf(note(kept, "Set up the VPN"), note(marked, "Deploys are on Thursdays")),
+            )
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    pinnedCardIds = listOf(kept.toString()),
+                    marks = mapOf(
+                        marked.toString() to
+                            listOf(CardMarkPayload("on Thursdays", HighlightColor.GREEN)),
+                    ),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+
+        assertThat(result).contains("Kept at the top of their board")
+        assertThat(result).contains("Set up the VPN")
+        // The words themselves, not "on 1 of these cards": the point of mentioning a highlight is
+        // that the mentor can ask about that part instead of the whole card.
+        assertThat(result).contains("Deploys are on Thursdays")
+        assertThat(result).contains("on Thursdays")
+    }
+
+    private fun note(id: UUID, text: String) = BoardCardResponse(
+        id = id,
+        kind = BoardCardKind.NOTE,
+        owner = BoardCardOwner.HIRE,
+        position = 0,
+        placedAt = null,
+        content = NoteContent(text = text),
+    )
+
+    @Test
+    fun `both tools are offered, and the read says it only looks`() {
+        val names = tools.toolSpecs().map { it.name }
+
+        assertThat(names).containsExactlyInAnyOrder("place_card", "read_board")
+        // The one thing the read's description has to get across: a mentor that thinks a read did
+        // something will tell the hire it did. It used to say "It changes nothing", which was more
+        // than was true — the read goes through the same path that keeps a board's baseline cards
+        // up to date — and a description that overstates one thing is not a good place to be
+        // believed about another.
+        assertThat(tools.toolSpecs().first { it.name == "read_board" }.description)
+            .contains("It only looks")
+    }
+
+    @Test
+    fun `a board the hire has never opened is not brought into existence by a read`() {
+        every { boardService.hasBoard(userId, projectId) } returns false
+
+        val result = tools.execute(readCall(), userId)
+
+        // Reading a board is what creates one. A hire who has never opened the page should not end
+        // up with a board because they asked the mentor a question about it.
+        assertThat(result).contains("has not opened their board yet")
+        verify(exactly = 0) { boardService.getBoard(any(), any()) }
+    }
+
+    @Test
+    fun `neither the pins nor the highlights let a client decide how long the read is`() {
+        val cards = (1..50).map { note(UUID.randomUUID(), "Card-%03d".format(it)) }
+        val first = cards.first()
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns boardOf(cards)
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    pinnedCardIds = List(5_000) { first.id.toString() },
+                    marks = mapOf(
+                        first.id.toString() to (1..500).map { CardMarkPayload("mark-%03d".format(it)) },
+                    ),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+        val pinnedLine = result.lineSequence().first { it.startsWith("Kept at the top") }
+        val markLine = result.lineSequence().first { it.contains("mark-001") }
+
+        // Everything in the arrangement was written by a client, so everything read out of it is a
+        // client deciding how large the next prompt for this board is. Five thousand pins of one
+        // card are one card, said once, and a card with five hundred highlights is quoted like any
+        // other card.
+        assertThat(pinnedLine.split("Card-001").size - 1).isEqualTo(1)
+        assertThat(markLine.split("mark-").size - 1).isLessThanOrEqualTo(6)
+    }
+
+    @Test
+    fun `a highlight that carries only a colour is left out rather than quoted as nothing`() {
+        val card = note(UUID.randomUUID(), "Set up the VPN")
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns boardOf(listOf(card))
+        every { boardStructureService.read(userId, projectId) } returns
+            BoardStructureResponse(
+                BoardStructurePayload(
+                    marks = mapOf(card.id.toString() to listOf(CardMarkPayload(color = HighlightColor.GREEN))),
+                ),
+                null,
+            )
+
+        val result = tools.execute(readCall(), userId)
+
+        // On a NOTE the marked words are in the note's own text; the mark is the colour. Quoting
+        // its empty string would have the mentor asking about the part they highlighted and naming
+        // nothing at all.
+        assertThat(result).doesNotContain("Highlighted")
+        assertThat(result).doesNotContain("\"\"")
+    }
+
+    @Test
+    fun `the tool offers only the kinds the board does not keep by itself`() {
+        val spec = placeCardSpec()
+
+        assertThat(spec.name).isEqualTo("place_card")
+        assertThat(spec.description).contains("CURRENT_TASK", "SUGGESTED_TASKS")
+        // The description must not offer a baseline card as something to place.
+        assertThat(spec.description).doesNotContain("PATH_TO_FIRST_CONTRIBUTION")
+    }
+}

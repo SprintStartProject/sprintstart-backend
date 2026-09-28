@@ -11,6 +11,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 
 class UploadArtifactMapperTest {
@@ -57,11 +58,12 @@ class UploadArtifactMapperTest {
     }
 
     @Test
-    fun `toCommand skips text read for pdf uploads`() {
+    fun `toCommand reads pdf bytes as base64 content`() {
         val runId = UUID.randomUUID()
         val projectId = UUID.randomUUID()
         val artifactId = UUID.randomUUID()
         val uploaderId = UUID.randomUUID()
+        val pdfBytes = "%PDF-1.7".toByteArray()
         val event = ArtifactUploadedEvent(
             transactionId = runId,
             projectId = projectId,
@@ -73,12 +75,80 @@ class UploadArtifactMapperTest {
             uploadedAt = Instant.parse("2026-07-11T10:15:30Z"),
             uploaderId = uploaderId,
         )
+        every { uploadedArtifactReader.readBytes(artifactId) } returns pdfBytes
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.content).isEqualTo(Base64.getEncoder().encodeToString(pdfBytes))
+        assertThat(result.language).isNull()
+        assertThat(result.mime).isEqualTo("application/pdf")
+        verify(exactly = 1) {
+            uploadedArtifactReader.readBytes(artifactId)
+        }
+        verify(exactly = 0) {
+            uploadedArtifactReader.readText(artifactId)
+        }
+    }
+
+    @Test
+    fun `toCommand reads image bytes as base64 content`() {
+        val runId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        val artifactId = UUID.randomUUID()
+        val uploaderId = UUID.randomUUID()
+        val imageBytes = byteArrayOf(1, 2, 3, 4)
+        val event = ArtifactUploadedEvent(
+            transactionId = runId,
+            projectId = projectId,
+            artifactId = artifactId,
+            filename = "diagram.png",
+            storagePath = "/uploads/$artifactId/diagram.png",
+            mime = "image/png",
+            hash = "hash",
+            uploadedAt = Instant.parse("2026-07-11T10:15:30Z"),
+            uploaderId = uploaderId,
+        )
+        every { uploadedArtifactReader.readBytes(artifactId) } returns imageBytes
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.content).isEqualTo(Base64.getEncoder().encodeToString(imageBytes))
+        assertThat(result.language).isNull()
+        assertThat(result.mime).isEqualTo("image/png")
+        verify(exactly = 1) {
+            uploadedArtifactReader.readBytes(artifactId)
+        }
+        verify(exactly = 0) {
+            uploadedArtifactReader.readText(artifactId)
+        }
+    }
+
+    @Test
+    fun `toCommand keeps unsupported binary content null`() {
+        val runId = UUID.randomUUID()
+        val projectId = UUID.randomUUID()
+        val artifactId = UUID.randomUUID()
+        val uploaderId = UUID.randomUUID()
+        val event = ArtifactUploadedEvent(
+            transactionId = runId,
+            projectId = projectId,
+            artifactId = artifactId,
+            filename = "archive.zip",
+            storagePath = "/uploads/$artifactId/archive.zip",
+            mime = "application/zip",
+            hash = "hash",
+            uploadedAt = Instant.parse("2026-07-11T10:15:30Z"),
+            uploaderId = uploaderId,
+        )
 
         val result = mapper.toCommand(event)
 
         assertThat(result.content).isNull()
         assertThat(result.language).isNull()
-        assertThat(result.mime).isEqualTo("application/pdf")
+        assertThat(result.mime).isEqualTo("application/zip")
+        verify(exactly = 0) {
+            uploadedArtifactReader.readBytes(artifactId)
+        }
         verify(exactly = 0) {
             uploadedArtifactReader.readText(artifactId)
         }

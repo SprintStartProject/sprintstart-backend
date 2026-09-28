@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
@@ -23,6 +25,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
@@ -34,12 +37,16 @@ class AdminProjectServiceTest {
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
+    private val jiraInstanceApi: JiraInstanceApi = mockk()
+    private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
         assignmentRepository = assignmentRepository,
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
+        jiraInstanceApi = jiraInstanceApi,
+        eventPublisher = eventPublisher,
     )
 
     @Test
@@ -85,7 +92,11 @@ class AdminProjectServiceTest {
     @Test
     fun `getProjectById returns sources and project-specific users`() {
         val project = project()
-        val user = user().apply { roles.add(Role.USER) }
+        // Roles are scoped to the membership, so the role goes on the assignment — the same place
+        // `ProjectRoleService.assignRoleToUser` writes it and `toProjectUserResponse` reads it.
+        val user = user().apply {
+            roles.add(Role.USER)
+        }
         val assignment = ProjectUserAssignment(user = user, project = project)
         assignment.projectRoles.add(ProjectRole(name = "MANAGER", description = "Manages the project"))
         val source = ProjectSourceDto(
@@ -105,7 +116,38 @@ class AdminProjectServiceTest {
         assertThat(result.sources.map { it.type }).containsExactly("GITHUB")
         assertThat(result.users).hasSize(1)
         assertThat(result.users.single().roles).containsExactly(Role.USER)
-        assertThat(result.users.single().projectRoles).containsExactly("MANAGER")
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("MANAGER")
+    }
+
+    /**
+     * Roles are read from the assignment, which is now the only place they live.
+     *
+     * Before per-project roles this list was empty for everybody: it read the assignment's set while
+     * every writer wrote a flat user-level one, so `GET /admin/projects/{id}/users` silently reported
+     * every member of every project as holding no role.
+     */
+    @Test
+    fun `project roles come from the assignment`() {
+        val project = project()
+        val user = user().apply { roles.add(Role.USER) }
+        val assignment = ProjectUserAssignment(user = user, project = project)
+        assignment.projectRoles.add(ProjectRole(name = "DEVELOPER", description = "Ships code"))
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
+
+        val result = service.getProjectById(project.id)
+
+        assertThat(
+            result.users
+                .single()
+                .projectRoles,
+        ).containsExactly("DEVELOPER")
     }
 
     @Test
@@ -186,6 +228,81 @@ class AdminProjectServiceTest {
         assertThat(result.description).isEqualTo("Backend service")
         assertThat(result.sources.map { it.type }).containsExactly("GITHUB")
         assertThat(result.users.map { it.username }).containsExactly(user.username)
+    }
+
+    @Test
+    fun `patchProject leaves industry and custom flag untouched when industry is unchanged`() {
+        val project = project(name = "SprintStart Frontend").apply {
+            industry = "Fintech"
+            industryConfidence = "high"
+            industryCustom = false
+        }
+        val request = PatchAdminProjectRequest(description = "Updated", industry = " Fintech ")
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+
+        service.patchProject(project.id, request)
+
+        assertThat(project.industry).isEqualTo("Fintech")
+        assertThat(project.industryConfidence).isEqualTo("high")
+        assertThat(project.industryCustom).isFalse()
+    }
+
+    @Test
+    fun `patchProject marks industry custom and clears confidence when industry changes`() {
+        val project = project(name = "SprintStart Frontend").apply {
+            industry = "Fintech"
+            industryConfidence = "high"
+            industryCustom = false
+        }
+        val request = PatchAdminProjectRequest(industry = "Healthcare")
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+
+        service.patchProject(project.id, request)
+
+        assertThat(project.industry).isEqualTo("Healthcare")
+        assertThat(project.industryConfidence).isNull()
+        assertThat(project.industryCustom).isTrue()
+    }
+
+    @Test
+    fun `patchProject ignores blank industry instead of storing an empty custom value`() {
+        val project = project(name = "SprintStart Frontend").apply {
+            industry = "Fintech"
+            industryConfidence = "high"
+            industryCustom = false
+        }
+        val request = PatchAdminProjectRequest(industry = "   ")
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { projectSourceApi.findSourcesByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+
+        service.patchProject(project.id, request)
+
+        assertThat(project.industry).isEqualTo("Fintech")
+        assertThat(project.industryConfidence).isEqualTo("high")
+        assertThat(project.industryCustom).isFalse()
+    }
+
+    @Test
+    fun `createProject marks industry custom when industry is provided`() {
+        val request = CreateAdminProjectRequest(name = "SprintStart Frontend", industry = "Fintech")
+        every { projectRepository.findByName("SprintStart Frontend") } returns null
+        every { projectRepository.save(any()) } answers { firstArg() }
+
+        val result = service.createProject(request)
+
+        assertThat(result.industry).isEqualTo("Fintech")
+        assertThat(result.industryCustom).isTrue()
+        verify(exactly = 1) {
+            projectRepository.save(match { it.industry == "Fintech" && it.industryCustom })
+        }
     }
 
     @Test
@@ -427,6 +544,7 @@ class AdminProjectServiceTest {
         every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
         every { assignmentRepository.deleteAll(capture(deletedAssignments)) } just runs
         every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
 
         val result = service.deleteProject(project.id)
@@ -434,7 +552,28 @@ class AdminProjectServiceTest {
         assertThat(result.deleted).isTrue()
         assertThat(deletedAssignments.captured.toList()).containsExactly(assignment)
         verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
+        verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
+    }
+
+    @Test
+    fun `deleteProject announces the deletion so the artifact store can drop the project`() {
+        val project = project()
+        val event = slot<ProjectDeletedEvent>()
+
+        every { projectRepository.findById(project.id) } returns Optional.of(project)
+        every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
+        every { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) } just runs
+        every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
+        every { projectRepository.delete(project) } just runs
+        every { eventPublisher.publishEvent(capture(event)) } just runs
+
+        service.deleteProject(project.id)
+
+        // Without this the deleted project's id stays on artifact_projects and on every indexed
+        // chunk, where nothing would ever clear it again.
+        assertThat(event.captured.projectId).isEqualTo(project.id)
     }
 
     @Test

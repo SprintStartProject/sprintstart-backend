@@ -37,9 +37,10 @@ internal class GithubPullRequestListener(
     fun on(
         event: GithubPullRequestsFetchFailedEvent,
     ) {
-        githubIngestionRunService.markFetchPhaseFinished(
+        githubIngestionRunService.markFetchPhaseFailed(
             event.transactionId,
             finishedType = FinishedTypes.PULL_REQUESTS,
+            reason = event.reason,
         )
     }
 }

@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -38,25 +39,38 @@ class UploadArtifactProviderService(
      */
     @Transactional
     fun persistArtifact(command: UploadArtifactCommand) {
+        val runId = command.ingestionRunId
         val projectId = command.projectId
 
         var artifact = artifactRepository.findBySourceId(command.sourceId)
         if (artifact != null) {
-            artifact.addProjectId(projectId)
-            if (artifact.hash != command.hash) {
+            val linked = artifact.addProjectId(projectId)
+            val contentChanged = artifact.hash != command.hash
+            if (contentChanged) {
                 artifact.content = command.content
                 artifact.hash = command.hash
+                artifact.lastChangedAt = Instant.now()
+            }
+            if (linked || contentChanged) {
                 val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
                     IngestionRunNotFoundException(command.ingestionRunId)
                 }
-                ingestionRun.updatedCount++
+                if (contentChanged) ingestionRun.updatedCount++
+                // Stored by an earlier run, so the AI sync would otherwise never see this change.
+                ingestionRun.artifactIdsToReingest.add(artifact.id)
             }
             return
         }
         val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
             IngestionRunNotFoundException(command.ingestionRunId)
         }
+        val targetId = try {
+            UUID.fromString(command.sourceId)
+        } catch (_: IllegalArgumentException) {
+            UUID.randomUUID()
+        }
         artifact = Artifact(
+            id = targetId,
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
             sourceUrl = null,

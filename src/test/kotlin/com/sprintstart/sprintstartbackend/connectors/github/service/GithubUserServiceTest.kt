@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.github.service
 
+import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUser
 import com.sprintstart.sprintstartbackend.connectors.github.models.GithubUserPat
 import com.sprintstart.sprintstartbackend.connectors.github.models.api.requests.AddPatRequest
@@ -11,9 +12,11 @@ import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.Gi
 import com.sprintstart.sprintstartbackend.connectors.github.models.exceptions.GithubUserPatStillInUseException
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubUserRepository
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -23,13 +26,38 @@ import kotlin.test.assertFailsWith
 class GithubUserServiceTest {
     private val githubUserRepository = mockk<GithubUserRepository>()
     private val githubRepositoryConnectionRepository = mockk<GithubRepositoryConnectionRepository>()
-    private val service = GithubUserService(githubUserRepository, githubRepositoryConnectionRepository)
+    private val githubClient = mockk<GithubClient>()
+    private val service = GithubUserService(githubUserRepository, githubRepositoryConnectionRepository, githubClient)
 
     private val authId = "test-auth-id"
     private val patName = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
     private val token = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
     private val userPat = GithubUserPat(authId, patName)
     private val githubUser = GithubUser(id = userPat, token = token)
+
+    @Nested
+    inner class UserExistsInGithub {
+        @Test
+        fun `returns true when GitHub confirms the user exists`() = runTest {
+            coEvery { githubClient.userExists("ada") } returns true
+
+            assertThat(service.userExistsInGithub("ada")).isTrue()
+        }
+
+        @Test
+        fun `returns false when GitHub says the user does not exist`() = runTest {
+            coEvery { githubClient.userExists("nosuchuser") } returns false
+
+            assertThat(service.userExistsInGithub("nosuchuser")).isFalse()
+        }
+
+        @Test
+        fun `passes GitHub's refusal to answer through as null rather than a verdict`() = runTest {
+            coEvery { githubClient.userExists("ada") } returns null
+
+            assertThat(service.userExistsInGithub("ada")).isNull()
+        }
+    }
 
     @Nested
     inner class GetAllPATs {

@@ -1,18 +1,22 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
+import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
-import com.sprintstart.sprintstartbackend.connectors.jira.jiraCredential
+import com.sprintstart.sprintstartbackend.connectors.jira.atlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.request.ConnectJiraInstanceRequest
+import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
-import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraCredentialsRepository
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -41,7 +45,7 @@ private suspend inline fun <reified T : Throwable> assertThrowsSuspend(block: su
 }
 
 class JiraServiceTest {
-    private val credentialsRepository = mockk<JiraCredentialsRepository>()
+    private val atlassianCredentialApi = mockk<AtlassianCredentialApi>()
     private val instanceRepository = mockk<JiraInstanceRepository>()
     private val configRepository = mockk<JiraInstanceConfigRepository>()
     private val jiraClient = mockk<JiraClient>()
@@ -52,13 +56,18 @@ class JiraServiceTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val applicationScope = kotlinx.coroutines.CoroutineScope(UnconfinedTestDispatcher())
 
+    private val userApi = mockk<UserApi>()
+
     private lateinit var service: JiraService
+
+    private val authId = "auth-id"
 
     @BeforeEach
     fun setUp() {
         every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns java.time.Instant.now()
+        every { userApi.userHasAccessToProject(any(), any()) } returns true
         service = JiraService(
-            credentialsRepository,
+            atlassianCredentialApi,
             instanceRepository,
             configRepository,
             jiraClient,
@@ -66,6 +75,7 @@ class JiraServiceTest {
             jiraIssueService,
             eventPublisher,
             jiraInstanceConfigService,
+            userApi,
         )
     }
 
@@ -125,6 +135,53 @@ class JiraServiceTest {
     }
 
     @Nested
+    inner class RemoveInstanceFromProject {
+        @Test
+        fun `should drop the project association and keep the instance`() {
+            val projectId = UUID.randomUUID()
+            val otherProject = UUID.randomUUID()
+            val instance = jiraInstance(
+                instanceUrl = "https://acme.atlassian.net",
+                projectIds = mutableSetOf(projectId, otherProject),
+            )
+            every { instanceRepository.findById(instance.instanceUrl) } returns Optional.of(instance)
+            every { instanceRepository.save(instance) } answers { firstArg() }
+
+            service.removeInstanceFromProject(authId, instance.instanceUrl, projectId)
+
+            assertThat(instance.projectIds).containsExactly(otherProject)
+            verify { instanceRepository.save(instance) }
+        }
+
+        @Test
+        fun `should throw when the instance is unknown`() {
+            every { instanceRepository.findById("unknown") } returns Optional.empty()
+
+            assertFailsWith<JiraInstanceNotConnectedException> {
+                service.removeInstanceFromProject(authId, "unknown", UUID.randomUUID())
+            }
+        }
+
+        @Test
+        fun `should refuse to unlink a project the caller does not manage`() {
+            val projectId = UUID.randomUUID()
+            val instance = jiraInstance(
+                instanceUrl = "https://acme.atlassian.net",
+                projectIds = mutableSetOf(projectId),
+            )
+            every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+            assertFailsWith<JiraProjectAccessDeniedException> {
+                service.removeInstanceFromProject(authId, instance.instanceUrl, projectId)
+            }
+
+            // The role check alone would have let any PM detach another PM's project.
+            assertThat(instance.projectIds).containsExactly(projectId)
+            verify(exactly = 0) { instanceRepository.save(any()) }
+        }
+    }
+
+    @Nested
     inner class ConnectInstanceIfNeeded {
         private val request = ConnectJiraInstanceRequest(
             displayName = "Test Instance",
@@ -145,7 +202,7 @@ class JiraServiceTest {
                 every { instanceRepository.findById(request.url) } returns Optional.of(existing)
                 every { instanceRepository.save(existing) } answers { firstArg() }
 
-                val transactionId = service.connectInstanceIfNeeded(request)
+                val transactionId = service.connectInstanceIfNeeded("auth-id", request)
 
                 assertThat(transactionId).isNotNull()
                 assertThat(existing.projectIds).contains(request.projectId)
@@ -158,15 +215,16 @@ class JiraServiceTest {
         fun `should connect new instance when not already connected`() {
             runTest {
                 val expectedNextSyncAt = java.time.Instant.now()
-                val credential = jiraCredential(request.userEmail, request.tokenName)
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
-                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
                 every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns expectedNextSyncAt
                 every { instanceRepository.save(any()) } answers { firstArg() }
                 every { configRepository.save(any()) } answers { firstArg() }
-                val transactionId = service.connectInstanceIfNeeded(request)
+                val transactionId = service.connectInstanceIfNeeded("auth-id", request)
 
                 assertThat(transactionId).isNotNull()
                 verify { instanceRepository.save(any()) }
@@ -181,13 +239,34 @@ class JiraServiceTest {
         }
 
         @Test
+        fun `should connect new instance with default as source enabled`() {
+            runTest {
+                val expectedNextSyncAt = java.time.Instant.now()
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
+                every { instanceRepository.findById(request.url) } returns Optional.empty()
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
+                coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
+                every { jiraInstanceConfigService.calculateNextSyncAt(any()) } returns expectedNextSyncAt
+                every { instanceRepository.save(any()) } answers { firstArg() }
+                every { configRepository.save(any()) } answers { firstArg() }
+                val transactionId = service.connectInstanceIfNeeded("auth-id", request)
+
+                assertThat(transactionId).isNotNull()
+                verify { configRepository.save(any()) }
+                verify { instanceRepository.save(match { it.sourceEnabled }) }
+            }
+        }
+
+        @Test
         fun `should throw when credentials not found`() {
             runTest {
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.empty()
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns null
 
-                assertThrowsSuspend<JiraCredentialNotFoundException> {
-                    service.connectInstanceIfNeeded(request)
+                assertThrowsSuspend<AtlassianCredentialNotFoundException> {
+                    service.connectInstanceIfNeeded("auth-id", request)
                 }
             }
         }
@@ -195,28 +274,47 @@ class JiraServiceTest {
         @Test
         fun `should throw when instance is unavailable`() {
             runTest {
-                val credential = jiraCredential(request.userEmail, request.tokenName)
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns false
 
                 assertThrowsSuspend<JiraInstanceUnavailableException> {
-                    service.connectInstanceIfNeeded(request)
+                    service.connectInstanceIfNeeded("auth-id", request)
                 }
+            }
+        }
+
+        @Test
+        fun `should throw when no projects are accessible`() {
+            runTest {
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
+                every { instanceRepository.findById(request.url) } returns Optional.empty()
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
+                coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+
+                assertThrowsSuspend<JiraNoAccessibleProjectsException> {
+                    service.connectInstanceIfNeeded("auth-id", request)
+                }
+
+                // The instance must not be persisted when there is nothing to ingest.
+                verify(exactly = 0) { instanceRepository.save(any()) }
             }
         }
 
         @Test
         fun `should set instance status to UP_TO_DATE after connecting`() {
             runTest {
-                val credential = jiraCredential(request.userEmail, request.tokenName)
+                val credential = atlassianCredentialSecret(userEmail = request.userEmail)
                 every { instanceRepository.findById(request.url) } returns Optional.empty()
-                every { credentialsRepository.findById(any()) } returns Optional.of(credential)
+                every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
                 coEvery { jiraClient.checkInstanceCapabilities(request.url) } returns true
-                coEvery { jiraClient.searchProjects(request.url, credential) } returns emptyList()
+                coEvery { jiraClient.searchProjects(request.url, credential) } returns
+                    listOf(JiraProjectResponse("TEST"))
                 every { instanceRepository.save(any()) } answers { firstArg() }
                 every { configRepository.save(any()) } answers { firstArg() }
-                service.connectInstanceIfNeeded(request)
+                service.connectInstanceIfNeeded("auth-id", request)
 
                 verify { instanceRepository.save(match { it.status == ConnectionState.UP_TO_DATE }) }
             }

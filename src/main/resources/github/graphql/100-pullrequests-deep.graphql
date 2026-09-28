@@ -12,11 +12,23 @@ query GetPRDetails($owner: String!, $name: String!, $prNumber: Int!, $commentsCu
             labels(first: 100) {
                 nodes { name }
             }
+            statusCheckRollup {
+                state
+            }
+            files(first: 100) {
+                nodes { path }
+            }
+            commits(first: 100) {
+                nodes {
+                    commit { message }
+                }
+            }
             reviews(first: 100, after: $reviewsCursor) {
                 pageInfo { hasNextPage, endCursor }
                 nodes {
                     body
                     state
+                    submittedAt
                     author { login }
                 }
             }

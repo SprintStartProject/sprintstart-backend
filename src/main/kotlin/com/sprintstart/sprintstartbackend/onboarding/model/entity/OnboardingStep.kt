@@ -7,9 +7,6 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
-import jakarta.persistence.Id
-import jakarta.persistence.JoinColumn
-import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
 import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
@@ -19,16 +16,11 @@ import java.util.UUID
 @Entity
 @Table(name = "onboarding_steps")
 class OnboardingStep(
-    @Id
-    val id: UUID = UUID.randomUUID(),
-    // This is a foreign key into onboarding_paths
-    @ManyToOne
-    @JoinColumn(name = "phase_id", nullable = false)
-    val phase: OnboardingPhase,
+    id: UUID = UUID.randomUUID(),
+    phase: OnboardingPhase,
     @Column(nullable = false)
     var position: Int,
-    @Column(nullable = false)
-    var title: String,
+    title: String,
     @Column(nullable = true, columnDefinition = "TEXT")
     var description: String,
     @Column(nullable = true)
@@ -73,4 +65,12 @@ class OnboardingStep(
     )
     @OrderBy("createdAt ASC")
     val feedback: MutableList<OnboardingFeedback> = mutableListOf(),
-)
+    graphX: Double? = null,
+    graphY: Double? = null,
+) : OnboardingSubGraphNode(
+        id = id,
+        phase = phase,
+        title = title,
+        graphX = graphX,
+        graphY = graphY,
+    )

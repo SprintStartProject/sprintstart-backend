@@ -1,8 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
+import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminDetailResponse
@@ -18,6 +21,7 @@ import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectUse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -38,6 +42,8 @@ class AdminProjectService(
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val eventPublisher: ApplicationEventPublisher,
+    private val jiraInstanceApi: JiraInstanceApi,
 ) {
     /**
      * Returns all projects with source and assigned-user summaries.
@@ -96,12 +102,14 @@ class AdminProjectService(
         val name = validatedName(request.name)
         ensureProjectNameAvailable(name)
 
-        val project = projectRepository.save(
-            Project(
-                name = name,
-                description = request.description,
-            ),
-        )
+        val project = Project(name = name, description = request.description)
+        val industry = request.industry?.trim()
+        if (!industry.isNullOrBlank()) {
+            ProjectIndustryService.applyCustomIndustry(project, industry)
+        }
+        projectRepository.save(project)
+
+        eventPublisher.publishEvent(ProjectCreatedEvent(project.id))
 
         return project.toAdminDetailResponse(
             sources = emptyList(),
@@ -130,6 +138,12 @@ class AdminProjectService(
             project.name = name
         }
         request.description?.let { project.description = it }
+        request.industry?.let { requestedIndustry ->
+            val trimmed = requestedIndustry.trim()
+            if (trimmed.isNotBlank() && trimmed != project.industry) {
+                ProjectIndustryService.applyCustomIndustry(project, trimmed)
+            }
+        }
 
         return project.toAdminDetailResponse(
             sources = projectSourceApi.findSourcesByProjectId(project.id),
@@ -141,8 +155,12 @@ class AdminProjectService(
      * Deletes a project and its local user assignments.
      *
      * Connected-source records are owned by their connector modules and are not deleted here, but
-     * the project link is removed from all GitHub repository connections (via the GitHub module
-     * API) so no connection keeps referencing a project that no longer exists.
+     * the project link is removed from all GitHub repository connections and Jira instances (via the
+     * respective module APIs) so no connection keeps referencing a project that no longer exists.
+     *
+     * The same id also sits on every artifact of those sources and on every indexed chunk, where
+     * nothing else would ever clear it. That cleanup is announced with a [ProjectDeletedEvent]
+     * rather than performed here, because the ingestion module already depends on this one.
      *
      * @param id Project identifier.
      * @return Deletion confirmation DTO.
@@ -155,7 +173,9 @@ class AdminProjectService(
         val assignments = assignmentRepository.findAllByProjectId(project.id)
         assignmentRepository.deleteAll(assignments)
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
+        jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
+        eventPublisher.publishEvent(ProjectDeletedEvent(project.id))
 
         return DeleteProjectResponse(id = id)
     }

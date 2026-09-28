@@ -33,7 +33,9 @@ import java.util.UUID
  *
  * A pending skip request does not complete the step on its own. The step remains
  * waiting until an admin accepts or denies the request. Accepted skips mark the
- * step as skipped and completed; denied skips return it to waiting.
+ * step as skipped and completed; denied skips return it to waiting. Because a
+ * skipped step counts as done, accepting a skip also re-evaluates whether the
+ * user's onboarding is finished via [OnboardingCompletionService].
  *
  * The service enforces ownership checks for user-facing methods by resolving the
  * authenticated user through [UserApi] and then restricting step or skip lookups
@@ -46,6 +48,7 @@ import java.util.UUID
 class OnboardingSkipService(
     private val onboardingSkipRepository: OnboardingSkipRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -192,6 +195,29 @@ class OnboardingSkipService(
         deleteSkip(skip)
     }
 
+    /**
+     * Records that the authenticated user has seen the review of one of their skip requests.
+     *
+     * Drives the "updated" marker on the step: an answered skip counts as new until this is
+     * called. Marking a pending skip, or one already seen, changes nothing.
+     *
+     * @param authId External authentication identifier.
+     * @param skipId Identifier of the reviewed skip.
+     * @throws ResponseStatusException with [HttpStatus.NOT_FOUND] if the user or skip does not exist.
+     */
+    @Transactional
+    @Tracked("Marking skip review as seen by user")
+    fun markSkipAnswerSeenForMe(authId: String, skipId: UUID) {
+        val userId = getUserId(authId)
+        val skip = onboardingSkipRepository
+            .findByIdAndStepPhasePathUserId(skipId, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
+
+        if (skip.status != SkipStatus.PENDING && skip.answerSeenAt == null) {
+            skip.answerSeenAt = Instant.now()
+        }
+    }
+
 //  ========================== Methods for admins ==========================
 
     /**
@@ -264,6 +290,8 @@ class OnboardingSkipService(
      *
      * Accepting a skip resolves the skip request, stores the admin review comment,
      * sets the step status to [StepStatus.SKIPPED], and records the completion timestamp.
+     * Onboarding completion is then re-evaluated for the path owner, because a skipped
+     * step counts as done.
      *
      * @param skipId Identifier of the skip to accept.
      * @param request Admin review payload.
@@ -286,6 +314,9 @@ class OnboardingSkipService(
         skip.resolvedAt = reviewedAt
         skip.step.status = StepStatus.SKIPPED
         skip.step.completedAt = reviewedAt
+
+        // A skipped step counts as done, so accepting the last open one can finish onboarding.
+        onboardingCompletionService.completeIfFinished(skip.step.phase.path.userId)
 
         return skip.toReviewResponse()
     }

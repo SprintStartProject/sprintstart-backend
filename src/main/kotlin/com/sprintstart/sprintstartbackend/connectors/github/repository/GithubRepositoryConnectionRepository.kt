@@ -24,4 +24,14 @@ interface GithubRepositoryConnectionRepository : JpaRepository<GithubRepositoryC
         """,
     )
     fun findAllByProjectId(@Param("projectId") projectId: UUID): List<GithubRepositoryConnection>
+
+    @Query(
+        """
+            SELECT DISTINCT p
+            FROM GithubRepositoryConnection r
+            JOIN r.projectIdsInternal p
+            WHERE LOWER(r.owner) = LOWER(:owner)
+        """,
+    )
+    fun findProjectIdsByOwner(@Param("owner") owner: String): Set<UUID>
 }

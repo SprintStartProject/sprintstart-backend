@@ -5,4 +5,5 @@ enum class FinishedTypes {
     FILES,
     ISSUES,
     PULL_REQUESTS,
+    ORG_METADATA,
 }

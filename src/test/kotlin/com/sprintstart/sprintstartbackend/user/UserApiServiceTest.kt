@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
+import com.sprintstart.sprintstartbackend.user.repository.UserSkillAssessmentRepository
+import com.sprintstart.sprintstartbackend.user.service.GithubLoginService
 import com.sprintstart.sprintstartbackend.user.service.UserApiService
 import io.mockk.every
 import io.mockk.mockk
@@ -13,13 +15,66 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 
 class UserApiServiceTest {
     private val userRepository: UserRepository = mockk()
+    private val userSkillAssessmentRepository: UserSkillAssessmentRepository = mockk()
     private val projectRepository: ProjectRepository = mockk()
-    private val userApi: UserApi = UserApiService(userRepository, projectRepository)
+
+    // The real service, not a mock: it owns normalisation, the uniqueness rule and clearing a
+    // stale verification verdict, and setGithubLogin exists precisely to delegate to it.
+    private val githubLoginService = GithubLoginService(userRepository)
+    private val userApi: UserApi = UserApiService(
+        userRepository,
+        userSkillAssessmentRepository,
+        projectRepository,
+        githubLoginService,
+    )
+
+    /**
+     * The buddy is a second *entry point* for a GitHub login, never a second writer. If this ever
+     * stopped delegating, the conversation path would quietly lose normalisation, the uniqueness
+     * check, and the rule that changing a login discards the verdict about the old one.
+     */
+    @Test
+    fun `setGithubLogin stores what GithubLoginService normalises, not what was passed`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            authId = "auth-1",
+            username = "alice",
+            email = null,
+            firstname = "Alice",
+            lastname = "A",
+        )
+        every { userRepository.findById(userId) } returns Optional.of(user)
+        every { userRepository.existsByGithubLoginAndIdNot(any(), any()) } returns false
+        every { userRepository.save(user) } returns user
+
+        val stored = userApi.setGithubLogin(userId, "  OctoCat  ")
+
+        assertThat(stored).isEqualTo("octocat")
+        assertThat(user.githubLogin).isEqualTo("octocat")
+    }
+
+    @Test
+    fun `setGithubLogin refuses a username another user already claims`() {
+        val userId = UUID.randomUUID()
+        val user = User(
+            authId = "auth-1",
+            username = "alice",
+            email = null,
+            firstname = "Alice",
+            lastname = "A",
+        )
+        every { userRepository.findById(userId) } returns Optional.of(user)
+        every { userRepository.existsByGithubLoginAndIdNot("octocat", user.id) } returns true
+
+        assertThrows<ResponseStatusException> { userApi.setGithubLogin(userId, "octocat") }
+            .also { assertThat(it.statusCode.value()).isEqualTo(409) }
+    }
 
     @Test
     fun `exists should return true when user exists`() {
@@ -169,37 +224,51 @@ class UserApiServiceTest {
     }
 
     @Test
-    fun `markOnboardingCompleted sets the flag on a user that has not completed onboarding`() {
-        val userId = UUID.randomUUID()
-        val user = user(project = null)
-        assertThat(user.hasCompletedOnboarding).isFalse()
+    fun `canManageProject should return true for the project's manager`() {
+        val projectId = UUID.randomUUID()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user(project = null))
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of("auth-1")
 
-        every { userRepository.findById(userId) } returns Optional.of(user)
-
-        userApi.markOnboardingCompleted(userId)
-
-        // The managed entity is mutated; the surrounding transaction flushes the change.
-        assertThat(user.hasCompletedOnboarding).isTrue()
+        assertThat(userApi.canManageProject("auth-1", projectId)).isTrue()
     }
 
     @Test
-    fun `markOnboardingCompleted is idempotent when already completed`() {
-        val userId = UUID.randomUUID()
-        val user = user(project = null).apply { hasCompletedOnboarding = true }
+    fun `canManageProject should return true for an admin`() {
+        val user = user(project = null).apply { roles.add(Role.ADMIN) }
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
 
-        every { userRepository.findById(userId) } returns Optional.of(user)
+        assertThat(userApi.canManageProject("auth-1", UUID.randomUUID())).isTrue()
+    }
 
-        userApi.markOnboardingCompleted(userId)
+    /**
+     * The difference from [UserApi.userHasAccessToProject], and the reason this exists: being on a
+     * project lets somebody read it, never manage it. Team mode hands out tools that read other
+     * people, so membership passing here would let any hire read their teammates.
+     */
+    @Test
+    fun `canManageProject should return false for a member who does not manage the project`() {
+        val projectId = UUID.randomUUID()
+        val member = user(project = Project(id = projectId, name = "Project"))
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(member)
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of("auth-2")
 
-        assertThat(user.hasCompletedOnboarding).isTrue()
+        assertThat(userApi.canManageProject("auth-1", projectId)).isFalse()
     }
 
     @Test
-    fun `markOnboardingCompleted throws when the user does not exist`() {
-        val userId = UUID.randomUUID()
-        every { userRepository.findById(userId) } returns Optional.empty()
+    fun `canManageProject should return false for a project with no manager`() {
+        val projectId = UUID.randomUUID()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user(project = null))
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.empty()
 
-        assertThrows<NoSuchElementException> { userApi.markOnboardingCompleted(userId) }
+        assertThat(userApi.canManageProject("auth-1", projectId)).isFalse()
+    }
+
+    @Test
+    fun `canManageProject should return false when user does not exist`() {
+        every { userRepository.findByAuthId("missing-auth") } returns Optional.empty()
+
+        assertThat(userApi.canManageProject("missing-auth", UUID.randomUUID())).isFalse()
     }
 
     private fun user(project: Project?) = User(

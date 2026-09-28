@@ -1,17 +1,15 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentStepDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -33,7 +31,9 @@ import java.util.UUID
 @Service
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
+    private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
+    private val onboardingPositionReader: OnboardingPositionReader,
 ) {
 //  ========================== Methods for users ==========================
 
@@ -41,9 +41,12 @@ class OnboardingPathService(
      * Returns the onboarding path for the authenticated user.
      *
      * The user is resolved from the external auth ID before the path lookup is performed.
+     * The response is enriched with the user's question attempt history: passed and
+     * attempted question IDs are loaded from [QuestionAttemptRepository] and drive the
+     * per-phase lock state and per-question status of the returned path.
      *
      * @param authId External authentication identifier.
-     * @return The authenticated user's onboarding path.
+     * @return The authenticated user's onboarding path, annotated with the user's attempt state.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
     @Transactional(readOnly = true)
@@ -53,10 +56,14 @@ class OnboardingPathService(
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
-        return onboardingPathRepository
+        val path = onboardingPathRepository
             .findOnboardingPathByUserId(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No path found for user with id: $userId") }
-            .toGetForUserResponse()
+
+        return path.toGetForUserResponse(
+            passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
+            attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
+        )
     }
 
     /**
@@ -74,27 +81,59 @@ class OnboardingPathService(
         onboardingPathRepository.deleteByUserId(userId)
     }
 
+    /**
+     * A user's path as they see it, by user id, or `null` when they have none.
+     *
+     * The same read as [getOnboardingPathForMe] -- question attempts included, so the statuses are
+     * the ones on their screen -- reached by user id, for a reviewer looking at somebody's path.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving onboarding path by user id")
+    fun findPathForUserId(userId: UUID): GetOnboardingPathForUserResponse? =
+        onboardingPathRepository
+            .findOnboardingPathByUserId(userId)
+            .map { path ->
+                path.toGetForUserResponse(
+                    passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
+                    attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
+                )
+            }.orElse(null)
+
 //  ========================== Methods for admins ==========================
 
     /**
-     * Returns the onboarding path for a specific user.
+     * Returns one user's onboarding path, for a PM, HR or admin looking at it.
      *
-     * The target user must exist before the path lookup is attempted.
+     * ### Why this is the hire-shaped response
+     *
+     * It used to answer with the summary shape: phases and nothing inside them. Every reviewer
+     * screen then rebuilt the path client-side — one request per phase for its steps — and none of
+     * them could get the questions at all, because no endpoint hands out a *user's* questions with
+     * their status. So the team page crashed the moment questions became first-class members of a
+     * phase: it read `phase.questions` on phases that had never carried any.
+     *
+     * A PM opening somebody's onboarding wants the path *as that person has it* — the same lock
+     * states, the same step statuses, the same questions with the same passed/retry marks. That is
+     * exactly [toGetForUserResponse], and computing it here rather than in three clients is what
+     * makes the reviewer's view and the hire's view incapable of disagreeing.
+     *
+     * One consequence worth naming: phases whose generation produced nothing are reported in
+     * `generationIssues` rather than listed, here as well. A reviewer sees what the hire sees, which
+     * includes seeing that something came back empty.
      *
      * @param userId Identifier of the user whose path should be loaded.
-     * @return The user's onboarding path.
+     * @return The user's onboarding path, annotated with that user's own attempt state.
      * @throws ResponseStatusException When the user or onboarding path does not exist.
      */
+    @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding path for user")
-    fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathResponse {
+    fun getOnboardingPathByUserId(userId: UUID): GetOnboardingPathForUserResponse {
         if (!userApi.exists(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         }
 
-        return onboardingPathRepository
-            .findOnboardingPathByUserId(userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No onboarding path found with for: $userId") }
-            .toGetResponse()
+        return findPathForUserId(userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No onboarding path found for: $userId")
     }
 
     /**
@@ -201,46 +240,33 @@ class OnboardingPathService(
         var currentStepDto: CurrentStepDto? = null
 
         if (path != null) {
-            val totalSteps = path.phases.sumOf { it.steps.size }
-            val completedSteps = path.phases.sumOf { phase ->
-                phase.steps.count {
-                    it.status == StepStatus.FINISHED ||
-                        it.status == StepStatus.SKIPPED
-                }
-            }
-            if (totalSteps > 0) {
-                progressPercentage = completedSteps.toDouble() / totalSteps.toDouble()
-            }
+            // Both derivations come from [OnboardingPositionReader] rather than living here: the
+            // escalation inbox needs the same two answers, and "which step is this person on" told
+            // two different ways is worse than not telling it at all.
+            progressPercentage = onboardingPositionReader.progressOf(path)
 
-            val sortedPhases = path.phases.sortedBy { it.position }
-            for (phase in sortedPhases) {
-                val sortedSteps = phase.steps.sortedBy { it.position }
-                val activeStep = sortedSteps.firstOrNull {
-                    it.status == StepStatus.WAITING ||
-                        it.status == StepStatus.IN_PROGRESS
-                }
-                if (activeStep != null) {
-                    currentPhase = phase.title
+            onboardingPositionReader.activeStepIn(path)?.let { active ->
+                currentPhase = active.phase.title
 
-                    val skipReq = activeStep.skips.lastOrNull()?.let { req ->
-                        SkipRequestDto(
-                            id = req.id.toString(),
-                            stepId = req.step.id.toString(),
-                            reason = req.reason,
-                            status = req.status.name,
-                            reviewComment = req.reviewComment,
-                            reviewedAt = req.resolvedAt,
-                        )
-                    }
-
-                    currentStepDto = CurrentStepDto(
-                        id = activeStep.id.toString(),
-                        title = activeStep.title,
-                        startedAt = activeStep.startedAt,
-                        skip = skipReq,
+                // Stays here: reviewing a skip needs the step entity, which is this service's
+                // business rather than the reader's.
+                val skipReq = active.step.skips.lastOrNull()?.let { req ->
+                    SkipRequestDto(
+                        id = req.id.toString(),
+                        stepId = req.step.id.toString(),
+                        reason = req.reason,
+                        status = req.status.name,
+                        reviewComment = req.reviewComment,
+                        reviewedAt = req.resolvedAt,
                     )
-                    break
                 }
+
+                currentStepDto = CurrentStepDto(
+                    id = active.step.id.toString(),
+                    title = active.step.title,
+                    startedAt = active.step.startedAt,
+                    skip = skipReq,
+                )
             }
         }
 

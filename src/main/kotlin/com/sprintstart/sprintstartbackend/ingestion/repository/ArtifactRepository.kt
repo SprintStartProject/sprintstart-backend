@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
@@ -11,11 +13,155 @@ import java.util.UUID
 
 /**
  * Persistence access for stored artifacts and project-scoped artifact searches.
+ *
+ * One method per distinct read the rest of the system needs; the count tracks how many questions
+ * are asked of artifacts, not a repository doing too many things.
  */
+@Suppress("TooManyFunctions")
 interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findBySourceId(sourceId: String): Artifact?
 
+    /**
+     * Batch variant of [findBySourceId]. Source ids with no artifact are simply absent, so a
+     * caller comparing a set of rows against the corpus learns which of them it no longer holds.
+     *
+     * Unscoped, like [findBySourceId] and unlike [findAllBySourceSystemAndSourceIdIn]: a caller
+     * holding a set of source ids that came from more than one tracker — the starter-work pool is
+     * one — has no single source system to scope by.
+     */
+    fun findAllBySourceIdIn(sourceIds: Collection<String>): List<Artifact>
+
+    fun findBySourceSystemAndSourceId(sourceSystem: SourceSystem, sourceId: String): Artifact?
+
+    /**
+     * Resolves the organization metadata artifact for a source system and organization login.
+     *
+     * Matches the source ID case-insensitively to accommodate casing differences between
+     * connector inputs and upstream API responses.
+     */
+    @Query(
+        """
+            SELECT a
+            FROM Artifact a
+            WHERE a.sourceSystem = :sourceSystem
+                AND LOWER(a.sourceId) = LOWER(:sourceId)
+                AND a.artifactType = 'ORG_METADATA'
+        """,
+    )
+    fun findOrgMetadataArtifact(
+        @Param("sourceSystem") sourceSystem: SourceSystem,
+        @Param("sourceId") sourceId: String,
+    ): Artifact?
+
+    fun findAllBySourceSystemAndSourceIdIn(
+        sourceSystem: SourceSystem,
+        sourceIds: Collection<String>,
+    ): List<Artifact>
+
     fun findAllByIngestionRunId(runId: UUID): MutableList<Artifact>
+
+    /**
+     * Returns the artifacts a given GitHub account authored within one project.
+     *
+     * The basis for recognizing a hire's own prior work: with their declared `User.githubLogin`,
+     * their issues and pull requests in the project's already-connected repositories can be found
+     * without asking GitHub for anything new. Only issues and pull requests carry an author login
+     * (see `Artifact.authorLogin`), so commits and files never match.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.authorLogin = :authorLogin
+        """,
+    )
+    fun findAllByProjectIdAndAuthorLogin(
+        @Param("projectId") projectId: UUID,
+        @Param("authorLogin") authorLogin: String,
+    ): List<Artifact>
+
+    /**
+     * Returns every artifact of one type within a project.
+     *
+     * Used to characterise a project's *repositories* rather than one person's work — for example
+     * how long pull requests in each repo wait for their first response, which is a property of the
+     * people who review there and cannot be derived from any single author's artifacts.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.artifactType = :artifactType
+        """,
+    )
+    fun findAllByProjectIdAndArtifactType(
+        @Param("projectId") projectId: UUID,
+        @Param("artifactType") artifactType: ArtifactType,
+    ): List<Artifact>
+
+    /**
+     * Returns every artifact of one type from one source system within a project.
+     *
+     * Exists because a tracked issue carries no `authorLogin` — the column is GitHub-only, and a
+     * Jira issue's assignee lives inside its metadata JSON. Attribution therefore has to filter in
+     * Kotlin, so the query narrows to the smallest honest set first: this project's issues from
+     * this tracker, rather than every artifact it has.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.sourceSystem = :sourceSystem
+                AND a.artifactType = :artifactType
+        """,
+    )
+    fun findAllByProjectIdAndSourceSystemAndArtifactType(
+        @Param("projectId") projectId: UUID,
+        @Param("sourceSystem") sourceSystem: SourceSystem,
+        @Param("artifactType") artifactType: ArtifactType,
+    ): List<Artifact>
+
+    /**
+     * Returns every project the run's artifacts belong to.
+     *
+     * A run is not scoped to a project of its own, so this is the only way to tell which projects a
+     * finished run actually affected. Queried directly rather than walking the artifacts, whose
+     * project ids are a lazy collection and would need an open session to read.
+     */
+    @Query(
+        """
+            SELECT DISTINCT p
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE a.ingestionRun.id = :runId
+        """,
+    )
+    fun findProjectIdsByIngestionRunId(@Param("runId") runId: UUID): Set<UUID>
+
+    /**
+     * Returns the projects of an explicit set of artifacts.
+     *
+     * The companion to [findProjectIdsByIngestionRunId] for artifacts a run touched without owning:
+     * `Artifact.ingestionRun` points at whichever run *stored* the row, so a run that only
+     * re-scoped or re-tracked existing artifacts is invisible to the run-scoped query.
+     *
+     * @param artifactIds The artifacts to resolve; an empty set returns nothing.
+     */
+    @Query(
+        """
+            SELECT DISTINCT p
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE a.id IN :artifactIds
+        """,
+    )
+    fun findProjectIdsByArtifactIdIn(@Param("artifactIds") artifactIds: Collection<UUID>): Set<UUID>
 
     /**
      * Returns one artifact page limited to artifacts linked to the given project.
@@ -51,8 +197,6 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
         ) projectId: UUID,
         @Param("filter") filter: String, pageable: Pageable,
     ): Page<Artifact>
-
-    fun deleteBySourceId(sourceId: String)
 
     /**
      * Returns one filtered artifact page across all projects.
@@ -98,4 +242,45 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countByComponent(
         @Param("component") component: String,
     ): Long
+
+    /**
+     * Counts stored artifacts belonging to a Jira instance.
+     *
+     * Jira issue artifacts store their web URL as `{instanceUrl}/browse/{key}`, so they are matched
+     * by that prefix -- the Jira counterpart to [countByComponent] for GitHub.
+     */
+    @Query(
+        "SELECT COUNT(a) FROM Artifact a " +
+            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.JIRA " +
+            "AND a.sourceUrl LIKE CONCAT(:instanceUrl, '/browse/%')",
+    )
+    fun countJiraArtifactsByInstanceUrl(
+        @Param("instanceUrl") instanceUrl: String,
+    ): Long
+
+    /** Counts stored upload artifacts belonging to a project. */
+    @Query(
+        """
+            SELECT COUNT(DISTINCT a)
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.UPLOAD
+        """,
+    )
+    fun countUploadArtifactsByProjectId(
+        @Param("projectId") projectId: UUID,
+    ): Long
+
+    /** Counts Confluence page artifacts belonging to one stored space connection. */
+    @Query(CONFLUENCE_ARTIFACT_COUNT_QUERY)
+    fun countConfluenceArtifactsByConnectionId(
+        @Param("connectionId") connectionId: String,
+    ): Long
 }
+
+private const val CONFLUENCE_ARTIFACT_COUNT_QUERY =
+    "SELECT COUNT(a) FROM Artifact a " +
+        "WHERE a.sourceSystem = " +
+        "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.CONFLUENCE " +
+        "AND a.sourceId LIKE CONCAT('confluence:', :connectionId, ':page:%')"

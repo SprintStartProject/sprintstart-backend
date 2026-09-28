@@ -8,11 +8,11 @@ package com.sprintstart.sprintstartbackend.shared.web
  * rather than letting [WebClientException] leak into business logic.
  *
  * @param statusCode The HTTP status code returned by the server.
- * @param body The raw response body, or a placeholder string for streaming responses
- *   where the body was not buffered.
+ * @param body The raw response body. Streaming responses capture a bounded prefix for diagnostics.
  */
 class WebClientException(
     val statusCode: Int,
     val body: String,
     message: String,
+    val retryAfter: String? = null,
 ) : RuntimeException(message)

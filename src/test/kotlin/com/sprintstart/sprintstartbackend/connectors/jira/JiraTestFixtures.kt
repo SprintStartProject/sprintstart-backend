@@ -1,8 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.jira
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredential
-import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraCredentialsId
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstanceConfig
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
@@ -20,6 +19,7 @@ internal fun jiraInstance(
     status: ConnectionState = ConnectionState.UP_TO_DATE,
     updateCredentialName: String = "token",
     updateCredentialUserEmail: String = "user@example.com",
+    updateCredentialAuthId: String = "auth-id",
 ): JiraInstance = JiraInstance(
     instanceUrl = instanceUrl,
     displayName = displayName,
@@ -30,6 +30,7 @@ internal fun jiraInstance(
     status = status,
     updateCredentialName = updateCredentialName,
     updateCredentialUserEmail = updateCredentialUserEmail,
+    updateCredentialAuthId = updateCredentialAuthId,
 )
 
 internal fun jiraInstanceConfig(
@@ -50,11 +51,10 @@ internal fun jiraInstanceConfig(
     return config
 }
 
-internal fun jiraCredential(
+internal fun atlassianCredentialSecret(
     userEmail: String = "user@example.com",
-    name: String = "token",
-    authToken: String = "secret",
-): JiraCredential = JiraCredential(
-    id = JiraCredentialsId(userEmail, name),
-    authToken = authToken,
+    apiToken: String = "secret",
+): AtlassianCredentialSecret = AtlassianCredentialSecret(
+    userEmail = userEmail,
+    apiToken = apiToken,
 )

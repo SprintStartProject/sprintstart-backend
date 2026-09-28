@@ -28,6 +28,13 @@ interface IngestionRunRepository :
     fun findFirstBySourceInstanceIdOrderByStartedAtDesc(sourceInstanceId: UUID): IngestionRun?
 
     /**
+     * Latest run for a source instance addressed by its connector-neutral reference (for Jira the
+     * instance URL), used where the instance has no UUID id, unlike
+     * [findFirstBySourceInstanceIdOrderByStartedAtDesc].
+     */
+    fun findFirstBySourceInstanceRefOrderByStartedAtDesc(sourceInstanceRef: String): IngestionRun?
+
+    /**
      * Loads a run with a database write lock for lifecycle paths that mutate counters or
      * collection-valued fields from independently delivered events.
      */
@@ -37,9 +44,22 @@ interface IngestionRunRepository :
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
 
-    @EntityGraph(attributePaths = ["artifactIdsToDeindex"])
+    /**
+     * Loads a run together with both artifact-id collections the AI sync needs.
+     *
+     * Fetched in one go because the sync runs after the run's own transaction has committed, where
+     * a lazy collection would throw rather than load.
+     */
+    @EntityGraph(attributePaths = ["artifactIdsToDeindex", "artifactIdsToReingest"])
     @Query("SELECT r FROM IngestionRun r WHERE r.id = :id")
-    fun findWithArtifactIdsToDeindexById(
+    fun findWithAiSyncArtifactIdsById(
         @Param("id") id: UUID,
     ): Optional<IngestionRun>
+
+    /**
+     * Returns all ingestion runs with the
+     * [com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus.RUNNING].
+     */
+    @Query("SELECT r FROM IngestionRun r WHERE r.status = IngestionRunStatus.RUNNING")
+    fun findAllRunning(): List<IngestionRun>
 }

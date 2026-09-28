@@ -46,6 +46,7 @@ class SyncExecution(
             throw WebClientException(
                 statusCode = response.statusCode(),
                 body = response.body(),
+                retryAfter = response.headers().firstValue("Retry-After").orElse(null),
                 message = "Request to ${request.uri()} failed with status ${response.statusCode()}",
             )
         }
@@ -70,6 +71,7 @@ class SyncExecution(
             throw WebClientException(
                 statusCode = response.statusCode(),
                 body = response.body(),
+                retryAfter = response.headers().firstValue("Retry-After").orElse(null),
                 message = "Request to ${request.uri()} failed with status ${response.statusCode()}",
             )
         }

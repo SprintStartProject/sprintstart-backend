@@ -11,10 +11,13 @@ class ArtifactMapper {
             id = artifact.id,
             title = artifact.title,
             sourceSystem = artifact.sourceSystem,
+            sourceId = artifact.sourceId,
             sourceUrl = artifact.sourceUrl,
             metadata = artifact.metadata,
             artifactType = artifact.artifactType,
             ingestedAt = artifact.ingestedAt,
+            lastChangedAt = artifact.lastChangedAt,
+            sourceVersion = artifact.sourceVersion,
         )
     }
 }

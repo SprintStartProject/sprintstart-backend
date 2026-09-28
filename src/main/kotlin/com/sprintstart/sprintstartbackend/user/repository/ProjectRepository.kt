@@ -1,7 +1,9 @@
 package com.sprintstart.sprintstartbackend.user.repository
 
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
@@ -11,6 +13,17 @@ import java.util.UUID
 @Repository
 interface ProjectRepository : JpaRepository<Project, UUID> {
     fun findByName(name: String): Project?
+
+    /**
+     * Loads a project with a pessimistic write lock to prevent concurrent evaluations
+     * from racing each other or overwriting higher-confidence results.
+     *
+     * @param projectId Unique identifier of the project.
+     * @return The project entity if found.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Project p where p.id = :projectId")
+    fun findByIdForUpdate(projectId: UUID): Optional<Project>
 
     /**
      * Returns the authentication identifier of a project's manager.

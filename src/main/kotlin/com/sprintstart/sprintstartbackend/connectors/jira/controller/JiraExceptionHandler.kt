@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.controller
 
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraAuthException
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialAlreadyExistsException
-import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraInstanceUnavailableException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraNoAccessibleProjectsException
+import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraResourceNotFoundException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -34,18 +34,16 @@ internal class JiraExceptionHandler {
             .body(ErrorResponse(ex.message))
 
     /**
-     * Handles exceptions of type `JiraCredentialNotFoundException` by returning a response
-     * with HTTP status `404 Not Found` and an error body containing the exception message.
+     * Handles exceptions of type `JiraProjectAccessDeniedException` by returning a response with
+     * HTTP status `403 Forbidden`.
      *
-     * @param ex The `JiraCredentialNotFoundException` instance containing details about
-     * the missing Jira credentials for a specific user.
-     * @return A `ResponseEntity` object with status `404 Not Found` and an `ErrorResponse` body
-     * containing the exception message.
+     * @param ex The `JiraProjectAccessDeniedException` naming the project the caller may not touch.
+     * @return A `ResponseEntity` with status `403 Forbidden` and an `ErrorResponse` body.
      */
-    @ExceptionHandler(JiraCredentialNotFoundException::class)
-    fun handleCredentialsNotFound(ex: JiraCredentialNotFoundException): ResponseEntity<ErrorResponse> =
+    @ExceptionHandler(JiraProjectAccessDeniedException::class)
+    fun handleProjectAccessDenied(ex: JiraProjectAccessDeniedException): ResponseEntity<ErrorResponse> =
         ResponseEntity
-            .status(HttpStatus.NOT_FOUND)
+            .status(HttpStatus.FORBIDDEN)
             .body(ErrorResponse(ex.message))
 
     /**
@@ -90,18 +88,20 @@ internal class JiraExceptionHandler {
             .body(ErrorResponse(ex.message))
 
     /**
-     * Handles exceptions of type `JiraCredentialAlreadyExistsException` by returning a response
-     * with HTTP status `400 Bad Request` and an error body containing the exception message.
+     * Handles exceptions of type `JiraNoAccessibleProjectsException` by returning a response with
+     * HTTP status `422 Unprocessable Entity` and an error body containing the exception message.
      *
-     * @param ex The `JiraCredentialAlreadyExistsException` instance containing details about
-     * the duplicate Jira credential that caused the exception.
-     * @return A `ResponseEntity` object with status `400 Bad Request` and an `ErrorResponse` body
-     * containing the exception message.
+     * The instance is reachable but the credentials expose no browsable project, so the request is
+     * well-formed yet cannot be fulfilled — distinct from an unreachable instance (`502`) or a
+     * missing credential (`404`).
+     *
+     * @param ex The exception instance describing the instance without accessible projects.
+     * @return A `ResponseEntity` with status `422 Unprocessable Entity` and an `ErrorResponse` body.
      */
-    @ExceptionHandler(JiraCredentialAlreadyExistsException::class)
-    fun handleCredentialAlreadyExists(ex: JiraCredentialAlreadyExistsException): ResponseEntity<ErrorResponse> =
+    @ExceptionHandler(JiraNoAccessibleProjectsException::class)
+    fun handleNoAccessibleProjects(ex: JiraNoAccessibleProjectsException): ResponseEntity<ErrorResponse> =
         ResponseEntity
-            .status(HttpStatus.BAD_REQUEST)
+            .status(HttpStatus.UNPROCESSABLE_ENTITY)
             .body(ErrorResponse(ex.message))
 }
 

@@ -12,7 +12,7 @@ class ConnectorConfiguration(
     @Id
     var id: String,
     @Column(nullable = false)
-    var enabled: Boolean = false,
+    var enabled: Boolean = true,
     @Column(name = "first_configured_at")
     var firstConfiguredAt: Instant? = null,
     @Column(name = "last_configured_at")

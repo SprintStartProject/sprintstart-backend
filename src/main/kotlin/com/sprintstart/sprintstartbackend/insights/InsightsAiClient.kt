@@ -1,8 +1,12 @@
 package com.sprintstart.sprintstartbackend.insights
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
+import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyResponse
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingResponse
+import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeGroupsRequest
+import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeResponse
 import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
@@ -40,6 +44,43 @@ class InsightsAiClient(
                 .perform<AiFaqGroupingResponse>()
         } catch (@Suppress("SwallowedException") e: WebClientException) {
             throw InsightsAiException("Failed to group FAQ questions (HTTP ${e.statusCode}): ${e.body}")
+        }
+
+    /**
+     * Asks where a single freshly asked question belongs in the existing FAQ.
+     *
+     * Unlike [groupFaqQuestions] this carries the FAQ's structure rather than its history, so its
+     * cost does not grow with the number of questions a project has accumulated.
+     *
+     * @throws InsightsAiException if the AI service returns a non-2xx status.
+     */
+    suspend fun classifyFaqQuestion(request: AiFaqClassifyRequest): AiFaqClassifyResponse =
+        try {
+            webClient
+                .post()
+                .uri(uri("/api/v1/insights/faq/classify"))
+                .body(request)
+                .sync()
+                .perform<AiFaqClassifyResponse>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw InsightsAiException("Failed to classify FAQ question (HTTP ${e.statusCode}): ${e.body}")
+        }
+
+    /**
+     * Requests a plan for folding duplicate entries together once the FAQ is over its ceiling.
+     *
+     * @throws InsightsAiException if the AI service returns a non-2xx status.
+     */
+    suspend fun mergeFaqGroups(request: AiFaqMergeGroupsRequest): AiFaqMergeResponse =
+        try {
+            webClient
+                .post()
+                .uri(uri("/api/v1/insights/faq/groups/merge"))
+                .body(request)
+                .sync()
+                .perform<AiFaqMergeResponse>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw InsightsAiException("Failed to merge FAQ groups (HTTP ${e.statusCode}): ${e.body}")
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

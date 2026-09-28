@@ -9,7 +9,6 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
-import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.JiraArtifactProviderService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
@@ -17,15 +16,16 @@ import org.springframework.stereotype.Component
 @Component
 internal class JiraIssueListener(
     private val ingestionRunLifeCycleService: IngestionRunLifeCycleService,
-    private val ingestionRunService: IngestionRunService,
     private val jiraArtifactProviderService: JiraArtifactProviderService,
     private val mapper: JiraArtifactMapper,
 ) {
     @EventListener
     fun on(event: JiraResourceFetchingStartedEvent) {
-        ingestionRunLifeCycleService.updateRunStatus(
+        ingestionRunLifeCycleService.startOrUpdateRun(
             transactionId = event.transactionId,
+            sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.RUNNING,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 
@@ -46,14 +46,12 @@ internal class JiraIssueListener(
             sourceSystem = SourceSystem.JIRA,
             status = IngestionRunStatus.FAILED,
             failureReason = event.reason,
+            sourceInstanceRef = event.instanceUrl,
         )
     }
 
     @EventListener
     fun on(event: JiraResourceFetchingCompleteEvent) {
-        val ingestionRun = ingestionRunService.findRunByTransactionId(event.transactionId)
-            ?: return
-
-        ingestionRunLifeCycleService.finishRun(ingestionRun)
+        ingestionRunLifeCycleService.finishRun(event.transactionId)
     }
 }

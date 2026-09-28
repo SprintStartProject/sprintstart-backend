@@ -30,8 +30,14 @@ import kotlin.test.assertNull
 class OnboardingStepServiceTest {
     private val onboardingPhaseRepository: OnboardingPhaseRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingStepService(onboardingPhaseRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingStepService(
+        onboardingPhaseRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val phaseId = UUID.randomUUID()
@@ -245,6 +251,41 @@ class OnboardingStepServiceTest {
                 service.completeOnboardingStepForMe(authId, stepId)
             }.also { assertEquals(400, it.statusCode.value()) }
         }
+
+        @Test
+        fun `triggers onboarding completion check after completing step`() {
+            val step = makeStep(0, StepStatus.WAITING)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            service.completeOnboardingStepForMe(authId, stepId)
+
+            verify(exactly = 1) { onboardingCompletionService.completeIfFinished(userId) }
+        }
+
+        @Test
+        fun `does not trigger completion check when step cannot be completed`() {
+            val step = makeStep(0, StepStatus.FINISHED)
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(step)
+
+            assertThrows<ResponseStatusException> {
+                service.completeOnboardingStepForMe(authId, stepId)
+            }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
+        }
+
+        @Test
+        fun `throws 404 when user not found and does not trigger completion check`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.completeOnboardingStepForMe(authId, stepId)
+            }.also { assertEquals(404, it.statusCode.value()) }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
+        }
     }
 
     @Nested
@@ -313,6 +354,38 @@ class OnboardingStepServiceTest {
 
             assertEquals(1, laterStep.position)
             verify(exactly = 1) { onboardingStepRepository.delete(step) }
+        }
+
+        @Test
+        fun `joins up the graph around a deleted step`() {
+            // A -> X -> B. Without this the edge B -> X outlived X: the delete failed on the join
+            // table, or B stayed locked behind a step nobody could finish.
+            val phase = makePhase()
+
+            fun node(id: UUID, title: String) = OnboardingStep(
+                id = id,
+                phase = phase,
+                position = 0,
+                title = title,
+                description = "d",
+                type = StepType.DOCUMENT,
+                estimatedMinutes = 5,
+                expectedOutcome = "",
+                status = StepStatus.WAITING,
+            ).also { phase.steps += it }
+            val a = node(UUID.randomUUID(), "A")
+            val x = node(stepId, "X").also { it.blockedBy += a }
+            val b = node(UUID.randomUUID(), "B").also { it.blockedBy += x }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(x)
+            every { onboardingStepRepository.findAllByPhaseIdAndPositionGreaterThan(phase.id, 0) } returns
+                mutableListOf()
+            every { onboardingStepRepository.delete(x) } just runs
+
+            service.deleteOnboardingStepForMe(authId, stepId)
+
+            assertEquals(setOf(a.id), b.blockedBy.map { it.id }.toSet())
+            assertEquals(emptySet<UUID>(), x.blockedBy.map { it.id }.toSet())
         }
 
         @Test

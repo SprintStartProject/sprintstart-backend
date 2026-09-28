@@ -10,4 +10,6 @@ data class GetOnboardingStepSkipResponse(
     val accepted: Boolean?,
     val reviewComment: String?,
     val reviewedAt: Instant?,
+    /** When the member saw the review; null while it is new to them (or still pending). */
+    val answerSeenAt: Instant? = null,
 )

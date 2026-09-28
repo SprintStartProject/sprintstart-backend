@@ -3,8 +3,16 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.commits.GithubCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.issues.GithubIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataMember
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeam
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeamMember
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.github.external.events.pullrequests.GithubPullRequestReview
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.assertj.core.api.Assertions.assertThat
@@ -33,7 +41,7 @@ class GithubArtifactMapperTest {
 
         assertThat(result.ingestionRunId).isEqualTo(runId)
         assertThat(result.sourceSystem).isEqualTo(SourceSystem.GITHUB)
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceId).isEqualTo("github:owner/repo:FILE:src/main/App.kt")
         assertThat(result.sourceUrl).isEqualTo(event.sourceUrl)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
@@ -81,7 +89,7 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:COMMIT:abc123")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo("https://github.com/owner/repo/commit/abc123")
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.COMMIT)
@@ -106,7 +114,7 @@ class GithubArtifactMapperTest {
             closedAt = null,
             url = "https://github.com/owner/repo/issues/42",
             author = "alice",
-            labels = emptyList(),
+            labels = listOf("bug", "good first issue"),
             assignees = emptyList(),
             comments = emptyList(),
         )
@@ -114,7 +122,7 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:ISSUE:42")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo(event.url)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.ISSUE)
@@ -122,6 +130,76 @@ class GithubArtifactMapperTest {
         assertThat(result.bodyText).isEqualTo("Something broke")
         assertThat(result.createdAtSource).isEqualTo(Instant.parse("2024-01-01T00:00:00Z"))
         assertThat(result.hash).isEqualTo("Bug report|Something broke".toByteArray().sha256())
+        assertThat(result.state).isEqualTo("OPEN")
+        assertThat(result.labels).containsExactly("bug", "good first issue")
+        assertThat(result.authorLogin).isEqualTo("alice")
+    }
+
+    @Test
+    fun `toCommand lower-cases the author login so it matches a declared identity`() {
+        val event = GithubIssueFetchedEvent(
+            transactionId = runId,
+            repositoryId = repositoryId,
+            repositoryOwner = "owner",
+            repositoryName = "repo",
+            number = 42,
+            title = "Bug report",
+            body = null,
+            state = "OPEN",
+            createdAt = "2024-01-01T00:00:00Z",
+            closedAt = null,
+            url = "https://github.com/owner/repo/issues/42",
+            author = "OctoCat",
+            labels = emptyList(),
+            assignees = emptyList(),
+            comments = emptyList(),
+        )
+
+        assertThat(mapper.toCommand(event).authorLogin).isEqualTo("octocat")
+    }
+
+    @Test
+    fun `toCommand does not treat a commit's git author name as a GitHub login`() {
+        val event = GithubCommitFetchedEvent(
+            transactionId = runId,
+            repositoryId = repositoryId,
+            repositoryOwner = "owner",
+            repositoryName = "repo",
+            author = "Ada Lovelace",
+            date = Instant.parse("2024-01-01T00:00:00Z"),
+            sha = "abc123",
+            msg = "fix: something",
+        )
+
+        // `git log --pretty=%an` yields a display name, not an account -- storing it as a login
+        // would attribute the commit to whoever happens to hold that handle on GitHub.
+        assertThat(mapper.toCommand(event).authorLogin).isNull()
+    }
+
+    @Test
+    fun `toCommand carries a null issue state through as null`() {
+        val event = GithubIssueFetchedEvent(
+            transactionId = runId,
+            repositoryId = repositoryId,
+            repositoryOwner = "owner",
+            repositoryName = "repo",
+            number = 43,
+            title = "Untitled",
+            body = null,
+            state = null,
+            createdAt = "2024-01-01T00:00:00Z",
+            closedAt = null,
+            url = "https://github.com/owner/repo/issues/43",
+            author = null,
+            labels = emptyList(),
+            assignees = emptyList(),
+            comments = emptyList(),
+        )
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.state).isNull()
+        assertThat(result.labels).isEmpty()
     }
 
     @Test
@@ -148,7 +226,7 @@ class GithubArtifactMapperTest {
         val result = mapper.toCommand(event)
 
         assertThat(result.sourceId).isEqualTo("github:owner/repo:PULL_REQUEST:7")
-        assertThat(result.metadata.repositoryId).isEqualTo(repositoryId)
+        assertThat((result.metadata as GithubArtifactMetadata).repositoryId).isEqualTo(repositoryId)
         assertThat(result.sourceUrl).isEqualTo(event.url)
         assertThat(result.metadata.repositoryFullName).isEqualTo("owner/repo")
         assertThat(result.artifactType).isEqualTo(ArtifactType.PULL_REQUEST)
@@ -156,4 +234,154 @@ class GithubArtifactMapperTest {
         assertThat(result.bodyText).isNull()
         assertThat(result.hash).isNull()
     }
+
+    @Test
+    fun `toCommand maps github org metadata using login as source identity`() {
+        val event = GithubOrgMetadataFetchedEvent(
+            transactionId = runId,
+            login = "octocat",
+            name = "The Octocats",
+            description = "A GitHub organization",
+            company = "GitHub",
+            blog = "https://github.blog",
+            location = "San Francisco",
+            email = "octocat@github.com",
+            publicRepos = 12,
+            privateRepos = 4,
+            teams = listOf(
+                GithubOrgMetadataTeam(
+                    name = "Platform",
+                    slug = "platform",
+                    orgLogin = "octocat",
+                    orgName = "The Octocats",
+                    members = listOf(
+                        GithubOrgMetadataTeamMember(login = "alice", name = "Alice"),
+                    ),
+                ),
+            ),
+            members = listOf(
+                GithubOrgMetadataMember(login = "bob", url = "https://github.com/bob"),
+            ),
+        )
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.ingestionRunId).isEqualTo(runId)
+        assertThat(result.sourceSystem).isEqualTo(SourceSystem.GITHUB)
+        assertThat(result.sourceId).isEqualTo("octocat")
+        assertThat(result.sourceUrl).isEqualTo("https://github.com/octocat")
+        assertThat(result.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(result.title).isEqualTo("The Octocats")
+
+        val metadata = result.metadata as GithubOrgMetadataArtifactMetadata
+        assertThat(metadata.login).isEqualTo("octocat")
+        assertThat(metadata.name).isEqualTo("The Octocats")
+        assertThat(metadata.publicRepos).isEqualTo(12)
+        assertThat(metadata.privateRepos).isEqualTo(4)
+        assertThat(metadata.teams).hasSize(1)
+        assertThat(metadata.teams!![0].members[0].login).isEqualTo("alice")
+        assertThat(metadata.members[0].login).isEqualTo("bob")
+        assertThat(metadata.members[0].url).isEqualTo("https://github.com/bob")
+    }
+
+    @Test
+    fun `toCommand keeps the merge, the state and the source creation time`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                state = "MERGED",
+                mergedAt = "2024-01-05T10:00:00Z",
+            ),
+        )
+
+        // All three were fetched from GitHub and dropped here before onboarding needed them.
+        assertThat(result.state).isEqualTo("MERGED")
+        assertThat(result.mergedAtSource).isEqualTo(Instant.parse("2024-01-05T10:00:00Z"))
+        assertThat(result.createdAtSource).isEqualTo(Instant.parse("2024-01-02T00:00:00Z"))
+    }
+
+    @Test
+    fun `toCommand takes the first response from a review or a comment, whichever came first`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                reviews = listOf(
+                    GithubPullRequestReview(
+                        body = "looks good",
+                        state = "APPROVED",
+                        author = "carol",
+                        submittedAt = "2024-01-04T00:00:00Z",
+                    ),
+                ),
+                comments = listOf(
+                    GithubPullRequestComment(
+                        body = "one thought",
+                        author = "dave",
+                        createdAt = "2024-01-03T00:00:00Z",
+                    ),
+                ),
+            ),
+        )
+
+        // A newcomer does not experience a comment and a review differently -- both are somebody
+        // answering, so the earlier one is the response.
+        assertThat(result.firstResponseAtSource).isEqualTo(Instant.parse("2024-01-03T00:00:00Z"))
+    }
+
+    @Test
+    fun `toCommand does not count the author answering themselves as a response`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                comments = listOf(
+                    GithubPullRequestComment(
+                        body = "bumping this",
+                        author = "Bob",
+                        createdAt = "2024-01-03T00:00:00Z",
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(result.firstResponseAtSource).isNull()
+    }
+
+    @Test
+    fun `toCommand skips a review GitHub reported without a timestamp rather than guessing one`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                reviews = listOf(
+                    GithubPullRequestReview(
+                        body = "no timestamp",
+                        state = "COMMENTED",
+                        author = "carol",
+                        submittedAt = null,
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(result.firstResponseAtSource).isNull()
+    }
+
+    private fun pullRequestEvent(
+        state: String = "OPEN",
+        mergedAt: String? = null,
+        reviews: List<GithubPullRequestReview>? = null,
+        comments: List<GithubPullRequestComment>? = null,
+    ) = GithubPullRequestFetchedEvent(
+        transactionId = runId,
+        repositoryId = repositoryId,
+        repositoryOwner = "owner",
+        repositoryName = "repo",
+        number = 7,
+        title = "Improve docs",
+        body = null,
+        state = state,
+        createdAt = "2024-01-02T00:00:00Z",
+        mergedAt = mergedAt,
+        url = "https://github.com/owner/repo/pull/7",
+        author = "bob",
+        labels = null,
+        reviews = reviews,
+        comments = comments,
+        reviewThreads = null,
+    )
 }

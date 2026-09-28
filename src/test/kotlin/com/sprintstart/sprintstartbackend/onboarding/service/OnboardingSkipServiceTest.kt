@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingSkip
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
+import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.CreateOnboardingSkipRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.ReviewOnboardingSkipRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.skip.UpdateOnboardingSkipRequest
@@ -15,9 +16,11 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingStepRe
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.Optional
@@ -29,8 +32,14 @@ import kotlin.test.assertNull
 class OnboardingSkipServiceTest {
     private val onboardingSkipRepository: OnboardingSkipRepository = mockk()
     private val onboardingStepRepository: OnboardingStepRepository = mockk()
+    private val onboardingCompletionService: OnboardingCompletionService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val service = OnboardingSkipService(onboardingSkipRepository, onboardingStepRepository, userApi)
+    private val service = OnboardingSkipService(
+        onboardingSkipRepository,
+        onboardingStepRepository,
+        onboardingCompletionService,
+        userApi,
+    )
 
     private val userId = UUID.randomUUID()
     private val stepId = UUID.randomUUID()
@@ -86,6 +95,46 @@ class OnboardingSkipServiceTest {
 
             assertEquals(1, result.size)
             assertEquals(skipId, result.first().id)
+        }
+    }
+
+    @Nested
+    inner class MarkSkipAnswerSeenForMe {
+        @Test
+        fun `marks a reviewed skip as seen once`() {
+            val step = makeStep(StepStatus.SKIPPED)
+            val skip = makeSkip(step, SkipStatus.ACCEPTED, Instant.now())
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingSkipRepository.findByIdAndStepPhasePathUserId(skipId, userId) } returns Optional.of(skip)
+
+            service.markSkipAnswerSeenForMe(authId, skipId)
+            val firstSeen = skip.answerSeenAt
+            service.markSkipAnswerSeenForMe(authId, skipId)
+
+            assertNotNull(firstSeen)
+            assertEquals(firstSeen, skip.answerSeenAt)
+            assertEquals(firstSeen, skip.toStepResponse().answerSeenAt)
+        }
+
+        @Test
+        fun `leaves a pending skip unseen`() {
+            val skip = makeSkip(makeStep())
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingSkipRepository.findByIdAndStepPhasePathUserId(skipId, userId) } returns Optional.of(skip)
+
+            service.markSkipAnswerSeenForMe(authId, skipId)
+
+            assertNull(skip.answerSeenAt)
+        }
+
+        @Test
+        fun `throws 404 for a skip that is not the user's`() {
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingSkipRepository.findByIdAndStepPhasePathUserId(skipId, userId) } returns Optional.empty()
+
+            val error = assertThrows<ResponseStatusException> { service.markSkipAnswerSeenForMe(authId, skipId) }
+
+            assertEquals(HttpStatus.NOT_FOUND, error.statusCode)
         }
     }
 
@@ -228,6 +277,39 @@ class OnboardingSkipServiceTest {
             assertThrows<ResponseStatusException> {
                 service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
             }.also { assertEquals(400, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `accepting a skip triggers onboarding completion check for the path owner`() {
+            val step = makeStep()
+            makeSkip(step)
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.of(step.skips.first())
+
+            service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
+
+            verify(exactly = 1) { onboardingCompletionService.completeIfFinished(userId) }
+        }
+
+        @Test
+        fun `denying a skip does not trigger onboarding completion check`() {
+            val step = makeStep()
+            makeSkip(step)
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.of(step.skips.first())
+
+            service.denySkipById(skipId, ReviewOnboardingSkipRequest("No"))
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
+        }
+
+        @Test
+        fun `accepting an unknown skip throws 404 without triggering completion check`() {
+            every { onboardingSkipRepository.findById(skipId) } returns Optional.empty()
+
+            assertThrows<ResponseStatusException> {
+                service.acceptSkipById(skipId, ReviewOnboardingSkipRequest("Approved"))
+            }.also { assertEquals(404, it.statusCode.value()) }
+
+            verify(exactly = 0) { onboardingCompletionService.completeIfFinished(any()) }
         }
     }
 

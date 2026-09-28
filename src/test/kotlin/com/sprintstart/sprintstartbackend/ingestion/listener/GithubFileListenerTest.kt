@@ -100,9 +100,9 @@ class GithubFileListenerTest {
     }
 
     @Test
-    fun `files failed event marks files phase finished`() {
+    fun `files failed event reports the failure instead of closing the phase quietly`() {
         val runId = UUID.randomUUID()
-        every { githubIngestionRunService.markFetchPhaseFinished(any(), any()) } just runs
+        every { githubIngestionRunService.markFetchPhaseFailed(any(), any(), any()) } just runs
 
         listener.on(
             GithubFilesFetchFailedEvent(
@@ -113,7 +113,12 @@ class GithubFileListenerTest {
             ),
         )
 
+        // Marking the phase merely "finished" made a failed fetch indistinguishable from one that
+        // found nothing, and the run ended up COMPLETED with no artifacts.
         verify(exactly = 1) {
+            githubIngestionRunService.markFetchPhaseFailed(runId, FinishedTypes.FILES, "Git failed")
+        }
+        verify(exactly = 0) {
             githubIngestionRunService.markFetchPhaseFinished(runId, FinishedTypes.FILES)
         }
     }

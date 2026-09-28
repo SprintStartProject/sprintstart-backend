@@ -99,19 +99,74 @@ class IngestionRunLifeCycleService(
     }
 
     /**
+     * Finishes the run identified by [transactionId], loading it **inside this transaction** so the
+     * terminal-status change is dirty-checked and flushed.
+     *
+     * Listeners that only hold the run id (Jira's connection-completed and resource-fetching-complete
+     * events) must use this overload instead of loading the run in a separate read-only transaction
+     * and passing the resulting *detached* entity to [finishRun]: a detached entity's mutations are
+     * never persisted, which left Jira runs stuck in-progress (`CONNECTED`, `finishedAt = null`) even
+     * though AI sync had already been dispatched and marked succeeded.
+     *
+     * @param transactionId The ingestion run id to finish. No-op when the run is unknown.
+     * @param successfulItemCount Source-specific successful items, including unchanged items that
+     * do not increment the canonical write counters.
+     */
+    @Transactional
+    @Tracked("Finishing ingestion run")
+    fun finishRun(transactionId: UUID, successfulItemCount: Int = 0) {
+        val run = ingestionRunRepository.findByIdOrNull(transactionId) ?: return
+        finishRun(run, successfulItemCount)
+    }
+
+    /**
+     * Completes a successful run that performed no ingestion work.
+     *
+     * This is used for idempotent connector operations such as linking an already-connected
+     * source to another project. The run is persisted as completed, but no [RunFinishedEvent]
+     * is published because there are no artifacts to synchronize downstream.
+     *
+     * @param transactionId The ingestion run id to complete.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    @Transactional
+    @Tracked("Finishing empty ingestion run")
+    fun finishEmptyRun(transactionId: UUID) {
+        val run = ingestionRunRepository
+            .findByIdForUpdate(transactionId)
+            .orElseThrow { IngestionRunNotFoundException(transactionId) }
+        run.status = IngestionRunStatus.COMPLETED
+        run.finishedAt = Instant.now()
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+    }
+
+    /**
      * Applies the shared terminal-status rule for all source systems.
      *
      * A run with failures is `PARTIAL` when at least one artifact was ingested, updated, or deleted;
      * otherwise it is `FAILED`. Fully failed runs do not publish `RunFinishedEvent`, because there
      * is nothing for the AI sync layer to ingest or deindex.
      *
+     * The [run] must be a managed entity from the calling transaction; callers that only have the
+     * run id must use [finishRun] with the id so the mutation is actually persisted.
+     *
      * @param run The managed ingestion run entity whose terminal status should be calculated.
+     * @param successfulItemCount Source-specific successful items, including unchanged items.
      */
     @Transactional
     @Tracked("Finishing ingestion run")
-    fun finishRun(run: IngestionRun) {
+    fun finishRun(run: IngestionRun, successfulItemCount: Int = 0) {
+        require(successfulItemCount >= 0) { "Successful item count must not be negative" }
+        val changedArtifactCount = run.ingestedCount + run.updatedCount + run.deletedCount
+        // Work that moves no counter and still has to reach the AI index: an artifact an earlier
+        // run stored that this one re-scoped into another project, or whose `state`/labels moved.
+        // Neither is an ingest, an update or a delete -- by design, since nothing was fetched --
+        // so counting only the counters would call such a run empty and skip its sync entirely.
+        val hasPendingAiWork = run.artifactIdsToReingest.isNotEmpty() || run.artifactIdsToDeindex.isNotEmpty()
+        val didSomething = changedArtifactCount > 0 || hasPendingAiWork
+
         if (run.failedCount > 0) {
-            if (run.ingestedCount > 0 || run.updatedCount > 0 || run.deletedCount > 0) {
+            if (didSomething || successfulItemCount > 0) {
                 run.status = IngestionRunStatus.PARTIAL
             } else {
                 run.status = IngestionRunStatus.FAILED
@@ -121,10 +176,12 @@ class IngestionRunLifeCycleService(
         }
 
         run.finishedAt = Instant.now()
-        if (run.status in setOf(IngestionRunStatus.COMPLETED, IngestionRunStatus.PARTIAL)) {
+        if (run.status == IngestionRunStatus.COMPLETED ||
+            (run.status == IngestionRunStatus.PARTIAL && didSomething)
+        ) {
             publisher.publishEvent(RunFinishedEvent(run.id))
         } else {
-            // Nothing was ingested, updated, or deleted, so there is nothing for the AI
+            // Nothing was ingested, updated, deleted or re-scoped, so there is nothing for the AI
             // sync layer to act on -- it will never run for this id.
             run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
         }
@@ -160,6 +217,23 @@ class IngestionRunLifeCycleService(
             run.aiSyncStatus = AiSyncStatus.FAILED
             run.aiSyncFailureReason = reason.truncateToDbLimit()
         }
+    }
+
+    /**
+     * Records that an ingestion run failed on the backend site, so before the ai sync even happened. Status is changed
+     * to failed, finished at is set to now, and reason is applied.
+     *
+     * @param run The ingestion run to set failed.
+     * @param reason The reason why that run failed.
+     */
+    @Tracked("Marking ingestion run failed")
+    fun markSyncFailed(run: IngestionRun, reason: String?) {
+        run.status = IngestionRunStatus.FAILED
+        run.finishedAt = Instant.now()
+        run.failureReason = reason
+        run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+
+        ingestionRunRepository.save(run)
     }
 }
 

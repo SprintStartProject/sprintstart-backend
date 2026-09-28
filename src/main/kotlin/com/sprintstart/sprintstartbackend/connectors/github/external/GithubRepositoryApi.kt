@@ -16,6 +16,17 @@ interface GithubRepositoryApi {
     fun getRepositoryProjectIdsById(id: UUID): Set<UUID>
 
     /**
+     * Resolves all project IDs currently linked to any repository owned by the given organization or user.
+     *
+     * Queries across all repository connections whose owner matches the given owner (case-insensitively).
+     * Used to determine project visibility for organization-level metadata artifacts.
+     *
+     * @param owner The repository owner or organization login.
+     * @return The set of all linked SprintStart project IDs across all repositories with this owner.
+     */
+    fun getProjectIdsByOwner(owner: String): Set<UUID>
+
+    /**
      * Resolves the internal repository connection id for a repository addressed by owner and name.
      *
      * @param owner The repository owner ("owner" part of "owner/name").

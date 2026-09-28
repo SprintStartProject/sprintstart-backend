@@ -11,6 +11,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class AiFaqGroupingRequest(
+    val projectId: String,
     val questions: List<AiFaqQuestion>,
 )
 

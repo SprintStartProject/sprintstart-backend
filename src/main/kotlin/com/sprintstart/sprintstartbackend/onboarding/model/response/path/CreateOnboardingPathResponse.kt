@@ -7,4 +7,5 @@ data class CreateOnboardingPathResponse(
     val id: UUID,
     val userId: UUID,
     val createdAt: Instant,
+    val blueprintId: UUID? = null,
 )

@@ -4,4 +4,5 @@ import java.util.UUID
 
 data class JiraResourceFetchingStartedEvent(
     val transactionId: UUID,
+    val instanceUrl: String,
 )

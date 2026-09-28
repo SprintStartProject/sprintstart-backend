@@ -14,7 +14,7 @@ import java.util.UUID
 /**
  * A component that is missing critical documentation, surfaced for project managers.
  *
- * A gap is the persisted result of an AI classification run (see issue #115): the AI service
+ * A gap is the persisted result of an AI classification run: the AI service
  * inspects the ingested artifacts, determines which components lack runbooks/ADRs and other
  * critical documents, and reports the result. Each reported component becomes one [KnowledgeGap].
  * The rows are treated as a rebuildable cache — a refresh replaces the whole set. [missingTypes]
@@ -26,6 +26,11 @@ import java.util.UUID
 class KnowledgeGap(
     @Id
     val id: UUID = UUID.randomUUID(),
+    // The project this gap was detected for. Nullable only for cache rows written
+    // before insights were project-scoped; those are invisible to every project and
+    // are cleared by the next refresh.
+    @Column(name = "project_id")
+    val projectId: UUID? = null,
     @Column(nullable = false)
     val component: String,
     @ElementCollection

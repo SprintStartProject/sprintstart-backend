@@ -36,6 +36,7 @@ import kotlin.ranges.contains
 class OnboardingStepService(
     private val onboardingPhaseRepository: OnboardingPhaseRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
+    private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
 //  ========================== Methods for users ==========================
@@ -208,6 +209,21 @@ class OnboardingStepService(
         return step.toUpdateResponse()
     }
 
+    /**
+     * Marks a step in the authenticated user's onboarding path as finished.
+     *
+     * Only waiting or in-progress steps can be completed. If the step was never started,
+     * the completion timestamp doubles as the start timestamp, and a trailing pending skip
+     * request is discarded because it is no longer needed. Because completing a step can
+     * finish the whole onboarding, completion is re-evaluated via
+     * [OnboardingCompletionService] after the step is updated.
+     *
+     * @param authId External authentication identifier.
+     * @param stepId Identifier of the step to complete.
+     * @return The updated step.
+     * @throws ResponseStatusException When the user or step does not exist, or the step
+     * is already finished or skipped.
+     */
     @Transactional
     @Tracked("Completing an onboarding step")
     fun completeOnboardingStepForMe(
@@ -237,6 +253,10 @@ class OnboardingStepService(
 
         step.status = StepStatus.FINISHED
 
+        // The journey can end on a step just as well as on a question, so completion is
+        // re-evaluated here rather than only after a knowledge-check attempt.
+        onboardingCompletionService.completeIfFinished(userId)
+
         return step.toUpdateResponse()
     }
 
@@ -264,6 +284,7 @@ class OnboardingStepService(
             .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }
 
+        bridgeOverInGraph(step)
         onboardingStepRepository.delete(step)
     }
 
@@ -386,10 +407,40 @@ class OnboardingStepService(
             .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }
 
+        bridgeOverInGraph(step)
         onboardingStepRepository.delete(step)
     }
 
 //  ========================== Helper Methods ==========================
+
+    /**
+     * Takes a step out of its phase's dependency graph before it is deleted, joining up what it sat
+     * between.
+     *
+     * Blocker edges are a many-to-many between subgraph nodes, and deleting a step removes only the
+     * rows it owns -- the ones saying what *it* waits on. The rows saying what waits on *it* belong to
+     * the other nodes and outlived it: the delete failed on the join table, or the items after it
+     * stayed locked behind a step nobody could finish any more. PMs add and delete steps right in the
+     * graph, so this is not a corner case.
+     *
+     * Bridged rather than only cut: for A -> X -> B, deleting X leaves A -> B, so B still opens after
+     * what it opened after before X was put in the way -- instead of suddenly opening at once.
+     */
+    private fun bridgeOverInGraph(step: OnboardingStep) {
+        val phase = step.phase
+        val dependents = (phase.steps + phase.checkQuestions)
+            .filter { node -> node.id != step.id && node.blockedBy.any { it.id == step.id } }
+        dependents.forEach { node ->
+            node.blockedBy.removeIf { it.id == step.id }
+            node.blockedBy += step.blockedBy.filter { it.id != node.id }
+        }
+        step.blockedBy.clear()
+        // Loading the siblings above put the step's phase collection in play, and that collection
+        // cascades: while it still holds the step, Hibernate quietly un-schedules the delete at flush,
+        // and the request "succeeds" with the step still there. Out of the collection, orphan removal
+        // and the delete agree.
+        phase.steps.removeIf { it.id == step.id }
+    }
 
     /**
      * Makes room for a new step at the requested position by shifting all existing

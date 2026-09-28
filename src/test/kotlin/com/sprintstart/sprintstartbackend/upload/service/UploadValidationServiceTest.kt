@@ -20,7 +20,6 @@ class UploadValidationServiceTest {
                 ai = AiConfig(baseUrl = "http://unused"),
                 github = GithubConfig(
                     baseUrl = "https://api.github.com",
-                    cron = "0 0 * * *",
                 ),
                 crypto = CryptoConfig(masterKey = "unused", salt = "unused"),
                 upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
