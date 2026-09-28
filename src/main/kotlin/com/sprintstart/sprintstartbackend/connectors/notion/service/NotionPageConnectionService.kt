@@ -2,9 +2,11 @@ package com.sprintstart.sprintstartbackend.connectors.notion.service
 
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionClient
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionPageConnectionRequest
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionPageConnectionConfigurationException
+import com.sprintstart.sprintstartbackend.connectors.notion.model.mapper.toDiscoveredPageResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -16,6 +18,17 @@ internal class NotionPageConnectionService(
     private val credentialPersistenceService: NotionCredentialPersistenceService,
     private val connectionPersistenceService: NotionPageConnectionPersistenceService,
 ) {
+
+    suspend fun discoverPages(
+        authId: String,
+        credentialName: String,
+    ): List<NotionDiscoveredPageResponse> {
+        val token = withContext(Dispatchers.IO) {
+            credentialPersistenceService.requireToken(authId, credentialName.trim())
+        }
+        return notionClient.discoverPages(token).map { it.toDiscoveredPageResponse() }
+    }
+
     suspend fun connectPage(
         authId: String,
         projectId: UUID,

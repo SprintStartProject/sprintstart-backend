@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.model.mapper
 
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionCredentialResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionCredential
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
@@ -32,5 +34,18 @@ internal fun NotionPageConnection.toResponse(): NotionPageConnectionResponse {
         createdAt = createdAt,
         updatedAt = updatedAt,
         version = version,
+    )
+}
+
+internal fun NotionPageResponse.toDiscoveredPageResponse(): NotionDiscoveredPageResponse {
+    var title = properties.values.firstOrNull { property -> property.type == "title" }?.title?.map { it.plainText }
+        ?.joinToString(separator = "")?.trim()
+        ?: "Untitled"
+    title = title.ifBlank { "Untitled" }
+    return NotionDiscoveredPageResponse(
+        id = id,
+        title = title,
+        url = url,
+        lastEditedTime = lastEditedTime,
     )
 }
