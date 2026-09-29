@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -47,7 +46,6 @@ class BuddyActionServiceTest {
         userGoalService,
         userApi,
         attestationService,
-        boardService,
         competencyPlacementService,
         BuddyBoardWriteActions(boardService),
     )
@@ -557,7 +555,7 @@ class BuddyActionServiceTest {
     }
 
     @Test
-    fun `claiming a goal pins it to the board, so the next visit still knows about it`() = runTest {
+    fun `claiming a goal tells the hire it is on their board`() = runTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
@@ -570,9 +568,8 @@ class BuddyActionServiceTest {
 
         val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)
 
-        // This conversation is gone by the next visit; the one instant we know for certain the
-        // task is theirs is now, so the card is placed then rather than when the mentor thinks of it.
-        verify { boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK) }
+        // The pinning itself happens in `UserGoalService.claimForMe` (tested there); the buddy
+        // only has to tell the hire where to find it.
         assertThat(result.message).contains("board")
     }
 

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.UserGoal
@@ -30,6 +31,7 @@ class UserGoalServiceTest {
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository = mockk()
     private val userApi: UserApi = mockk()
+    private val boardService: BoardService = mockk(relaxed = true)
 
     // Claiming reconciles the one row against its source first. Default to "nothing changed"; the
     // tests that care about the closed case override it.
@@ -41,6 +43,7 @@ class UserGoalServiceTest {
         starterWorkTaskProposalRepository,
         starterWorkPoolReconciler,
         userApi,
+        boardService,
     )
 
     private val userId: UUID = UUID.randomUUID()
@@ -95,6 +98,21 @@ class UserGoalServiceTest {
         }
 
         @Test
+        fun `pins the current-task card, however the task was grabbed`() {
+            stageUser()
+            val proposal = approvedProposal()
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+            every { userGoalRepository.findByUserIdAndProjectId(userId, projectId) } returns null
+            every { userGoalRepository.save(any()) } answers { firstArg() }
+
+            service.claimForMe(authId, projectId, proposal.id)
+
+            // `placeOrRevive`, not `place`: a card the hire dismissed back when it had nothing on it
+            // has to come back once they grab something.
+            verify { boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK) }
+        }
+
+        @Test
         fun `replaces an existing goal rather than adding a second one`() {
             stageUser()
             val proposal = approvedProposal()
@@ -127,6 +145,8 @@ class UserGoalServiceTest {
             // A PM curates which tasks exist; a hire may pick from that set, not extend it.
             assertEquals(HttpStatus.CONFLICT, exception.statusCode)
             verify(exactly = 0) { userGoalRepository.save(any()) }
+            // Nothing was claimed, so nothing is pinned — the order inside claimForMe matters.
+            verify(exactly = 0) { boardService.placeOrRevive(any(), any(), any()) }
         }
     }
 
