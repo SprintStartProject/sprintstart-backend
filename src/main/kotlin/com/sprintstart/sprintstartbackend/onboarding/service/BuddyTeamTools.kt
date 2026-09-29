@@ -99,13 +99,16 @@ class BuddyTeamTools(
                 toolResult = "There is no area called “$requested”. Areas you can open: $available.",
             )
         }
-        val names = (areaTools[area]?.toolSpecs().orEmpty() + buddyProposalService.actionSpecs(setOf(area)))
-            .joinToString(", ") { it.name }
+        val names = toolNamesIn(area).joinToString(", ")
         return OpenAreaOutcome(
             area = area,
             toolResult = "Opened ${area.name.lowercase()}. These tools are available from your next step: $names.",
         )
     }
+
+    /** The read tools and actions an opened [area] mounts, by name. */
+    private fun toolNamesIn(area: TeamArea): List<String> =
+        (areaTools[area]?.toolSpecs().orEmpty() + buddyProposalService.actionSpecs(setOf(area))).map { it.name }
 
     /**
      * Runs one team-mode tool for [context], refusing any tool that was not mounted for this hop.
@@ -291,9 +294,14 @@ class BuddyTeamTools(
                 "step. Open an area only when the manager asks about something in it; its tools are not " +
                 "available until you have opened it. An area you open or use stays open for your next few " +
                 "replies, so you do not open it again to act on something you discussed. If a tool you need " +
-                "is not there, open its area first. Never say something has been offered for confirmation " +
-                "unless a tool of an opened area did it.\n\nThe areas:\n" +
-                openableAreas().sorted().joinToString("\n") { "- ${it.name.lowercase()}: ${it.summary}" },
+                "is not there, open its area first, or call it by the name listed below: its area is opened " +
+                "for you and you call it again on your next step. Never say something has been offered for " +
+                "confirmation unless a tool of an opened area did it.\n\nThe areas, and the tools in each:\n" +
+                // Names, not definitions: the model can only call a tool it knows exists, and the conversation
+                // keeps text only, so without them a later message never learns what an area holds.
+                openableAreas().sorted().joinToString("\n") {
+                    "- ${it.name.lowercase()}: ${it.summary} (tools: ${toolNamesIn(it).joinToString(", ")})"
+                },
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
