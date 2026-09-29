@@ -95,7 +95,7 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
  * JPQL and in some JDBC drivers, and has to survive all three unchanged. `!` cannot appear in a
  * GitHub repository name or a host name at all, so it never even has to be escaped in practice.
  */
-private const val LIKE_ESCAPE = "!"
+internal const val LIKE_ESCAPE = "!"
 
 /**
  * Makes a literal string safe to use as the fixed part of a `LIKE` pattern.
