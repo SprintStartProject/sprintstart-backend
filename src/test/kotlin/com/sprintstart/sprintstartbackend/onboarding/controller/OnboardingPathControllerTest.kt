@@ -9,9 +9,13 @@ import com.sprintstart.sprintstartbackend.onboarding.service.OnboardingPersonali
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
+import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
+import com.sprintstart.sprintstartbackend.user.repository.ProjectUserAssignmentRepository
+import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
+import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -37,7 +41,8 @@ import java.util.Optional
 import java.util.UUID
 
 @WebMvcTest(OnboardingPathController::class, ProjectOnboardingPathController::class)
-@Import(SecurityConfig::class)
+// The real `projectAuth` bean over mocked repositories, so the manager rule itself is exercised.
+@Import(SecurityConfig::class, ProjectAuthorization::class)
 @AutoConfigureMockMvc
 class OnboardingPathControllerTest(
     @Autowired private val mockMvc: MockMvc,
@@ -57,8 +62,14 @@ class OnboardingPathControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
-    @MockkBean(name = "projectAuth")
-    private lateinit var projectAuthorization: ProjectAuthorization
+    @MockkBean
+    private lateinit var projectRepository: ProjectRepository
+
+    @MockkBean
+    private lateinit var projectUserAssignmentRepository: ProjectUserAssignmentRepository
+
+    @MockkBean
+    private lateinit var userRepository: UserRepository
 
     private val pathId = UUID.randomUUID()
     private val userId = UUID.randomUUID()
@@ -87,6 +98,26 @@ class OnboardingPathControllerTest(
     private val adminJwt = jwtWithSubject(adminAuthId, "USER", "ADMIN")
     private val noUserRoleJwt = jwtWithSubject(authId, "NONE")
     private val pmJwt = jwtWithSubject(authId, "USER", "PM")
+    private val hrJwt = jwtWithSubject(authId, "USER", "HR")
+    private val managerAuthId = "test-manager-auth-id"
+    private val managerJwt = jwtWithSubject(managerAuthId, "USER", "PM")
+    private val memberAuthId = "member-auth-id"
+
+    /** Stubs the registry for a start from [projectId] and hands back the start hook it was given. */
+    private fun captureStart(
+        forAuthId: String,
+        sameProjectOnly: Boolean,
+    ): io.mockk.CapturingSlot<() -> Unit> {
+        val beforeStart = slot<() -> Unit>()
+        every {
+            onboardingGenerationRegistry.startOrAttach(forAuthId, projectId, sameProjectOnly, capture(beforeStart))
+        } answers {
+            beforeStart.captured()
+            // Stops the request before an SSE stream opens; reaching it is what the tests check.
+            throw ResponseStatusException(HttpStatus.I_AM_A_TEAPOT, "reached")
+        }
+        return beforeStart
+    }
 
     // ========================== /me endpoints ==========================
 
@@ -147,6 +178,8 @@ class OnboardingPathControllerTest(
 
     @Test
     fun `deleteOnboardingPathForMe should return 204`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { onboardingPathService.requireMayReplacePath(authId, userId, null) } just Runs
         every { onboardingPathService.deleteOnboardingPathForMe(authId) } just Runs
 
         mockMvc
@@ -188,7 +221,23 @@ class OnboardingPathControllerTest(
     }
 
     @Test
+    fun `deleteOnboardingPathForMe refuses a PM whose path is from a project they do not manage`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { onboardingPathService.requireMayReplacePath(authId, userId, null) } throws
+            ResponseStatusException(HttpStatus.FORBIDDEN)
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/path")
+                    .with(pmJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingPathService.deleteOnboardingPathForMe(any()) }
+    }
+
+    @Test
     fun `deleteOnboardingPathForMe should return 404 when not found`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
         every { onboardingPathService.deleteOnboardingPathForMe(authId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 
@@ -207,27 +256,25 @@ class OnboardingPathControllerTest(
 
     @Test
     fun `personalizePath passes the selected project path variable to the generation registry`() {
-        every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasBuiltPathForMe(authId) } returns false
-        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
-            ResponseStatusException(HttpStatus.BAD_REQUEST, "rejected")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { onboardingPathService.requireMayReplacePath(authId, userId, projectId) } just Runs
+        captureStart(authId, sameProjectOnly = false)
 
         mockMvc
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
                     .with(userJwt),
-            ).andExpect(status().isBadRequest)
+            ).andExpect(status().isIAmATeapot)
 
-        verify(exactly = 1) {
-            onboardingGenerationRegistry.startOrAttach(authId, projectId)
-        }
+        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId, false, any()) }
     }
 
     @Test
-    fun `personalizePath refuses a member rebuilding a path they already have`() {
-        every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasBuiltPathForMe(authId) } returns true
-        every { userApi.canManageProject(authId, projectId) } returns false
+    fun `personalizePath checks whether the caller may replace their path before a new run starts`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { onboardingPathService.requireMayReplacePath(authId, userId, projectId) } throws
+            ResponseStatusException(HttpStatus.FORBIDDEN)
+        captureStart(authId, sameProjectOnly = false)
 
         mockMvc
             .perform(
@@ -235,78 +282,103 @@ class OnboardingPathControllerTest(
                     .with(userJwt),
             ).andExpect(status().isForbidden)
 
-        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any()) }
-    }
-
-    @Test
-    fun `personalizePath lets the project's manager rebuild their own path`() {
-        every { onboardingGenerationRegistry.status(authId) } returns null
-        every { onboardingPathService.hasBuiltPathForMe(authId) } returns true
-        every { userApi.canManageProject(authId, projectId) } returns true
-        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
-            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
-
-        mockMvc
-            .perform(
-                post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
-                    .with(userJwt),
-            ).andExpect(status().isBadRequest)
-
-        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId) }
+        verify(exactly = 1) { onboardingPathService.requireMayReplacePath(authId, userId, projectId) }
     }
 
     @Test
     fun `personalizePath still attaches a member to a running rebuild over their path`() {
-        every { onboardingGenerationRegistry.status(authId) } returns
-            OnboardingGenerationRegistry.GenerationRun(projectId = projectId, startedAt = Instant.now())
-        every { onboardingGenerationRegistry.startOrAttach(authId, projectId) } throws
-            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        // An attach never runs the start hook -- the registry is what decides that.
+        every { onboardingGenerationRegistry.startOrAttach(authId, projectId, false, any()) } throws
+            ResponseStatusException(HttpStatus.I_AM_A_TEAPOT, "attached")
 
         mockMvc
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
                     .with(userJwt),
-            ).andExpect(status().isBadRequest)
+            ).andExpect(status().isIAmATeapot)
 
-        verify(exactly = 0) { onboardingPathService.hasBuiltPathForMe(any()) }
-        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId) }
+        verify(exactly = 0) { onboardingPathService.requireMayReplacePath(any(), any(), any()) }
     }
 
     // ========================== PM rebuild of a member's path ==========================
 
     @Test
     fun `personalizePathForUser starts the generation under the member's auth id`() {
-        val memberAuthId = "member-auth-id"
-        every { projectAuthorization.canManageProject(any(), projectId) } returns true
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of(managerAuthId)
         every { userApi.getAuthIdByUserId(userId) } returns Optional.of(memberAuthId)
-        every { onboardingGenerationRegistry.startOrAttach(memberAuthId, projectId) } throws
-            ResponseStatusException(HttpStatus.BAD_REQUEST, "reached")
+        every { userApi.getOnboardingProfileByAuthId(memberAuthId) } returns Optional.of(profileIn(projectId))
+        every { onboardingPathService.requireMayReplacePath(managerAuthId, userId, projectId) } just Runs
+        captureStart(memberAuthId, sameProjectOnly = true)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(managerJwt),
+            ).andExpect(status().isIAmATeapot)
+
+        verify(exactly = 1) { onboardingPathService.requireMayReplacePath(managerAuthId, userId, projectId) }
+    }
+
+    @Test
+    fun `personalizePathForUser is refused to a PM who does not manage the project`() {
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of("somebody-else")
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(pmJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `personalizePathForUser refuses a member of another project before attaching to their run`() {
+        every { userApi.getAuthIdByUserId(userId) } returns Optional.of(memberAuthId)
+        every { userApi.getOnboardingProfileByAuthId(memberAuthId) } returns
+            Optional.of(profileIn(UUID.randomUUID()))
 
         mockMvc
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
                     .with(adminJwt),
-            ).andExpect(status().isBadRequest)
+            ).andExpect(status().isForbidden)
 
-        verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(memberAuthId, projectId) }
+        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any(), any(), any()) }
     }
 
     @Test
-    fun `personalizePathForUser is refused to anyone who does not manage the project`() {
-        every { projectAuthorization.canManageProject(any(), projectId) } returns false
+    fun `personalizePathForUser only attaches to a run for the same project`() {
+        every { userApi.getAuthIdByUserId(userId) } returns Optional.of(memberAuthId)
+        every { userApi.getOnboardingProfileByAuthId(memberAuthId) } returns Optional.of(profileIn(projectId))
+        every { onboardingGenerationRegistry.startOrAttach(memberAuthId, projectId, true, any()) } throws
+            ResponseStatusException(HttpStatus.CONFLICT)
 
         mockMvc
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
-                    .with(userJwt),
-            ).andExpect(status().isForbidden)
+                    .with(adminJwt),
+            ).andExpect(status().isConflict)
+    }
 
-        verify(exactly = 0) { onboardingGenerationRegistry.startOrAttach(any(), any()) }
+    @Test
+    fun `personalizePathForUser refuses replacing a path the caller may not replace`() {
+        every { userApi.getAuthIdByUserId(userId) } returns Optional.of(memberAuthId)
+        every { userApi.getOnboardingProfileByAuthId(memberAuthId) } returns Optional.of(profileIn(projectId))
+        every { onboardingPathService.requireMayReplacePath(adminAuthId, userId, projectId) } throws
+            ResponseStatusException(HttpStatus.FORBIDDEN)
+        captureStart(memberAuthId, sameProjectOnly = true)
+
+        mockMvc
+            .perform(
+                post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
+                    .with(adminJwt),
+            ).andExpect(status().isForbidden)
     }
 
     @Test
     fun `personalizePathForUser returns 404 for an unknown member`() {
-        every { projectAuthorization.canManageProject(any(), projectId) } returns true
         every { userApi.getAuthIdByUserId(userId) } returns Optional.empty()
 
         mockMvc
@@ -465,6 +537,7 @@ class OnboardingPathControllerTest(
 
     @Test
     fun `deleteOnboardingPathByUserId should return 204`() {
+        every { onboardingPathService.requireMayReplacePath(adminAuthId, userId, null) } just Runs
         every { onboardingPathService.deleteOnboardingPathByUserId(userId) } just Runs
 
         mockMvc
@@ -495,7 +568,31 @@ class OnboardingPathControllerTest(
     }
 
     @Test
+    fun `deleteOnboardingPathByUserId is no longer open to HR`() {
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/users/$userId/path")
+                    .with(hrJwt),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteOnboardingPathByUserId refuses a PM whose member's path is from a project they do not manage`() {
+        every { onboardingPathService.requireMayReplacePath(authId, userId, null) } throws
+            ResponseStatusException(HttpStatus.FORBIDDEN)
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/users/$userId/path")
+                    .with(pmJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { onboardingPathService.deleteOnboardingPathByUserId(any()) }
+    }
+
+    @Test
     fun `deleteOnboardingPathByUserId should return 404 when not found`() {
+        every { onboardingPathService.requireMayReplacePath(adminAuthId, userId, null) } just Runs
         every { onboardingPathService.deleteOnboardingPathByUserId(userId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND)
 

@@ -42,6 +42,7 @@ import java.util.UUID
 class OnboardingPathController(
     private val onboardingPathService: OnboardingPathService,
     private val onboardingPersonalizationService: OnboardingPersonalizationService,
+    private val userApi: UserApi,
 ) {
 //  ========================== Endpoints for users (/me/...) ==========================
 
@@ -88,21 +89,26 @@ class OnboardingPathController(
      * This removes the hierarchy root at depth 0. Any nested descendants below that
      * root are deleted according to the persistence rules of the underlying model.
      *
-     * PM and admin only: a member deleting their path and building a new one would be the rebuild
-     * that is the project manager's call (see [ProjectOnboardingPathController.personalizePathForUser]).
+     * Deleting a path and building a new one is a rebuild, which is the project manager's call (see
+     * [ProjectOnboardingPathController.personalizePathForUser]). So only a PM or admin may, and only
+     * for a path built from a project they manage ([OnboardingPathService.requireMayReplacePath]).
      *
      * @param jwt Authenticated JWT used to resolve the current user.
      */
     @Operation(
         summary = "Delete current user's onboarding path",
         description = "Deletes the onboarding path at hierarchy depth 0 for the authenticated user. " +
-            "PM and admin only: members cannot discard their own path.",
+            "PM and admin only, and only for a path built from a project the caller manages: " +
+            "members cannot discard their own path.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Onboarding path deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding path"),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role, or the path was built from a project the caller does not manage",
+            ),
             ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
         ],
     )
@@ -113,6 +119,9 @@ class OnboardingPathController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ) {
+        userApi.getUserIdByAuthId(jwt.subject).ifPresent { userId ->
+            onboardingPathService.requireMayReplacePath(jwt.subject, userId, projectId = null)
+        }
         onboardingPathService.deleteOnboardingPathForMe(jwt.subject)
     }
 
@@ -155,29 +164,39 @@ class OnboardingPathController(
     /**
      * Deletes the onboarding path for a specific user.
      *
-     * This removes the root object at depth 0 for the selected user.
+     * This removes the root object at depth 0 for the selected user. The user then builds a new
+     * one, so this is a rebuild too: only a PM or admin may, for a path built from a project they
+     * manage ([OnboardingPathService.requireMayReplacePath]).
      *
      * @param userId Identifier of the user whose path should be deleted.
+     * @param jwt Authenticated JWT of the caller.
      */
     @Operation(
         summary = "Delete onboarding path by user ID",
-        description = "Deletes the onboarding path at hierarchy depth 0 for the specified user.",
+        description = "Deletes the onboarding path at hierarchy depth 0 for the specified user. " +
+            "PM and admin only, and only for a path built from a project the caller manages.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Onboarding path deleted successfully"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "403", description = "Insufficient role to delete this onboarding path"),
+            ApiResponse(
+                responseCode = "403",
+                description = "Insufficient role, or the path was built from a project the caller does not manage",
+            ),
             ApiResponse(responseCode = "404", description = "No user found with the given ID"),
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/users/{userId}/path")
-    @PreAuthorize("hasAnyRole('ADMIN', 'PM', 'HR')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
     fun deletePathByUserId(
         @Parameter(description = "UUID of the user whose onboarding path should be deleted")
         @PathVariable userId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
     ) {
+        onboardingPathService.requireMayReplacePath(jwt.subject, userId, projectId = null)
         onboardingPathService.deleteOnboardingPathByUserId(userId)
     }
 }
@@ -251,10 +270,10 @@ class ProjectOnboardingPathController(
      * template. The service rejects a project the user is not assigned to. Any existing path is
      * replaced. A project must have exactly one active blueprint.
      *
-     * A member builds their *first* path here (or retries one whose every phase failed); rebuilding
-     * a path with phases in it is the project manager's call ([personalizePathForUser]), because it
-     * throws away the member's progress. The project's manager and admins may still replace their
-     * own path from here.
+     * A member builds their *first* path here. Rebuilding an existing one is the project manager's
+     * call ([personalizePathForUser]), because it throws away the member's progress; the project's
+     * manager and admins may still replace their own path from here
+     * ([OnboardingPathService.requireMayReplacePath]).
      *
      * The generation runs detached from this request (see [OnboardingGenerationRegistry]): closing
      * the stream does not cancel it, and a request while one is running watches that one instead of
@@ -263,7 +282,7 @@ class ProjectOnboardingPathController(
      * @param projectId The project whose active blueprint seeds the path.
      * @return A stream of progress events ending in the new path plus a `done` event.
      * @throws ResponseStatusException `403` when the user is not assigned to the project, or already
-     * has a path and does not manage the project; `404` when the user does not exist.
+     * has a path they may not replace; `404` when the user does not exist.
      */
     @Operation(
         summary = "Create onboarding path from blueprint",
@@ -281,7 +300,7 @@ class ProjectOnboardingPathController(
                 responseCode = "403",
                 description = "Insufficient role to create an onboarding path, " +
                     "the authenticated user is not assigned to the given project, " +
-                    "or the user already has a path and does not manage the project",
+                    "or the user already has a path they may not replace",
             ),
             ApiResponse(responseCode = "404", description = "No user found for the authenticated user"),
         ],
@@ -295,19 +314,17 @@ class ProjectOnboardingPathController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
     ): Flow<OnboardingSseEvent> {
-        // Watching a running generation stays open to everyone -- including one a PM started for this
-        // member. Only starting a new one over an existing path is the manager's call.
-        val startsNewRun = onboardingGenerationRegistry.status(jwt.subject) == null
-        if (startsNewRun &&
-            onboardingPathService.hasBuiltPathForMe(jwt.subject) &&
-            !userApi.canManageProject(jwt.subject, projectId)
-        ) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "Only the project manager can rebuild an existing onboarding path",
-            )
-        }
-        return onboardingGenerationRegistry.startOrAttach(jwt.subject, projectId)
+        // Watching a running generation stays open to its owner -- including one a PM started for
+        // them. Only starting a new one over an existing path is the manager's call, checked under
+        // the registry's start lock. An unknown user has no path; personalize answers them with 404.
+        val userId = userApi.getUserIdByAuthId(jwt.subject).orElse(null)
+        return onboardingGenerationRegistry.startOrAttach(
+            authId = jwt.subject,
+            projectId = projectId,
+            beforeStart = {
+                if (userId != null) onboardingPathService.requireMayReplacePath(jwt.subject, userId, projectId)
+            },
+        )
     }
 
     /**
@@ -318,11 +335,21 @@ class ProjectOnboardingPathController(
      * with it their progress), and the member's own onboarding page attaches to it like to one they
      * started. Closing this stream does not cancel it.
      *
+     * The caller's rights reach only as far as [projectId], so everything is checked before a
+     * running generation is attached to -- its events carry the member's whole path:
+     *
+     * - the member must be assigned to [projectId];
+     * - a generation already running for them must be for [projectId] (else `409`);
+     * - and a path they already have from another project may only be replaced by somebody who
+     *   manages that project too ([OnboardingPathService.requireMayReplacePath]).
+     *
      * @param projectId The project whose active blueprint seeds the path.
      * @param userId The member whose path is rebuilt.
+     * @param jwt Authenticated JWT of the caller.
      * @return A stream of progress events ending in the new path plus a `done` event.
-     * @throws ResponseStatusException `403` when the member is not assigned to the project, `404`
-     * when the member does not exist.
+     * @throws ResponseStatusException `403` when the member is not assigned to the project or their
+     * path is from a project the caller does not manage, `404` when the member does not exist, `409`
+     * when a generation for another project is running for them.
      */
     @Operation(
         summary = "Rebuild a member's onboarding path",
@@ -336,9 +363,14 @@ class ProjectOnboardingPathController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(
                 responseCode = "403",
-                description = "Caller does not manage the project, or the member is not assigned to it",
+                description = "Caller does not manage the project, the member is not assigned to it, " +
+                    "or the member's path was built from a project the caller does not manage",
             ),
             ApiResponse(responseCode = "404", description = "No user found with the given ID"),
+            ApiResponse(
+                responseCode = "409",
+                description = "A generation for another project is already running for the member",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -349,10 +381,19 @@ class ProjectOnboardingPathController(
         @PathVariable projectId: UUID,
         @Parameter(description = "UUID of the member whose path is rebuilt")
         @PathVariable userId: UUID,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
     ): Flow<OnboardingSseEvent> {
         val authId = userApi.getAuthIdByUserId(userId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         }
-        return onboardingGenerationRegistry.startOrAttach(authId, projectId)
+        // Before any attach: `personalize` checks membership too, but only when a run starts.
+        userApi.onboardingProfileInProject(authId, projectId)
+        return onboardingGenerationRegistry.startOrAttach(
+            authId = authId,
+            projectId = projectId,
+            sameProjectOnly = true,
+            beforeStart = { onboardingPathService.requireMayReplacePath(jwt.subject, userId, projectId) },
+        )
     }
 }

@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
@@ -24,7 +26,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class OnboardingPathServiceTest {
@@ -32,8 +34,15 @@ class OnboardingPathServiceTest {
     private val questionAttemptRepository: QuestionAttemptRepository = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
     private val onboardingPositionReader: OnboardingPositionReader = mockk(relaxed = true)
+    private val blueprintPathRepository: BlueprintPathRepository = mockk()
     private val service =
-        OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi, onboardingPositionReader)
+        OnboardingPathService(
+            onboardingPathRepository,
+            questionAttemptRepository,
+            userApi,
+            onboardingPositionReader,
+            blueprintPathRepository,
+        )
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()
@@ -255,38 +264,33 @@ class OnboardingPathServiceTest {
     }
 
     @Nested
-    inner class HasBuiltPathForMe {
-        @Test
-        fun `is true when the user's path has phases`() {
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { onboardingPathRepository.findByUserId(userId) } returns
-                Optional.of(mockk { every { phases } returns mutableListOf(mockk()) })
+    inner class FindPathOrigin {
+        private val blueprintId = UUID.randomUUID()
+        private val projectId = UUID.randomUUID()
 
-            assertTrue(service.hasBuiltPathForMe(authId))
+        @Test
+        fun `names the project whose blueprint the path was built from`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintId))
+            every { blueprintPathRepository.findById(blueprintId) } returns
+                Optional.of(mockk<BlueprintPath> { every { projectId } returns this@FindPathOrigin.projectId })
+
+            assertEquals(OnboardingPathService.PathOrigin(projectId), service.findPathOrigin(userId))
         }
 
         @Test
-        fun `is false when every phase failed to generate`() {
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        fun `has no project for a path without a blueprint`() {
             every { onboardingPathRepository.findByUserId(userId) } returns
-                Optional.of(mockk { every { phases } returns mutableListOf() })
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = null))
 
-            assertFalse(service.hasBuiltPathForMe(authId))
+            assertEquals(OnboardingPathService.PathOrigin(null), service.findPathOrigin(userId))
         }
 
         @Test
-        fun `is false for a user without a path`() {
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        fun `is null without a path`() {
             every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
 
-            assertFalse(service.hasBuiltPathForMe(authId))
-        }
-
-        @Test
-        fun `is false for an unknown user`() {
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
-
-            assertFalse(service.hasBuiltPathForMe(authId))
+            assertNull(service.findPathOrigin(userId))
         }
     }
 

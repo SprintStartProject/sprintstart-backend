@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
@@ -34,7 +35,18 @@ class OnboardingPathService(
     private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
     private val onboardingPositionReader: OnboardingPositionReader,
+    private val blueprintPathRepository: BlueprintPathRepository,
 ) {
+    /**
+     * Where an existing path came from.
+     *
+     * @property builtFromProjectId The project whose blueprint the path was copied from; `null` for
+     * a path built from a system-wide blueprint, or one whose blueprint no longer exists.
+     */
+    data class PathOrigin(
+        val builtFromProjectId: UUID?,
+    )
+
 //  ========================== Methods for users ==========================
 
     /**
@@ -67,21 +79,61 @@ class OnboardingPathService(
     }
 
     /**
-     * Whether the authenticated user has an onboarding path with anything in it. An unknown user
-     * has none; neither does one whose every phase failed to generate -- an empty path holds no
-     * progress, so building it again takes nothing away.
+     * The origin of [userId]'s onboarding path, or `null` when they have none.
      *
-     * @param authId External authentication identifier.
-     * @return `true` when the user's path has at least one phase.
+     * Rebuilding or deleting a path is decided by who manages the project it was built from, so the
+     * rules about replacing a path need this rather than the path itself.
+     *
+     * @param userId Identifier of the path's owner.
+     * @return Where the path came from, or `null` without a path.
      */
     @Transactional(readOnly = true)
-    @Tracked("Checking whether the user has a built onboarding path")
-    fun hasBuiltPathForMe(authId: String): Boolean =
-        userApi
-            .getUserIdByAuthId(authId)
-            .flatMap { userId -> onboardingPathRepository.findByUserId(userId) }
-            .map { path -> path.phases.isNotEmpty() }
-            .orElse(false)
+    @Tracked("Resolving the origin of an onboarding path")
+    fun findPathOrigin(userId: UUID): PathOrigin? =
+        onboardingPathRepository
+            .findByUserId(userId)
+            .map { path ->
+                PathOrigin(
+                    builtFromProjectId = path.blueprintId
+                        ?.let { blueprintPathRepository.findById(it).orElse(null) }
+                        ?.projectId,
+                )
+            }.orElse(null)
+
+    /**
+     * Refuses [callerAuthId] replacing or deleting [userId]'s path when that is not theirs to decide.
+     *
+     * A user's first path is theirs to build, so without a path there is nothing to check. An
+     * existing one holds the user's progress, and only somebody who manages the project it is for
+     * may throw it away:
+     *
+     * - rebuilding from [projectId] needs the caller to manage [projectId];
+     * - and a path built from another project may only be replaced or deleted by somebody who also
+     *   manages *that* project, since a user has one path across all their projects.
+     *
+     * @param callerAuthId The acting user's auth ID.
+     * @param userId The path's owner.
+     * @param projectId The project a rebuild builds from, or `null` for a deletion.
+     * @throws ResponseStatusException `403` when the caller may not.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Checking whether an onboarding path may be replaced")
+    fun requireMayReplacePath(callerAuthId: String, userId: UUID, projectId: UUID?) {
+        val origin = findPathOrigin(userId) ?: return
+        if (projectId != null && !userApi.canManageProject(callerAuthId, projectId)) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the project manager can rebuild an existing onboarding path",
+            )
+        }
+        val builtFrom = origin.builtFromProjectId ?: return
+        if (builtFrom != projectId && !userApi.canManageProject(callerAuthId, builtFrom)) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "The onboarding path was built from a project the caller does not manage",
+            )
+        }
+    }
 
     /**
      * Deletes the onboarding path owned by the authenticated user.
