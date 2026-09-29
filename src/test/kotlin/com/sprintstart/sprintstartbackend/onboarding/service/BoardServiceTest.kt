@@ -1576,9 +1576,11 @@ class BoardServiceTest {
         val moved = service.reorderForBuddy(hireId, projectId, listOf(last.id))
 
         assertEquals(listOf(0, 1, 2, 3), listOf(last, first, dismissed, stays).map { it.position })
-        assertEquals(2, moved)
+        assertEquals(1, moved)
+        assertEquals(BoardCardChange.MOVED, last.lastChange)
         assertEquals(BoardActor.BUDDY, last.lastChangedBy)
-        assertEquals(BoardCardChange.MOVED, first.lastChange)
+        // Renumbered, but still in the same place relative to everything else: not moved.
+        assertNull(first.lastChange)
         assertEquals(BoardCardChange.DISMISSED, dismissed.lastChange)
         assertEquals(BoardActor.HIRE, dismissed.lastChangedBy)
         assertNull(stays.lastChange)
@@ -1594,8 +1596,36 @@ class BoardServiceTest {
 
         service.reorder(hireId, projectId, listOf(second.id))
 
-        assertEquals(BoardActor.HIRE, first.lastChangedBy)
+        assertEquals(BoardCardChange.MOVED, second.lastChange)
         assertEquals(BoardActor.HIRE, second.lastChangedBy)
+        assertNull(first.lastChange)
+    }
+
+    /**
+     * Putting one card first renumbers every card above it. Only the one that was picked up moved;
+     * the rest keep their attribution — here, the buddy's edit the hire's drag must not overwrite.
+     */
+    @Test
+    fun `moving one card to the top marks only that card, even when the whole board is resent`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val cards = listOf(
+            BoardCardKind.CURRENT_TASK,
+            BoardCardKind.MEMORY_RECAP,
+            BoardCardKind.COMPETENCY_PROGRESS,
+            BoardCardKind.SUGGESTED_TASKS,
+        ).mapIndexed { i, kind -> liveCard(board, kind, i) }
+        cards[1].recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findAllByBoardId(board.id) } returns cards
+
+        // The client sends the whole board in its new order, as a drag does.
+        service.reorder(hireId, projectId, listOf(cards[3], cards[0], cards[1], cards[2]).map { it.id })
+
+        assertEquals(listOf(1, 2, 3, 0), cards.map { it.position })
+        assertEquals(BoardCardChange.MOVED, cards[3].lastChange)
+        assertNull(cards[0].lastChange)
+        assertEquals(BoardCardChange.EDITED, cards[1].lastChange)
+        assertEquals(BoardActor.BUDDY, cards[1].lastChangedBy)
     }
 
     /** Every buddy checklist write — append, tick, reword — lands attributed, not only the new ones. */

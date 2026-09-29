@@ -320,6 +320,58 @@ class BuddyBoardEditActionsTest {
         assertThat(outcome.toolResult).contains("longer than read_board shows")
     }
 
+    /** A link retargeted without a name keeps the one it had, rather than losing it to a whole-card write. */
+    @Test
+    fun `a link edit that leaves out the name keeps the current one`() {
+        onOneProjectWithBoard()
+
+        val outcome = service.propose(
+            call(
+                "edit_link",
+                buildJsonObject {
+                    put("card_id", linkId.toString())
+                    put("url", "https://wiki/runbook-v2")
+                },
+            ),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.linkUrl).isEqualTo("https://wiki/runbook-v2")
+        assertThat(outcome.proposal?.linkLabel).isEqualTo("Runbook")
+        assertThat(outcome.proposal?.preview).contains("Runbook — https://wiki/runbook-v2")
+    }
+
+    /** The preview counts what the edit will really remove: one line kept once of two is one gone. */
+    @Test
+    fun `a checklist edit that keeps a repeated line once says the other copy goes`() {
+        onProjects(ProjectDto(projectId, "Checkout", null))
+        val repeated = card(
+            checklistId,
+            BoardCardKind.CHECKLIST,
+            BoardCardOwner.HIRE,
+            ChecklistContent(
+                title = "Setup",
+                items = List(2) { ChecklistItemResponse(id = UUID.randomUUID(), text = "Set up laptop", done = false) },
+            ),
+        )
+        every { boardService.hasBoard(userId, projectId) } returns true
+        every { boardService.getBoard(userId, projectId) } returns
+            BoardResponse(UUID.randomUUID(), projectId, listOf(repeated))
+
+        val outcome = service.propose(
+            call(
+                "edit_checklist",
+                buildJsonObject {
+                    put("card_id", checklistId.toString())
+                    putJsonArray("items") { add("set up laptop") }
+                },
+            ),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.preview).contains("Lines that would go: “Set up laptop”")
+    }
+
     /** A line silently dropping out of a long list is the change a hire would not notice. */
     @Test
     fun `a checklist edit names every line that would go`() {

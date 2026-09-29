@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCar
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.LinkContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService.BuddyActionProposal
@@ -171,6 +172,9 @@ class BuddyBoardEditActions(
             is Found.Ok -> found.value
         }
         if (!url.isWebAddress()) return refused(NOT_A_WEB_ADDRESS)
+        // The edit replaces the card whole, so a name left out would be a name deleted — and a
+        // model retargeting a link rarely thinks to repeat what the link is called.
+        val keptLabel = label ?: (card.content as? LinkContent)?.label
 
         return offer(
             type,
@@ -181,9 +185,9 @@ class BuddyBoardEditActions(
                 question = null,
                 cardId = card.id,
                 linkUrl = url,
-                linkLabel = label,
+                linkLabel = keptLabel,
                 preview = "Change your link “${BoardReading.nameOf(card)}” to " +
-                    "${label?.let { "$it — " }.orEmpty()}$url",
+                    "${keptLabel?.let { "$it — " }.orEmpty()}$url",
             ),
         )
     }
@@ -214,12 +218,7 @@ class BuddyBoardEditActions(
             )
         }
 
-        val kept = items.map { it.lowercase() }.toSet()
-        val dropped = (card.content as? ChecklistContent)
-            ?.items
-            ?.map { it.text }
-            ?.filterNot { it.trim().lowercase() in kept }
-            .orEmpty()
+        val dropped = droppedLines((card.content as? ChecklistContent)?.items?.map { it.text }.orEmpty(), items)
         val preview = buildString {
             append("Update your list “${BoardReading.nameOf(card)}” to the ${items.size} lines shown.")
             if (dropped.isNotEmpty()) {
@@ -287,6 +286,21 @@ class BuddyBoardEditActions(
                     "Everything else keeps its order after them.",
             ),
         )
+    }
+
+    /**
+     * The existing lines an edit to [proposed] would remove, counted the way the edit itself matches
+     * them (`keepingLinesOf`): trimmed, case-insensitive, and each proposed line claiming at most one
+     * existing line. So a list with a line twice, edited to have it once, says one copy goes.
+     */
+    private fun droppedLines(existing: List<String>, proposed: List<String>): List<String> {
+        val unclaimed = proposed.groupingBy { it.trim().lowercase() }.eachCount().toMutableMap()
+        return existing.filter { line ->
+            val key = line.trim().lowercase()
+            val left = unclaimed[key] ?: 0
+            if (left > 0) unclaimed[key] = left - 1
+            left == 0
+        }
     }
 
     // -- Performing --------------------------------------------------------------------------------
@@ -572,7 +586,7 @@ class BuddyBoardEditActions(
                     }
                     putJsonObject("label") {
                         put("type", "string")
-                        put("description", "What to call it on the card. Optional.")
+                        put("description", "What to call it on the card. Leave it out to keep the current name.")
                     }
                 }
                 putJsonArray("required") {

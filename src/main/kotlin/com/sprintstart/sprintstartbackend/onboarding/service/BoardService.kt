@@ -627,10 +627,15 @@ class BoardService(
     /**
      * Writes an order to [board], attributing each card that actually moved to [by].
      *
-     * Only the moved ones: a card that kept its place was not changed, and marking it would have the
-     * board claim the buddy touched cards it did not. A dismissed card is renumbered like any other
-     * but keeps its attribution — nobody moved a card that is not on the board, and overwriting
-     * "dismissed" with "moved" would lose the one change on it worth being able to see.
+     * "Moved" means its place *among the other cards* changed, not that its number did. Putting one
+     * card first renumbers every card above it, and marking all of those would have the board claim
+     * the buddy rearranged cards it never touched — or, on the hire's own drag, overwrite "your
+     * buddy rewrote this" on cards the hire did not touch either. So the cards marked are the fewest
+     * that explain the new order ([movedIn]); the rest only have their number updated.
+     *
+     * A dismissed card is renumbered like any other but never marked — nobody moved a card that is
+     * not on the board, and overwriting "dismissed" with "moved" would lose the one change on it
+     * worth being able to see.
      */
     private fun reorderOn(board: Board, cardIds: List<UUID>, by: BoardActor): Int {
         val cards = boardCardRepository.findAllByBoardId(board.id)
@@ -638,21 +643,57 @@ class BoardService(
         val requested = cardIds.distinct().mapNotNull { byId[it] }
         val requestedIds = requested.map { it.id }.toSet()
         val rest = cards.filterNot { it.id in requestedIds }.sortedBy { it.position }
+        val ordered = requested + rest
+        val moved = movedIn(ordered.filter { it.state == BoardCardState.ACTIVE })
 
         val now = Instant.now()
-        var moved = 0
-        (requested + rest).forEachIndexed { index, card ->
-            if (card.position == index) return@forEachIndexed
+        ordered.forEachIndexed { index, card ->
+            val renumbered = card.position != index
             card.position = index
-            if (card.state == BoardCardState.ACTIVE) {
-                card.recordChange(BoardCardChange.MOVED, by, now)
-                moved++
-            } else {
-                card.updatedAt = now
+            when {
+                card.id in moved -> card.recordChange(BoardCardChange.MOVED, by, now)
+                renumbered -> card.updatedAt = now
             }
         }
-        boardCardRepository.saveAll(requested + rest)
-        return moved
+        boardCardRepository.saveAll(ordered)
+        return moved.size
+    }
+
+    /**
+     * The cards in [newOrder] whose order relative to the others changed.
+     *
+     * Everything outside the longest run that is still in its old relative order: the smallest set of
+     * cards that, picked up and put back, turns the old order into the new one — which is what a
+     * person means by the cards that were moved. Ties in the old positions break by id, so the answer
+     * does not depend on how the rows came back from the database.
+     */
+    private fun movedIn(newOrder: List<BoardCard>): Set<UUID> {
+        val oldRank = newOrder
+            .sortedWith(compareBy<BoardCard> { it.position }.thenBy { it.id })
+            .withIndex()
+            .associate { (rank, card) -> card.id to rank }
+        val kept = longestIncreasingRun(newOrder.map { oldRank.getValue(it.id) })
+        return newOrder.indices
+            .filterNot { it in kept }
+            .map { newOrder[it].id }
+            .toSet()
+    }
+
+    /** The indices of one longest strictly increasing subsequence of [values], patience-sorted. */
+    private fun longestIncreasingRun(values: List<Int>): Set<Int> {
+        val tails = mutableListOf<Int>() // index into values of the smallest tail of each length
+        val previous = IntArray(values.size) { -1 }
+        values.forEachIndexed { i, value ->
+            var low = 0
+            var high = tails.size
+            while (low < high) {
+                val mid = (low + high) / 2
+                if (values[tails[mid]] < value) low = mid + 1 else high = mid
+            }
+            if (low > 0) previous[i] = tails[low - 1]
+            if (low == tails.size) tails.add(i) else tails[low] = i
+        }
+        return generateSequence(tails.lastOrNull()) { previous[it].takeIf { p -> p >= 0 } }.toSet()
     }
 
     /**
