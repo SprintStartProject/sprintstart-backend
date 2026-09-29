@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -40,9 +41,18 @@ internal class BitbucketPullRequestsService(
      * instant re-reads whatever changed during the window instead, which is safe because ingestion
      * deduplicates artifacts by source id and updates them in place.
      *
+     * The pull-request phase is opened before the credential is resolved, and every failure after
+     * that point reports itself. Both matter: an ingestion run is only finalized once all of its
+     * phases have closed, so a credential that cannot be resolved outside the guarded section would
+     * leave the run open forever instead of failing it. The file and commit collectors already open
+     * their phase before doing any fallible work, so this one matches them.
+     *
      * @param repositoryId The connected repository to read pull requests from.
      * @param transactionId The ingestion run the published events belong to.
      * @throws BitbucketRepositoryNotConnectedException if no connection with [repositoryId] exists.
+     *         Nothing is published in that case: the id comes from this application's own scheduler,
+     *         so an unknown id is an internal error rather than a failed fetch, and there is no
+     *         repository to attribute a fetch failure to.
      * @throws AtlassianCredentialNotFoundException if the connection's credential cannot be resolved.
      */
     @Tracked("Fetching and ingesting PRs from a Bitbucket repository")
@@ -50,9 +60,6 @@ internal class BitbucketPullRequestsService(
         val connection = withContext(Dispatchers.IO) {
             connectionRepository.findById(repositoryId)
         }.orElseThrow { BitbucketRepositoryNotConnectedException(repositoryId) }
-
-        val credential = credentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
-            ?: throw AtlassianCredentialNotFoundException(connection.credentialAuthId, connection.credentialName)
 
         eventPublisher.publishEvent(
             BitbucketPullRequestsFetchingStartedEvent(
@@ -65,10 +72,16 @@ internal class BitbucketPullRequestsService(
 
         val syncStartedAt = Instant.now()
         try {
+            val credential = resolveCredential(connection)
+
             fetchAndIngestPullRequests(connection, credential, transactionId)
 
             connection.lastPullRequestsSyncAt = syncStartedAt
             connectionRepository.save(connection)
+        } catch (e: CancellationException) {
+            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
+            // terminal failure here would report a fetch that did not happen.
+            throw e
         } catch (e: Exception) {
             eventPublisher.publishEvent(BitbucketPullRequestsFetchingFailedEvent(transactionId, e.message))
             throw e
@@ -76,6 +89,20 @@ internal class BitbucketPullRequestsService(
 
         eventPublisher.publishEvent(BitbucketPullRequestsFetchingCompletedEvent(transactionId))
     }
+
+    /**
+     * Resolves the credential the fetch authenticates with, or refuses the run.
+     *
+     * Kept apart from the fetch so the caller has a single place where a run can be refused before it
+     * does any work, and so the fetch body itself has one failure path rather than two.
+     *
+     * @param connection The connection whose named credential should be resolved.
+     * @return The resolved credential secret.
+     * @throws AtlassianCredentialNotFoundException when the named credential no longer exists.
+     */
+    private fun resolveCredential(connection: BitbucketConnection): AtlassianCredentialSecret =
+        credentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
+            ?: throw AtlassianCredentialNotFoundException(connection.credentialAuthId, connection.credentialName)
 
     private suspend fun fetchAndIngestPullRequests(
         connection: BitbucketConnection,

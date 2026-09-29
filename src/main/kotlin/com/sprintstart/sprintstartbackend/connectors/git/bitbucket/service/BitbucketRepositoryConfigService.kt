@@ -103,18 +103,22 @@ internal class BitbucketRepositoryConfigService(
     }
 
     /**
-     * Retrieves every config whose next sync is at or before [now].
+     * Retrieves every config of an enabled repository whose next sync is at or before [now].
      *
      * This is the executor's work queue. A config is returned as-is rather than with its connection,
      * because the executor only needs the config's own columns — its id is the repository id.
      *
+     * A disabled repository is excluded here, which is what makes `sourceEnabled` gate the scheduled
+     * ingest: it is never handed to the executor, so it is neither updated nor put back on its
+     * schedule. Re-enabling it therefore syncs once immediately before resuming its normal cadence.
+     *
      * @param now The instant to compare each config's next sync against.
-     * @return The due configs, or an empty list when nothing is due.
+     * @return The due configs of enabled repositories, or an empty list when nothing is due.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving all Bitbucket repositories due for sync now")
     fun findConfigsDueForSync(now: Instant): List<BitbucketRepositoryConfig> =
-        configRepository.findAllByNextSyncAtIsLessThanEqual(now)
+        configRepository.findEnabledConfigsDueForSync(now)
 
     /**
      * Persists a config, used by the executor after it advances [BitbucketRepositoryConfig.nextSyncAt].

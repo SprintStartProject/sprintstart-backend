@@ -26,3 +26,18 @@ internal class BitbucketSourceUrls : GitSourceUrls {
         const val BASE = "https://bitbucket.org"
     }
 }
+
+/**
+ * Builds the Bitbucket Cloud browser URL of a repository, for example
+ * `https://bitbucket.org/sprintstart/backend`.
+ *
+ * Exposed as a function because the connector overview and the ingestion status view both need the
+ * URL of a connected repository without wanting to construct a [BitbucketSourceUrls] of their own.
+ * Delegating to [BitbucketSourceUrls.repositoryUrl] keeps the browser root defined once, so a change
+ * to the host or path shape cannot leave the two callers disagreeing.
+ *
+ * @param workspace The workspace owning the repository.
+ * @param slug The repository's slug within [workspace].
+ */
+internal fun bitbucketRepositoryUrl(workspace: String, slug: String): String =
+    BitbucketSourceUrls().repositoryUrl(listOf(workspace), slug)

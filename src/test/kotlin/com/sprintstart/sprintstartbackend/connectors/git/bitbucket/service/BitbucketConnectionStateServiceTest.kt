@@ -11,7 +11,6 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith

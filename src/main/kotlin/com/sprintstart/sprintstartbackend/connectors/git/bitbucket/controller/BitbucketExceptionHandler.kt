@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.excepti
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotEnabledException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.ControllerAdvice
@@ -33,6 +34,16 @@ internal class BitbucketExceptionHandler {
      */
     @ExceptionHandler(BitbucketRepositoryNotConnectedException::class)
     fun handleRepositoryNotConnected(ex: BitbucketRepositoryNotConnectedException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(ex.message))
+
+    /**
+     * Maps an update of a disabled repository to 400, mirroring how the Confluence connector
+     * refuses ingestion of a disabled space.
+     */
+    @ExceptionHandler(BitbucketRepositoryNotEnabledException::class)
+    fun handleRepositoryNotEnabled(ex: BitbucketRepositoryNotEnabledException): ResponseEntity<ErrorResponse> =
         ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
             .body(ErrorResponse(ex.message))

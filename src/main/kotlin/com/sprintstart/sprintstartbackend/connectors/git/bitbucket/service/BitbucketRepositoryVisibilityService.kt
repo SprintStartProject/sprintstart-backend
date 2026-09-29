@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClient
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked

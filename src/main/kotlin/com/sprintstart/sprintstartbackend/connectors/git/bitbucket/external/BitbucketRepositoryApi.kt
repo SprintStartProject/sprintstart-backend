@@ -43,6 +43,15 @@ interface BitbucketRepositoryApi {
     fun getRepositoryIdsByProject(projectId: UUID): List<UUID>
 
     /**
+     * Lists connected Bitbucket repositories as source instances for status reporting.
+     *
+     * @param projectId When provided, only repositories connected to that project are returned;
+     * otherwise all connected repositories are returned.
+     * @return Source-instance views ordered by workspace and slug for stable rendering.
+     */
+    fun getSourceInstances(projectId: UUID? = null): List<BitbucketSourceInstanceDto>
+
+    /**
      * Removes a project from every repository connection linked to it.
      *
      * Called when a project is deleted so no connection keeps referencing a project that no longer

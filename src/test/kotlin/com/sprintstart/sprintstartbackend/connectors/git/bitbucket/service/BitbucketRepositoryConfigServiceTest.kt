@@ -159,12 +159,25 @@ class BitbucketRepositoryConfigServiceTest {
     @Nested
     inner class FindConfigsDueForSync {
         @Test
-        fun `returns the configs due at the given time`() {
+        fun `returns the configs of enabled repositories due at the given time`() {
             val config = config("w", "s")
             val now = Instant.parse("2025-06-01T00:00:00Z")
-            every { configRepository.findAllByNextSyncAtIsLessThanEqual(now) } returns listOf(config)
+            every { configRepository.findEnabledConfigsDueForSync(now) } returns listOf(config)
 
             assertThat(service.findConfigsDueForSync(now)).containsExactly(config)
+        }
+
+        /**
+         * The gate lives in the query, so a paused repository is not merely skipped by the executor —
+         * it never reaches it. This is the Bitbucket counterpart of Confluence's
+         * `...AndSourceEnabledTrue` claim query.
+         */
+        @Test
+        fun `returns nothing when only disabled repositories are due`() {
+            val now = Instant.parse("2025-06-01T00:00:00Z")
+            every { configRepository.findEnabledConfigsDueForSync(now) } returns emptyList()
+
+            assertThat(service.findConfigsDueForSync(now)).isEmpty()
         }
     }
 

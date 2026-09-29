@@ -8,8 +8,8 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -32,7 +32,7 @@ class BitbucketRepositoryProjectServiceTest {
     private val otherProjectId = UUID.randomUUID()
 
     @Test
-    fun `links a project and announces the change`() {
+    fun `links a project and announces the change`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { connectionRepository.findById(repositoryId) } returns Optional.of(connection())
         every { connectionRepository.save(any()) } answers { firstArg() }
@@ -54,7 +54,7 @@ class BitbucketRepositoryProjectServiceTest {
 
     /** The announcement is what re-scopes the stored artifacts, so a repeat must repair it. */
     @Test
-    fun `re-linking an already linked project still announces the change`() {
+    fun `re-linking an already linked project still announces the change`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { connectionRepository.findById(repositoryId) } returns
             Optional.of(connection(projectIds = mutableSetOf(projectId)))
@@ -70,7 +70,7 @@ class BitbucketRepositoryProjectServiceTest {
     }
 
     @Test
-    fun `unlinks a project and announces the removal`() {
+    fun `unlinks a project and announces the removal`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { connectionRepository.findById(repositoryId) } returns
             Optional.of(connection(projectIds = mutableSetOf(projectId, otherProjectId)))
@@ -87,7 +87,7 @@ class BitbucketRepositoryProjectServiceTest {
     }
 
     @Test
-    fun `unlinking an unlinked project is idempotent`() {
+    fun `unlinking an unlinked project is idempotent`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         val existing = connection(projectIds = mutableSetOf(otherProjectId))
         every { connectionRepository.findById(repositoryId) } returns Optional.of(existing)
@@ -99,7 +99,7 @@ class BitbucketRepositoryProjectServiceTest {
     }
 
     @Test
-    fun `refuses a caller without access to the project`() {
+    fun `refuses a caller without access to the project`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns false
 
         assertThrows<BitbucketProjectAccessDeniedException> {
@@ -111,7 +111,7 @@ class BitbucketRepositoryProjectServiceTest {
     }
 
     @Test
-    fun `refuses an unknown connection`() {
+    fun `refuses an unknown connection`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { connectionRepository.findById(repositoryId) } returns Optional.empty()
 
