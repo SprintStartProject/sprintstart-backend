@@ -262,6 +262,10 @@ class BitbucketPullRequestsServiceTest {
                 match<Any> {
                     it is BitbucketPullRequestFetchedEvent &&
                         it.transactionId == transactionId &&
+                        it.repositoryId == connection.id &&
+                        it.workspace == "sprintstart" &&
+                        it.slug == "sprintstart-backend" &&
+                        it.number == 7 &&
                         it.title == "Add onboarding path" &&
                         it.state == "MERGED" &&
                         it.authorId == "acc-1" &&

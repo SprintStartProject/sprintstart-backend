@@ -1,7 +1,5 @@
 @ApplicationModule(
-        allowedDependencies = {"shared :: shared", "user :: api", "upload :: api", "connectors :: github-events",
-                "connectors :: api", "shared :: annotations", "upload :: upload.api", "connectors :: jira.events.initial",
-                "connectors :: jira.events.issues"}
+        allowedDependencies = {"shared :: shared", "user :: api", "upload :: api", "connectors :: github-events", "connectors :: api", "shared :: annotations", "upload :: upload.api", "connectors :: jira.events.initial", "connectors :: jira.events.issues", "connectors :: bitbucket-events"}
 )
 package com.sprintstart.sprintstartbackend.ingestion;
 

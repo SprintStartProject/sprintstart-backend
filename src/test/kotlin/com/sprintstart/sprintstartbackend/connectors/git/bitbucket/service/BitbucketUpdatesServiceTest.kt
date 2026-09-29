@@ -1,17 +1,23 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.justRun
 import io.mockk.mockk
+import io.mockk.runs
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -24,6 +30,7 @@ class BitbucketUpdatesServiceTest {
     private val fileService = mockk<BitbucketFileService>(relaxed = true)
     private val commitsService = mockk<BitbucketCommitsService>(relaxed = true)
     private val prService = mockk<BitbucketPullRequestsService>(relaxed = true)
+    private val connectionStateService = mockk<BitbucketConnectionStateService>(relaxed = true)
 
     // Unconfined so the launched ingests run inline and can be verified without waiting.
     private val applicationScope = CoroutineScope(Dispatchers.Unconfined)
@@ -33,12 +40,14 @@ class BitbucketUpdatesServiceTest {
         fileService = fileService,
         commitsService = commitsService,
         prService = prService,
+        connectionStateService = connectionStateService,
         applicationScope = applicationScope,
     )
 
+    private val connection = connection("sprintstart", "backend")
+
     @Test
     fun `re-ingests files, commits and pull requests of the connection under one transaction`() = runTest {
-        val connection = connection("sprintstart", "backend")
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
         val fileTransaction = slot<UUID>()
         val commitTransaction = slot<UUID>()
@@ -55,6 +64,15 @@ class BitbucketUpdatesServiceTest {
     }
 
     @Test
+    fun `marks the repository updating before the collectors start`() = runTest {
+        every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
+
+        service.updateRepository(connection.id)
+
+        verify(exactly = 1) { connectionStateService.markUpdating(connection.id) }
+    }
+
+    @Test
     fun `fails when the repository is not connected`() = runTest {
         val missingId = UUID.randomUUID()
         every { connectionRepository.findById(missingId) } returns Optional.empty()
@@ -66,6 +84,7 @@ class BitbucketUpdatesServiceTest {
         coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }
         coVerify(exactly = 0) { commitsService.fetchAndIngestCommitsOfRepository(any(), any()) }
         coVerify(exactly = 0) { prService.fetchAndIngestPullRequests(any(), any()) }
+        verify(exactly = 0) { connectionStateService.markUpdating(any()) }
     }
 
     private fun connection(workspace: String, slug: String) = BitbucketConnection(

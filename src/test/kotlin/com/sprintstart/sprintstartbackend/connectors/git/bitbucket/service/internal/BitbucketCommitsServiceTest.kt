@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
@@ -37,6 +38,7 @@ class BitbucketCommitsServiceTest {
     private val service = BitbucketCommitsService(
         connectionRepository = connectionRepository,
         coordinatesFactory = coordinatesFactory,
+        provider = BitbucketGitProvider(),
         ingestionEngine = ingestionEngine,
         eventPublisher = eventPublisher,
     )
@@ -131,7 +133,8 @@ class BitbucketCommitsServiceTest {
                         it.subject == "Fix the bug" &&
                         it.committedAt == committedAt &&
                         it.repositoryId == connection.id &&
-                        it.workspace == "sprintstart"
+                        it.workspace == "sprintstart" &&
+                        it.sourceUrl == "https://bitbucket.org/sprintstart/sprintstart-backend/commits/sha-1"
                 },
             )
         }
