@@ -12,6 +12,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -142,6 +143,9 @@ class BoardCard(
      * nothing and, more importantly, does not overwrite the previous version — a no-op save must not
      * be what takes away the undo for a real change made just before it.
      *
+     * [previousReplacedAt] is what a client echoes back to undo exactly this edit, so it is stored
+     * at the precision it will come back in — see [atClientPrecision].
+     *
      * @return Whether anything changed.
      */
     fun replacePayload(
@@ -151,11 +155,12 @@ class BoardCard(
         at: Instant = Instant.now(),
     ): Boolean {
         if (newPayload == payload) return false
+        val stamp = atClientPrecision(at)
         previousPayload = payload
         previousReplacedBy = by
-        previousReplacedAt = at
+        previousReplacedAt = stamp
         payload = newPayload
-        recordChange(change, by, at)
+        recordChange(change, by, stamp)
         return true
     }
 
@@ -167,9 +172,23 @@ class BoardCard(
      * replace.
      */
     fun recordChange(change: BoardCardChange, by: BoardActor, at: Instant = Instant.now()) {
+        val stamp = atClientPrecision(at)
         lastChange = change
         lastChangedBy = by
-        lastChangedAt = at
-        updatedAt = at
+        lastChangedAt = stamp
+        updatedAt = stamp
+    }
+
+    companion object {
+        /**
+         * [at], cut to whole milliseconds.
+         *
+         * An undo names the edit it undoes by this time and is refused if it no longer matches, so
+         * the value a client holds must equal the stored one exactly. `Instant.now()` can carry
+         * nanoseconds; Postgres keeps microseconds, and a JavaScript `Date` keeps milliseconds. A
+         * stamp any finer than the coarsest of those would make every undo look stale. Milliseconds
+         * survive all three unchanged, and no two edits a person makes are closer together.
+         */
+        fun atClientPrecision(at: Instant): Instant = at.truncatedTo(ChronoUnit.MILLIS)
     }
 }

@@ -1878,4 +1878,25 @@ class BoardServiceTest {
 
         assertEquals(404, refusal.statusCode.value())
     }
+
+    /**
+     * The time a client echoes back to undo an edit went through Postgres (microseconds) and JSON,
+     * possibly a JavaScript `Date` (milliseconds). Stored at nanosecond precision, it never matched
+     * again and every undo was refused as stale.
+     */
+    @Test
+    fun `an undo sent back with the millisecond time a client holds is not mistaken for stale`() {
+        val card = noteOnOwnBoard("mine")
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "the buddy's")),
+            BoardCardChange.EDITED,
+            BoardActor.BUDDY,
+            Instant.parse("2026-09-29T10:15:30.123456789Z"),
+        )
+
+        assertEquals(Instant.parse("2026-09-29T10:15:30.123Z"), card.previousReplacedAt)
+        service.restorePreviousContent(hireId, card.id, Instant.parse("2026-09-29T10:15:30.123Z"))
+
+        assertEquals("mine", textOf(card.payload))
+    }
 }

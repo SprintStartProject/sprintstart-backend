@@ -221,7 +221,7 @@ class BoardService(
             }
         }
 
-        val now = Instant.now()
+        val now = BoardCard.atClientPrecision(Instant.now())
         boardCardRepository.save(
             BoardCard(
                 boardId = board.id,
@@ -409,7 +409,7 @@ class BoardService(
             ?: boardRepository.save(Board(userId = userId, projectId = projectId))
         val existing = boardCardRepository.findAllByBoardId(board.id)
 
-        val now = Instant.now()
+        val now = BoardCard.atClientPrecision(Instant.now())
         val card = boardCardRepository.save(
             BoardCard(
                 boardId = board.id,
