@@ -49,7 +49,7 @@ class BuddyActionServiceTest {
         attestationService,
         boardService,
         competencyPlacementService,
-        BuddyBoardWriteActions(boardService),
+        BuddyBoardWriteActions(boardService, BuddyBoardEditActions(boardService)),
     )
 
     private val userId = UUID.randomUUID()
@@ -110,7 +110,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the twelve action tools`() {
+    fun `exposes exactly the eighteen action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -124,6 +124,12 @@ class BuddyActionServiceTest {
             "place_note",
             "tick_checklist_items",
             "reword_checklist_item",
+            "place_link",
+            "edit_note",
+            "edit_link",
+            "edit_checklist",
+            "dismiss_cards",
+            "reorder_cards",
         )
     }
 
@@ -179,6 +185,29 @@ class BuddyActionServiceTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("not on a project")
+    }
+
+    /**
+     * The board writes' reason lines come from a table rather than an exhaustive `when`, so the
+     * compiler no longer points at a new one that was left out. This does instead: every board write
+     * has to be able to say what it could not do for a hire with no project.
+     */
+    @Test
+    fun `every board write can say what it cannot do for a hire on no project`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+        val boardWrites = service.actionSpecs().map { it.name }.filter { name ->
+            name.contains("checklist") ||
+                name.contains("card") ||
+                name.startsWith("place_") ||
+                name.startsWith("edit_")
+        }
+
+        assertThat(boardWrites).hasSize(11)
+        boardWrites.forEach { name ->
+            val outcome = service.propose(call(name), userId)
+            assertThat(outcome.proposal).isNull()
+            assertThat(outcome.toolResult).contains("not on a project").contains("board")
+        }
     }
 
     @Test

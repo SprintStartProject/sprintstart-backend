@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.onboarding.model.response.board
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardChange
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
@@ -40,6 +42,21 @@ data class BoardCardResponse(
      */
     val placedAt: Instant?,
     val content: BoardCardContent,
+    /**
+     * The most recent change to this card, who made it and when; null for a card nobody has touched
+     * since the board seeded it.
+     *
+     * What lets the client say "your buddy rewrote this on Tuesday" rather than leaving the hire to
+     * notice different words under their own card.
+     */
+    val lastChange: BoardCardChangeResponse? = null,
+)
+
+/** One change to a card: what it was, whose, and when. Always all three or none at all. */
+data class BoardCardChangeResponse(
+    val change: BoardCardChange,
+    val by: BoardActor,
+    val at: Instant,
 )
 
 /**

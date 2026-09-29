@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
@@ -34,19 +35,26 @@ import java.util.UUID
  * no-confirm `place_card` tool stays limited to live reads whose contents it does not choose (see
  * [BuddyBoardTools]). Widening that tool would be the hole; these are not one.
  *
+ * The gate is also what lets the buddy reach past adding. [BuddyBoardEditActions] holds the ones
+ * that edit, clear and rearrange what the hire already has, offered through here so the whole
+ * board catalog shares one confirm path. Every write from either class is attributed to the buddy
+ * on the card (`BoardCard.recordChange`), so a change the hire confirmed is still one they can see
+ * afterwards was not their own hand.
+ *
  * The payload travels with the proposal rather than being worked out again at confirm time, which
  * matters more here than anywhere else in the catalog: these payloads are *words*, not target ids,
  * so re-deriving them could keep a card whose wording the hire never saw.
  *
- * Four actions, each with a propose and a perform half, plus the argument readers they share —
+ * Five actions, each with a propose and a perform half, plus the argument readers they share —
  * hence the suppressed function count.
  */
 @Component
 @Suppress("TooManyFunctions")
 class BuddyBoardWriteActions(
     private val boardService: BoardService,
+    private val edits: BuddyBoardEditActions,
 ) {
-    /** The five tools, offered by [BuddyActionService] alongside its own. */
+    /** Every board write tool, offered by [BuddyActionService] alongside its own. */
     fun specs(): List<BuddyToolSpecDto> =
         listOf(
             PLACE_CHECKLIST_SPEC,
@@ -54,20 +62,20 @@ class BuddyBoardWriteActions(
             TICK_CHECKLIST_SPEC,
             REWORD_CHECKLIST_SPEC,
             PLACE_NOTE_SPEC,
-        )
+        ) + edits.specs()
 
-    /** Whether this is one of ours, so the caller's dispatch need not know the five names. */
-    fun handles(type: BuddyActionType): Boolean = type in HANDLED
+    /** Whether this is a board write, so the caller's dispatch need not know the names. */
+    fun handles(type: BuddyActionType): Boolean = type in HANDLED || edits.handles(type)
 
     /** Turns one of these tool calls into a proposal, or into the reason there is none. */
-    fun propose(call: BuddyToolCallDto, type: BuddyActionType, projectName: String): ProposeOutcome =
+    fun propose(call: BuddyToolCallDto, type: BuddyActionType, scope: Scope): ProposeOutcome =
         when (type) {
-            BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, projectName)
-            BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, projectName)
-            BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, projectName)
-            BuddyActionType.REWORD_CHECKLIST_ITEM -> proposeReword(call, type, projectName)
-            BuddyActionType.PLACE_NOTE -> proposeNote(call, type, projectName)
-            else -> error("$type is not a board write; handles() keeps it out of here")
+            BuddyActionType.PLACE_CHECKLIST -> proposeChecklist(call, type, scope.projectName)
+            BuddyActionType.AMEND_CHECKLIST -> proposeAmendment(call, type, scope.projectName)
+            BuddyActionType.TICK_CHECKLIST_ITEMS -> proposeTicks(call, type, scope.projectName)
+            BuddyActionType.REWORD_CHECKLIST_ITEM -> proposeReword(call, type, scope.projectName)
+            BuddyActionType.PLACE_NOTE -> proposeNote(call, type, scope.projectName)
+            else -> edits.propose(call, type, scope)
         }
 
     /** Runs a confirmed one. The caller has already resolved whose board, and which project. */
@@ -86,8 +94,20 @@ class BuddyBoardWriteActions(
         BuddyActionType.REWORD_CHECKLIST_ITEM ->
             rewordItem(userId, projectId, payload.cardId, payload.lineBefore, payload.lineAfter)
         BuddyActionType.PLACE_NOTE -> placeNote(userId, projectId, payload.noteText)
-        else -> error("$type is not a board write; handles() keeps it out of here")
+        else -> edits.perform(type, userId, projectId, payload)
     }
+
+    /**
+     * Whose board a proposal is about, already resolved to the one project it is scoped to.
+     *
+     * Carried to the proposing half because some proposals read the board — to name the cards a
+     * confirm is about from the board itself rather than from the model.
+     */
+    data class Scope(
+        val userId: UUID,
+        val projectId: UUID,
+        val projectName: String,
+    )
 
     /** What a confirmed board write carries, unpacked from the request by the caller. */
     data class BoardWritePayload(
@@ -97,6 +117,9 @@ class BuddyBoardWriteActions(
         val noteText: String? = null,
         val lineBefore: String? = null,
         val lineAfter: String? = null,
+        val linkUrl: String? = null,
+        val linkLabel: String? = null,
+        val cardIds: List<UUID>? = null,
     )
 
     /**
@@ -165,6 +188,7 @@ class BuddyBoardWriteActions(
                 title = title?.trim()?.take(MAX_CHECKLIST_TITLE)?.ifBlank { null },
                 items = lines.map { ChecklistItemRequest(text = it, done = false) },
             ),
+            by = BoardActor.BUDDY,
         )
         return BuddyActionResponse(
             ok = true,
@@ -397,7 +421,7 @@ class BuddyBoardWriteActions(
             return BuddyActionResponse(ok = false, message = "There was no note left to keep.")
         }
 
-        boardService.addAuthoredCard(userId, projectId, NoteCardRequest(text = body))
+        boardService.addAuthoredCard(userId, projectId, NoteCardRequest(text = body), by = BoardActor.BUDDY)
         return BuddyActionResponse(ok = true, message = "Kept on your board. It's yours — edit it as you like.")
     }
 
@@ -421,11 +445,7 @@ class BuddyBoardWriteActions(
         lineAfter: String? = null,
     ): ProposeOutcome =
         ProposeOutcome(
-            toolResult = "Proposed to the hire on $projectName: \u201C${type.label}\u201D. They will see a " +
-                "confirm button showing what would be kept; it runs only if they click. Offer it " +
-                "\u2014 do not claim it is done. You will never be told whether they confirmed it, and a " +
-                "confirmed proposal leaves the screen, so do not describe the button or ask them to " +
-                "click it again. If they say nothing happened, believe them and call the tool afresh.",
+            toolResult = offeredOnBoard(type, projectName),
             proposal = BuddyActionProposal(
                 action = type.toolName,
                 label = type.label,
@@ -670,3 +690,18 @@ class BuddyBoardWriteActions(
         )
     }
 }
+
+/**
+ * What the model is told after offering any board write: offered, not done.
+ *
+ * Shared by [BuddyBoardWriteActions] and [BuddyBoardEditActions] so every board proposal makes the
+ * same promise in the same words. The mentor never learns what became of it, and a confirmed
+ * proposal leaves the screen, so pointing at the button afterwards is how a hire ends up being told
+ * they must be missing something that is not there.
+ */
+internal fun offeredOnBoard(type: BuddyActionType, projectName: String): String =
+    "Proposed to the hire on $projectName: “${type.label}”. They will see a " +
+        "confirm button showing what would change; it runs only if they click. Offer it " +
+        "— do not claim it is done. You will never be told whether they confirmed it, and a " +
+        "confirmed proposal leaves the screen, so do not describe the button or ask them to " +
+        "click it again. If they say nothing happened, believe them and call the tool afresh."

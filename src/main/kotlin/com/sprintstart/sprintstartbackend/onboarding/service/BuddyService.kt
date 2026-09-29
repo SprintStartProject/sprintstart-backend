@@ -399,6 +399,11 @@ class BuddyService(
                         noteText = proposal.noteText,
                         lineBefore = proposal.lineBefore,
                         lineAfter = proposal.lineAfter,
+                        linkUrl = proposal.linkUrl,
+                        linkLabel = proposal.linkLabel,
+                        cardIds = proposal.cardIds?.map { it.toString() },
+                        cardNames = proposal.cardNames,
+                        preview = proposal.preview,
                     ),
                 )
             }

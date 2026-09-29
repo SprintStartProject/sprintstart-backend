@@ -104,6 +104,41 @@ enum class BuddyActionType(
      * makes it an edit they can see rather than one they would have to go looking for.
      */
     REWORD_CHECKLIST_ITEM("reword_checklist_item", "Reword this line"),
+
+    /** Keeps a link on the hire's board — the last of the three kinds a hire writes themselves. */
+    PLACE_LINK("place_link", "Keep this link"),
+
+    /**
+     * Rewrites one of the hire's notes, when they ask for it to be changed.
+     *
+     * The first of the edits that reach past checklists into anything the hire wrote. What makes
+     * that acceptable is the pair every buddy board write now carries: the confirm shows the new
+     * words before anything is written, and the card says afterwards that the buddy changed it.
+     */
+    EDIT_NOTE("edit_note", "Update this note"),
+
+    /** Changes where one of the hire's links points, or what it is called. */
+    EDIT_LINK("edit_link", "Update this link"),
+
+    /**
+     * Rewrites a whole checklist — its title and its lines — when the hire asks for it tidied.
+     *
+     * Broader than [AMEND_CHECKLIST] and [REWORD_CHECKLIST_ITEM] on purpose, and still gated the
+     * same way: the confirm shows the list as it would read, so a dropped or reworded line is one
+     * the hire saw go. Lines that survive keep their ticks.
+     */
+    EDIT_CHECKLIST("edit_checklist", "Update this list"),
+
+    /**
+     * Takes cards off the hire's board — "clean up my board".
+     *
+     * Non-destructive, like the hire's own dismissal: the rows survive, so each card is a state flip
+     * away from coming back. The confirm names every card that would go.
+     */
+    DISMISS_CARDS("dismiss_cards", "Remove these from your board"),
+
+    /** Puts the hire's cards in a new order. The confirm shows the order it would leave. */
+    REORDER_CARDS("reorder_cards", "Rearrange your board"),
     ;
 
     companion object {
