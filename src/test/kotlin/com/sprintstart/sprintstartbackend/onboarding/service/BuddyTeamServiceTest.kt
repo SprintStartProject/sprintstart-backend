@@ -410,6 +410,73 @@ class BuddyTeamServiceTest {
         verify(exactly = 0) { buddyTeamTools.execute(any(), any(), any()) }
     }
 
+    /**
+     * The whole flow the review asked for: "send it" after a draft written without opening the knowledge
+     * area. The first call opens the area, the second, now mounted, becomes a proposal card.
+     */
+    @Test
+    fun `after the area is opened for it, calling the action again puts a proposal in front of the manager`() =
+        runTest {
+            every { buddyTeamTools.toolSpecs(any()) } answers {
+                val opened = firstArg<Set<TeamArea>>()
+                listOf(spec(BuddyTeamTools.OPEN_AREA)) +
+                    if (TeamArea.KNOWLEDGE in opened) listOf(spec("answer_escalation")) else emptyList()
+            }
+            every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+            every { buddyProposalService.isAction("answer_escalation") } returns true
+            val proposal = BuddyActionProposal(
+                userId = userId,
+                projectId = projectId,
+                action = "answer_escalation",
+                params = "{}",
+                label = "Answer: how do we deploy?",
+                preview = "The answer is published.",
+                risk = BuddyProposalRisk.STANDARD,
+                createdAt = Instant.now(),
+                expiresAt = Instant.now().plusSeconds(60),
+            )
+            every { buddyProposalService.propose(any(), any()) } returns
+                BuddyProposalService.ProposeOutcome(toolResult = "Offered to the manager.", proposal = proposal)
+            coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+                toolCall("answer_escalation"),
+                toolCall("answer_escalation"),
+                finalReply("It is in front of you to confirm."),
+            )
+
+            val events = service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+            assertThat(events.single { it.type == "action_proposal" }.proposalId).isEqualTo(proposal.id.toString())
+            verify(exactly = 1) { buddyProposalService.propose(any(), any()) }
+        }
+
+    @Test
+    fun `a tool call written out as text opens the area of the tool it names`() = runTest {
+        val mountedSets = mountedOnEachHop()
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        val requests = mutableListOf<BuddyAgentRequest>()
+        val written = """{"name":"answer_escalation","parameters":{"request_id":"r1"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = true,
+                text = written,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant", content = written)),
+            ),
+            finalReply("Confirm below."),
+        )
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
+        assertThat(
+            requests
+                .last()
+                .messages
+                .last()
+                .content,
+        ).contains("The area of answer_escalation is open now")
+            .isNotEqualTo(TOOL_CALL_WRITTEN_OUT)
+    }
+
     @Test
     fun `nothing is opened for a call when open_area itself is not mounted`() = runTest {
         val mountedSets = mutableListOf<Set<TeamArea>>()

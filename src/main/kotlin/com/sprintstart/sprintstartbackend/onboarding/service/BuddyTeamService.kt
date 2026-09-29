@@ -185,9 +185,10 @@ class BuddyTeamService(
                     // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
                     // and if the budget runs out the reply is the fallback, never the raw call.
                     logger.warn("Team buddy wrote a tool call out as its reply; asking again")
+                    val retry = openAreasWrittenOut(response.text, tools.map { it.name }.toSet(), areas)
                     messages = response.messages.ifEmpty {
                         messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
-                    } + BuddyAgentMessageDto(role = "user", content = TOOL_CALL_WRITTEN_OUT)
+                    } + BuddyAgentMessageDto(role = "user", content = retry)
                 } else if (response.final) {
                     answer = response.text
                 } else {
@@ -290,6 +291,37 @@ class BuddyTeamService(
         areas.open(area)
         return "${call.name} belongs to the ${area.name.lowercase()} area, which was not open. It is open now: " +
             "call ${call.name} again on your next step. Nothing has been done or offered yet."
+    }
+
+    /**
+     * Opens the areas of tools the model wrote out as text instead of calling, and says what to do instead.
+     *
+     * Writing a call out is the small model's usual way of failing to make one, and the tool it names is often
+     * in an area that is not open, the same case [openAreaOf] handles for a call that was made. Without this,
+     * the model is only told to open the area itself, which costs a step of a short budget.
+     *
+     * @return What to tell the model in place of the reply it wrote.
+     */
+    private suspend fun FlowCollector<BuddyStreamEvent>.openAreasWrittenOut(
+        text: String,
+        mountedToolNames: Set<String>,
+        areas: OpenAreas,
+    ): String {
+        if (BuddyTeamTools.OPEN_AREA !in mountedToolNames) {
+            return TOOL_CALL_WRITTEN_OUT
+        }
+        val opened = text
+            .writtenOutToolNames()
+            .filter { it !in mountedToolNames }
+            .mapNotNull { name -> buddyTeamTools.areaOf(name)?.let { name to it } }
+        if (opened.isEmpty()) {
+            return TOOL_CALL_WRITTEN_OUT
+        }
+        emit(BuddyStreamEvent(type = "tool_use", name = BuddyTeamTools.OPEN_AREA, kind = "tool"))
+        opened.forEach { (_, area) -> areas.open(area) }
+        val names = opened.joinToString(", ") { it.first }
+        return "That reply was a tool call written out as text, so nothing ran and the manager has not seen an " +
+            "answer. The area of $names is open now: call it properly on your next step, not as text."
     }
 
     private suspend fun FlowCollector<BuddyStreamEvent>.finishOpen(

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-private val NAMED_CALL = Regex(""""name"\s*:\s*"[\w.-]+"""")
+private val NAMED_CALL = Regex(""""name"\s*:\s*"([\w.-]+)"""")
 private val CALL_ARGUMENTS = Regex(""""(?:parameters|arguments)"\s*:""")
 
 /**
@@ -12,6 +12,14 @@ private val CALL_ARGUMENTS = Regex(""""(?:parameters|arguments)"\s*:""")
  */
 internal fun String.writesOutAToolCall(): Boolean =
     NAMED_CALL.containsMatchIn(this) && CALL_ARGUMENTS.containsMatchIn(this)
+
+/** The tool names a reply that [writesOutAToolCall] wrote out, in the order written. */
+internal fun String.writtenOutToolNames(): List<String> =
+    NAMED_CALL
+        .findAll(this)
+        .map { it.groupValues[1] }
+        .distinct()
+        .toList()
 
 /** Told to the model in place of showing the manager a call that never ran. */
 internal const val TOOL_CALL_WRITTEN_OUT =

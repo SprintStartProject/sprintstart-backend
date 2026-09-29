@@ -14,6 +14,14 @@ class WrittenOutToolCallTest {
     }
 
     @Test
+    fun `names every tool a reply wrote out, once each`() {
+        val written = """{"name":"list_open_escalations","parameters":{}} then """ +
+            """{"name":"answer_escalation","arguments":{"request_id":"r1"}} and {"name":"list_open_escalations"}"""
+
+        assertThat(written.writtenOutToolNames()).containsExactly("list_open_escalations", "answer_escalation")
+    }
+
+    @Test
     fun `an ordinary answer is not a call, even one that mentions a tool or a name`() {
         assertThat("Ada is waiting on a review; I looked her up with find_member.".writesOutAToolCall()).isFalse()
         assertThat("""Her name is "Ada" and that is all.""".writesOutAToolCall()).isFalse()
