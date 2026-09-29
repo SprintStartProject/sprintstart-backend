@@ -6,23 +6,34 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClie
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.projects.BitbucketRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.DiscoverBitbucketRepositoriesRequest
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.ConnectBitbucketRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.ConnectBitbucketRepositoryResponse
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.DiscoverBitbucketRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.DiscoveredBitbucketRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 /**
@@ -42,32 +53,79 @@ internal class BitbucketConnectionService(
     private val commitsService: BitbucketCommitsService,
     private val prService: BitbucketPullRequestsService,
     private val credentialApi: AtlassianCredentialApi,
+    private val userApi: UserApi,
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
-    /**
-     * Connects a Bitbucket repository to the caller's account if it is reachable.
-     *
-     * @param authId The authenticated user the credential belongs to.
-     * @param request The repository coordinates and the name of the credential to use.
-     * @return The id of the connection transaction.
-     * @throws AtlassianCredentialNotFoundException if the named credential does not exist.
-     * @throws BitbucketRepositoryDoesNotExistException if the repository does not exist or the
-     *         credential cannot read it.
-     */
+    @Tracked("Retrieving all bitbucket sources")
+    @Transactional(readOnly = true)
+    fun getSources(): List<BitbucketConnection> {
+        return connectionRepository.findAll()
+    }
+
+    @Tracked("Retrieving all bitbucket sources of project")
+    @Transactional(readOnly = true)
+    fun getSources(projectId: UUID): List<BitbucketConnection> {
+        return connectionRepository.findAllByProjectId(projectId)
+    }
+
+    @Tracked("Patching bitbucket repository enabled/disabled state")
+    fun patchSource(source: ConnectorSource, newStatus: Boolean) {
+        val (workspace, slug) = source.id.split("/")
+        val connection = connectionRepository.findByWorkspaceAndSlug(workspace, slug)
+            ?: throw BitbucketRepositoryNotConnectedException(workspace = workspace, slug = slug)
+
+        connection.sourceEnabled = newStatus
+        connectionRepository.save(connection)
+    }
+
+    @Tracked("Connecting a list of bitbucket repositories")
+    suspend fun connectRepositoriesIfExist(
+        authId: String,
+        request: ConnectBitbucketRepositoriesRequest,
+    ): ConnectBitbucketRepositoriesResponse {
+        val transactionIdsByRepository = mutableMapOf<String, UUID>()
+        request.repositories.forEach { repo ->
+            val response = connectRepositoryIfExists(authId, repo)
+            transactionIdsByRepository["${repo.workspace}/${repo.slug}"] = response.transactionId
+        }
+
+        return ConnectBitbucketRepositoriesResponse(transactionIdsByRepository)
+    }
+
     @Tracked("ConnectBitbucketRepository")
     suspend fun connectRepositoryIfExists(
         authId: String,
         request: ConnectBitbucketRepositoryRequest,
     ): ConnectBitbucketRepositoryResponse {
         val transactionId = UUID.randomUUID()
-        eventPublisher.publishEvent(BitbucketRepositoryConnectionInitiatedEvent(transactionId))
+        eventPublisher.publishEvent(
+            BitbucketRepositoryConnectionInitiatedEvent(
+                transactionId = transactionId,
+                workspace = request.workspace,
+                slug = request.slug,
+            ),
+        )
+
+        if (!userApi.userHasAccessToProject(authId, request.projectId)) {
+            eventPublisher.publishEvent(
+                BitbucketRepositoryConnectionFailedEvent(
+                    transactionId,
+                    request.workspace,
+                    request.slug,
+                    "No access to project ${request.projectId}",
+                ),
+            )
+            throw BitbucketProjectAccessDeniedException(request.projectId)
+        }
 
         val cred = credentialApi.findSecret(authId, request.credentialName)
         if (cred == null) {
             eventPublisher.publishEvent(
                 BitbucketRepositoryConnectionFailedEvent(
                     transactionId,
+                    request.workspace,
+                    request.slug,
                     "Credential ${request.credentialName} not found",
                 ),
             )
@@ -78,6 +136,8 @@ internal class BitbucketConnectionService(
             eventPublisher.publishEvent(
                 BitbucketRepositoryConnectionFailedEvent(
                     transactionId,
+                    request.workspace,
+                    request.slug,
                     "Bitbucket repository ${request.workspace}/${request.slug} not found or out of reach",
                 ),
             )
@@ -87,20 +147,41 @@ internal class BitbucketConnectionService(
         return ConnectBitbucketRepositoryResponse(connectRepository(authId, request, transactionId))
     }
 
-    /**
-     * Stores the connection and starts collecting the repository's data.
-     *
-     * A repository that is already connected is not stored a second time: the connection already
-     * carries every project linked to it, so connecting it again to another project adds that
-     * project to the existing row and shares the artifacts it has already collected. No fetch is
-     * started in that case, because the repository's data is already being collected under the
-     * existing connection.
-     *
-     * @param authId The authenticated user the credential belongs to.
-     * @param request The repository coordinates, the credential to use and the project to link.
-     * @param transactionId The id of the overall connection transaction.
-     * @return [transactionId], unchanged, so the caller can correlate the asynchronous ingestion.
-     */
+    @Tracked("Discovering bitbucket repositories")
+    @Transactional(readOnly = true)
+    suspend fun discoverRepositoriesOfWorkspace(
+        request: DiscoverBitbucketRepositoriesRequest,
+    ): DiscoverBitbucketRepositoriesResponse {
+        val token = credentialApi.findSecret(request.authId, request.credentialName)
+            ?: throw AtlassianCredentialNotFoundException(request.authId, request.credentialName)
+
+        val discoveredRepositories = bitbucketClient.discoverRepositoriesOfWorkspace(
+            request.workspace,
+            token.apiToken,
+            request.page,
+            request.pageSize,
+        )
+
+        val candidatesById = discoveredRepositories.repositories.map { arrayOf(request.workspace, it.slug) }
+        val alreadyConnected = withContext(Dispatchers.IO) {
+            connectionRepository.findExistingIdsByWorkspaceSlugCombinations(candidatesById)
+        }
+
+        return DiscoverBitbucketRepositoriesResponse(
+            discoveredRepositories.repositories.map { repo ->
+                DiscoveredBitbucketRepository(
+                    request.workspace,
+                    repo.slug,
+                    repo.fullName,
+                    repo.isPrivate,
+                    repo.url,
+                    alreadyConnected.any { request.workspace == it.workspace && repo.slug == it.slug },
+                    alreadyConnected.find { request.workspace == it.workspace && repo.slug == it.slug }?.sourceEnabled,
+                )
+            },
+        )
+    }
+
     private suspend fun connectRepository(
         authId: String,
         request: ConnectBitbucketRepositoryRequest,
@@ -111,7 +192,23 @@ internal class BitbucketConnectionService(
         }
         if (alreadyConnected != null) {
             linkProject(alreadyConnected, request.projectId)
-            eventPublisher.publishEvent(BitbucketRepositoryAlreadyConnectedEvent(transactionId))
+            eventPublisher.publishEvent(
+                BitbucketRepositoryAlreadyConnectedEvent(
+                    transactionId = transactionId,
+                    workspace = request.workspace,
+                    slug = request.slug,
+                ),
+            )
+            // Announced even when the project was already linked, so a repeated connect repairs a
+            // membership that never reached the artifacts or the AI index.
+            eventPublisher.publishEvent(
+                BitbucketRepositoryProjectLinkChangedEvent(
+                    workspace = request.workspace,
+                    slug = request.slug,
+                    projectId = request.projectId,
+                    linked = true,
+                ),
+            )
             return transactionId
         }
 
@@ -122,19 +219,17 @@ internal class BitbucketConnectionService(
             credentialName = request.credentialName,
             projectIdsInternal = mutableSetOf(request.projectId),
         )
-        // The config shares the connection's id and is what the scheduled executor reads, so it is
-        // written together with the connection. Auto-update defaults on, keeping a connected
-        // repository syncing until the user opts out.
+
         val config = BitbucketRepositoryConfig(repository = connection).apply {
             nextSyncAt = BitbucketRepositoryConfigService.calculateNextSyncAt(schedule)
         }
+
         withContext(Dispatchers.IO) {
             connectionRepository.save(connection)
             configRepository.save(config)
         }
 
-        // Launch data collectors. Both read the same clone but take turns on it, so the commit read
-        // sees the revision the file read left behind rather than one it is halfway through creating.
+        // Launch data collectors
         applicationScope.launch {
             fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
         }
@@ -150,9 +245,6 @@ internal class BitbucketConnectionService(
 
     /**
      * Links a project to an existing connection, writing only when the link is new.
-     *
-     * The guard keeps a repeated connect of an already-linked repository free of writes, so the
-     * idempotent case does not dirty the row on every call.
      */
     private suspend fun linkProject(connection: BitbucketConnection, projectId: UUID) {
         if (!connection.projectIdsInternal.add(projectId)) {

@@ -7,8 +7,10 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
+import com.sprintstart.sprintstartbackend.connectors.git.utils.GitSourceUrls
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import kotlinx.coroutines.CancellationException
@@ -33,6 +35,7 @@ import java.util.UUID
 internal class BitbucketCommitsService(
     private val connectionRepository: BitbucketConnectionRepository,
     private val coordinatesFactory: BitbucketRepositoryCoordinatesFactory,
+    private val provider: BitbucketGitProvider,
     private val ingestionEngine: GitIngestionEngine,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
@@ -53,7 +56,7 @@ internal class BitbucketCommitsService(
             ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(connection),
                 sinceRevision = connection.lastCommitsSyncedSha,
-                sink = BitbucketCommitSink(eventPublisher, connection, transactionId),
+                sink = BitbucketCommitSink(eventPublisher, connection, transactionId, provider.descriptor.sourceUrls),
             )
         } catch (e: CancellationException) {
             // Never swallow cancellation: the run is abandoned, not failed, and publishing a
@@ -117,6 +120,7 @@ private class BitbucketCommitSink(
     private val eventPublisher: ApplicationEventPublisher,
     private val connection: BitbucketConnection,
     private val transactionId: UUID,
+    private val sourceUrls: GitSourceUrls,
 ) : GitCommitSink {
     override suspend fun onCommit(commit: GitCommit) {
         eventPublisher.publishEvent(
@@ -129,6 +133,11 @@ private class BitbucketCommitSink(
                 committedAt = commit.committedAt,
                 sha = commit.sha,
                 subject = commit.subject,
+                sourceUrl = sourceUrls.commitUrl(
+                    namespacePath = listOf(connection.workspace),
+                    name = connection.slug,
+                    sha = commit.sha,
+                ),
             ),
         )
     }

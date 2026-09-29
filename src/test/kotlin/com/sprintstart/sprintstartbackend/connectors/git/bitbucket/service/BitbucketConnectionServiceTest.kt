@@ -5,9 +5,11 @@ import com.sprintstart.sprintstartbackend.connectors.atlassian.external.Atlassia
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClient
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
@@ -16,6 +18,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.Bitbu
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -39,6 +42,7 @@ class BitbucketConnectionServiceTest {
     private val commitsService = mockk<BitbucketCommitsService>(relaxed = true)
     private val prService = mockk<BitbucketPullRequestsService>(relaxed = true)
     private val credentialApi = mockk<AtlassianCredentialApi>()
+    private val userApi = mockk<UserApi>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
     // Unconfined so the launched ingestion runs inline and can be verified without waiting.
@@ -52,6 +56,7 @@ class BitbucketConnectionServiceTest {
         commitsService = commitsService,
         prService = prService,
         credentialApi = credentialApi,
+        userApi = userApi,
         applicationScope = applicationScope,
         eventPublisher = eventPublisher,
     )
@@ -67,6 +72,7 @@ class BitbucketConnectionServiceTest {
 
     @Test
     fun `stores the connection and starts ingesting on a new repository`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists("sprintstart", "sprintstart-backend", "api-token") } returns true
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns null
@@ -100,6 +106,7 @@ class BitbucketConnectionServiceTest {
 
     @Test
     fun `reports an already connected repository without storing it twice`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns
@@ -121,6 +128,7 @@ class BitbucketConnectionServiceTest {
     @Test
     fun `links a further project to an already connected repository`() = runTest {
         val existing = existingConnection()
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns existing
@@ -140,6 +148,7 @@ class BitbucketConnectionServiceTest {
      */
     @Test
     fun `writes nothing when the project is already linked`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns
@@ -159,8 +168,28 @@ class BitbucketConnectionServiceTest {
             projectIdsInternal = projectIdsInternal,
         )
 
+    /**
+     * The access check runs before any Bitbucket call, so a caller without project access cannot
+     * use this endpoint to probe which credentials or repositories exist.
+     */
+    @Test
+    fun `refuses a caller without access to the target project`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns false
+
+        assertThrows<BitbucketProjectAccessDeniedException> {
+            service.connectRepositoryIfExists("auth-id", request)
+        }
+
+        coVerify(exactly = 0) { bitbucketClient.repositoryExists(any(), any(), any()) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is BitbucketRepositoryConnectionFailedEvent })
+        }
+    }
+
     @Test
     fun `stores nothing when the named credential does not exist`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret(any(), any()) } returns null
 
         assertThrows<AtlassianCredentialNotFoundException> {
@@ -173,6 +202,7 @@ class BitbucketConnectionServiceTest {
 
     @Test
     fun `stores nothing when the repository is out of reach`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns false
 

@@ -20,6 +20,7 @@ import java.util.UUID
 @JsonTypeInfo(use = JsonTypeInfo.Id.DEDUCTION)
 @JsonSubTypes(
     JsonSubTypes.Type(GithubArtifactMetadata::class),
+    JsonSubTypes.Type(BitbucketArtifactMetadata::class),
     JsonSubTypes.Type(UploadArtifactMetadata::class),
     JsonSubTypes.Type(JiraArtifactMetadataWrapper::class),
 )

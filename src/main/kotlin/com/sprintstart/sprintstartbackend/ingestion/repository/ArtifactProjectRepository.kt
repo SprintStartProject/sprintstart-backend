@@ -38,6 +38,18 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
         findAllJiraArtifactsBySourceUrlStartingWith(escapeLikeLiteral("$instanceUrl/browse/"))
 
     /**
+     * Returns every stored artifact of a Bitbucket repository.
+     *
+     * Artifact source ids have the form `bitbucket:workspace/slug:TYPE:unique`, so they are matched
+     * by prefix — the Bitbucket counterpart to [findAllByComponent].
+     *
+     * @param workspace The workspace owning the repository.
+     * @param slug The repository's slug within [workspace].
+     */
+    fun findAllBitbucketArtifactsByWorkspaceAndSlug(workspace: String, slug: String): List<Artifact> =
+        findAllBySourceIdStartingWith(escapeLikeLiteral("bitbucket:$workspace/$slug:"))
+
+    /**
      * Returns every stored page of a Confluence space connection.
      *
      * Page artifacts carry source ids of the form `confluence:{connectionId}:page:{pageId}`, so

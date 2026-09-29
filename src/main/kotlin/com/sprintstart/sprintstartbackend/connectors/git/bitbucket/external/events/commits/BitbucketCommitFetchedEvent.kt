@@ -16,6 +16,7 @@ import java.util.UUID
  * @property committedAt The commit time.
  * @property sha The full commit SHA.
  * @property subject The first line of the commit message.
+ * @property sourceUrl A link to the commit on Bitbucket.
  */
 data class BitbucketCommitFetchedEvent(
     val transactionId: UUID,
@@ -26,4 +27,5 @@ data class BitbucketCommitFetchedEvent(
     val committedAt: Instant,
     val sha: String,
     val subject: String,
+    val sourceUrl: String,
 )

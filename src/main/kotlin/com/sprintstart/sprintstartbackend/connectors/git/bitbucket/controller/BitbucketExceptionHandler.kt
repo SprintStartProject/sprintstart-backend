@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.controller
 
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -33,6 +35,25 @@ internal class BitbucketExceptionHandler {
     fun handleRepositoryNotConnected(ex: BitbucketRepositoryNotConnectedException): ResponseEntity<ErrorResponse> =
         ResponseEntity
             .status(HttpStatus.BAD_REQUEST)
+            .body(ErrorResponse(ex.message))
+
+    /**
+     * Maps a denied project access to 403, mirroring the GitHub connector's handling.
+     */
+    @ExceptionHandler(BitbucketProjectAccessDeniedException::class)
+    fun handleProjectAccessDenied(ex: BitbucketProjectAccessDeniedException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.FORBIDDEN)
+            .body(ErrorResponse(ex.message))
+
+    /**
+     * Maps an unusable connection id to 404. Unknown and invisible connections deliberately share
+     * this answer, so the two cannot be told apart from the outside.
+     */
+    @ExceptionHandler(BitbucketRepositoryConnectionNotFoundException::class)
+    fun handleConnectionNotFound(ex: BitbucketRepositoryConnectionNotFoundException): ResponseEntity<ErrorResponse> =
+        ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
             .body(ErrorResponse(ex.message))
 }
 

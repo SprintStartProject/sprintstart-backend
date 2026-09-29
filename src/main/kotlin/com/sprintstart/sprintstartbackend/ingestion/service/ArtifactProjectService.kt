@@ -104,6 +104,9 @@ class ArtifactProjectService(
         is ArtifactSourceRef.GithubRepository ->
             artifactProjectRepository.findAllByComponent(source.component)
 
+        is ArtifactSourceRef.BitbucketRepository ->
+            artifactProjectRepository.findAllBitbucketArtifactsByWorkspaceAndSlug(source.workspace, source.slug)
+
         is ArtifactSourceRef.JiraInstance ->
             artifactProjectRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
 

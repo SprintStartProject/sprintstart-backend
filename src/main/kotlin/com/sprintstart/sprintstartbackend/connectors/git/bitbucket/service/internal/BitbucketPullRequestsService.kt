@@ -96,17 +96,22 @@ internal class BitbucketPullRequestsService(
                     it.id,
                     credential.apiToken,
                 )
-                it.asEvent(prComments, transactionId)
+                it.asEvent(connection, prComments, transactionId)
             }.forEach(eventPublisher::publishEvent)
     }
 }
 
 private fun PullRequest.asEvent(
+    connection: BitbucketConnection,
     comments: List<PullRequestComment>,
     transactionId: UUID,
 ): BitbucketPullRequestFetchedEvent {
     return BitbucketPullRequestFetchedEvent(
         transactionId,
+        connection.id,
+        connection.workspace,
+        connection.slug,
+        this.id,
         this.title,
         this.state,
         this.author?.accountId,

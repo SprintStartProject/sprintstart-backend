@@ -22,6 +22,17 @@ sealed interface ArtifactSourceRef {
     }
 
     /**
+     * A connected Bitbucket repository, whose artifacts carry source ids of the form
+     * `bitbucket:workspace/slug:TYPE:unique`.
+     */
+    data class BitbucketRepository(
+        val workspace: String,
+        val slug: String,
+    ) : ArtifactSourceRef {
+        val component: String get() = "$workspace/$slug"
+    }
+
+    /**
      * A connected Jira instance, whose issue artifacts carry source urls of the form
      * `{instanceUrl}/browse/{key}`.
      */
