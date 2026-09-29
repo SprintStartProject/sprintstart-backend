@@ -70,8 +70,9 @@ class UserGoalService(
         userGoalRepository.save(goal)
         // Pinned the moment it becomes theirs, whichever way it was grabbed — from the buddy's
         // confirm or by hand from the pool card. The current-task card is mentor-placed, so without
-        // this a hire who grabbed by hand would have a task and no card saying so.
-        boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK)
+        // this a hire who grabbed by hand would have a task and no card saying so. Revived if they
+        // dismissed it before: grabbing a task is them saying this is what they are working on.
+        boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK)
 
         return GoalView(
             proposalId = proposal.id,

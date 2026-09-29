@@ -107,7 +107,9 @@ class UserGoalServiceTest {
 
             service.claimForMe(authId, projectId, proposal.id)
 
-            verify { boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK) }
+            // `placeOrRevive`, not `place`: a card the hire dismissed back when it had nothing on it
+            // has to come back once they grab something.
+            verify { boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK) }
         }
 
         @Test
@@ -143,6 +145,8 @@ class UserGoalServiceTest {
             // A PM curates which tasks exist; a hire may pick from that set, not extend it.
             assertEquals(HttpStatus.CONFLICT, exception.statusCode)
             verify(exactly = 0) { userGoalRepository.save(any()) }
+            // Nothing was claimed, so nothing is pinned — the order inside claimForMe matters.
+            verify(exactly = 0) { boardService.placeOrRevive(any(), any(), any()) }
         }
     }
 

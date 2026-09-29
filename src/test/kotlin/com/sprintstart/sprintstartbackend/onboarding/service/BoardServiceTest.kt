@@ -693,6 +693,33 @@ class BoardServiceTest {
         )
     }
 
+    @Test
+    fun `a dismissed current-task card comes back when the hire grabs a task`() {
+        val board = existingBoard()
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        val outcome = service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK)
+
+        // Grabbing is the hire saying "this is what I'm working on", which is what the card says.
+        assertEquals(BoardService.PlacementOutcome.PLACED, outcome)
+        assertEquals(BoardCardState.ACTIVE, dismissed.state)
+        verify { boardCardRepository.save(dismissed) }
+    }
+
+    @Test
+    fun `the mentor's place still leaves a dismissed card alone`() {
+        val board = existingBoard()
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        assertEquals(
+            BoardService.PlacementOutcome.DISMISSED_BY_HIRE,
+            service.place(hireId, projectId, BoardCardKind.CURRENT_TASK),
+        )
+        assertEquals(BoardCardState.DISMISSED, dismissed.state)
+    }
+
     // ---- the hire removes (slice 1) ----
 
     @Test
@@ -785,6 +812,23 @@ class BoardServiceTest {
         val tasks = service.suggestionsCard().tasks
 
         assertEquals(listOf("You have worked in this repository before"), tasks.first().reasons)
+    }
+
+    @Test
+    fun `the suggestions and the pool share one ranking per board read`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.SUGGESTED_TASKS, position = 0),
+            card(board, BoardCardKind.TASK_POOL, position = 1),
+        )
+        every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns listOf(
+            ranked("Fix a typo", listOf("You have worked in this repository before")),
+        )
+
+        service.getBoard(hireId, projectId)
+
+        // A pass over the whole live pool plus a responsiveness read — once, not once per card.
+        verify(exactly = 1) { starterWorkTaskProposalService.matchForUserId(hireId, projectId) }
     }
 
     @Test

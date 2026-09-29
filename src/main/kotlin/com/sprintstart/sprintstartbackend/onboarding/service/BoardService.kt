@@ -26,10 +26,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardC
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPoolTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardSuggestedTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistItemResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
@@ -40,11 +38,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteCo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.SuggestedTasksContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.TaskPoolContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
@@ -138,6 +135,11 @@ class BoardService(
         } else {
             emptyMap()
         }
+        // One ranking per read, shared by the suggestions card and the pool card: it is a pass over
+        // the whole live pool plus a responsiveness read, and the pool card is baseline, so every
+        // board would otherwise pay for it twice. Sharing it also means the two cannot disagree.
+        // Lazy, so a board with neither card does not pay for it at all.
+        val matches by lazy { starterWorkTaskProposalService.matchForUserId(userId, projectId) }
 
         return BoardResponse(
             boardId = board.id,
@@ -145,7 +147,9 @@ class BoardService(
             cards = cards
                 .filter { it.state == BoardCardState.ACTIVE }
                 .sortedWith(attentionOrder(arrivalSteps, onATask))
-                .map { it.toResponse(member, projectId, timeline, diagrams[it.id], arrivalSteps, pathSteps) },
+                .map {
+                    it.toResponse(member, projectId, timeline, diagrams[it.id], arrivalSteps, pathSteps) { matches }
+                },
         )
     }
 
@@ -245,6 +249,33 @@ class BoardService(
                 subject = storedSubject.takeIf { kind.takesSubject },
             ),
         )
+        return PlacementOutcome.PLACED
+    }
+
+    /**
+     * Places a card of [kind], or brings it back if the hire dismissed it before.
+     *
+     * The one exception to dismissal being sticky, and it is only for the hire's own act: when they
+     * grab a task, "this is what I'm working on" is exactly what the current-task card says, so a
+     * card they dismissed back when it had nothing on it has to return. The mentor never gets this —
+     * [place] stays the only thing it can call.
+     *
+     * Only for kinds without a subject, where one row per kind is the whole identity.
+     */
+    @Transactional
+    fun placeOrRevive(userId: UUID, projectId: UUID, kind: BoardCardKind): PlacementOutcome {
+        require(!kind.takesSubject) { "$kind is identified by its subject; revive it through place()" }
+        val outcome = place(userId, projectId, kind)
+        if (outcome != PlacementOutcome.DISMISSED_BY_HIRE) return outcome
+
+        val board = boardRepository.findByUserIdAndProjectId(userId, projectId) ?: return outcome
+        val card = boardCardRepository
+            .findAllByBoardId(board.id)
+            .firstOrNull { it.kind == kind && it.state == BoardCardState.DISMISSED }
+            ?: return outcome
+        card.state = BoardCardState.ACTIVE
+        card.placedAt = Instant.now()
+        boardCardRepository.save(card)
         return PlacementOutcome.PLACED
     }
 
@@ -593,13 +624,17 @@ class BoardService(
         diagram: BoardDiagram?,
         arrivalSteps: List<ResolvedArrivalStep>,
         pathSteps: Map<UUID, ResolvedPathStep>,
+        matches: () -> List<RankedStarterWorkTaskResponse>,
     ): BoardCardContent = when (card.kind) {
         BoardCardKind.PATH_TO_FIRST_CONTRIBUTION -> pathContent(member, timeline)
         BoardCardKind.ARRIVAL_STEPS -> arrivalStepsContent(arrivalSteps)
         BoardCardKind.OPEN_PULL_REQUESTS -> openPullRequestsContent(member, projectId)
         BoardCardKind.CURRENT_TASK -> currentTaskContent(member.userId, projectId)
-        BoardCardKind.SUGGESTED_TASKS -> suggestedTasksContent(member.userId, projectId)
-        BoardCardKind.TASK_POOL -> taskPoolContent(member.userId, projectId)
+        BoardCardKind.SUGGESTED_TASKS -> BoardTaskCards.suggested(matches())
+        BoardCardKind.TASK_POOL -> BoardTaskCards.pool(
+            matches(),
+            currentTaskId = currentTaskReader.currentTaskFor(member.userId, projectId)?.id,
+        )
         BoardCardKind.COMPETENCY_PROGRESS -> competencyProgressContent(member.userId)
         BoardCardKind.MEMORY_RECAP -> memoryRecapContent(member.userId)
         // The one card served from a cache: its content costs a model call.
@@ -760,52 +795,6 @@ class BoardService(
     }
 
     /**
-     * Good next tasks, ranked. Carries the reasons and never the score.
-     *
-     * Same read and same cap as the buddy's `get_suggested_tasks` tool.
-     */
-    private fun suggestedTasksContent(userId: UUID, projectId: UUID): SuggestedTasksContent =
-        SuggestedTasksContent(
-            tasks = starterWorkTaskProposalService
-                .matchForUserId(userId, projectId)
-                .take(MAX_SUGGESTED_TASKS)
-                .map { match ->
-                    BoardSuggestedTaskResponse(
-                        taskId = match.task.id,
-                        title = match.task.title,
-                        url = match.task.sourceUrl,
-                        reasons = match.reasons,
-                    )
-                },
-        )
-
-    /**
-     * The whole pool, ranked, for the hire to pick from themselves.
-     *
-     * Uncapped on purpose — the point of the card is that nothing is hidden behind "ask your buddy".
-     * The client scrolls and filters.
-     */
-    private fun taskPoolContent(userId: UUID, projectId: UUID): TaskPoolContent =
-        TaskPoolContent(
-            tasks = starterWorkTaskProposalService
-                .matchForUserId(userId, projectId)
-                .mapIndexed { index, match ->
-                    BoardPoolTaskResponse(
-                        taskId = match.task.id,
-                        title = match.task.title,
-                        summary = match.task.summary,
-                        rationale = match.task.rationale,
-                        url = match.task.sourceUrl,
-                        taskType = match.taskType,
-                        reasons = match.reasons,
-                        bestFit = index < MAX_SUGGESTED_TASKS && match.score > 0,
-                        sourceHasAssignee = match.task.sourceHasAssignee,
-                    )
-                },
-            currentTaskId = currentTaskReader.currentTaskFor(userId, projectId)?.id,
-        )
-
-    /**
      * The path card's content, from the same timeline the PM dashboard reads.
      *
      * A hire with no timeline at all still gets the card, with every moment unreached: "nothing has
@@ -860,13 +849,17 @@ class BoardService(
         diagram: BoardDiagram? = null,
         arrivalSteps: List<ResolvedArrivalStep> = emptyList(),
         pathSteps: Map<UUID, ResolvedPathStep> = emptyMap(),
+        // A single card rendered on its own ranks for itself; a whole board shares one ranking.
+        matches: () -> List<RankedStarterWorkTaskResponse> = {
+            starterWorkTaskProposalService.matchForUserId(member.userId, projectId)
+        },
     ) = BoardCardResponse(
         id = id,
         kind = kind,
         owner = owner,
         position = position,
         placedAt = placedAt,
-        content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps),
+        content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps, matches),
     )
 
     /**
@@ -1007,9 +1000,6 @@ class BoardService(
     }
 
     private companion object {
-        /** Matches the buddy tool's cap, so the card and the conversation list the same tasks. */
-        const val MAX_SUGGESTED_TASKS = 3
-
         /**
          * Long enough for any real question, short enough that a rambling one cannot become a card
          * title nobody can read. Matches the cap the AI service applies to the same string.
