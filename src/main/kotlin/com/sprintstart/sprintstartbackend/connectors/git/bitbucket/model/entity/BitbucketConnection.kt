@@ -10,6 +10,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import java.time.Instant
 import java.util.UUID
 
@@ -36,7 +37,15 @@ import java.util.UUID
  * @property projectIdsInternal The SprintStart projects this repository is connected to.
  */
 @Entity
-@Table(name = "bitbucket_repositories")
+@Table(
+    name = "bitbucket_repositories",
+    uniqueConstraints = [
+        UniqueConstraint(
+            name = "uk_workspace_slug",
+            columnNames = ["workspace", "slug"],
+        ),
+    ],
+)
 class BitbucketConnection(
     @Id
     var id: UUID = UUID.randomUUID(),

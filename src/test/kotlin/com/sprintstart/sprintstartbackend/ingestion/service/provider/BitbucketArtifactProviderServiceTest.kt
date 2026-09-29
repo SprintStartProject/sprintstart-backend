@@ -2,8 +2,10 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.BitbucketArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -45,6 +47,7 @@ class BitbucketArtifactProviderServiceTest {
     fun setUp() {
         every { artifactRepository.save(any()) } answers { firstArg() }
         every { bitbucketRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(projectId)
+        every { bitbucketRepositoryApi.getWorkspaceProjectIds("sprintstart") } returns setOf(projectId)
         every { artifactMetadataJsonMapper.toJson(any()) } returns """{"repositoryId":"$repositoryId"}"""
     }
 
@@ -183,6 +186,87 @@ class BitbucketArtifactProviderServiceTest {
     }
 
     @Test
+    fun `persistArtifact stores workspace metadata with the workspace's project union`() {
+        val run = ingestionRun()
+        val savedArtifact = slot<Artifact>()
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA") } returns null
+        every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+
+        service.persistArtifact(workspaceCommand())
+
+        // A workspace is no repository, so the union of its connections' projects decides — never
+        // a per-repository lookup.
+        verify(exactly = 0) { bitbucketRepositoryApi.getRepositoryProjectIdsById(any()) }
+        verify { bitbucketRepositoryApi.getWorkspaceProjectIds("sprintstart") }
+        assertThat(savedArtifact.captured.sourceId).isEqualTo("bitbucket:sprintstart:ORG_METADATA")
+        assertThat(savedArtifact.captured.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(savedArtifact.captured.title).isEqualTo("SprintStart")
+        assertThat(savedArtifact.captured.content).isNull()
+        assertThat(savedArtifact.captured.projectIds).containsExactly(projectId)
+        assertThat(run.ingestedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `persistArtifact ignores a re-delivered workspace artifact whose payload is unchanged`() {
+        val existing = artifact(
+            artifactType = ArtifactType.ORG_METADATA,
+            title = "SprintStart",
+            projectIds = setOf(projectId),
+        )
+        every { artifactRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA") } returns existing
+        every { artifactMetadataJsonMapper.toJson(any()) } returns "{}"
+        existing.metadata = "{}"
+
+        service.persistArtifact(workspaceCommand())
+
+        // Same members, same projects: the run is not even locked a second time.
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact refreshes a workspace artifact whose payload changed`() {
+        val run = ingestionRun()
+        val existing = artifact(
+            artifactType = ArtifactType.ORG_METADATA,
+            title = "SprintStart",
+            projectIds = setOf(projectId),
+        )
+        existing.metadata = "{}"
+        every { artifactRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA") } returns existing
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(workspaceCommand(title = "SprintStart Renamed"))
+
+        assertThat(existing.metadata).isEqualTo("""{"repositoryId":"$repositoryId"}""")
+        assertThat(existing.title).isEqualTo("SprintStart Renamed")
+        assertThat(run.updatedCount).isEqualTo(1)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+    }
+
+    @Test
+    fun `persistArtifact links a re-delivered workspace artifact to newly connected projects`() {
+        val run = ingestionRun()
+        val existing = artifact(
+            artifactType = ArtifactType.ORG_METADATA,
+            title = "SprintStart",
+            projectIds = emptySet(),
+        )
+        existing.metadata = "{}"
+        every { artifactRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA") } returns existing
+        every { artifactMetadataJsonMapper.toJson(any()) } returns "{}"
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(workspaceCommand())
+
+        // Payload identical, so this is linking, not content: re-indexed, but no update counted.
+        assertThat(existing.projectIds).containsExactly(projectId)
+        assertThat(run.updatedCount).isZero()
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+    }
+
+    @Test
     fun `persistArtifact rejects artifact types Bitbucket does not produce`() {
         val existing = artifact(artifactType = ArtifactType.PAGE, hash = null)
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
@@ -201,6 +285,59 @@ class BitbucketArtifactProviderServiceTest {
 
         assertThatThrownBy { service.persistArtifact(fileCommand()) }
             .isInstanceOf(IngestionRunNotFoundException::class.java)
+    }
+
+    @Test
+    fun `reconcileDeletedFiles removes stored files the full ingest did not see`() {
+        val run = ingestionRun()
+        val kept = artifact(sourceId = "bitbucket:sprintstart/backend:FILE:kept.kt")
+        val stale = artifact(sourceId = "bitbucket:sprintstart/backend:FILE:gone.kt")
+        val commit = artifact(
+            artifactType = ArtifactType.COMMIT,
+            sourceId = "bitbucket:sprintstart/backend:COMMIT:abc123",
+        )
+        every {
+            artifactRepository.findAllBySourceIdPrefix("bitbucket:sprintstart/backend:FILE:")
+        } returns listOf(kept, stale, commit)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.deleteById(any()) } returns Unit
+
+        service.reconcileDeletedFiles(
+            BitbucketFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                workspace = "sprintstart",
+                slug = "backend",
+                visitedPaths = setOf("kept.kt"),
+            ),
+        )
+
+        verify { artifactRepository.deleteById(stale.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(kept.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(commit.id) }
+        assertThat(run.deletedCount).isEqualTo(1)
+        assertThat(run.artifactIdsToDeindex).containsExactly(stale.id.toString())
+    }
+
+    @Test
+    fun `reconcileDeletedFiles leaves the run alone when nothing is stale`() {
+        val kept = artifact(sourceId = "bitbucket:sprintstart/backend:FILE:kept.kt")
+        every {
+            artifactRepository.findAllBySourceIdPrefix("bitbucket:sprintstart/backend:FILE:")
+        } returns listOf(kept)
+
+        service.reconcileDeletedFiles(
+            BitbucketFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                workspace = "sprintstart",
+                slug = "backend",
+                visitedPaths = setOf("kept.kt"),
+            ),
+        )
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { artifactRepository.deleteById(any()) }
     }
 
     @Test
@@ -271,6 +408,33 @@ class BitbucketArtifactProviderServiceTest {
         ),
     )
 
+    private fun workspaceCommand(
+        sourceId: String = "bitbucket:sprintstart:ORG_METADATA",
+        title: String = "SprintStart",
+    ) = BitbucketArtifactCommand(
+        ingestionRunId = runId,
+        sourceSystem = SourceSystem.BITBUCKET,
+        sourceId = sourceId,
+        sourceUrl = "https://bitbucket.org/sprintstart",
+        artifactType = ArtifactType.ORG_METADATA,
+        title = title,
+        bodyText = null,
+        mime = null,
+        language = null,
+        createdAtSource = null,
+        updatedAtSource = null,
+        hash = null,
+        metadata = BitbucketWorkspaceMetadataArtifactMetadata(
+            workspace = "sprintstart",
+            uuid = "{ws-uuid}",
+            name = "SprintStart",
+            isPrivate = true,
+            createdOn = "2024-01-01T00:00:00Z",
+            url = "https://bitbucket.org/sprintstart",
+            members = emptyList(),
+        ),
+    )
+
     private fun prCommand(
         sourceId: String = "bitbucket:sprintstart/backend:PULL_REQUEST:7",
         title: String = "PR #7 Improve docs",
@@ -306,9 +470,10 @@ class BitbucketArtifactProviderServiceTest {
         title: String = "old title",
         state: String? = null,
         projectIds: Set<UUID> = emptySet(),
+        sourceId: String = "bitbucket:sprintstart/backend:FILE:src/main/App.kt",
     ) = Artifact(
         sourceSystem = SourceSystem.BITBUCKET,
-        sourceId = "bitbucket:sprintstart/backend:FILE:src/main/App.kt",
+        sourceId = sourceId,
         sourceUrl = null,
         artifactType = artifactType,
         title = title,

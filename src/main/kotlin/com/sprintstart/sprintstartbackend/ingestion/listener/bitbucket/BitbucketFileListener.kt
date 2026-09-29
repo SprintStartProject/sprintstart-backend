@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.BitbucketArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.BitbucketArtifactMapper
@@ -37,6 +38,11 @@ internal class BitbucketFileListener(
     @EventListener
     fun on(event: BitbucketFileFetchFailedEvent) {
         failedArtifactService.addFailedArtifact(bitbucketArtifactFailedMapper.toCommand(event))
+    }
+
+    @EventListener
+    fun on(event: BitbucketFilesResyncedEvent) {
+        bitbucketArtifactProviderService.reconcileDeletedFiles(event)
     }
 
     @EventListener

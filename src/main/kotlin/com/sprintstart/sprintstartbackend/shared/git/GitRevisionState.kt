@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -36,6 +37,29 @@ class GitRevisionState(
     suspend fun currentRevision(repositoryPath: Path): String =
         withContext(Dispatchers.IO) {
             gitRunner.exec(repositoryPath, onDiskOperations.gitRevParse()).trim()
+        }
+
+    /**
+     * Reports whether [revision] exists in the clone at [repositoryPath].
+     *
+     * A stored cursor can outlive the clone's knowledge of it — a re-clone fetches only the
+     * tracked heads, so a cursor pointing at a since-deleted branch reads as unknown. Callers
+     * treat that as "read everything" rather than failing the diff against it on every run.
+     *
+     * @param repositoryPath The local clone to check.
+     * @param revision The cursor revision to look for.
+     * @return `true` when the revision is known to the clone.
+     */
+    suspend fun knowsRevision(repositoryPath: Path, revision: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                gitRunner.exec(repositoryPath, onDiskOperations.gitRevisionExists(revision))
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                false
+            }
         }
 
     /**

@@ -101,6 +101,9 @@ class CustomOnDiskCacheTest {
             every {
                 gitRunner.exec(any(), match { it.command().contains("rev-parse") })
             } returns "abc123\n"
+            every {
+                gitRunner.exec(any(), match { it.command().contains("set-url") })
+            } returns ""
 
             val results = runBlocking {
                 awaitAll(
@@ -126,12 +129,43 @@ class CustomOnDiskCacheTest {
 
             every { gitRunner.exec(repoDir, match { it.command().contains("status") }) } returns ""
             every { gitRunner.exec(repoDir, match { it.command().contains("rev-parse") }) } returns "abc123\n"
+            every { gitRunner.exec(repoDir, match { it.command().contains("set-url") }) } returns ""
 
             val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }
 
             assertThat(result).isEqualTo(repoDir)
             verify(exactly = 0) {
                 gitRunner.exec(any(), match { pb -> pb.command().contains("clone") })
+            }
+        }
+
+        /**
+         * The clone's remote URL still carries the token from when it was cloned. Refreshing it on
+         * every hit is what keeps fetches working after a rotation without wiping the cache.
+         */
+        @Test
+        fun `refreshes the remote url with the current token on a cache hit`() {
+            val repoDir = githubPath().also {
+                Files.createDirectories(it)
+            }
+
+            every { gitRunner.exec(repoDir, any()) } returns ""
+
+            val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates(secret = "rotated-token")) }
+
+            assertThat(result).isEqualTo(repoDir)
+            verify(exactly = 0) {
+                gitRunner.exec(any(), match { pb -> pb.command().contains("clone") })
+            }
+            verify {
+                gitRunner.exec(
+                    repoDir,
+                    match { pb ->
+                        pb.command().contains("set-url") &&
+                            pb.command().any { it.contains("rotated-token") } &&
+                            pb.command().none { it.contains("test-token") }
+                    },
+                )
             }
         }
     }
@@ -186,6 +220,9 @@ class CustomOnDiskCacheTest {
                     repoDir,
                     match { it.command() == listOf("git", "checkout", "-B", "trunk", "refs/remotes/origin/trunk") },
                 )
+            } returns ""
+            every {
+                gitRunner.exec(repoDir, match { it.command().contains("set-url") })
             } returns ""
 
             val result = runBlocking { cache.getLocalRepositoryPath(githubCoordinates()) }

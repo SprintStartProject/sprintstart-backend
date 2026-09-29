@@ -31,6 +31,9 @@ internal class BitbucketRepositoryApiService(
         return connection.projectIds
     }
 
+    override fun getWorkspaceProjectIds(workspace: String): Set<UUID> =
+        connectionRepository.findAllByWorkspace(workspace).flatMapTo(mutableSetOf()) { it.projectIds }
+
     override fun getRepositoryIdByWorkspaceAndSlug(workspace: String, slug: String): UUID? =
         connectionRepository.findByWorkspaceAndSlug(workspace, slug)?.id
 

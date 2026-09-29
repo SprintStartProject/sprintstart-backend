@@ -3,12 +3,15 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.update.BitbucketRepositoryUpdateFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.update.BitbucketRepositoryUpdateStartedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
@@ -29,7 +32,9 @@ class BitbucketUpdatesServiceTest {
     private val fileService = mockk<BitbucketFileService>(relaxed = true)
     private val commitsService = mockk<BitbucketCommitsService>(relaxed = true)
     private val prService = mockk<BitbucketPullRequestsService>(relaxed = true)
+    private val workspaceService = mockk<BitbucketWorkspaceService>(relaxed = true)
     private val connectionStateService = mockk<BitbucketConnectionStateService>(relaxed = true)
+    private val userApi = mockk<UserApi>()
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
     // Unconfined so the launched ingests run inline and can be verified without waiting.
@@ -40,15 +45,19 @@ class BitbucketUpdatesServiceTest {
         fileService = fileService,
         commitsService = commitsService,
         prService = prService,
+        workspaceService = workspaceService,
         connectionStateService = connectionStateService,
+        userApi = userApi,
         applicationScope = applicationScope,
         eventPublisher = eventPublisher,
     )
 
+    private val projectId = UUID.randomUUID()
+    private val authId = "auth-id"
     private val connection = connection("sprintstart", "backend")
 
     @Test
-    fun `re-ingests files, commits and pull requests of the connection under one transaction`() = runTest {
+    fun `re-ingests files, commits, pull requests and workspace metadata of the connection`() = runTest {
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
         val fileTransaction = slot<UUID>()
         val commitTransaction = slot<UUID>()
@@ -59,6 +68,14 @@ class BitbucketUpdatesServiceTest {
         coVerify { fileService.fetchAndIngestFilesOfRepository(connection.id, capture(fileTransaction)) }
         coVerify { commitsService.fetchAndIngestCommitsOfRepository(connection.id, capture(commitTransaction)) }
         coVerify { prService.fetchAndIngestPullRequests(connection.id, capture(prTransaction)) }
+        coVerify {
+            workspaceService.connectWorkspaceIfNecessary(
+                workspace = "sprintstart",
+                authId = "auth-id",
+                credentialName = "team-token",
+                transactionId = transactionId,
+            )
+        }
         assertThat(fileTransaction.captured).isEqualTo(transactionId)
         assertThat(commitTransaction.captured).isEqualTo(transactionId)
         assertThat(prTransaction.captured).isEqualTo(transactionId)
@@ -148,15 +165,31 @@ class BitbucketUpdatesServiceTest {
 
     @Test
     fun `update-all skips disabled repositories`() = runTest {
-        val enabled = connection("sprintstart", "backend")
-        val disabled = connection("sprintstart", "paused").apply { sourceEnabled = false }
+        val enabled = connection("sprintstart", "backend", projectIds = setOf(projectId))
+        val disabled = connection("sprintstart", "paused", projectIds = setOf(projectId)).apply { sourceEnabled = false }
         every { connectionRepository.findAll() } returns listOf(enabled, disabled)
         every { connectionRepository.findById(enabled.id) } returns Optional.of(enabled)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
-        val response = service.updateAllRepositories()
+        val response = service.updateAllRepositories(authId)
 
         assertThat(response.transactionIdsByRepository.keys).containsExactly("sprintstart/backend")
         coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(disabled.id, any()) }
+    }
+
+    @Test
+    fun `update-all skips repositories linked to none of the caller's projects`() = runTest {
+        val mine = connection("sprintstart", "backend", projectIds = setOf(projectId))
+        val foreign = connection("other", "repo", projectIds = setOf(UUID.randomUUID()))
+        every { connectionRepository.findAll() } returns listOf(mine, foreign)
+        every { connectionRepository.findById(mine.id) } returns Optional.of(mine)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { userApi.userHasAccessToProject(authId, foreign.projectIds.single()) } returns false
+
+        val response = service.updateAllRepositories(authId)
+
+        assertThat(response.transactionIdsByRepository.keys).containsExactly("sprintstart/backend")
+        coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(foreign.id, any()) }
     }
 
     /**
@@ -165,21 +198,48 @@ class BitbucketUpdatesServiceTest {
      */
     @Test
     fun `update-all returns the transaction id of each updated repository`() = runTest {
-        val enabled = connection("sprintstart", "backend")
+        val enabled = connection("sprintstart", "backend", projectIds = setOf(projectId))
         every { connectionRepository.findAll() } returns listOf(enabled)
         every { connectionRepository.findById(enabled.id) } returns Optional.of(enabled)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
-        val response = service.updateAllRepositories()
+        val response = service.updateAllRepositories(authId)
 
         val transactionId = response.transactionIdsByRepository.getValue("sprintstart/backend")
         coVerify { fileService.fetchAndIngestFilesOfRepository(enabled.id, transactionId) }
         assertThat(transactionId).isNotEqualTo(enabled.id)
     }
 
-    private fun connection(workspace: String, slug: String) = BitbucketConnection(
+    @Test
+    fun `a scoped update reaches a repository through any linked project`() = runTest {
+        val linked = connection("sprintstart", "backend", projectIds = setOf(projectId))
+        every { connectionRepository.findById(linked.id) } returns Optional.of(linked)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+
+        service.updateRepository(authId, linked.id)
+
+        coVerify { fileService.fetchAndIngestFilesOfRepository(linked.id, any()) }
+    }
+
+    @Test
+    fun `a scoped update answers an unreachable repository as unknown`() = runTest {
+        val foreign = connection("other", "repo", projectIds = setOf(UUID.randomUUID()))
+        every { connectionRepository.findById(foreign.id) } returns Optional.of(foreign)
+        every { userApi.userHasAccessToProject(authId, any()) } returns false
+
+        assertThrows<BitbucketRepositoryConnectionNotFoundException> {
+            service.updateRepository(authId, foreign.id)
+        }
+
+        coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<BitbucketRepositoryUpdateStartedEvent>()) }
+    }
+
+    private fun connection(workspace: String, slug: String, projectIds: Set<UUID> = emptySet()) = BitbucketConnection(
         workspace = workspace,
         slug = slug,
         credentialAuthId = "auth-id",
         credentialName = "team-token",
+        projectIdsInternal = projectIds.toMutableSet(),
     )
 }

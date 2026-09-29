@@ -21,6 +21,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -71,14 +73,15 @@ internal class BitbucketConnectionController(
             ApiResponse(responseCode = "404", description = "The named credential does not exist"),
         ],
     )
-    @ResponseStatus(HttpStatus.CREATED)
+    @ResponseStatus(HttpStatus.ACCEPTED)
     @PostMapping
+    @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     suspend fun connect(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @Valid @RequestBody request: ConnectBitbucketRepositoryRequest,
     ): ResponseEntity<ConnectBitbucketRepositoryResponse> {
         val response = service.connectRepositoryIfExists(jwt.subject, request)
-        return ResponseEntity.ok(response)
+        return ResponseEntity.accepted().body(response)
     }
 
     /**
@@ -213,7 +216,9 @@ internal class BitbucketConnectionController(
     ): ResponseEntity<BitbucketRepositoryProjectLinkResponse> {
         visibilityService.requireCallerCanSeeConnection(jwt.subject, repositoryId)
 
-        val projectIds = projectService.addProjectToRepository(jwt.subject, repositoryId, projectId)
+        val projectIds = withContext(Dispatchers.IO) {
+            projectService.addProjectToRepository(jwt.subject, repositoryId, projectId)
+        }
         return ResponseEntity.ok(BitbucketRepositoryProjectLinkResponse(repositoryId, projectIds))
     }
 
@@ -249,7 +254,9 @@ internal class BitbucketConnectionController(
         @PathVariable repositoryId: UUID,
         @PathVariable projectId: UUID,
     ): ResponseEntity<BitbucketRepositoryProjectLinkResponse> {
-        val projectIds = projectService.removeProjectFromRepository(jwt.subject, repositoryId, projectId)
+        val projectIds = withContext(Dispatchers.IO) {
+            projectService.removeProjectFromRepository(jwt.subject, repositoryId, projectId)
+        }
         return ResponseEntity.ok(BitbucketRepositoryProjectLinkResponse(repositoryId, projectIds))
     }
 
@@ -292,25 +299,28 @@ internal class BitbucketConnectionController(
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     suspend fun updateRepository(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @PathVariable repositoryId: UUID,
     ): ResponseEntity<UpdateBitbucketRepositoryResponse> {
-        val transactionId = updatesService.updateRepository(repositoryId)
+        val transactionId = updatesService.updateRepository(jwt.subject, repositoryId)
         return ResponseEntity.accepted().body(UpdateBitbucketRepositoryResponse(transactionId))
     }
 
     /**
-     * Re-ingests every connected repository.
+     * Re-ingests every connected repository the caller may reach.
      *
      * Each repository is updated on its own, so one repository whose credential was revoked does not
      * stop the others. Disabled repositories are skipped rather than updated: a batch call is not a
-     * reason to wake a source the caller paused.
+     * reason to wake a source the caller paused. Repositories linked to none of the caller's
+     * projects are skipped the same way.
      *
      * @return 202 with one transaction id per updated `workspace/slug`.
      */
     @Operation(
         summary = "Update all connected Bitbucket repositories",
         description =
-            "Re-ingests every connected repository, reading only what changed since each one's last sync.",
+            "Re-ingests every connected repository the caller may reach, reading " +
+                "only what changed since each one's last sync.",
     )
     @ApiResponses(
         value = [
@@ -326,8 +336,10 @@ internal class BitbucketConnectionController(
     @PostMapping("/update-all")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
-    suspend fun updateAllRepositories(): ResponseEntity<UpdateAllBitbucketRepositoriesResponse> {
-        val response = updatesService.updateAllRepositories()
+    suspend fun updateAllRepositories(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<UpdateAllBitbucketRepositoriesResponse> {
+        val response = updatesService.updateAllRepositories(jwt.subject)
         return ResponseEntity.accepted().body(response)
     }
 }

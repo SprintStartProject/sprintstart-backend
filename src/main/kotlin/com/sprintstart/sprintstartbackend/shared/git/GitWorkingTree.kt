@@ -52,7 +52,10 @@ sealed interface GitFileRead {
  *
  * Text is decoded strictly. A lenient decode would replace invalid bytes with U+FFFD and hand the
  * caller mangled content that looks like a successful read, so a file that is not valid UTF-8 is
- * reported as [GitFileRead.Unreadable] instead.
+ * reported as [GitFileRead.Unreadable] instead. Decoded text containing NUL takes the same path:
+ * NUL is valid UTF-8, so the decode accepts it, but PostgreSQL text columns reject it — and the
+ * rejection would surface as a database error in the synchronous file listener, failing the whole
+ * files phase instead of just skipping the file.
  *
  * @property onDiskOperations The factory supplying the Git commands themselves.
  * @property gitRunner The runner used to execute them.
@@ -100,6 +103,9 @@ class GitWorkingTree(
                 val bytes = Files.readAllBytes(absolutePath)
                 val text = decodeStrictly(bytes)
                     ?: return@runCatching GitFileRead.Unreadable("not valid UTF-8")
+                if (NUL in text) {
+                    return@runCatching GitFileRead.Unreadable("contains NUL bytes, which text columns cannot store")
+                }
 
                 GitFileRead.Text(text = text, sha256 = sha256(bytes))
             }.getOrElse { e -> GitFileRead.Unreadable(e.message ?: e::class.simpleName ?: "unreadable") }

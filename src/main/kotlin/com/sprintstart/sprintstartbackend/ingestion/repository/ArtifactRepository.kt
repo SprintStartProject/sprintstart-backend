@@ -291,6 +291,21 @@ interface ArtifactRepository :
     ): Long
 
     /**
+     * Lists stored artifacts whose source id starts with the given prefix.
+     *
+     * Same escaping contract as [countBySourceIdPrefix]: the prefix arrives already run through
+     * [escapeLikeLiteral].
+     *
+     * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
+    )
+    fun findAllBySourceIdPrefix(
+        @Param("prefix") prefix: String,
+    ): List<Artifact>
+
+    /**
      * Counts stored artifacts belonging to a Jira instance.
      *
      * Jira issue artifacts store their web URL as `{instanceUrl}/browse/{key}`, so they are matched

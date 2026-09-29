@@ -72,22 +72,23 @@ internal class BitbucketConnectionStateService(
     }
 
     /**
-     * Loads the connection and writes the given state.
+     * Writes the given state unless the connection is gone.
      *
      * A connection deleted mid-update is skipped rather than resurrected: there is nothing left to
-     * mark, and recreating the row would lose the deletion.
+     * mark, and recreating the row would lose the deletion. Only existence is read — never the row
+     * itself — so the write cannot carry a stale snapshot over a cursor another job just advanced.
      *
      * @param repositoryId The connection to update.
      * @param state The state to persist.
      */
     private suspend fun persistState(repositoryId: UUID, state: ConnectionState) {
-        val connection = withContext(Dispatchers.IO) {
-            connectionRepository.findById(repositoryId)
-        }.orElse(null) ?: return
+        val exists = withContext(Dispatchers.IO) {
+            connectionRepository.existsById(repositoryId)
+        }
+        if (!exists) return
 
-        connection.connectionState = state
         withContext(Dispatchers.IO) {
-            connectionRepository.save(connection)
+            connectionRepository.updateConnectionState(repositoryId, state)
         }
     }
 }

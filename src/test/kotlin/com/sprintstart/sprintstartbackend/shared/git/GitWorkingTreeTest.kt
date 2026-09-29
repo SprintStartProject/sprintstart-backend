@@ -95,6 +95,22 @@ class GitWorkingTreeTest {
         assertThat((read as GitFileRead.Unreadable).reason).contains("UTF-8")
     }
 
+    /**
+     * NUL is valid UTF-8, so the strict decode accepts it — but PostgreSQL text columns reject it,
+     * and the rejection would surface as a database error in the synchronous file listener,
+     * failing the whole files phase and pinning the cursor. Reported as unreadable instead, so the
+     * file is recorded as failed and the run moves on.
+     */
+    @Test
+    fun `reports valid utf-8 containing nul bytes instead of poisoning the whole phase`() = runTest {
+        tempDir.resolve("nul.txt").writeBytes("hello\u0000world".toByteArray())
+
+        val read = tree().readFile(tempDir, "nul.txt")
+
+        assertThat(read).isInstanceOf(GitFileRead.Unreadable::class.java)
+        assertThat((read as GitFileRead.Unreadable).reason).contains("NUL")
+    }
+
     @Test
     fun `reports a file that disappeared between enumeration and reading`() = runTest {
         val read = tree().readFile(tempDir, "gone.txt")

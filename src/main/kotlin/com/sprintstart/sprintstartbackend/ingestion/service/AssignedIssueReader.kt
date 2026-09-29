@@ -45,7 +45,11 @@ class AssignedIssueReader(
      * two kinds of nothing.
      */
     fun read(artifact: Artifact, assigneeDisplayName: String): AssignedIssue? {
-        val metadata = artifactMetadataJsonMapper.fromJson(artifact.metadata) as? JiraArtifactMetadataWrapper
+        val metadata = artifactMetadataJsonMapper.fromJson(
+            artifact.metadata,
+            artifact.sourceSystem,
+            artifact.artifactType,
+        ) as? JiraArtifactMetadataWrapper
             ?: return null
         if (!metadata.assignee?.displayName.equals(assigneeDisplayName, ignoreCase = true)) {
             return null

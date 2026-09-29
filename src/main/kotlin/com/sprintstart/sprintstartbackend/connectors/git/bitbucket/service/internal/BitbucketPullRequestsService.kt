@@ -76,8 +76,9 @@ internal class BitbucketPullRequestsService(
 
             fetchAndIngestPullRequests(connection, credential, transactionId)
 
-            connection.lastPullRequestsSyncAt = syncStartedAt
-            connectionRepository.save(connection)
+            withContext(Dispatchers.IO) {
+                connectionRepository.updatePullRequestsCursor(connection.id, syncStartedAt)
+            }
         } catch (e: CancellationException) {
             // Never swallow cancellation: the run is abandoned, not failed, and publishing a
             // terminal failure here would report a fetch that did not happen.
@@ -108,24 +109,21 @@ internal class BitbucketPullRequestsService(
         connection: BitbucketConnection,
         credential: AtlassianCredentialSecret,
         transactionId: UUID,
-    ) {
-        // Fetch
-        val prs = bitbucketClient
-            .fetchAllPullRequests(
+    ) = bitbucketClient
+        .fetchAllPullRequests(
+            connection.workspace,
+            connection.slug,
+            credential.apiToken,
+            connection.lastPullRequestsSyncAt?.toString(),
+        ).map {
+            val prComments = bitbucketClient.fetchAllPullRequestComments(
                 connection.workspace,
                 connection.slug,
+                it.id,
                 credential.apiToken,
-                connection.lastPullRequestsSyncAt?.toString(),
-            ).map {
-                val prComments = bitbucketClient.fetchAllPullRequestComments(
-                    connection.workspace,
-                    connection.slug,
-                    it.id,
-                    credential.apiToken,
-                )
-                it.asEvent(connection, prComments, transactionId)
-            }.forEach(eventPublisher::publishEvent)
-    }
+            )
+            it.asEvent(connection, prComments, transactionId)
+        }.forEach(eventPublisher::publishEvent)
 }
 
 private fun PullRequest.asEvent(

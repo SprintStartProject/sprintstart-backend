@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.shared.scheduler.CronBuilder
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
+import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -19,17 +20,23 @@ import org.junit.jupiter.api.assertThrows
 import java.time.Instant
 import java.time.LocalTime
 import java.util.Optional
+import java.util.UUID
 
 class BitbucketRepositoryConfigServiceTest {
     private val configRepository = mockk<BitbucketRepositoryConfigRepository>()
     private val connectionRepository = mockk<BitbucketConnectionRepository>()
     private val cronBuilder = mockk<CronBuilder>()
+    private val userApi = mockk<UserApi>()
 
     private val service = BitbucketRepositoryConfigService(
         configRepository = configRepository,
         connectionRepository = connectionRepository,
         cronBuilder = cronBuilder,
+        userApi = userApi,
     )
+
+    private val projectId = UUID.randomUUID()
+    private val authId = "auth-id"
 
     @Nested
     inner class CalculateNextSyncAt {
@@ -52,16 +59,25 @@ class BitbucketRepositoryConfigServiceTest {
     @Nested
     inner class GetAll {
         @Test
-        fun `maps every config to a response`() {
+        fun `maps every reachable config to a response`() {
             every { configRepository.findAll() } returns listOf(config("w1", "s1"), config("w2", "s2"))
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
-            val result = service.getAll()
+            val result = service.getAll(authId)
 
             assertThat(result).hasSize(2)
             assertThat(result[0].workspace).isEqualTo("w1")
             assertThat(result[0].slug).isEqualTo("s1")
             assertThat(result[1].workspace).isEqualTo("w2")
             assertThat(result[1].slug).isEqualTo("s2")
+        }
+
+        @Test
+        fun `hides configs linked to none of the caller's projects`() {
+            every { configRepository.findAll() } returns listOf(config("w1", "s1"), config("w2", "s2"))
+            every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+            assertThat(service.getAll(authId)).isEmpty()
         }
     }
 
@@ -72,11 +88,13 @@ class BitbucketRepositoryConfigServiceTest {
             val config = config("w", "s")
             val spec = ScheduleSpec.Daily(time = LocalTime.of(6, 30))
             every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns config.repository
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
             every { configRepository.findById(config.id!!) } returns Optional.of(config)
             every { cronBuilder.build(spec) } returns "0 30 6 * * *"
             every { configRepository.save(config) } returns config
 
             service.configure(
+                authId,
                 "w",
                 "s",
                 ConfigureBitbucketRepositoryRequest(autoUpdate = false, schedule = spec),
@@ -90,11 +108,24 @@ class BitbucketRepositoryConfigServiceTest {
         }
 
         @Test
+        fun `refuses a repository linked to none of the caller's projects`() {
+            val config = config("w", "s")
+            every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns config.repository
+            every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+            assertThrows<BitbucketRepositoryNotConnectedException> {
+                service.configure(authId, "w", "s", request())
+            }
+
+            verify(exactly = 0) { configRepository.save(any()) }
+        }
+
+        @Test
         fun `fails when the repository is not connected`() {
             every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns null
 
             assertThrows<BitbucketRepositoryNotConnectedException> {
-                service.configure("w", "s", request())
+                service.configure(authId, "w", "s", request())
             }
         }
 
@@ -102,10 +133,11 @@ class BitbucketRepositoryConfigServiceTest {
         fun `fails when the connection has no config`() {
             val config = config("w", "s")
             every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns config.repository
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
             every { configRepository.findById(config.id!!) } returns Optional.empty()
 
             assertThrows<BitbucketRepositoryConfigNotFoundException> {
-                service.configure("w", "s", request())
+                service.configure(authId, "w", "s", request())
             }
         }
     }
@@ -113,21 +145,40 @@ class BitbucketRepositoryConfigServiceTest {
     @Nested
     inner class ConfigureAll {
         @Test
-        fun `updates every config with the given settings`() {
+        fun `updates every reachable config with the given settings`() {
             val first = config("w1", "s1")
             val second = config("w2", "s2")
             val spec = ScheduleSpec.Interval(everyMinutes = 30)
             every { configRepository.findAll() } returns listOf(first, second)
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
             every { cronBuilder.build(spec) } returns "0 */30 * * * *"
             every { configRepository.saveAll(any<Iterable<BitbucketRepositoryConfig>>()) } returns listOf(first, second)
 
-            service.configureAll(ConfigureBitbucketRepositoryRequest(autoUpdate = true, schedule = spec))
+            service.configureAll(authId, ConfigureBitbucketRepositoryRequest(autoUpdate = true, schedule = spec))
 
             assertThat(first.schedule).isEqualTo("0 */30 * * * *")
             assertThat(first.nextSyncAt).isNotNull
             assertThat(second.schedule).isEqualTo("0 */30 * * * *")
             assertThat(second.nextSyncAt).isNotNull
             verify { configRepository.saveAll(listOf(first, second)) }
+        }
+
+        @Test
+        fun `leaves configs linked to none of the caller's projects alone`() {
+            val reachable = config("w1", "s1")
+            val foreign = config("w2", "s2", projectIds = mutableSetOf(UUID.randomUUID()))
+            val spec = ScheduleSpec.Interval(everyMinutes = 30)
+            every { configRepository.findAll() } returns listOf(reachable, foreign)
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
+            every { userApi.userHasAccessToProject(authId, foreign.repository.projectIds.single()) } returns false
+            every { cronBuilder.build(spec) } returns "0 */30 * * * *"
+            every { configRepository.saveAll(any<Iterable<BitbucketRepositoryConfig>>()) } returns listOf(reachable)
+
+            service.configureAll(authId, ConfigureBitbucketRepositoryRequest(autoUpdate = true, schedule = spec))
+
+            assertThat(reachable.schedule).isEqualTo("0 */30 * * * *")
+            assertThat(foreign.schedule).isNotEqualTo("0 */30 * * * *")
+            verify { configRepository.saveAll(listOf(reachable)) }
         }
     }
 
@@ -137,9 +188,10 @@ class BitbucketRepositoryConfigServiceTest {
         fun `maps the config to a response`() {
             val config = config("w", "s")
             every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns config.repository
+            every { userApi.userHasAccessToProject(authId, projectId) } returns true
             every { configRepository.findById(config.id!!) } returns Optional.of(config)
 
-            val response = service.getConfigOfRepository("w", "s")
+            val response = service.getConfigOfRepository(authId, "w", "s")
 
             assertThat(response.workspace).isEqualTo("w")
             assertThat(response.slug).isEqualTo("s")
@@ -147,11 +199,22 @@ class BitbucketRepositoryConfigServiceTest {
         }
 
         @Test
+        fun `refuses a repository linked to none of the caller's projects`() {
+            val config = config("w", "s")
+            every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns config.repository
+            every { userApi.userHasAccessToProject(authId, projectId) } returns false
+
+            assertThrows<BitbucketRepositoryNotConnectedException> {
+                service.getConfigOfRepository(authId, "w", "s")
+            }
+        }
+
+        @Test
         fun `fails when the repository is not connected`() {
             every { connectionRepository.findByWorkspaceAndSlug("w", "s") } returns null
 
             assertThrows<BitbucketRepositoryNotConnectedException> {
-                service.getConfigOfRepository("w", "s")
+                service.getConfigOfRepository(authId, "w", "s")
             }
         }
     }
@@ -199,12 +262,17 @@ class BitbucketRepositoryConfigServiceTest {
         schedule = ScheduleSpec.Daily(time = LocalTime.of(2, 0)),
     )
 
-    private fun config(workspace: String, slug: String): BitbucketRepositoryConfig {
+    private fun config(
+        workspace: String,
+        slug: String,
+        projectIds: MutableSet<UUID> = mutableSetOf(projectId),
+    ): BitbucketRepositoryConfig {
         val connection = BitbucketConnection(
             workspace = workspace,
             slug = slug,
             credentialAuthId = "auth-id",
             credentialName = "team-token",
+            projectIdsInternal = projectIds,
         )
         return BitbucketRepositoryConfig(repository = connection).apply { id = connection.id }
     }

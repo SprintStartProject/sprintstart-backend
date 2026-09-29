@@ -57,4 +57,21 @@ class GitRevisionStateTest {
             gitRunner.exec(repositoryPath, match { it.command().contains("merge") })
         }
     }
+
+    @Test
+    fun `knows a revision the clone holds`() = runTest {
+        every { gitRunner.exec(repositoryPath, match { it.command().contains("cat-file") }) } returns ""
+
+        assertThat(state.knowsRevision(repositoryPath, "abc123")).isTrue()
+        verify {
+            gitRunner.exec(repositoryPath, match { it.command() == listOf("git", "cat-file", "-e", "abc123") })
+        }
+    }
+
+    @Test
+    fun `misses a revision the clone never fetched`() = runTest {
+        every { gitRunner.exec(any(), any()) } throws RuntimeException("unknown revision (exit 128)")
+
+        assertThat(state.knowsRevision(repositoryPath, "deadbeef")).isFalse()
+    }
 }

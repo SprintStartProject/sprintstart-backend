@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
@@ -20,7 +21,9 @@ import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -68,7 +71,7 @@ class BitbucketFileServiceTest {
         failures: List<GitIngestFailure> = emptyList(),
     ) {
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.updateFileCursor(any(), any()) } just Runs
         every { coordinatesFactory.of(connection) } returns coordinates
         coEvery {
             ingestionEngine.ingestFileChangesSince(coordinates, any(), capture(sink))
@@ -102,8 +105,8 @@ class BitbucketFileServiceTest {
 
         service.fetchAndIngestFilesOfRepository(connection.id, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
-        verify { connectionRepository.save(connection) }
+        verify { connectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     // ── terminal events ───────────────────────────────────────────────────────
@@ -123,6 +126,33 @@ class BitbucketFileServiceTest {
         verify(exactly = 0) {
             eventPublisher.publishEvent(match<Any> { it is BitbucketFilesFetchingFailedEvent })
         }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is BitbucketFilesResyncedEvent })
+        }
+    }
+
+    @Test
+    fun `publishes a resync event when the engine fell back to a full ingest`() = runTest {
+        every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
+        every { coordinatesFactory.of(connection) } returns coordinates
+        every { connectionRepository.updateFileCursor(any(), any()) } just Runs
+        coEvery { ingestionEngine.ingestFileChangesSince(coordinates, any(), any()) } returns
+            GitIngestOutcome(NEW_REVISION, emptyList(), resyncedPaths = setOf("Main.kt"))
+
+        service.fetchAndIngestFilesOfRepository(connection.id, transactionId)
+
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> {
+                    it is BitbucketFilesResyncedEvent &&
+                        it.transactionId == transactionId &&
+                        it.repositoryId == connection.id &&
+                        it.workspace == "sprintstart" &&
+                        it.slug == "sprintstart-backend" &&
+                        it.visitedPaths == setOf("Main.kt")
+                },
+            )
+        }
     }
 
     @Test
@@ -131,7 +161,7 @@ class BitbucketFileServiceTest {
 
         service.fetchAndIngestFilesOfRepository(connection.id, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
+        verify { connectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(match<Any> { it is BitbucketFilesFetchingCompletedEvent })
         }
@@ -149,6 +179,7 @@ class BitbucketFileServiceTest {
         }
 
         assertThat(connection.lastSha).isEmpty()
+        verify(exactly = 0) { connectionRepository.updateFileCursor(any(), any()) }
         verify(exactly = 0) { connectionRepository.save(any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(

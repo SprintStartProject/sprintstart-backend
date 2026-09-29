@@ -43,6 +43,15 @@ class OnDiskOperations {
      */
     fun gitClone(remoteUri: String, localFsPath: String) = ProcessBuilder("git", "clone", remoteUri, localFsPath)
 
+    /**
+     * Points `origin` at [remoteUri].
+     *
+     * Used to refresh a cached clone after the stored credential rotated: `git clone` bakes the
+     * token into the clone's remote URL once, and nothing else ever rewrites it. Like [gitClone],
+     * [remoteUri] is expected to contain credentials inline and must never be logged.
+     */
+    fun gitSetRemoteUrl(remoteUri: String) = ProcessBuilder("git", "remote", "set-url", "origin", remoteUri)
+
     /** Downloads new commits from `origin` into `FETCH_HEAD` without modifying the working tree. */
     fun gitFetch() = ProcessBuilder("git", "fetch", "origin")
 
@@ -56,6 +65,14 @@ class OnDiskOperations {
      * storing or comparing the SHA.
      */
     fun gitRevParse() = ProcessBuilder("git", "rev-parse", "HEAD")
+
+    /**
+     * Checks that [revision] exists in the clone, without printing anything.
+     *
+     * `git cat-file -e` exits non-zero for an unknown revision, which [exec] turns into a
+     * `RuntimeException` — callers testing for existence catch that rather than parsing output.
+     */
+    fun gitRevisionExists(revision: String) = ProcessBuilder("git", "cat-file", "-e", revision)
 
     /**
      * Resolves remote `HEAD` to its full 40-character commit SHA.
