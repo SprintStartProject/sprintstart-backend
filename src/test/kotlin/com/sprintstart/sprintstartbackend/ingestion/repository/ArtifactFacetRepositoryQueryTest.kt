@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.repository
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -186,6 +187,48 @@ class ArtifactFacetRepositoryQueryTest {
         assertThat(facets.sources.sumOf { it.count }).isEqualTo(list(window).totalElements)
     }
 
+    // ========================== format and repository filters ==========================
+
+    @Test
+    fun `format filters use the same exclusive priority as format facets`() {
+        val pdfWithMarkdownName = store(
+            title = "manual.md",
+            mime = "application/pdf",
+            sourceSystem = SourceSystem.UPLOAD,
+        )
+        val markdownWithImageMime = store(
+            title = "diagram.png",
+            mime = "image/png",
+            language = "Markdown",
+            sourceSystem = SourceSystem.UPLOAD,
+        )
+        flush()
+
+        val facets = repository.findFacets(projectId, ArtifactFilterCriteria()).formats
+
+        assertThat(facets).containsExactly(
+            FacetCountResponse(UploadFormat.PDF.name, 1),
+            FacetCountResponse(UploadFormat.MARKDOWN.name, 1),
+        )
+        assertThat(listIds(ArtifactFilterCriteria(format = UploadFormat.PDF)))
+            .containsExactly(pdfWithMarkdownName.id)
+        assertThat(listIds(ArtifactFilterCriteria(format = UploadFormat.MARKDOWN)))
+            .containsExactly(markdownWithImageMime.id)
+        assertThat(listIds(ArtifactFilterCriteria(format = UploadFormat.IMAGE))).isEmpty()
+    }
+
+    @Test
+    fun `repository filter treats underscores as literal characters`() {
+        val selected = store(sourceId = "github:acme/data_service:FILE:1")
+        val wildcardLookalike = store(sourceId = "github:acme/data-service:FILE:2")
+        flush()
+
+        val found = listIds(ArtifactFilterCriteria(repositories = setOf("acme/data_service")))
+
+        assertThat(found).containsExactly(selected.id)
+        assertThat(found).doesNotContain(wildcardLookalike.id)
+    }
+
     // ========================== languages ==========================
 
     @Test
@@ -278,6 +321,8 @@ class ArtifactFacetRepositoryQueryTest {
         ingestedAt: Instant = BASE,
         lastChangedAt: Instant? = null,
         language: String? = null,
+        mime: String? = null,
+        sourceId: String? = null,
         sourceSystem: SourceSystem = SourceSystem.GITHUB,
         type: ArtifactType = ArtifactType.FILE,
         project: UUID = projectId,
@@ -285,12 +330,12 @@ class ArtifactFacetRepositoryQueryTest {
         val artifact = Artifact(
             id = id,
             sourceSystem = sourceSystem,
-            sourceId = "github:acme/repo:$type:$id",
+            sourceId = sourceId ?: "github:acme/repo:$type:$id",
             sourceUrl = "https://github.com/acme/repo",
             artifactType = type,
             title = title,
             content = "content",
-            mime = null,
+            mime = mime,
             language = language,
             createdAtSource = null,
             updatedAtSource = null,

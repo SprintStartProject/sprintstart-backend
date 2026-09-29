@@ -497,8 +497,8 @@ class ArtifactFacetRepositoryImpl(
 
         return when (format) {
             UploadFormat.PDF -> isPdf
-            UploadFormat.MARKDOWN -> isMarkdown
-            UploadFormat.IMAGE -> isImage
+            UploadFormat.MARKDOWN -> cb.and(cb.not(isPdf), isMarkdown)
+            UploadFormat.IMAGE -> cb.and(cb.not(cb.or(isPdf, isMarkdown)), isImage)
             UploadFormat.OTHER -> cb.not(cb.or(isPdf, isMarkdown, isImage))
         }
     }
@@ -512,7 +512,8 @@ class ArtifactFacetRepositoryImpl(
         val artifactType = root.get<ArtifactType>("artifactType")
 
         val repoPrefixPredicates = repositories.map { repo ->
-            cb.like(sourceId, "github:$repo:%")
+            val escapedPrefix = escapeLikeLiteral("github:$repo:")
+            cb.like(sourceId, "$escapedPrefix%", LIKE_ESCAPE.single())
         }
         val isNonOrgRepoMatch = cb.and(
             cb.notEqual(artifactType, ArtifactType.ORG_METADATA),
