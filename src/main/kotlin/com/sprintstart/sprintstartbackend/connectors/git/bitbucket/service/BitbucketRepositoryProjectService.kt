@@ -55,11 +55,11 @@ internal class BitbucketRepositoryProjectService(
      */
     @Transactional
     @Tracked("Linking Bitbucket repository to an additional project")
-    suspend fun addProjectToRepository(
+    fun addProjectToRepository(
         authId: String,
         repositoryId: UUID,
         projectId: UUID,
-    ): Set<UUID> = withContext(Dispatchers.IO) {
+    ): Set<UUID> {
         requireProjectAccess(authId, projectId)
 
         val connection = findConnection(repositoryId)
@@ -67,7 +67,7 @@ internal class BitbucketRepositoryProjectService(
         connectionRepository.save(connection)
         publishLinkChanged(connection, projectId, linked = true)
 
-        return@withContext connection.projectIds
+        return connection.projectIds
     }
 
     /**
@@ -87,11 +87,11 @@ internal class BitbucketRepositoryProjectService(
      */
     @Transactional
     @Tracked("Unlinking Bitbucket repository from a project")
-    suspend fun removeProjectFromRepository(
+    fun removeProjectFromRepository(
         authId: String,
         repositoryId: UUID,
         projectId: UUID,
-    ): Set<UUID> = withContext(Dispatchers.IO) {
+    ): Set<UUID> {
         requireProjectAccess(authId, projectId)
 
         val connection = findConnection(repositoryId)
@@ -99,7 +99,7 @@ internal class BitbucketRepositoryProjectService(
         connectionRepository.save(connection)
         publishLinkChanged(connection, projectId, linked = false)
 
-        return@withContext connection.projectIds
+        return connection.projectIds
     }
 
     /**

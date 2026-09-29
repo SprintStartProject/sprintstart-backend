@@ -21,10 +21,15 @@ data class GitIngestFailure(
  * @property revision The revision the repository ended up on. Callers store this as their cursor,
  *           which makes a repeated ingest of an unchanged repository a no-op.
  * @property failures Files that were part of [revision] but were not ingested.
+ * @property resyncedPaths Every tracked path at [revision], present only when the engine fell back
+ *           to a full ingest because the caller's cursor revision was missing from the clone. The
+ *           caller reconciles deletions from it: stored files absent from the set were removed while
+ *           the cursor could not see them. `null` on every incremental ingest.
  */
 data class GitIngestOutcome(
     val revision: String,
     val failures: List<GitIngestFailure>,
+    val resyncedPaths: Set<String>? = null,
 ) {
     /** Whether every file of the revision was ingested. */
     val complete: Boolean

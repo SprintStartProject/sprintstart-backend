@@ -76,11 +76,30 @@ class CustomOnDiskCache(
                 logger.info("Cache miss for $safeUri — cloning")
                 cloneRepository(localFsPath, remoteUri)
             } else {
-                logger.info("Cache hit for $safeUri")
+                logger.info("Cache hit for $safeUri — refreshing remote URL")
+                refreshRemoteUrl(localFsPath, remoteUri)
             }
         }
 
         return localFsPath
+    }
+
+    /**
+     * Re-points `origin` at the current credentials.
+     *
+     * The clone's remote URL still carries whatever token was current when it was cloned. Without
+     * this, a rotated token keeps failing fetches with the old one until the cache is wiped. A
+     * local config write only — no network — executed under the repository lock like the clone.
+     *
+     * The [remoteUri] contains the auth token inline and is never logged.
+     *
+     * @param localFsPath The local clone whose remote URL should be refreshed.
+     * @param remoteUri The current remote URI, with the current credentials embedded.
+     */
+    private suspend fun refreshRemoteUrl(localFsPath: Path, remoteUri: String) {
+        withContext(Dispatchers.IO) {
+            gitRunner.exec(localFsPath, onDiskOperations.gitSetRemoteUrl(remoteUri))
+        }
     }
 
     /**

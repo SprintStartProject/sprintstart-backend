@@ -22,7 +22,10 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
@@ -60,7 +63,7 @@ class BitbucketPullRequestsServiceTest {
         comments: List<PullRequestComment> = emptyList(),
     ) {
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.updatePullRequestsCursor(any(), any()) } just Runs
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.fetchAllPullRequests(any(), any(), any(), any()) } returns pullRequests
         coEvery { bitbucketClient.fetchAllPullRequestComments(any(), any(), any(), any()) } returns comments
@@ -103,8 +106,8 @@ class BitbucketPullRequestsServiceTest {
 
         service.fetchAndIngestPullRequests(connection.id, transactionId)
 
-        assertThat(connection.lastPullRequestsSyncAt).isNotNull()
-        verify { connectionRepository.save(connection) }
+        verify { connectionRepository.updatePullRequestsCursor(connection.id, any()) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     /**
@@ -120,10 +123,12 @@ class BitbucketPullRequestsServiceTest {
             fetchStartedAt = Instant.now()
             listOf(pullRequest())
         }
+        val cursor = slot<Instant>()
 
         service.fetchAndIngestPullRequests(connection.id, transactionId)
 
-        assertThat(connection.lastPullRequestsSyncAt).isBeforeOrEqualTo(fetchStartedAt)
+        verify { connectionRepository.updatePullRequestsCursor(connection.id, capture(cursor)) }
+        assertThat(cursor.captured).isBeforeOrEqualTo(fetchStartedAt)
     }
 
     @Test
@@ -131,7 +136,7 @@ class BitbucketPullRequestsServiceTest {
         val cursor = Instant.parse("2026-03-01T10:00:00Z")
         connection.lastPullRequestsSyncAt = cursor
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.updatePullRequestsCursor(any(), any()) } just Runs
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.fetchAllPullRequests(any(), any(), any(), any()) } throws
             IllegalStateException("bitbucket is down")
@@ -143,7 +148,8 @@ class BitbucketPullRequestsServiceTest {
         // A failed run must leave the cursor where it was, so the next run re-reads the same window
         // instead of skipping everything the failed run never managed to fetch.
         assertThat(connection.lastPullRequestsSyncAt).isEqualTo(cursor)
-        verify(exactly = 0) { connectionRepository.save(connection) }
+        verify(exactly = 0) { connectionRepository.updatePullRequestsCursor(any(), any()) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     // ── terminal events ───────────────────────────────────────────────────────
@@ -177,6 +183,7 @@ class BitbucketPullRequestsServiceTest {
         }
 
         assertThat(connection.lastPullRequestsSyncAt).isNull()
+        verify(exactly = 0) { connectionRepository.updatePullRequestsCursor(any(), any()) }
         verify(exactly = 0) { connectionRepository.save(any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(

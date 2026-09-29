@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
@@ -67,9 +68,8 @@ internal class BitbucketCommitsService(
             throw e
         }
 
-        connection.lastCommitsSyncedSha = outcome.revision
         withContext(Dispatchers.IO) {
-            connectionRepository.save(connection)
+            connectionRepository.updateCommitsCursor(connection.id, outcome.revision)
         }
 
         publishCompleted(connection, transactionId)
@@ -110,34 +110,6 @@ internal class BitbucketCommitsService(
                 workspace = connection.workspace,
                 slug = connection.slug,
                 reason = reason,
-            ),
-        )
-    }
-}
-
-/** Turns the engine's commits into this connector's commit event. */
-private class BitbucketCommitSink(
-    private val eventPublisher: ApplicationEventPublisher,
-    private val connection: BitbucketConnection,
-    private val transactionId: UUID,
-    private val sourceUrls: GitSourceUrls,
-) : GitCommitSink {
-    override suspend fun onCommit(commit: GitCommit) {
-        eventPublisher.publishEvent(
-            BitbucketCommitFetchedEvent(
-                transactionId = transactionId,
-                repositoryId = connection.id,
-                workspace = connection.workspace,
-                slug = connection.slug,
-                author = commit.authorName,
-                committedAt = commit.committedAt,
-                sha = commit.sha,
-                subject = commit.subject,
-                sourceUrl = sourceUrls.commitUrl(
-                    namespacePath = listOf(connection.workspace),
-                    name = connection.slug,
-                    sha = commit.sha,
-                ),
             ),
         )
     }

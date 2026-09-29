@@ -2,6 +2,10 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.BitbucketArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -11,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildBitbucketSourceId
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.escapeLikeLiteral
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -22,9 +27,9 @@ import java.util.UUID
  * The Bitbucket counterpart of [GithubArtifactProviderService], sharing its business rules:
  * duplicate commits are ignored, files update in place only when their hash changed, and pull
  * requests are treated as mutable records. It differs in the project lookup — it asks the Bitbucket
- * module API — and in supporting only the artifact types Bitbucket produces: there is no issue and
- * no org-metadata shape here, because Bitbucket removed its native issue tracker and its workspace
- * metadata is not collected yet.
+ * module API — and in supporting only the artifact types Bitbucket produces: there is no issue
+ * shape here, because Bitbucket removed its native issue tracker. The workspace metadata artifact
+ * belongs to no single repository, so it resolves to the union of its workspace's project links.
  *
  * Connector listeners do not persist artifacts directly. They map source-specific events to
  * commands first, then delegate here so version-independent rules stay in one place, and run
@@ -60,9 +65,7 @@ class BitbucketArtifactProviderService(
     @Transactional
     fun persistArtifact(command: BitbucketArtifactCommand) {
         val runId = command.ingestionRunId
-        val projectIds = bitbucketRepositoryApi
-            .getRepositoryProjectIdsById(command.metadata.repositoryId)
-            .toMutableSet()
+        val projectIds = resolveProjectIds(command.metadata)
 
         val existing = artifactRepository.findBySourceId(command.sourceId)
         if (existing != null) {
@@ -72,6 +75,32 @@ class BitbucketArtifactProviderService(
 
         storeNew(command, projectIds, runId)
     }
+
+    /**
+     * Resolves the projects an artifact belongs to.
+     *
+     * Repository artifacts are scoped by their connection's project links, so their metadata names
+     * the repository to ask the Bitbucket module API about. The workspace metadata artifact is
+     * workspace-level and belongs to no single repository, so it resolves to the union of the
+     * projects of every connected repository in the workspace.
+     *
+     * @param metadata The metadata the command carries.
+     * @return The ids of the projects the artifact belongs to.
+     */
+    private fun resolveProjectIds(metadata: ArtifactMetadata): MutableSet<UUID> =
+        when (metadata) {
+            is BitbucketArtifactMetadata -> {
+                bitbucketRepositoryApi
+                    .getRepositoryProjectIdsById(metadata.repositoryId)
+                    .toMutableSet()
+            }
+            is BitbucketWorkspaceMetadataArtifactMetadata -> {
+                bitbucketRepositoryApi
+                    .getWorkspaceProjectIds(metadata.workspace)
+                    .toMutableSet()
+            }
+            else -> mutableSetOf()
+        }
 
     /**
      * Applies a re-fetch to an artifact an earlier run already stored.
@@ -156,11 +185,23 @@ class BitbucketArtifactProviderService(
                 BitbucketArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
 
-            // The remaining types never travel through this provider: issues come from Jira, pages
-            // have Confluence's own provider, and Bitbucket workspace metadata is not collected yet.
+            // Workspace metadata rots: members join and leave, display data changes. A re-fetch
+            // overwrites the stored payload so the artifact never fossilizes, and a changed payload
+            // re-indexes like any other content change — while an identical one stays quiet.
+            ArtifactType.ORG_METADATA -> {
+                val metadata = artifactMetadataJsonMapper.toJson(command.metadata)
+                val contentChanged = artifact.metadata != metadata || artifact.title != command.title
+                if (contentChanged) {
+                    artifact.metadata = metadata
+                    artifact.title = command.title
+                }
+                BitbucketArtifactChange(content = contentChanged)
+            }
+
+            // The remaining types never travel through this provider: issues come from Jira and
+            // pages have Confluence's own provider.
             ArtifactType.ISSUE,
             ArtifactType.PAGE,
-            ArtifactType.ORG_METADATA,
             -> error("Bitbucket artifact commands do not support ${command.artifactType} artifacts")
         }
 
@@ -243,6 +284,40 @@ class BitbucketArtifactProviderService(
         artifactRepository.deleteById(artifact.id)
         run.deletedCount++
         run.artifactIdsToDeindex.add(artifact.id.toString())
+    }
+
+    /**
+     * Removes stored file artifacts a fallback full ingest did not see, and records them for AI
+     * deindexing at the end of the run.
+     *
+     * A full ingest re-upserts everything it visits but never reports deletions, so files removed
+     * while the cursor revision was missing would otherwise linger in the store and the index
+     * forever. Only file artifacts of this repository are candidates, and only those whose path is
+     * absent from the visited set go: failed reads are visited too, so an unreadable file is kept,
+     * not mistaken for a deleted one.
+     *
+     * The run is locked once for the whole reconciliation, like the single-delete path locks it per
+     * file. When nothing is stale the run is left untouched.
+     *
+     * @param event The resync event carrying repository identity and every path the full ingest saw.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    @Transactional
+    fun reconcileDeletedFiles(event: BitbucketFilesResyncedEvent) {
+        val prefix = "bitbucket:${event.workspace}/${event.slug}:${ArtifactType.FILE}:"
+        val stale = artifactRepository
+            .findAllBySourceIdPrefix(escapeLikeLiteral(prefix))
+            .filter { it.artifactType == ArtifactType.FILE }
+            .filter { it.sourceId.startsWith(prefix) }
+            .filter { it.sourceId.removePrefix(prefix) !in event.visitedPaths }
+        if (stale.isEmpty()) return
+
+        val run = lockRun(event.transactionId)
+        stale.forEach { artifact ->
+            artifactRepository.deleteById(artifact.id)
+            run.deletedCount++
+            run.artifactIdsToDeindex.add(artifact.id.toString())
+        }
     }
 }
 

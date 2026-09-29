@@ -33,6 +33,17 @@ sealed interface ArtifactSourceRef {
     }
 
     /**
+     * A Bitbucket workspace, whose single metadata artifact carries the source id
+     * `bitbucket:workspace:ORG_METADATA`.
+     *
+     * Deliberately not covered by [BitbucketRepository]: the workspace id has no slug segment, so
+     * no repository prefix query matches it.
+     */
+    data class BitbucketWorkspace(
+        val workspace: String,
+    ) : ArtifactSourceRef
+
+    /**
      * A connected Jira instance, whose issue artifacts carry source urls of the form
      * `{instanceUrl}/browse/{key}`.
      */

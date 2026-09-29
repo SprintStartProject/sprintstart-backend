@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.response.GetBitbucketRepositoryConfigResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketRepositoryConfigService
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -11,6 +12,8 @@ import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.annotation.AuthenticationPrincipal
+import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -38,8 +41,8 @@ internal class BitbucketRepositoryConfigController(
      * @return 204 with an empty body.
      */
     @Operation(
-        summary = "Configure update behaviour for all repositories",
-        description = "Applies one update behaviour to every connected Bitbucket repository",
+        summary = "Configure update behaviour for all reachable repositories",
+        description = "Applies one update behaviour to every connected Bitbucket repository the caller may reach",
     )
     @ApiResponses(
         value = [
@@ -52,8 +55,11 @@ internal class BitbucketRepositoryConfigController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PutMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
-    fun configureAll(@Valid @RequestBody request: ConfigureBitbucketRepositoryRequest): ResponseEntity<Unit> {
-        configService.configureAll(request)
+    fun configureAll(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+        @Valid @RequestBody request: ConfigureBitbucketRepositoryRequest,
+    ): ResponseEntity<Unit> {
+        configService.configureAll(jwt.subject, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -63,8 +69,8 @@ internal class BitbucketRepositoryConfigController(
      * @return 200 with the list of configurations.
      */
     @Operation(
-        summary = "Retrieve all repository configs",
-        description = "Returns the update configuration of every connected Bitbucket repository",
+        summary = "Retrieve all reachable repository configs",
+        description = "Returns the update configuration of every connected Bitbucket repository the caller may reach",
     )
     @ApiResponses(
         value = [
@@ -75,8 +81,10 @@ internal class BitbucketRepositoryConfigController(
     )
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
-    fun getAll(): ResponseEntity<List<GetBitbucketRepositoryConfigResponse>> =
-        ResponseEntity.ok(configService.getAll())
+    fun getAll(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<List<GetBitbucketRepositoryConfigResponse>> =
+        ResponseEntity.ok(configService.getAll(jwt.subject))
 
     /**
      * Configures the update behaviour of one repository.
@@ -103,11 +111,12 @@ internal class BitbucketRepositoryConfigController(
     @PutMapping("/{workspace}/{slug}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun configureRepository(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @PathVariable workspace: String,
         @PathVariable slug: String,
         @Valid @RequestBody request: ConfigureBitbucketRepositoryRequest,
     ): ResponseEntity<Unit> {
-        configService.configure(workspace, slug, request)
+        configService.configure(jwt.subject, workspace, slug, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -134,8 +143,9 @@ internal class BitbucketRepositoryConfigController(
     @GetMapping("/{workspace}/{slug}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun getConfigOfRepository(
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @PathVariable workspace: String,
         @PathVariable slug: String,
     ): ResponseEntity<GetBitbucketRepositoryConfigResponse> =
-        ResponseEntity.ok(configService.getConfigOfRepository(workspace, slug))
+        ResponseEntity.ok(configService.getConfigOfRepository(jwt.subject, workspace, slug))
 }

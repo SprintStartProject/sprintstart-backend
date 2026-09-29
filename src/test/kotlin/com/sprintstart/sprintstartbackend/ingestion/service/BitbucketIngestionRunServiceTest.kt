@@ -23,7 +23,7 @@ class BitbucketIngestionRunServiceTest {
     private val runId = UUID.randomUUID()
 
     @Test
-    fun `a run finishes only after files, commits and pull requests have all reported`() {
+    fun `a run finishes only after files, commits, pull requests and workspace metadata have all reported`() {
         val run = ingestionRun()
         every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
         justRun { ingestionRunLifeCycleService.finishRun(run) }
@@ -34,9 +34,12 @@ class BitbucketIngestionRunServiceTest {
         service.markFetchPhaseFinished(runId, FinishedTypes.COMMITS)
         verify(exactly = 0) { ingestionRunLifeCycleService.finishRun(any<IngestionRun>()) }
 
-        // Bitbucket has no issue tracker and no org metadata, so the run must finish without those
-        // phases; waiting for every FinishedTypes entry would leave it open forever.
         service.markFetchPhaseFinished(runId, FinishedTypes.PULL_REQUESTS)
+        verify(exactly = 0) { ingestionRunLifeCycleService.finishRun(any<IngestionRun>()) }
+
+        // Bitbucket has no issue tracker, so the run must finish without that phase; waiting for
+        // every FinishedTypes entry would leave it open forever.
+        service.markFetchPhaseFinished(runId, FinishedTypes.ORG_METADATA)
         verify(exactly = 1) { ingestionRunLifeCycleService.finishRun(run) }
     }
 
@@ -104,6 +107,7 @@ class BitbucketIngestionRunServiceTest {
             FinishedTypes.FILES,
             FinishedTypes.COMMITS,
             FinishedTypes.PULL_REQUESTS,
+            FinishedTypes.ORG_METADATA,
         )
     }
 }

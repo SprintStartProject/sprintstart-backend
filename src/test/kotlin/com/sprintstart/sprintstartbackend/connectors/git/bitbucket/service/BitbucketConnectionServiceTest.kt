@@ -18,6 +18,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.Bitbu
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -41,8 +42,10 @@ class BitbucketConnectionServiceTest {
     private val fileService = mockk<BitbucketFileService>(relaxed = true)
     private val commitsService = mockk<BitbucketCommitsService>(relaxed = true)
     private val prService = mockk<BitbucketPullRequestsService>(relaxed = true)
+    private val workspaceService = mockk<BitbucketWorkspaceService>(relaxed = true)
     private val credentialApi = mockk<AtlassianCredentialApi>()
     private val userApi = mockk<UserApi>()
+    private val connectionStateService = mockk<BitbucketConnectionStateService>(relaxed = true)
     private val eventPublisher = mockk<ApplicationEventPublisher>(relaxed = true)
 
     // Unconfined so the launched ingestion runs inline and can be verified without waiting.
@@ -55,8 +58,10 @@ class BitbucketConnectionServiceTest {
         fileService = fileService,
         commitsService = commitsService,
         prService = prService,
+        workspaceService = workspaceService,
         credentialApi = credentialApi,
         userApi = userApi,
+        connectionStateService = connectionStateService,
         applicationScope = applicationScope,
         eventPublisher = eventPublisher,
     )
@@ -98,10 +103,23 @@ class BitbucketConnectionServiceTest {
                 response.transactionId,
             )
         }
+        // The workspace fetch joins the collectors; its own guard decides whether anything is read.
+        coVerify {
+            workspaceService.connectWorkspaceIfNecessary(
+                workspace = "sprintstart",
+                authId = "auth-id",
+                credentialName = "team-token",
+                transactionId = response.transactionId,
+            )
+        }
         assertThat(savedConfig.captured.repository).isSameAs(saved.captured)
         assertThat(savedConfig.captured.autoUpdate).isTrue()
         assertThat(savedConfig.captured.nextSyncAt).isNotNull()
         verify { eventPublisher.publishEvent(any<BitbucketRepositoryConnectionInitiatedEvent>()) }
+        // A new connection must read UPDATING through its first ingest, not the UP_TO_DATE
+        // default it was stored with, and settle once its collectors do.
+        verify { connectionStateService.markUpdating(saved.captured.id) }
+        coVerify { connectionStateService.awaitCollectorsAndFinalize(saved.captured.id, any()) }
     }
 
     @Test

@@ -24,11 +24,13 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketCommitsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -52,8 +54,10 @@ internal class BitbucketConnectionService(
     private val fileService: BitbucketFileService,
     private val commitsService: BitbucketCommitsService,
     private val prService: BitbucketPullRequestsService,
+    private val workspaceService: BitbucketWorkspaceService,
     private val credentialApi: AtlassianCredentialApi,
     private val userApi: UserApi,
+    private val connectionStateService: BitbucketConnectionStateService,
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
@@ -163,9 +167,9 @@ internal class BitbucketConnectionService(
             request.pageSize,
         )
 
-        val candidatesById = discoveredRepositories.repositories.map { arrayOf(request.workspace, it.slug) }
+        val slugs = discoveredRepositories.repositories.map { it.slug }
         val alreadyConnected = withContext(Dispatchers.IO) {
-            connectionRepository.findExistingIdsByWorkspaceSlugCombinations(candidatesById)
+            connectionRepository.findAllByWorkspaceAndSlugIn(request.workspace, slugs)
         }
 
         return DiscoverBitbucketRepositoriesResponse(
@@ -230,15 +234,34 @@ internal class BitbucketConnectionService(
             configRepository.save(config)
         }
 
-        // Launch data collectors
+        connectionStateService.markUpdating(connection.id)
+
+        // Launched collectors, finalized like an update: the connection reads UPDATING while its
+        // first ingest runs and settles to UP_TO_DATE or FAILED after, instead of sitting on the
+        // default it was stored with through the ingest and any failure.
+        val collectors = listOf(
+            applicationScope.async {
+                fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
+            },
+            applicationScope.async {
+                commitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+            },
+            applicationScope.async {
+                prService.fetchAndIngestPullRequests(connection.id, transactionId)
+            },
+            // Announced per repository connect; the workspace service's marker guard makes the fetch of
+            // an already-ingested workspace a no-op that still closes its ingestion phase.
+            applicationScope.async {
+                workspaceService.connectWorkspaceIfNecessary(
+                    workspace = request.workspace,
+                    authId = authId,
+                    credentialName = request.credentialName,
+                    transactionId = transactionId,
+                )
+            },
+        )
         applicationScope.launch {
-            fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
-        }
-        applicationScope.launch {
-            commitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
-        }
-        applicationScope.launch {
-            prService.fetchAndIngestPullRequests(connection.id, transactionId)
+            connectionStateService.awaitCollectorsAndFinalize(connection.id, collectors)
         }
 
         return transactionId
@@ -247,12 +270,11 @@ internal class BitbucketConnectionService(
     /**
      * Links a project to an existing connection, writing only when the link is new.
      */
-    private suspend fun linkProject(connection: BitbucketConnection, projectId: UUID) {
+    private fun linkProject(connection: BitbucketConnection, projectId: UUID) {
         if (!connection.projectIdsInternal.add(projectId)) {
             return
         }
-        withContext(Dispatchers.IO) {
-            connectionRepository.save(connection)
-        }
+
+        connectionRepository.save(connection)
     }
 }

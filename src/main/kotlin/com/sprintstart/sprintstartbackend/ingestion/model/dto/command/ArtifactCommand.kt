@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.ingestion.model.dto.command
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
-import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraArtifactMetadataWrapper
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueComment
@@ -61,7 +60,9 @@ data class GithubArtifactCommand(
  * and storing a nickname in a column that is matched against `User.githubLogin` would let the two
  * identity namespaces alias each other in the source-system-agnostic reader queries.
  *
- * @property metadata The [BitbucketArtifactMetadata] the artifact's repository is scoped by.
+ * @property metadata The [ArtifactMetadata] the artifact is scoped by: repository artifacts carry
+ *           [BitbucketArtifactMetadata], the workspace metadata artifact carries
+ *           [BitbucketWorkspaceMetadataArtifactMetadata].
  */
 data class BitbucketArtifactCommand(
     val ingestionRunId: UUID,
@@ -76,7 +77,7 @@ data class BitbucketArtifactCommand(
     val createdAtSource: Instant?,
     val updatedAtSource: Instant?,
     val hash: String?,
-    val metadata: BitbucketArtifactMetadata,
+    val metadata: ArtifactMetadata,
     val state: String? = null,
     /** Merge time for pull requests; null for every other artifact type. */
     val mergedAtSource: Instant? = null,

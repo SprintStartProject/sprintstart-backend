@@ -57,6 +57,7 @@ class GitIngestionEngineTest {
     @BeforeEach
     fun setUp() {
         coEvery { repositoryCache.getLocalRepositoryPath(coordinates) } returns repositoryPath
+        coEvery { revisionState.knowsRevision(any(), any()) } returns true
     }
 
     /** A tracked file that exists on disk, so the engine sees it as present. */
@@ -187,6 +188,28 @@ class GitIngestionEngineTest {
         val outcome = engine().ingestFileChangesSince(coordinates, OLD_REVISION, sink)
 
         assertThat(outcome.revision).isEqualTo(NEW_REVISION)
+        assertThat(outcome.resyncedPaths).isNull()
+        coVerify { sink.onBatch(match { it.single() is GitFileChange.Modified }) }
+    }
+
+    /**
+     * A stored cursor can outlive the clone's knowledge of it: a re-clone only fetches tracked
+     * heads. Diffing against it would fail on every run and pin the cursor, so the engine reads
+     * everything instead and reports what it saw for deletion reconciliation.
+     */
+    @Test
+    fun `falls back to a full ingest when the cursor revision is missing from the clone`() = runTest {
+        existingFile("Main.kt")
+        coEvery { revisionState.updateLocal(repositoryPath) } returns NEW_REVISION
+        coEvery { revisionState.knowsRevision(repositoryPath, OLD_REVISION) } returns false
+        coEvery { workingTree.trackedFiles(repositoryPath) } returns listOf("Main.kt")
+        coEvery { workingTree.readFile(repositoryPath, "Main.kt") } returns GitFileRead.Text("x", "hash")
+
+        val outcome = engine().ingestFileChangesSince(coordinates, OLD_REVISION, sink)
+
+        assertThat(outcome.revision).isEqualTo(NEW_REVISION)
+        assertThat(outcome.resyncedPaths).containsExactly("Main.kt")
+        coVerify(exactly = 0) { changeSet.changedPaths(any(), any(), any()) }
         coVerify { sink.onBatch(match { it.single() is GitFileChange.Modified }) }
     }
 
@@ -238,6 +261,19 @@ class GitIngestionEngineTest {
         engine().ingestCommitsSince(coordinates, OLD_REVISION, mockk<GitCommitSink>(relaxed = true))
 
         coVerify { gitLog.commits(repositoryPath, OLD_REVISION) }
+    }
+
+    @Test
+    fun `reads the full history when the commit cursor is missing from the clone`() = runTest {
+        coEvery { revisionState.updateLocal(repositoryPath) } returns NEW_REVISION
+        coEvery { revisionState.knowsRevision(repositoryPath, OLD_REVISION) } returns false
+        coEvery { gitLog.commits(repositoryPath, null) } returns emptyList()
+
+        val outcome = engine().ingestCommitsSince(coordinates, OLD_REVISION, mockk<GitCommitSink>(relaxed = true))
+
+        assertThat(outcome.revision).isEqualTo(NEW_REVISION)
+        coVerify { gitLog.commits(repositoryPath, null) }
+        coVerify(exactly = 0) { gitLog.commits(repositoryPath, OLD_REVISION) }
     }
 
     @Test

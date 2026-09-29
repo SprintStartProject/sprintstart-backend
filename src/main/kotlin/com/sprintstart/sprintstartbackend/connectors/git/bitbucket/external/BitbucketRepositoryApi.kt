@@ -23,6 +23,18 @@ interface BitbucketRepositoryApi {
     fun getRepositoryProjectIdsById(id: UUID): Set<UUID>
 
     /**
+     * Returns the project ids linked to any connected repository of one workspace.
+     *
+     * The union of the workspace's connections, because the workspace metadata artifact is scoped
+     * to the workspace rather than to one repository: it belongs to a project when any repository
+     * of the workspace does.
+     *
+     * @param workspace The Bitbucket workspace whose project links should be united.
+     * @return All SprintStart project ids currently linked to the workspace's connections.
+     */
+    fun getWorkspaceProjectIds(workspace: String): Set<UUID>
+
+    /**
      * Resolves the internal repository connection id for a repository addressed by its coordinates.
      *
      * Used to turn a connector event that only carries `workspace`/`slug` back into the connection

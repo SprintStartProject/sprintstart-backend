@@ -14,9 +14,10 @@ import java.util.UUID
  * Tracks Bitbucket fetch-phase completion before finalizing the ingestion run.
  *
  * Mirrors [GithubIngestionRunService] with one deliberate difference: the phase set a Bitbucket run
- * waits for is [PHASES], not every [FinishedTypes] entry. Bitbucket has no issue tracker and no
- * org-metadata collection, so a run that waited for `ISSUES` or `ORG_METADATA` the way the GitHub
- * one does would never finish.
+ * waits for is [PHASES], not every [FinishedTypes] entry. Bitbucket has no issue tracker, so a run
+ * that waited for `ISSUES` the way the GitHub one does would never finish. The workspace metadata
+ * phase is part of every run: the fetch service always reports a completion for it, even when the
+ * workspace's metadata had already been fetched before and the fetch itself was skipped.
  *
  * The run is finalized only after every expected phase has reported completion, so a successful
  * fast phase cannot publish the run-finished event while slower phases are still writing artifacts.
@@ -110,11 +111,19 @@ class BitbucketIngestionRunService(
     }
 
     private companion object {
-        /** The fetch phases a Bitbucket run consists of. */
+        /**
+         * The fetch phases a Bitbucket run consists of.
+         *
+         * Workspace metadata is fetched once per workspace rather than per repository, but its
+         * phase still closes on every run — a skipped fetch reports a completion too, so the wait
+         * costs one no-op report and buys a run that is only ever finalized when the workspace
+         * side of it has settled as well.
+         */
         val PHASES: Set<FinishedTypes> = setOf(
             FinishedTypes.COMMITS,
             FinishedTypes.FILES,
             FinishedTypes.PULL_REQUESTS,
+            FinishedTypes.ORG_METADATA,
         )
     }
 }

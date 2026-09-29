@@ -17,7 +17,9 @@ import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -63,7 +65,7 @@ class BitbucketCommitsServiceTest {
 
     private fun givenIngestSucceeds(revision: String = NEW_REVISION) {
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.updateCommitsCursor(any(), any()) } just Runs
         every { coordinatesFactory.of(connection) } returns coordinates
         coEvery {
             ingestionEngine.ingestCommitsSince(coordinates, any(), capture(sink))
@@ -95,8 +97,8 @@ class BitbucketCommitsServiceTest {
 
         service.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
 
-        assertThat(connection.lastCommitsSyncedSha).isEqualTo(NEW_REVISION)
-        verify { connectionRepository.save(connection) }
+        verify { connectionRepository.updateCommitsCursor(connection.id, NEW_REVISION) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     @Test
@@ -152,6 +154,7 @@ class BitbucketCommitsServiceTest {
         }
 
         assertThat(connection.lastCommitsSyncedSha).isEmpty()
+        verify(exactly = 0) { connectionRepository.updateCommitsCursor(any(), any()) }
         verify(exactly = 0) { connectionRepository.save(any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(

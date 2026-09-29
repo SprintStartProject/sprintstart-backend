@@ -5,12 +5,16 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.BitbucketPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.PrComment
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.PrParticipant
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.workspace.BitbucketWorkspaceMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.FileMetaDataResolver
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataMember
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.BitbucketArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildBitbucketSourceId
+import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildBitbucketWorkspaceSourceId
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.springframework.stereotype.Component
 import java.time.Instant
@@ -24,9 +28,8 @@ private const val CHANGES_REQUESTED = "changes_requested"
 /**
  * Translates Bitbucket domain events into canonical artifact commands.
  *
- * The Bitbucket counterpart of [GithubArtifactMapper], minus the issue and org-metadata shapes:
- * Bitbucket removed its native issue tracker, so issue-shaped work arrives through Jira instead,
- * and the org/workspace metadata event is not part of the connector's fetch set yet.
+ * The Bitbucket counterpart of [GithubArtifactMapper], minus the issue shape: Bitbucket removed
+ * its native issue tracker, so issue-shaped work arrives through Jira instead.
  *
  * Commands carry no `authorLogin`. A Bitbucket account id or nickname is not a GitHub login, and
  * `authorLogin` is matched against `User.githubLogin` by the starter-work readers; storing a
@@ -34,6 +37,49 @@ private const val CHANGES_REQUESTED = "changes_requested"
  */
 @Component
 class BitbucketArtifactMapper {
+    /**
+     * Maps a fetched workspace metadata into the canonical command shape.
+     *
+     * The artifact's body is deliberately empty: everything a reader needs travels in the metadata
+     * payload, like the GitHub org metadata artifact does. The workspace's `createdOn` also stays
+     * out of `createdAtSource`, which means "when ingestion first saw this artifact", not "when
+     * the workspace was created".
+     *
+     * @param event The workspace metadata event published by the connector.
+     * @return The command the artifact provider persists.
+     */
+    fun toCommand(event: BitbucketWorkspaceMetadataFetchedEvent): BitbucketArtifactCommand {
+        return BitbucketArtifactCommand(
+            ingestionRunId = event.transactionId,
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceId = buildBitbucketWorkspaceSourceId(event.workspace),
+            sourceUrl = event.url,
+            artifactType = ArtifactType.ORG_METADATA,
+            title = event.name,
+            bodyText = null,
+            mime = null,
+            language = null,
+            createdAtSource = null,
+            updatedAtSource = null,
+            hash = null,
+            metadata = BitbucketWorkspaceMetadataArtifactMetadata(
+                workspace = event.workspace,
+                uuid = event.uuid,
+                name = event.name,
+                isPrivate = event.isPrivate,
+                createdOn = event.createdOn,
+                url = event.url,
+                members = event.members.map { member ->
+                    BitbucketWorkspaceMetadataMember(
+                        accountId = member.accountId,
+                        nickname = member.nickname,
+                        displayName = member.displayName,
+                    )
+                },
+            ),
+        )
+    }
+
     /**
      * Maps a fetched commit into the canonical command shape.
      *

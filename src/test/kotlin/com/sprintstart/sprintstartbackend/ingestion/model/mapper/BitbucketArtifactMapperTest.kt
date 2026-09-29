@@ -5,8 +5,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.BitbucketPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.PrComment
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.PrParticipant
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.workspace.BitbucketWorkspaceMetadataFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.workspace.BitbucketWorkspaceMetadataMember
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import org.assertj.core.api.Assertions.assertThat
@@ -18,6 +21,44 @@ class BitbucketArtifactMapperTest {
     private val mapper = BitbucketArtifactMapper()
     private val runId = UUID.randomUUID()
     private val repositoryId = UUID.randomUUID()
+
+    @Test
+    fun `toCommand maps workspace metadata into a project-less org metadata command`() {
+        val event = BitbucketWorkspaceMetadataFetchedEvent(
+            transactionId = runId,
+            workspace = "sprintstart",
+            uuid = "{ws-uuid}",
+            name = "SprintStart",
+            isPrivate = true,
+            createdOn = "2024-01-01T00:00:00Z",
+            url = "https://bitbucket.org/sprintstart",
+            members = listOf(
+                BitbucketWorkspaceMetadataMember(accountId = "{account-1}", nickname = "alice", displayName = "Alice"),
+            ),
+        )
+
+        val result = mapper.toCommand(event)
+
+        assertThat(result.ingestionRunId).isEqualTo(runId)
+        assertThat(result.sourceSystem).isEqualTo(SourceSystem.BITBUCKET)
+        assertThat(result.sourceId).isEqualTo("bitbucket:sprintstart:ORG_METADATA")
+        assertThat(result.sourceUrl).isEqualTo("https://bitbucket.org/sprintstart")
+        assertThat(result.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
+        assertThat(result.title).isEqualTo("SprintStart")
+        // The workspace's data travels in the metadata payload; the artifact body stays empty.
+        assertThat(result.bodyText).isNull()
+        // The field means "when ingestion first saw this artifact", not when the workspace was created.
+        assertThat(result.createdAtSource).isNull()
+        val metadata = result.metadata as BitbucketWorkspaceMetadataArtifactMetadata
+        assertThat(metadata.workspace).isEqualTo("sprintstart")
+        assertThat(metadata.uuid).isEqualTo("{ws-uuid}")
+        assertThat(metadata.name).isEqualTo("SprintStart")
+        assertThat(metadata.isPrivate).isTrue()
+        assertThat(metadata.createdOn).isEqualTo("2024-01-01T00:00:00Z")
+        assertThat(metadata.url).isEqualTo("https://bitbucket.org/sprintstart")
+        assertThat(metadata.members).hasSize(1)
+        assertThat(metadata.members[0].accountId).isEqualTo("{account-1}")
+    }
 
     @Test
     fun `toCommand maps bitbucket file metadata and hash`() {

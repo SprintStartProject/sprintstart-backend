@@ -57,7 +57,7 @@ class BitbucketRepositoryConfigControllerTest {
     inner class ConfigureAll {
         @Test
         fun `returns 204 when configuration is applied`() {
-            every { configService.configureAll(any()) } just runs
+            every { configService.configureAll(any(), any()) } just runs
 
             mockMvc
                 .perform(
@@ -67,7 +67,7 @@ class BitbucketRepositoryConfigControllerTest {
                         .with(adminJwt),
                 ).andExpect(status().isNoContent)
 
-            verify { configService.configureAll(any()) }
+            verify { configService.configureAll("mockId", any()) }
         }
 
         @Test
@@ -97,7 +97,7 @@ class BitbucketRepositoryConfigControllerTest {
     inner class GetAll {
         @Test
         fun `returns 200 with all configs`() {
-            every { configService.getAll() } returns listOf(response("w1", "s1"), response("w2", "s2"))
+            every { configService.getAll(any()) } returns listOf(response("w1", "s1"), response("w2", "s2"))
 
             mockMvc
                 .perform(get("/api/v1/bitbucket/config").with(adminJwt))
@@ -106,6 +106,8 @@ class BitbucketRepositoryConfigControllerTest {
                 .andExpect(jsonPath("$[0].workspace").value("w1"))
                 .andExpect(jsonPath("$[0].slug").value("s1"))
                 .andExpect(jsonPath("$[1].workspace").value("w2"))
+
+            verify { configService.getAll("mockId") }
         }
 
         @Test
@@ -120,7 +122,7 @@ class BitbucketRepositoryConfigControllerTest {
     inner class ConfigureRepository {
         @Test
         fun `returns 204 when the repository is configured`() {
-            every { configService.configure("w", "s", any()) } just runs
+            every { configService.configure(any(), "w", "s", any()) } just runs
 
             mockMvc
                 .perform(
@@ -130,12 +132,12 @@ class BitbucketRepositoryConfigControllerTest {
                         .with(adminJwt),
                 ).andExpect(status().isNoContent)
 
-            verify { configService.configure("w", "s", any()) }
+            verify { configService.configure("mockId", "w", "s", any()) }
         }
 
         @Test
         fun `returns 400 when the repository is not connected`() {
-            every { configService.configure("w", "s", any()) } throws
+            every { configService.configure(any(), "w", "s", any()) } throws
                 BitbucketRepositoryNotConnectedException(workspace = "w", slug = "s")
 
             mockMvc
@@ -150,7 +152,7 @@ class BitbucketRepositoryConfigControllerTest {
 
         @Test
         fun `returns 404 when the config does not exist`() {
-            every { configService.configure("w", "s", any()) } throws
+            every { configService.configure(any(), "w", "s", any()) } throws
                 BitbucketRepositoryConfigNotFoundException("w", "s")
 
             mockMvc
@@ -179,7 +181,7 @@ class BitbucketRepositoryConfigControllerTest {
     inner class GetConfigOfRepository {
         @Test
         fun `returns 200 with the config of a connected repository`() {
-            every { configService.getConfigOfRepository("w", "s") } returns response("w", "s")
+            every { configService.getConfigOfRepository(any(), "w", "s") } returns response("w", "s")
 
             mockMvc
                 .perform(get("/api/v1/bitbucket/config/w/s").with(adminJwt))
@@ -195,7 +197,7 @@ class BitbucketRepositoryConfigControllerTest {
 
         @Test
         fun `returns 400 when the repository is not connected`() {
-            every { configService.getConfigOfRepository("w", "s") } throws
+            every { configService.getConfigOfRepository(any(), "w", "s") } throws
                 BitbucketRepositoryNotConnectedException(workspace = "w", slug = "s")
 
             mockMvc
@@ -206,7 +208,7 @@ class BitbucketRepositoryConfigControllerTest {
 
         @Test
         fun `returns 404 when the config does not exist`() {
-            every { configService.getConfigOfRepository("w", "s") } throws
+            every { configService.getConfigOfRepository(any(), "w", "s") } throws
                 BitbucketRepositoryConfigNotFoundException("w", "s")
 
             mockMvc

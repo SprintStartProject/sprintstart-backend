@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
@@ -63,6 +64,7 @@ class GitIngestionEngine(
     private val config: GitConfig,
 ) {
     private val repositoryLocks = ConcurrentHashMap<String, Mutex>()
+    private val logger = LoggerFactory.getLogger(GitIngestionEngine::class.java)
 
     /**
      * Ingests the complete working tree of a repository.
@@ -87,6 +89,10 @@ class GitIngestionEngine(
      * The remote is fetched before any file is read, so the changes reported all belong to one
      * consistent revision. An unchanged repository is detected before diffing and costs one fetch
      * and one `rev-parse`, which is what makes a scheduled re-ingest cheap.
+     *
+     * A cursor revision missing from the clone — a re-clone only fetches tracked heads — falls back
+     * to reading everything and reports the visited paths for deletion reconciliation, instead of
+     * failing the diff on every run.
      *
      * @param coordinates The repository to ingest.
      * @param fromRevision The revision the caller last ingested. A blank value means "read
@@ -114,7 +120,8 @@ class GitIngestionEngine(
      * Commits are read from the clone rather than from a provider API, so every provider gets the
      * same history for the same repository and no API rate limit applies to it. The clone is brought
      * up to date first, so a commit ingest that runs on its own — without a file ingest having just
-     * fetched — still sees the commits that were pushed since it last ran.
+     * fetched — still sees the commits that were pushed since it last ran. A cursor revision missing
+     * from the clone reads the whole history instead of failing.
      *
      * @param coordinates The repository to ingest.
      * @param sinceRevision The revision whose commits are already ingested, or `null` to read the
@@ -132,7 +139,18 @@ class GitIngestionEngine(
         withRepositoryLock(coordinates) {
             val repositoryPath = repositoryCache.getLocalRepositoryPath(coordinates)
             val revision = revisionState.updateLocal(repositoryPath)
-            val since = sinceRevision?.takeIf(String::isNotBlank)
+            val requested = sinceRevision?.takeIf(String::isNotBlank)
+            val since = if (requested != null && !revisionState.knowsRevision(repositoryPath, requested)) {
+                logger.warn(
+                    "Commit cursor revision {} of {}/{} is missing from the clone, reading the full history",
+                    requested,
+                    coordinates.host,
+                    "${coordinates.namespacePath.joinToString("/")}/${coordinates.name}",
+                )
+                null
+            } else {
+                requested
+            }
 
             gitLog.commits(repositoryPath, since).forEach { sink.onCommit(it) }
 
@@ -173,6 +191,18 @@ class GitIngestionEngine(
         val repositoryPath = repositoryCache.getLocalRepositoryPath(coordinates)
         val revision = revisionState.updateLocal(repositoryPath)
         if (revision == fromRevision) return GitIngestOutcome(revision, emptyList())
+
+        if (!revisionState.knowsRevision(repositoryPath, fromRevision)) {
+            logger.warn(
+                "Cursor revision {} of {}/{} is missing from the clone, falling back to a full ingest",
+                fromRevision,
+                coordinates.host,
+                "${coordinates.namespacePath.joinToString("/")}/${coordinates.name}",
+            )
+            val tracked = workingTree.trackedFiles(repositoryPath)
+            val failures = ingestFiles(repositoryPath, revision, tracked, sink)
+            return GitIngestOutcome(revision, failures, resyncedPaths = tracked.toSet())
+        }
 
         val changedPaths = changeSet.changedPaths(repositoryPath, fromRevision, revision)
         val failures = ingestFiles(repositoryPath, revision, changedPaths, sink)

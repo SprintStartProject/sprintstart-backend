@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesFetchingStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketFileSink
@@ -111,9 +112,20 @@ internal class BitbucketFileService(
             )
         }
 
-        connection.lastSha = outcome.revision
         withContext(Dispatchers.IO) {
-            connectionRepository.save(connection)
+            connectionRepository.updateFileCursor(connection.id, outcome.revision)
+        }
+
+        outcome.resyncedPaths?.let { visitedPaths ->
+            eventPublisher.publishEvent(
+                BitbucketFilesResyncedEvent(
+                    transactionId = transactionId,
+                    repositoryId = connection.id,
+                    workspace = connection.workspace,
+                    slug = connection.slug,
+                    visitedPaths = visitedPaths,
+                ),
+            )
         }
 
         eventPublisher.publishEvent(

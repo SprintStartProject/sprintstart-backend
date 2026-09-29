@@ -50,6 +50,21 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
         findAllBySourceIdStartingWith(escapeLikeLiteral("bitbucket:$workspace/$slug:"))
 
     /**
+     * Returns the single workspace metadata artifact of a Bitbucket workspace, if stored.
+     *
+     * Matched by exact source id (`bitbucket:workspace:ORG_METADATA`) rather than by prefix: the
+     * id carries no slug segment, so no repository prefix query ever matches it.
+     *
+     * @param sourceId The workspace artifact's source id, as built by `SourceIdFactory`.
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId = :sourceId",
+    )
+    fun findBySourceId(
+        @Param("sourceId") sourceId: String,
+    ): Artifact?
+
+    /**
      * Returns every stored page of a Confluence space connection.
      *
      * Page artifacts carry source ids of the form `confluence:{connectionId}:page:{pageId}`, so

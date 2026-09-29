@@ -54,6 +54,25 @@ class BitbucketRepositoryApiServiceTest {
     }
 
     @Test
+    fun `getWorkspaceProjectIds unites the project ids of the workspace's connections`() {
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+        every { connectionRepository.findAllByWorkspace("sprintstart") } returns listOf(
+            connection(projectIds = mutableSetOf(first, second)),
+            connection(projectIds = mutableSetOf(second)),
+        )
+
+        assertThat(service.getWorkspaceProjectIds("sprintstart")).containsExactlyInAnyOrder(first, second)
+    }
+
+    @Test
+    fun `getWorkspaceProjectIds is empty when the workspace has no connections`() {
+        every { connectionRepository.findAllByWorkspace("sprintstart") } returns emptyList()
+
+        assertThat(service.getWorkspaceProjectIds("sprintstart")).isEmpty()
+    }
+
+    @Test
     fun `getRepositoryIdsByProject maps connections to their ids`() {
         val projectId = UUID.randomUUID()
         val first = UUID.randomUUID()

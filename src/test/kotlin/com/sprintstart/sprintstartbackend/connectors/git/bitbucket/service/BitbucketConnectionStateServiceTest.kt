@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import io.mockk.every
 import io.mockk.mockk
@@ -11,7 +10,6 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
-import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertFailsWith
 
@@ -30,9 +28,7 @@ class BitbucketConnectionStateServiceTest {
 
     @Test
     fun `a failed collector persists FAILED`() = runTest {
-        val connection = connection()
-        every { connectionRepository.findById(repositoryId) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.existsById(repositoryId) } returns true
 
         val failure = assertFailsWith<IllegalStateException> {
             service.awaitCollectorsAndFinalize(
@@ -43,37 +39,31 @@ class BitbucketConnectionStateServiceTest {
 
         assertThat(failure.message).contains("failed")
 
-        assertThat(connection.connectionState).isEqualTo(ConnectionState.FAILED)
+        verify { connectionRepository.updateConnectionState(repositoryId, ConnectionState.FAILED) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     @Test
     fun `all successful collectors persist UP_TO_DATE`() = runTest {
-        val connection = connection()
-        every { connectionRepository.findById(repositoryId) } returns Optional.of(connection)
-        every { connectionRepository.save(any()) } returns connection
+        every { connectionRepository.existsById(repositoryId) } returns true
 
         service.awaitCollectorsAndFinalize(repositoryId, listOf(CompletableDeferred(Unit)))
 
-        assertThat(connection.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
+        verify { connectionRepository.updateConnectionState(repositoryId, ConnectionState.UP_TO_DATE) }
+        verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     @Test
     fun `a connection deleted mid-update is skipped instead of resurrected`() = runTest {
-        every { connectionRepository.findById(repositoryId) } returns Optional.empty()
+        every { connectionRepository.existsById(repositoryId) } returns false
 
         service.awaitCollectorsAndFinalize(repositoryId, listOf(CompletableDeferred(Unit)))
 
+        verify(exactly = 0) { connectionRepository.updateConnectionState(any(), any()) }
         verify(exactly = 0) { connectionRepository.save(any()) }
     }
 
     private fun failedDeferred(error: Exception): Deferred<Unit> = CompletableDeferred<Unit>().apply {
         completeExceptionally(error)
     }
-
-    private fun connection() = BitbucketConnection(
-        workspace = "sprintstart",
-        slug = "backend",
-        credentialAuthId = "auth-id",
-        credentialName = "team-token",
-    )
 }
