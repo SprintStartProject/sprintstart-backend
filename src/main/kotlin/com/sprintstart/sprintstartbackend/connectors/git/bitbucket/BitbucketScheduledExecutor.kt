@@ -15,8 +15,13 @@ import java.time.Instant
  * a background job, so a slow clone does not stall the tick or the repositories behind it.
  *
  * The next sync is advanced for every due config, including one whose auto-update is off. That keeps
- * a disabled repository on its schedule rather than leaving it permanently due, so turning
- * auto-update back on resumes normally instead of firing once for every interval it sat out.
+ * a repository with auto-update off on its schedule rather than leaving it permanently due, so
+ * turning auto-update back on resumes normally instead of firing once for every interval it sat out.
+ *
+ * A repository whose source is disabled never reaches this tick at all: the due query already
+ * excludes it (see [BitbucketRepositoryConfigService.findConfigsDueForSync]). That is how
+ * `sourceEnabled` pauses the scheduled ingest, and it mirrors the Confluence connector, which
+ * filters disabled connections in the same place.
  */
 @Component
 internal class BitbucketScheduledExecutor(

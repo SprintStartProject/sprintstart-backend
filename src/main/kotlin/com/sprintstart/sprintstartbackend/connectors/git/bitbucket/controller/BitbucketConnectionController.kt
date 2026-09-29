@@ -21,8 +21,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -263,6 +261,9 @@ internal class BitbucketConnectionController(
      * collector and downloads no file. The work runs in the background, hence the returned
      * transaction id rather than the resulting state.
      *
+     * A repository whose source is disabled is refused: disabling is how a caller pauses ingestion,
+     * and an explicit update of a paused repository is answered rather than quietly performed.
+     *
      * @param repositoryId The connected repository to update.
      * @return 202 with the transaction id the connector's progress events report under.
      */
@@ -279,7 +280,10 @@ internal class BitbucketConnectionController(
                 description = "Update accepted; the transaction id is returned",
                 content = [Content(schema = Schema(implementation = UpdateBitbucketRepositoryResponse::class))],
             ),
-            ApiResponse(responseCode = "400", description = "Repository connection not found"),
+            ApiResponse(
+                responseCode = "400",
+                description = "Repository connection not found, or its source is disabled",
+            ),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
         ],
@@ -298,9 +302,10 @@ internal class BitbucketConnectionController(
      * Re-ingests every connected repository.
      *
      * Each repository is updated on its own, so one repository whose credential was revoked does not
-     * stop the others. A single transaction id covers the whole batch, which is what callers follow.
+     * stop the others. Disabled repositories are skipped rather than updated: a batch call is not a
+     * reason to wake a source the caller paused.
      *
-     * @return 202 with the transaction id shared by the whole batch.
+     * @return 202 with one transaction id per updated `workspace/slug`.
      */
     @Operation(
         summary = "Update all connected Bitbucket repositories",
@@ -311,7 +316,7 @@ internal class BitbucketConnectionController(
         value = [
             ApiResponse(
                 responseCode = "202",
-                description = "Batch update accepted; the transaction id is returned",
+                description = "Batch update accepted; one transaction id per updated repository is returned",
                 content = [Content(schema = Schema(implementation = UpdateAllBitbucketRepositoriesResponse::class))],
             ),
             ApiResponse(responseCode = "401", description = "Authentication required"),

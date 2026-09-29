@@ -93,7 +93,8 @@ internal class BitbucketConnectionService(
         return ConnectBitbucketRepositoriesResponse(transactionIdsByRepository)
     }
 
-    @Tracked("ConnectBitbucketRepository")
+    @Suppress("ThrowsCount")
+    @Tracked("Connecting a bitbucket repository if valid")
     suspend fun connectRepositoryIfExists(
         authId: String,
         request: ConnectBitbucketRepositoryRequest,

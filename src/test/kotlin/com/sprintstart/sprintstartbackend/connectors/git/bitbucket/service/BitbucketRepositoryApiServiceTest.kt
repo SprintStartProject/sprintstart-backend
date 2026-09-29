@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import io.mockk.every
@@ -8,6 +9,7 @@ import io.mockk.slot
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
@@ -65,6 +67,66 @@ class BitbucketRepositoryApiServiceTest {
     }
 
     @Test
+    fun `getSourceInstances derives the browser url and status of a connected repository`() {
+        val syncAt = Instant.parse("2026-07-06T12:00:00Z")
+        val linked = connection().apply {
+            lastPullRequestsSyncAt = syncAt
+        }
+        every { connectionRepository.findAll() } returns listOf(linked)
+
+        val result = service.getSourceInstances().single()
+
+        assertThat(result.repositoryId).isEqualTo(repositoryId)
+        assertThat(result.workspace).isEqualTo("sprintstart")
+        assertThat(result.slug).isEqualTo("backend")
+        assertThat(result.sourceUrl).isEqualTo("https://bitbucket.org/sprintstart/backend")
+        assertThat(result.status).isEqualTo("CONNECTED")
+        assertThat(result.enabled).isTrue()
+        assertThat(result.lastPullRequestsSyncAt).isEqualTo(syncAt)
+    }
+
+    /**
+     * A paused repository must not be reported as actively connected, whatever its last run did.
+     */
+    @Test
+    fun `getSourceInstances reports a disabled repository as DISABLED regardless of its connection state`() {
+        val paused = connection().apply {
+            sourceEnabled = false
+            connectionState = ConnectionState.FAILED
+        }
+        every { connectionRepository.findAll() } returns listOf(paused)
+
+        val result = service.getSourceInstances().single()
+
+        assertThat(result.status).isEqualTo("DISABLED")
+        assertThat(result.enabled).isFalse()
+    }
+
+    @Test
+    fun `getSourceInstances orders repositories by workspace then slug`() {
+        every { connectionRepository.findAll() } returns listOf(
+            connection(workspace = "zeta", slug = "alpha"),
+            connection(workspace = "acme", slug = "zulu"),
+            connection(workspace = "acme", slug = "alpha"),
+        )
+
+        val result = service.getSourceInstances()
+
+        assertThat(result.map { "${it.workspace}/${it.slug}" })
+            .containsExactly("acme/alpha", "acme/zulu", "zeta/alpha")
+    }
+
+    @Test
+    fun `getSourceInstances filters by project id when provided`() {
+        val projectId = UUID.randomUUID()
+        every { connectionRepository.findAllByProjectId(projectId) } returns listOf(connection())
+
+        val result = service.getSourceInstances(projectId).single()
+
+        assertThat(result.repositoryId).isEqualTo(repositoryId)
+    }
+
+    @Test
     fun `removeProjectFromAllRepositories drops the project from every linked connection`() {
         val projectId = UUID.randomUUID()
         val otherProjectId = UUID.randomUUID()
@@ -100,11 +162,16 @@ class BitbucketRepositoryApiServiceTest {
         assertThat(saved.captured).isEmpty()
     }
 
-    private fun connection(projectIds: MutableSet<UUID> = mutableSetOf()) =
+    private fun connection(
+        id: UUID = repositoryId,
+        workspace: String = "sprintstart",
+        slug: String = "backend",
+        projectIds: MutableSet<UUID> = mutableSetOf(),
+    ) =
         BitbucketConnection(
-            id = repositoryId,
-            workspace = "sprintstart",
-            slug = "backend",
+            id = id,
+            workspace = workspace,
+            slug = slug,
             credentialAuthId = "auth-id",
             credentialName = "team-token",
             projectIdsInternal = projectIds,

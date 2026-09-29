@@ -101,11 +101,14 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
 }
 
 /**
- * The `ESCAPE` character the prefix queries above declare.
+ * The `ESCAPE` character the prefix queries declare.
  *
  * A backslash would be the conventional choice, but it is also an escape character in Kotlin, in
  * JPQL and in some JDBC drivers, and has to survive all three unchanged. `!` cannot appear in a
  * GitHub repository name or a host name at all, so it never even has to be escaped in practice.
+ *
+ * Visible to the rest of the package so [ArtifactRepository]'s prefix counts declare the same
+ * escape character as these queries instead of repeating a literal that must stay in step.
  */
 internal const val LIKE_ESCAPE = "!"
 

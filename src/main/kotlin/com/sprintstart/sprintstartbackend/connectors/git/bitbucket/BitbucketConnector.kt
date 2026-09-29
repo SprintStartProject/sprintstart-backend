@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketConnectionService
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.bitbucketRepositoryUrl
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
 import org.springframework.stereotype.Component
@@ -10,13 +11,9 @@ import java.util.UUID
 /**
  * Registers the Bitbucket connector with the connector overview.
  *
- * Deliberately reports no sources yet: source lookup needs the connection service that this
- * connector's module still grows, and returning an empty list is the honest answer until then —
- * the overview treats a connector without sources as connectable but empty rather than broken.
- *
- * Once sources exist, a connection maps to `ConnectorSource(id = "$workspace/$slug",
- * url = "https://bitbucket.org/$workspace/$slug", enabled = sourceEnabled)`, mirroring the
- * GitHub connector.
+ * A connection maps to `ConnectorSource(id = "$workspace/$slug", name = slug,
+ * url = <browser url>, enabled = sourceEnabled)`, mirroring the GitHub connector. The URL is built
+ * by the same helper the ingestion status view uses, so both report the same repository address.
  */
 @Component
 internal class BitbucketConnector(
@@ -42,7 +39,7 @@ internal class BitbucketConnector(
         ConnectorSource(
             id = "$workspace/$slug",
             name = slug,
-            url = "https://bitbucket.org/$workspace/$slug", // TODO:
+            url = bitbucketRepositoryUrl(workspace, slug),
             enabled = sourceEnabled,
         )
 }

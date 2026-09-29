@@ -201,8 +201,13 @@ class BitbucketPullRequestsServiceTest {
         verify(exactly = 0) { eventPublisher.publishEvent(any<Any>()) }
     }
 
+    /**
+     * A credential that can no longer be resolved must still close the pull-request phase. A run is
+     * only finalized once every phase has reported, so a phase that died before opening itself would
+     * leave the run open forever rather than failing it.
+     */
     @Test
-    fun `fails when the connection credential is missing`() = runTest {
+    fun `closes the pull request phase when the connection credential is missing`() = runTest {
         every { connectionRepository.findById(connection.id) } returns Optional.of(connection)
         every { credentialApi.findSecret("auth-id", "team-token") } returns null
 
@@ -211,7 +216,15 @@ class BitbucketPullRequestsServiceTest {
         }
 
         coVerify(exactly = 0) { bitbucketClient.fetchAllPullRequests(any(), any(), any(), any()) }
-        verify(exactly = 0) { eventPublisher.publishEvent(any<Any>()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is BitbucketPullRequestsFetchingStartedEvent })
+        }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(match<Any> { it is BitbucketPullRequestsFetchingFailedEvent })
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is BitbucketPullRequestsFetchingCompletedEvent })
+        }
     }
 
     // ── mapping ───────────────────────────────────────────────────────────────

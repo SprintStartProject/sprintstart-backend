@@ -58,7 +58,7 @@ internal class BitbucketRepositoryProjectService(
     suspend fun addProjectToRepository(
         authId: String,
         repositoryId: UUID,
-        projectId: UUID
+        projectId: UUID,
     ): Set<UUID> = withContext(Dispatchers.IO) {
         requireProjectAccess(authId, projectId)
 
