@@ -36,12 +36,12 @@ class BuddyTeamMessage(
     @Column(nullable = false)
     val opening: Boolean = false,
     /**
-     * The team areas this reply opened, as a comma-separated list of area names; null when it opened
-     * none, and for every message written before the column existed.
+     * The team areas this reply opened or used a tool of, as a comma-separated list of area names; null
+     * when none, and for every message written before the column existed.
      *
-     * Read back on the manager's later messages of the same visit so that an area opened to draft
-     * something is still open when they say "yes, send it". The transcript holds text only, so without
-     * this the tools that make the change are gone by the time the manager approves, and the model has
+     * Read back from the latest few replies of the visit so that an area opened to draft something is
+     * still open when the manager says "yes, send it". The transcript holds text only, so without this
+     * the tools that make the change are gone by the time the manager approves, and the model has
      * nothing to call.
      */
     @Column(name = "opened_areas", nullable = true)

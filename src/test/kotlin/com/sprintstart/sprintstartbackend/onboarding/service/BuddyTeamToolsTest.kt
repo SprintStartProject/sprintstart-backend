@@ -396,13 +396,24 @@ class BuddyTeamToolsTest {
     }
 
     @Test
-    fun `open_area's definition says an area stays open for the visit, and forbids inventing a confirmation`() {
+    fun `open_area's definition says an area stays open for a few replies, and forbids inventing a confirmation`() {
         val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
 
         val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
 
-        assertThat(description).contains("stays open for the rest of this visit")
+        assertThat(description).contains("stays open for your next few replies")
         assertThat(description).contains("open its area first")
         assertThat(description).contains("Never say something has been offered for confirmation unless a tool")
+    }
+
+    @Test
+    fun `knows the area of every read tool and action, and of nothing else`() {
+        val tools = tools(knowledgeArea, actions = listOf(action("create_arrival_steps", TeamArea.ARRIVAL)))
+
+        assertThat(tools.areaOf("list_open_escalations")).isEqualTo(TeamArea.KNOWLEDGE)
+        assertThat(tools.areaOf("create_arrival_steps")).isEqualTo(TeamArea.ARRIVAL)
+        assertThat(tools.areaOf(BuddyTeamTools.FIND_MEMBER)).isNull()
+        assertThat(tools.areaOf(BuddyTeamTools.OPEN_AREA)).isNull()
+        assertThat(tools.areaOf("not_a_tool")).isNull()
     }
 }

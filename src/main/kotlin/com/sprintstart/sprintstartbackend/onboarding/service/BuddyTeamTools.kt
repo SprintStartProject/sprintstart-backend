@@ -73,6 +73,16 @@ class BuddyTeamTools(
         }
 
     /**
+     * The area [toolName] belongs to, whether a read tool or an action; `null` for the team reads,
+     * `open_area` and names that are no tool at all.
+     */
+    fun areaOf(toolName: String): TeamArea? =
+        areaTools.values.firstOrNull { it.handles(toolName) }?.area
+            ?: buddyProposalService.actionAreas().firstOrNull { area ->
+                buddyProposalService.actionSpecs(setOf(area)).any { it.name == toolName }
+            }
+
+    /**
      * Opens the area the model named, so its tools are mounted from the next hop on.
      *
      * @return The area opened, or `null` with the reason when no such area has tools.
@@ -279,10 +289,10 @@ class BuddyTeamTools(
             name = OPEN_AREA,
             description = "Open one area of the manager's work so its tools become available on your next " +
                 "step. Open an area only when the manager asks about something in it; its tools are not " +
-                "available until you have opened it. An area stays open for the rest of this visit, so you " +
-                "do not open it again to act on something you discussed. If a tool you need is not there, " +
-                "open its area first. Never say something has been offered for confirmation unless a " +
-                "tool of an opened area did it.\n\nThe areas:\n" +
+                "available until you have opened it. An area you open or use stays open for your next few " +
+                "replies, so you do not open it again to act on something you discussed. If a tool you need " +
+                "is not there, open its area first. Never say something has been offered for confirmation " +
+                "unless a tool of an opened area did it.\n\nThe areas:\n" +
                 openableAreas().sorted().joinToString("\n") { "- ${it.name.lowercase()}: ${it.summary}" },
             parameters = buildJsonObject {
                 put("type", "object")

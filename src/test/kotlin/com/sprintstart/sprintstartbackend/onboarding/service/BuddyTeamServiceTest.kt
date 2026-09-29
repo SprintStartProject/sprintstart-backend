@@ -76,6 +76,7 @@ class BuddyTeamServiceTest {
         every { buddyTeamMessageRepository.save(any()) } answers { firstArg() }
         every { buddyTeamTools.toolSpecs(any()) } returns listOf(spec(BuddyTeamTools.GET_TEAM_ATTENTION))
         every { buddyProposalService.isAction(any()) } returns false
+        every { buddyTeamTools.areaOf(any()) } returns null
     }
 
     /**
@@ -273,7 +274,7 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `an area that was only carried over is not carried again`() = runTest {
+    fun `an area that was only carried over, and not used, is not stored again`() = runTest {
         asTranscript(reply(opened = "KNOWLEDGE"))
         val saved = savedReplies()
         mountedOnEachHop()
@@ -330,7 +331,7 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `every area the visit opened stays mounted`() = runTest {
+    fun `every area the latest replies opened stays mounted`() = runTest {
         asTranscript(reply(opened = "KNOWLEDGE"), reply(opened = "TEAM,ARRIVAL"))
         val mountedSets = mountedOnEachHop()
         coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
@@ -338,6 +339,92 @@ class BuddyTeamServiceTest {
         service.sendMessageForMe(authId, projectId, "go ahead").toList()
 
         assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE, TeamArea.TEAM, TeamArea.ARRIVAL))
+    }
+
+    /** The bound on the reviewer's concern: a conversation moving on must not keep every area's tools. */
+    @Test
+    fun `an area left alone for the whole window closes`() = runTest {
+        asTranscript(
+            reply(opened = "KNOWLEDGE"),
+            *Array(AREA_OPEN_FOR_REPLIES) { reply(content = "Something else.") },
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
+
+        service.sendMessageForMe(authId, projectId, "and now?").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet())
+    }
+
+    private fun toolCall(name: String) =
+        BuddyAgentResponse(
+            final = false,
+            messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+            pendingToolCalls = listOf(BuddyToolCallDto(id = "c1", name = name)),
+        )
+
+    @Test
+    fun `a carried-over area whose tool runs is stored again, so it stays open while it is in use`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"))
+        val saved = savedReplies()
+        every { buddyTeamTools.toolSpecs(any()) } returns
+            listOf(spec(BuddyTeamTools.OPEN_AREA), spec("list_open_escalations"))
+        every { buddyTeamTools.areaOf("list_open_escalations") } returns TeamArea.KNOWLEDGE
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "One open question."
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+            listOf(toolCall("list_open_escalations"), finalReply("There is one."))
+
+        service.sendMessageForMe(authId, projectId, "anything else open?").toList()
+
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+    }
+
+    /**
+     * The reviewer's blocker: the draft was written without opening the knowledge area, so "send it" had
+     * no action mounted. The backend knows which area the action is in and opens it itself; the action is
+     * not run on the hop it was not mounted for, and the model is asked to call it again.
+     */
+    @Test
+    fun `calling an action of an area that is not open opens the area instead of running it`() = runTest {
+        val saved = savedReplies()
+        val mountedSets = mountedOnEachHop()
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany
+            listOf(toolCall("answer_escalation"), finalReply("Confirm below."))
+
+        val events = service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
+        assertThat(
+            requests
+                .last()
+                .messages
+                .last()
+                .content,
+        ).contains("knowledge area")
+            .contains("call answer_escalation again")
+        assertThat(events.single { it.type == "tool_use" }.name).isEqualTo(BuddyTeamTools.OPEN_AREA)
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+        verify(exactly = 0) { buddyProposalService.propose(any(), any()) }
+        verify(exactly = 0) { buddyTeamTools.execute(any(), any(), any()) }
+    }
+
+    @Test
+    fun `nothing is opened for a call when open_area itself is not mounted`() = runTest {
+        val mountedSets = mutableListOf<Set<TeamArea>>()
+        every { buddyTeamTools.toolSpecs(any()) } answers {
+            mountedSets.add(firstArg<Set<TeamArea>>().toSet())
+            listOf(spec(BuddyTeamTools.GET_TEAM_ATTENTION))
+        }
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "The tool answer_escalation is not available."
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+            listOf(toolCall("answer_escalation"), finalReply("I cannot do that here."))
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), emptySet())
     }
 
     @Test

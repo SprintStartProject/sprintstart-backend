@@ -146,9 +146,9 @@ class BuddyTeamService(
         // Read before saving the new message so it is not sent to the AI twice.
         val transcript = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
         val history = transcript.drop(session.summarizedCount).map { it.toAgentMessage() }
-        // Everything the visit has opened, from the whole transcript rather than the unfolded part: a fold
-        // must not close an area the manager is still working in.
-        val carriedOver = transcript.areasOpenedThisVisit()
+        // What the latest replies opened or used, from the whole transcript rather than the unfolded part: a
+        // fold must not close an area the manager is still working in.
+        val carriedOver = transcript.areasStillOpen()
 
         buddyTeamMessageRepository.save(
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
@@ -166,7 +166,7 @@ class BuddyTeamService(
             while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
                 step++
                 // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
-                // one opened earlier in the visit is mounted from the first.
+                // one the latest replies opened or used is mounted from the first.
                 val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
                 val response = onboardingAiClient.buddyAgentTurn(
                     BuddyAgentRequest(
@@ -214,8 +214,8 @@ class BuddyTeamService(
                     session = session,
                     role = BuddyMessageRole.ASSISTANT,
                     content = reply,
-                    // Only what this reply opened; the visit's areas are read back from these.
-                    openedAreas = areas.openedThisTurn.encoded(),
+                    // What this reply opened or used; the next message reads the latest replies' back.
+                    openedAreas = areas.activeThisTurn.encoded(),
                 ),
             )
             compactInBackground(userId, projectId)
@@ -236,6 +236,10 @@ class BuddyTeamService(
         mountedToolNames: Set<String>,
         areas: OpenAreas,
     ): String {
+        openAreaOf(call, mountedToolNames, areas)?.let { return it }
+        if (call.name in mountedToolNames) {
+            buddyTeamTools.areaOf(call.name)?.let { areas.use(it) }
+        }
         if (call.name in mountedToolNames && buddyProposalService.isAction(call.name)) {
             val outcome = buddyProposalService.propose(call, context)
             outcome.proposal?.let { proposal ->
@@ -259,6 +263,33 @@ class BuddyTeamService(
             return outcome.toolResult
         }
         return buddyTeamTools.execute(call, context, mountedToolNames)
+    }
+
+    /**
+     * Opens the area of a tool the model called before it was mounted, and asks it to call again.
+     *
+     * The model is told to open an area first, but that is an instruction, not a guarantee: a draft written
+     * without opening the knowledge area leaves "yes, send it" with nothing to call. The backend knows which
+     * area every tool belongs to, so it opens it itself. The call is not run on this hop: its arguments
+     * were written without the tool's description, and nothing runs that was not mounted for the hop it was
+     * called on. Only when `open_area` is mounted, so never with capabilities off.
+     *
+     * @return What to tell the model, or `null` when the call is not for an unopened area.
+     */
+    private suspend fun FlowCollector<BuddyStreamEvent>.openAreaOf(
+        call: BuddyToolCallDto,
+        mountedToolNames: Set<String>,
+        areas: OpenAreas,
+    ): String? {
+        if (call.name in mountedToolNames || BuddyTeamTools.OPEN_AREA !in mountedToolNames) {
+            return null
+        }
+        val area = buddyTeamTools.areaOf(call.name) ?: return null
+        logger.info("Team buddy called {} before opening its area; opening {}", call.name, area)
+        emit(BuddyStreamEvent(type = "tool_use", name = BuddyTeamTools.OPEN_AREA, kind = "tool"))
+        areas.open(area)
+        return "${call.name} belongs to the ${area.name.lowercase()} area, which was not open. It is open now: " +
+            "call ${call.name} again on your next step. Nothing has been done or offered yet."
     }
 
     private suspend fun FlowCollector<BuddyStreamEvent>.finishOpen(

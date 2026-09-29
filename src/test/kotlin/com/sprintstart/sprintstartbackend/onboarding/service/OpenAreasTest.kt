@@ -5,11 +5,11 @@ import org.junit.jupiter.api.Test
 
 class OpenAreasTest {
     @Test
-    fun `an area that was carried over is mounted but not recorded as opened this turn`() {
+    fun `an area that was carried over is mounted but not recorded as active this turn`() {
         val areas = OpenAreas(carriedOver = setOf(TeamArea.KNOWLEDGE))
 
         assertThat(areas.mounted).containsExactly(TeamArea.KNOWLEDGE)
-        assertThat(areas.openedThisTurn).isEmpty()
+        assertThat(areas.activeThisTurn).isEmpty()
     }
 
     @Test
@@ -20,7 +20,18 @@ class OpenAreasTest {
         areas.open(TeamArea.ARRIVAL)
 
         assertThat(areas.mounted).containsExactlyInAnyOrder(TeamArea.KNOWLEDGE, TeamArea.ARRIVAL)
-        assertThat(areas.openedThisTurn).containsExactlyInAnyOrder(TeamArea.KNOWLEDGE, TeamArea.ARRIVAL)
+        assertThat(areas.activeThisTurn).containsExactlyInAnyOrder(TeamArea.KNOWLEDGE, TeamArea.ARRIVAL)
+    }
+
+    @Test
+    fun `using a mounted area records it, using one that is not mounted does not`() {
+        val areas = OpenAreas(carriedOver = setOf(TeamArea.KNOWLEDGE))
+
+        areas.use(TeamArea.KNOWLEDGE)
+        areas.use(TeamArea.ARRIVAL)
+
+        assertThat(areas.mounted).containsExactly(TeamArea.KNOWLEDGE)
+        assertThat(areas.activeThisTurn).containsExactly(TeamArea.KNOWLEDGE)
     }
 
     @Test
