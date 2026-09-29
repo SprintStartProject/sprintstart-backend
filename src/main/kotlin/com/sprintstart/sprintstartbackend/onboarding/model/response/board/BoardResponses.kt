@@ -51,6 +51,21 @@ data class BoardCardResponse(
      * notice different words under their own card.
      */
     val lastChange: BoardCardChangeResponse? = null,
+    /**
+     * What this card said before its most recent content edit, and whose edit replaced it; null
+     * for a card never edited, and for every live card.
+     *
+     * The hire's own words, not a label saying something changed: somebody who finds different text
+     * on their note needs to be able to read what was there, and to put it back.
+     */
+    val previous: BoardCardPreviousResponse? = null,
+)
+
+/** The one previous version of an authored card, and the edit that replaced it. */
+data class BoardCardPreviousResponse(
+    val content: BoardCardContent,
+    val replacedBy: BoardActor,
+    val replacedAt: Instant,
 )
 
 /** One change to a card: what it was, whose, and when. Always all three or none at all. */

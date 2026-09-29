@@ -6,7 +6,6 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPayload
@@ -16,13 +15,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toLastChangeRe
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
@@ -443,15 +437,55 @@ class BoardService(
     fun editAuthoredCard(userId: UUID, cardId: UUID, request: AuthoredCardRequest): BoardCardResponse {
         val (card, board) = editableCardOrThrow(userId, cardId, request.kind)
 
-        val before = card.payload
-        card.payload = json.encodeToString(request.toPayload())
-        card.recordChange(changeBetween(before, card.payload), BoardActor.HIRE)
-        boardCardRepository.save(card)
+        val next = json.encodeToString(request.toPayload())
+        if (card.replacePayload(next, changeBetween(card.payload, next), BoardActor.HIRE)) {
+            boardCardRepository.save(card)
+        }
 
         val member = memberOrNull(userId, board.projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
         val arrivalSteps = arrivalStepService.forHire(member.userId)
         return card.toResponse(member, board.projectId, timeline = null, arrivalSteps = arrivalSteps)
+    }
+
+    /**
+     * Puts one of the hire's cards back to what it said before its most recent edit — theirs or the
+     * buddy's.
+     *
+     * **Restoring is itself an edit.** The content being replaced becomes the new previous version,
+     * so an undo can be undone, and the card records that the hire made it. Nothing older is kept:
+     * a depth of one is what undo needs (see [BoardCard.previousPayload]).
+     *
+     * @param replacedAt When the edit being undone happened, as the hire saw it. When given and no
+     * longer the card's latest edit, nothing is restored.
+     * @throws ResponseStatusException 404 when the card is not one of theirs; 409 when it is off
+     * their board, has nothing to restore, or has been edited again since the undo was offered.
+     */
+    @Transactional
+    fun restorePreviousContent(userId: UUID, cardId: UUID, replacedAt: Instant?): BoardCardResponse {
+        val (card, board) = editableCardOrThrow(userId, cardId, kind = null)
+        val onBoard = card.state == BoardCardState.ACTIVE
+        val stale = replacedAt != null && replacedAt != card.previousReplacedAt
+        val previous = card.previousPayload?.takeIf { onBoard && !stale } ?: throw ResponseStatusException(
+            HttpStatus.CONFLICT,
+            when {
+                !onBoard -> "That card is not on your board — bring it back first"
+                stale -> "That card has changed since — nothing was undone"
+                else -> "That card has no earlier version to go back to"
+            },
+        )
+
+        card.replacePayload(previous, BoardCardChange.EDITED, BoardActor.HIRE)
+        boardCardRepository.save(card)
+
+        val member = memberOrNull(userId, board.projectId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
+        return card.toResponse(
+            member,
+            board.projectId,
+            timeline = null,
+            arrivalSteps = arrivalStepService.forHire(userId),
+        )
     }
 
     /**
@@ -484,13 +518,16 @@ class BoardService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
         }
 
-        card.payload = json.encodeToString<BoardCardPayload>(
-            existing.copy(
-                items = existing.items +
-                    added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(
+                existing.copy(
+                    items = existing.items +
+                        added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+                ),
             ),
+            BoardCardChange.EDITED,
+            BoardActor.BUDDY,
         )
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
         boardCardRepository.save(card)
 
         return card.toResponse(
@@ -535,8 +572,11 @@ class BoardService(
         }
         if (ticked == 0) return 0
 
-        card.payload = json.encodeToString<BoardCardPayload>(existing.copy(items = items))
-        card.recordChange(BoardCardChange.TICKED, BoardActor.BUDDY)
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(existing.copy(items = items)),
+            BoardCardChange.TICKED,
+            BoardActor.BUDDY,
+        )
         boardCardRepository.save(card)
 
         return ticked
@@ -573,15 +613,19 @@ class BoardService(
         val matches = existing.items.filter { it.text.trim().lowercase() == wanted }
         if (matches.size != 1) return false
 
-        card.payload = json.encodeToString<BoardCardPayload>(
-            existing.copy(
-                items = existing.items.map { item ->
-                    if (item.id == matches.first().id) item.copy(text = words) else item
-                },
-            ),
+        val reworded = existing.copy(
+            items = existing.items.map { item ->
+                if (item.id == matches.first().id) item.copy(text = words) else item
+            },
         )
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
-        boardCardRepository.save(card)
+        if (card.replacePayload(
+                json.encodeToString<BoardCardPayload>(reworded),
+                BoardCardChange.EDITED,
+                BoardActor.BUDDY,
+            )
+        ) {
+            boardCardRepository.save(card)
+        }
 
         return true
     }
@@ -613,9 +657,9 @@ class BoardService(
             request
         }
 
-        card.payload = json.encodeToString(content.toPayload())
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
-        boardCardRepository.save(card)
+        if (card.replacePayload(json.encodeToString(content.toPayload()), BoardCardChange.EDITED, BoardActor.BUDDY)) {
+            boardCardRepository.save(card)
+        }
 
         return card.toResponse(
             member,
@@ -762,26 +806,6 @@ class BoardService(
     }
 
     /**
-     * What is still outstanding before this hire can work, counted by how each step was settled.
-     *
-     * The same read the hire's own `GET /me/arrival` serves, so the card and that endpoint cannot
-     * disagree — the rule every other card here follows.
-     *
-     * Counted per rigor and never totalled. A step the system observed and a step somebody
-     * ticked are different facts, and a single blended figure here would be meaningless.
-     */
-    private fun arrivalStepsContent(steps: List<ResolvedArrivalStep>): ArrivalStepsContent {
-        val responses: List<ArrivalStepResponse> = steps.map { it.toResponse() }
-
-        return ArrivalStepsContent(
-            steps = responses,
-            observedCount = responses.count { it.rigor == Rigor.OBSERVED },
-            declaredCount = responses.count { it.rigor == Rigor.DECLARED },
-            outstandingCount = responses.count { !it.settled },
-        )
-    }
-
-    /**
      * The hire's ledger, split at the bar rather than summed into a percentage.
      *
      * The same read and the same level-0 exclusion as the buddy's `get_my_competencies` tool.
@@ -798,13 +822,6 @@ class BoardService(
             inProgress = inProgress.map { it.toBoardResponse() },
         )
     }
-
-    private fun MyCompetencyResponse.toBoardResponse() = BoardCompetencyResponse(
-        competencyKey = competencyKey,
-        label = label,
-        level = level,
-        targetLevel = targetLevel,
-    )
 
     /**
      * What the mentor remembers, read and never written.
@@ -841,34 +858,6 @@ class BoardService(
             closedAtSource = task?.status == ProposalStatus.STALE,
         )
     }
-
-    /**
-     * The path card's content, from the same timeline the PM dashboard reads.
-     *
-     * A hire with no timeline at all still gets the card, with every moment unreached: "nothing has
-     * happened yet" is the honest day-one state and is exactly what somebody on day one should see,
-     * rather than a card that is missing until they have already made progress.
-     */
-    private fun pathContent(
-        member: ProjectMember,
-        timeline: HireTimelineResponse?,
-    ): PathToFirstContributionContent = PathToFirstContributionContent(
-        moments = listOf(
-            // Joined comes from the membership rather than the timeline, so it is still shown when
-            // there is no timeline to read.
-            BoardMomentResponse(BoardMomentKey.JOINED, member.joinedAt),
-            BoardMomentResponse(BoardMomentKey.TASK_CLAIMED, timeline?.firstTaskClaimedAt),
-            // The timeline's field names still say "pull request"; the values behind them are
-            // composed from contributions of any kind, which is why the card can name them
-            // generally.
-            BoardMomentResponse(BoardMomentKey.WORK_SUBMITTED, timeline?.firstContributionOpenedAt),
-            BoardMomentResponse(BoardMomentKey.FIRST_RESPONSE, timeline?.firstResponseAt),
-            BoardMomentResponse(BoardMomentKey.WORK_ACCEPTED, timeline?.firstContributionAcceptedAt),
-        ),
-        acceptedCount = timeline?.acceptedContributionCount ?: 0,
-        autonomyReachedAt = timeline?.autonomyReachedAt,
-        stalledReason = timeline?.stalledReason,
-    )
 
     private fun openPullRequestsContent(
         member: ProjectMember,
@@ -909,6 +898,7 @@ class BoardService(
         placedAt = placedAt,
         content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps, matches),
         lastChange = toLastChangeResponse(),
+        previous = toPreviousResponse(),
     )
 
     /**
@@ -921,14 +911,14 @@ class BoardService(
     private fun editableCardOrThrow(
         userId: UUID,
         cardId: UUID,
-        kind: BoardCardKind,
+        kind: BoardCardKind?,
     ): Pair<BoardCard, Board> {
         val card = boardCardRepository.findById(cardId).orElse(null)
         val board = card?.let { boardRepository.findById(it.boardId).orElse(null) }
         val refusal = when {
             card == null || board == null || board.userId != userId || card.owner != BoardCardOwner.HIRE ->
                 ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
-            card.kind != kind ->
+            kind != null && card.kind != kind ->
                 ResponseStatusException(HttpStatus.BAD_REQUEST, "That card is a ${card.kind}, not a $kind")
             else -> null
         }

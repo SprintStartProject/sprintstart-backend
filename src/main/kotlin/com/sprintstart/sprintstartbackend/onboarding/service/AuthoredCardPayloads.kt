@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.board.Checkli
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardPreviousResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ChecklistItemResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.LinkContent
@@ -145,3 +146,11 @@ internal fun AuthoredCardRequest.toPayload(): BoardCardPayload = when (this) {
 
 private fun String.requireContent(message: String): String =
     trim().ifBlank { throw ResponseStatusException(HttpStatus.BAD_REQUEST, message) }
+
+/** The previous version, decoded — all three snapshot columns, or nothing. */
+internal fun BoardCard.toPreviousResponse(): BoardCardPreviousResponse? {
+    val content = previousPayload ?: return null
+    val by = previousReplacedBy ?: return null
+    val at = previousReplacedAt ?: return null
+    return BoardCardPreviousResponse(content = authoredContent(content), replacedBy = by, replacedAt = at)
+}

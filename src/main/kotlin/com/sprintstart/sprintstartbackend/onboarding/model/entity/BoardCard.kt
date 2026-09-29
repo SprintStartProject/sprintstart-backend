@@ -107,7 +107,58 @@ class BoardCard(
     var lastChangedBy: BoardActor? = null,
     @Column(name = "last_changed_at")
     var lastChangedAt: Instant? = null,
+    /**
+     * What this card said before its most recent content edit, whole — or null when it has never
+     * been edited. Authored cards only.
+     *
+     * The undo for an edit. While only the hire could edit, replacing content outright was fine:
+     * the only person who could lose their words was the one choosing to. Once the buddy can rewrite
+     * a hire's note, an unrecoverable overwrite is a real way to lose somebody's work.
+     *
+     * **A depth of one, on the row, on purpose.** Undo needs the content an edit replaced and
+     * nothing older; anything deeper is a version history nobody has asked for. Keeping it here
+     * rather than in a table of snapshots is what bounds it: the next edit supersedes this one, so
+     * a card holds at most one previous version however often it changes. Whole content rather than
+     * a diff, for the reason edits are whole — a patch language for a three-line note would be more
+     * machinery than the note.
+     *
+     * Written only through [replacePayload], together with [previousReplacedBy] and
+     * [previousReplacedAt], which say whose edit and when this content was replaced — hire and
+     * buddy alike, so the history reads the same whoever made it.
+     */
+    @Column(name = "previous_payload", columnDefinition = "TEXT")
+    var previousPayload: String? = null,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "previous_replaced_by")
+    var previousReplacedBy: BoardActor? = null,
+    @Column(name = "previous_replaced_at")
+    var previousReplacedAt: Instant? = null,
 ) {
+    /**
+     * Replaces this card's content, keeping what it said before as the one previous version.
+     *
+     * The single way an authored card's content changes after creation, so no edit can skip the
+     * snapshot. An edit that leaves the content exactly as it was is not an edit: it records
+     * nothing and, more importantly, does not overwrite the previous version — a no-op save must not
+     * be what takes away the undo for a real change made just before it.
+     *
+     * @return Whether anything changed.
+     */
+    fun replacePayload(
+        newPayload: String,
+        change: BoardCardChange,
+        by: BoardActor,
+        at: Instant = Instant.now(),
+    ): Boolean {
+        if (newPayload == payload) return false
+        previousPayload = payload
+        previousReplacedBy = by
+        previousReplacedAt = at
+        payload = newPayload
+        recordChange(change, by, at)
+        return true
+    }
+
     /**
      * Notes who just changed this card and how, and bumps [updatedAt] with it.
      *

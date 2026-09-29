@@ -212,6 +212,35 @@ class BoardControllerTest(
             ).andExpect(status().isOk)
     }
 
+    /** The time of the edit being undone reaches the service, so a stale undo can be refused. */
+    @Test
+    fun `restorePreviousContent passes on which edit the caller is undoing`() {
+        val cardId = UUID.randomUUID()
+        val replacedAt = java.time.Instant.parse("2026-09-29T10:15:30Z")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, replacedAt) } returns noteCard()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"replacedAt":"2026-09-29T10:15:30Z"}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+    }
+
+    /** No body is an older client: it still works, only without the staleness check. */
+    @Test
+    fun `restorePreviousContent works without a body`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null) } returns noteCard()
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous").with(userJwt))
+            .andExpect(status().isOk)
+    }
+
     @Test
     fun `tickPathStepTask ticks the task and returns the refreshed card`() {
         val cardId = UUID.randomUUID()

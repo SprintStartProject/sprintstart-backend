@@ -39,6 +39,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardM
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
@@ -1733,5 +1734,148 @@ class BoardServiceTest {
         service.appendChecklistItems(hireId, projectId, card.id, listOf("Open a PR"))
         assertEquals(BoardCardChange.EDITED, card.lastChange)
         assertEquals(BoardActor.BUDDY, card.lastChangedBy)
+    }
+
+    // -- The previous version of an edited card, and putting it back ------------------------------
+
+    private fun noteOnOwnBoard(text: String = "Deploys run on Thursdays"): BoardCard {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board, text)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        onBoard(card, board)
+        return card
+    }
+
+    private fun textOf(payload: String?): String =
+        assertNotNull(json.decodeFromString<BoardCardPayload>(assertNotNull(payload)) as? NotePayload).text
+
+    /** The hire's own edit is kept the same way as the buddy's, so the history reads the same. */
+    @Test
+    fun `the hire's edit keeps what the note said before, with who replaced it and when`() {
+        val card = noteOnOwnBoard()
+
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "Deploys run on Tuesdays"))
+
+        assertEquals("Deploys run on Thursdays", textOf(card.previousPayload))
+        assertEquals(BoardActor.HIRE, card.previousReplacedBy)
+        assertEquals(card.lastChangedAt, card.previousReplacedAt)
+    }
+
+    @Test
+    fun `a buddy edit keeps what the note said before, and the board shows it`() {
+        val card = noteOnOwnBoard()
+
+        val response = service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            NoteCardRequest(text = "Deploys run on Tuesdays"),
+        )
+
+        assertEquals(BoardActor.BUDDY, card.previousReplacedBy)
+        val previous = assertNotNull(response.previous)
+        assertEquals(NoteContent(text = "Deploys run on Thursdays"), previous.content)
+        assertEquals(BoardActor.BUDDY, previous.replacedBy)
+    }
+
+    /** Depth one: each edit supersedes the last snapshot, so a card never holds more than one. */
+    @Test
+    fun `a second edit replaces the kept version rather than adding to it`() {
+        val card = noteOnOwnBoard("one")
+
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "three"))
+
+        assertEquals("two", textOf(card.previousPayload))
+        assertEquals("three", textOf(card.payload))
+    }
+
+    /** A save that changes nothing must not take away the undo for a real change made just before. */
+    @Test
+    fun `saving a note unchanged keeps the undo for the edit before it`() {
+        val card = noteOnOwnBoard("one")
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "two"))
+
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+
+        assertEquals("one", textOf(card.previousPayload))
+        assertEquals(BoardActor.BUDDY, card.previousReplacedBy)
+    }
+
+    @Test
+    fun `undoing a buddy edit puts the hire's words back, as an edit by the hire`() {
+        val card = noteOnOwnBoard("mine")
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
+
+        val response = service.restorePreviousContent(hireId, card.id, card.previousReplacedAt)
+
+        assertEquals("mine", textOf(card.payload))
+        assertEquals(NoteContent(text = "mine"), response.content)
+        assertEquals(BoardCardChange.EDITED, card.lastChange)
+        assertEquals(BoardActor.HIRE, card.lastChangedBy)
+    }
+
+    /** Restoring is an edit and keeps history too, so the undo can itself be undone. */
+    @Test
+    fun `an undo can be undone`() {
+        val card = noteOnOwnBoard("mine")
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
+        service.restorePreviousContent(hireId, card.id, replacedAt = null)
+
+        service.restorePreviousContent(hireId, card.id, card.previousReplacedAt)
+
+        assertEquals("the buddy's", textOf(card.payload))
+        assertEquals("mine", textOf(card.previousPayload))
+    }
+
+    /**
+     * The undo on screen is for one edit. If the card was edited again since — another tab, another
+     * confirm — restoring anyway would throw away a change the hire never saw.
+     */
+    @Test
+    fun `a stale undo is refused and changes nothing`() {
+        val card = noteOnOwnBoard("one")
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+        val seen = card.previousReplacedAt
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "three")),
+            BoardCardChange.EDITED,
+            BoardActor.BUDDY,
+            assertNotNull(seen).plusSeconds(60),
+        )
+
+        val refusal = assertThrows<ResponseStatusException> {
+            service.restorePreviousContent(hireId, card.id, seen)
+        }
+
+        assertEquals(409, refusal.statusCode.value())
+        assertEquals("three", textOf(card.payload))
+    }
+
+    @Test
+    fun `a card never edited has nothing to undo`() {
+        val card = noteOnOwnBoard()
+
+        val refusal = assertThrows<ResponseStatusException> {
+            service.restorePreviousContent(hireId, card.id, replacedAt = null)
+        }
+
+        assertEquals(409, refusal.statusCode.value())
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Somebody else's card answers the same as a missing one: a 409 would confirm it exists. */
+    @Test
+    fun `undo on a card that is not theirs is a not-found`() {
+        val card = noteOnOwnBoard()
+        every { boardRepository.findById(card.boardId) } returns
+            Optional.of(Board(id = card.boardId, userId = UUID.randomUUID(), projectId = projectId))
+
+        val refusal = assertThrows<ResponseStatusException> {
+            service.restorePreviousContent(hireId, card.id, replacedAt = null)
+        }
+
+        assertEquals(404, refusal.statusCode.value())
     }
 }

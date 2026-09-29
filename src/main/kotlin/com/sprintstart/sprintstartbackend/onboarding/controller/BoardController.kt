@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ReorderBoardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.RestorePreviousContentRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.TickPathStepTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
@@ -184,6 +185,34 @@ class BoardController(
         @PathVariable taskId: UUID,
         @RequestBody request: TickPathStepTaskRequest,
     ): PathStepContent = boardService.tickPathStepTask(resolveUserId(jwt), cardId, taskId, request.done)
+
+    @Operation(
+        summary = "Undo the last edit to a card of mine",
+        description = "Puts a note, link or checklist back to what it said before its most recent " +
+            "edit, whether you or the buddy made it. Undoing is itself an edit, so it can be undone " +
+            "the same way. Send the `replacedAt` of the version you are undoing, from the card's " +
+            "`previous`, and nothing happens if the card has been edited again since.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "The card, as it now reads"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "404", description = "No such card on your board"),
+            ApiResponse(
+                responseCode = "409",
+                description = "The card has no earlier version, or has been edited again since",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/me/board/cards/{cardId}/restore-previous")
+    @PreAuthorize("hasAnyRole('USER', 'PM', 'HR', 'ADMIN')")
+    fun restorePreviousContent(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable cardId: UUID,
+        @RequestBody(required = false) request: RestorePreviousContentRequest?,
+    ): BoardCardResponse = boardService.restorePreviousContent(resolveUserId(jwt), cardId, request?.replacedAt)
 
     @Operation(
         summary = "Arrange my board",

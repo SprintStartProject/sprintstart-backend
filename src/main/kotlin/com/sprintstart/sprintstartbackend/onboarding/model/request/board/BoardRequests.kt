@@ -74,3 +74,16 @@ data class ReorderBoardRequest(
 data class TickPathStepTaskRequest(
     val done: Boolean,
 )
+
+/**
+ * Putting a card back to what it said before its most recent edit.
+ *
+ * [replacedAt] is the time of the edit the hire saw and is undoing, echoed back from the card's
+ * `previous.replacedAt`. It is what stops a stale undo: if the card has been edited again since —
+ * in another tab, or by a buddy change confirmed elsewhere — the undo the hire pressed is no longer
+ * the undo on offer, and restoring anyway would throw away a change they never saw. Optional so an
+ * older client still works; a client that sends it gets the check.
+ */
+data class RestorePreviousContentRequest(
+    val replacedAt: java.time.Instant? = null,
+)
