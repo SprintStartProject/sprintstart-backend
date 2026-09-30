@@ -70,6 +70,18 @@ class UserApiService(
     }
 
     /**
+     * Resolves the external authentication identifier for an internal user ID.
+     *
+     * @param userId Internal user identifier.
+     * @return The matching auth ID when present.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Resolving auth ID by user ID")
+    override fun getAuthIdByUserId(userId: UUID): Optional<String> {
+        return userRepository.findAuthIdById(userId)
+    }
+
+    /**
      * Retrieves a user by their external authentication identifier.
      *
      * @param authId The external authentication identifier of the user.
@@ -259,6 +271,12 @@ class UserApiService(
 
     @Transactional(readOnly = true)
     @Tracked("Checking if user manages project")
+    override fun isAdmin(authId: String): Boolean =
+        userRepository
+            .findByAuthId(authId)
+            .map { user -> Role.ADMIN in user.roles }
+            .orElse(false)
+
     override fun canManageProject(authId: String, projectId: UUID): Boolean {
         val user = userRepository.findByAuthId(authId).orElse(null)
             ?: return false

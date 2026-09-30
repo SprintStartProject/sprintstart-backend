@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
@@ -29,12 +30,26 @@ import java.util.UUID
  * the owning onboarding path. Admin-scoped operations address a user directly by UUID.
  */
 @Service
+// One function per way a path is read or replaced (hire, buddy, PM, team overview); splitting
+// them across classes would scatter the access rules they share.
+@Suppress("TooManyFunctions")
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
     private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
     private val onboardingPositionReader: OnboardingPositionReader,
+    private val blueprintPathRepository: BlueprintPathRepository,
 ) {
+    /**
+     * Where an existing path came from.
+     *
+     * @property builtFromProjectId The project whose blueprint the path was copied from; `null` for
+     * a path built from a system-wide blueprint, or one whose blueprint no longer exists.
+     */
+    data class PathOrigin(
+        val builtFromProjectId: UUID?,
+    )
+
 //  ========================== Methods for users ==========================
 
     /**
@@ -64,6 +79,94 @@ class OnboardingPathService(
             passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
             attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
         )
+    }
+
+    /**
+     * The origin of [userId]'s onboarding path, or `null` when they have none.
+     *
+     * Rebuilding or deleting a path is decided by who manages the project it was built from, so the
+     * rules about replacing a path need this rather than the path itself.
+     *
+     * @param userId Identifier of the path's owner.
+     * @return Where the path came from, or `null` without a path.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Resolving the origin of an onboarding path")
+    fun findPathOrigin(userId: UUID): PathOrigin? =
+        onboardingPathRepository
+            .findByUserId(userId)
+            .map { path ->
+                PathOrigin(
+                    builtFromProjectId = path.blueprintId
+                        ?.let { blueprintPathRepository.findById(it).orElse(null) }
+                        ?.projectId,
+                )
+            }.orElse(null)
+
+    /**
+     * Refuses [callerAuthId] replacing or deleting [userId]'s path when that is not theirs to decide.
+     *
+     * A user's first path is theirs to build, so without a path there is nothing to check. An
+     * existing one holds the user's progress, so throwing it away is a manager's call:
+     *
+     * - **Rebuilding** from [projectId] needs the caller to manage [projectId] and the owner to be
+     *   assigned to it. Where the old path came from does not matter: a user has one path across
+     *   all their projects, and a member who joins project B with a path from A must be able to get
+     *   one for B from B's manager -- otherwise only an admin could ever move them.
+     * - **Deleting** replaces the path with nothing, so it is decided by the project the path was
+     *   built from: the caller must manage that project. A path whose origin is unknown (its
+     *   blueprint was deleted, or it came from a system-wide one) has no manager to vouch for it,
+     *   so only an admin may delete it.
+     *
+     * @param callerAuthId The acting user's auth ID.
+     * @param userId The path's owner.
+     * @param projectId The project a rebuild builds from, or `null` for a deletion.
+     * @throws ResponseStatusException `403` when the caller may not.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Checking whether an onboarding path may be replaced")
+    fun requireMayReplacePath(callerAuthId: String, userId: UUID, projectId: UUID?) {
+        val origin = findPathOrigin(userId) ?: return
+        if (projectId != null) {
+            requireMayRebuildFrom(callerAuthId, userId, projectId)
+            return
+        }
+        val builtFrom = origin.builtFromProjectId
+        val mayDelete = if (builtFrom == null) {
+            userApi.isAdmin(callerAuthId)
+        } else {
+            userApi.canManageProject(callerAuthId, builtFrom)
+        }
+        if (!mayDelete) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                if (builtFrom == null) {
+                    "Only an admin can delete an onboarding path whose project is unknown"
+                } else {
+                    "The onboarding path was built from a project the caller does not manage"
+                },
+            )
+        }
+    }
+
+    private fun requireMayRebuildFrom(callerAuthId: String, userId: UUID, projectId: UUID) {
+        if (!userApi.canManageProject(callerAuthId, projectId)) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the project manager can rebuild an existing onboarding path",
+            )
+        }
+        val ownerAssigned = userApi
+            .getAuthIdByUserId(userId)
+            .flatMap { authId -> userApi.getOnboardingProfileByAuthId(authId) }
+            .map { profile -> projectId in profile.projectIds }
+            .orElse(false)
+        if (!ownerAssigned) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "The path's owner is not assigned to project: $projectId",
+            )
+        }
     }
 
     /**
