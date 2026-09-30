@@ -24,8 +24,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Curren
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
