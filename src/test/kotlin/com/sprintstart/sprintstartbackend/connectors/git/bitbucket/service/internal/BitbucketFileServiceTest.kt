@@ -10,7 +10,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileChange
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileSink
@@ -18,12 +17,12 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestFailure
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.Runs
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest

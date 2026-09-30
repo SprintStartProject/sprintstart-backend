@@ -102,21 +102,27 @@ class ArtifactProjectService(
      * @return The source's stored artifacts, empty when it has never been ingested.
      */
     private fun findArtifactsOf(source: ArtifactSourceRef): List<Artifact> = when (source) {
-        is ArtifactSourceRef.GithubRepository ->
+        is ArtifactSourceRef.GithubRepository -> {
             artifactProjectRepository.findAllByComponent(source.component)
+        }
 
-        is ArtifactSourceRef.BitbucketRepository ->
+        is ArtifactSourceRef.BitbucketRepository -> {
             artifactProjectRepository.findAllBitbucketArtifactsByWorkspaceAndSlug(source.workspace, source.slug)
+        }
 
-        is ArtifactSourceRef.BitbucketWorkspace ->
-            artifactProjectRepository.findBySourceId(buildBitbucketWorkspaceSourceId(source.workspace))
+        is ArtifactSourceRef.BitbucketWorkspace -> {
+            artifactProjectRepository
+                .findBySourceId(buildBitbucketWorkspaceSourceId(source.workspace))
                 ?.let(::listOf) ?: emptyList()
+        }
 
-        is ArtifactSourceRef.JiraInstance ->
+        is ArtifactSourceRef.JiraInstance -> {
             artifactProjectRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
+        }
 
-        is ArtifactSourceRef.ConfluenceConnection ->
+        is ArtifactSourceRef.ConfluenceConnection -> {
             artifactProjectRepository.findAllConfluencePagesByConnectionId(source.connectionId)
+        }
     }
 
     /**

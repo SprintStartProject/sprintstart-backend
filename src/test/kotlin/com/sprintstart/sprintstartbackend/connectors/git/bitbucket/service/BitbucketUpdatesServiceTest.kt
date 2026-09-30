@@ -166,7 +166,8 @@ class BitbucketUpdatesServiceTest {
     @Test
     fun `update-all skips disabled repositories`() = runTest {
         val enabled = connection("sprintstart", "backend", projectIds = setOf(projectId))
-        val disabled = connection("sprintstart", "paused", projectIds = setOf(projectId)).apply { sourceEnabled = false }
+        val disabled =
+            connection("sprintstart", "paused", projectIds = setOf(projectId)).apply { sourceEnabled = false }
         every { connectionRepository.findAll() } returns listOf(enabled, disabled)
         every { connectionRepository.findById(enabled.id) } returns Optional.of(enabled)
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
