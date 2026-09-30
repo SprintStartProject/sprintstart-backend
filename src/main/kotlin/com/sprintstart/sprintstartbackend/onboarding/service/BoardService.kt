@@ -437,7 +437,7 @@ class BoardService(
 
         val next = json.encodeToString(request.toPayload())
         if (card.replacePayload(next, changeBetween(card.payload, next), BoardActor.HIRE)) {
-            boardCardRepository.save(card)
+            boardCardRepository.saveAndFlush(card)
         }
 
         val member = memberOrNull(userId, board.projectId)
@@ -454,16 +454,26 @@ class BoardService(
      * so an undo can be undone, and the card records that the hire made it. Nothing older is kept:
      * a depth of one is what undo needs (see [BoardCard.previousPayload]).
      *
-     * @param replacedAt When the edit being undone happened, as the hire saw it. When given and no
-     * longer the card's latest edit, nothing is restored.
+     * @param revision Which edit is being undone, as the hire saw it ([BoardCard.contentRevision]).
+     * When given and no longer the card's latest, nothing is restored.
+     * @param replacedAt The same edit by its time, for clients that do not send a revision. Checked
+     * in addition when given.
      * @throws ResponseStatusException 404 when the card is not one of theirs; 409 when it is off
      * their board, has nothing to restore, or has been edited again since the undo was offered.
+     * A write that lands between this read and its save fails the version check and surfaces as a
+     * 409 too (see `BoardExceptionHandler`).
      */
     @Transactional
-    fun restorePreviousContent(userId: UUID, cardId: UUID, replacedAt: Instant?): BoardCardResponse {
+    fun restorePreviousContent(
+        userId: UUID,
+        cardId: UUID,
+        revision: Long? = null,
+        replacedAt: Instant? = null,
+    ): BoardCardResponse {
         val (card, board) = editableCardOrThrow(userId, cardId, kind = null)
         val onBoard = card.state == BoardCardState.ACTIVE
-        val stale = replacedAt != null && replacedAt != card.previousReplacedAt
+        val stale = (revision != null && revision != card.contentRevision) ||
+            (replacedAt != null && replacedAt != card.previousReplacedAt)
         val previous = card.previousPayload?.takeIf { onBoard && !stale } ?: throw ResponseStatusException(
             HttpStatus.CONFLICT,
             when {
@@ -474,7 +484,7 @@ class BoardService(
         )
 
         card.replacePayload(previous, BoardCardChange.EDITED, BoardActor.HIRE)
-        boardCardRepository.save(card)
+        boardCardRepository.saveAndFlush(card)
 
         val member = memberOrNull(userId, board.projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")

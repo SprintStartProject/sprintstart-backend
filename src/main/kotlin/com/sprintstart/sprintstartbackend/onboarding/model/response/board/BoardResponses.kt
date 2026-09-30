@@ -66,6 +66,8 @@ data class BoardCardPreviousResponse(
     val content: BoardCardContent,
     val replacedBy: BoardActor,
     val replacedAt: Instant,
+    /** Identifies the edit that replaced it; send it back to restore exactly this version. */
+    val revision: Long,
 )
 
 /** One change to a card: what it was, whose, and when. Always all three or none at all. */

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
@@ -26,6 +27,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
@@ -216,9 +218,37 @@ class BoardControllerTest(
     @Test
     fun `restorePreviousContent passes on which edit the caller is undoing`() {
         val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, 3L, null) } returns noteCard()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":3}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+    }
+
+    /** No body is an older client: it still works, only without the staleness check. */
+    @Test
+    fun `restorePreviousContent works without a body`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null, null) } returns noteCard()
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous").with(userJwt))
+            .andExpect(status().isOk)
+    }
+
+    /** The legacy time-based check still reaches the service for clients that send it. */
+    @Test
+    fun `restorePreviousContent still passes on replacedAt`() {
+        val cardId = UUID.randomUUID()
         val replacedAt = java.time.Instant.parse("2026-09-29T10:15:30Z")
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.restorePreviousContent(userId, cardId, replacedAt) } returns noteCard()
+        every { boardService.restorePreviousContent(userId, cardId, null, replacedAt) } returns noteCard()
 
         mockMvc
             .perform(
@@ -229,16 +259,33 @@ class BoardControllerTest(
             ).andExpect(status().isOk)
     }
 
-    /** No body is an older client: it still works, only without the staleness check. */
     @Test
-    fun `restorePreviousContent works without a body`() {
+    fun `restorePreviousContent answers 409 when the service refuses a stale undo`() {
         val cardId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.restorePreviousContent(userId, cardId, null) } returns noteCard()
+        every { boardService.restorePreviousContent(userId, cardId, 1L, null) } throws
+            ResponseStatusException(HttpStatus.CONFLICT, "That card has changed since — nothing was undone")
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":1}""")
+                    .with(userJwt),
+            ).andExpect(status().isConflict)
+    }
+
+    /** A write that loses the version check is a conflict the client can reload from, not a 500. */
+    @Test
+    fun `restorePreviousContent answers 409 when the card changed while it ran`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null, null) } throws
+            ObjectOptimisticLockingFailureException(BoardCard::class.java, cardId)
 
         mockMvc
             .perform(post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous").with(userJwt))
-            .andExpect(status().isOk)
+            .andExpect(status().isConflict)
     }
 
     @Test

@@ -11,6 +11,7 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -134,6 +135,30 @@ class BoardCard(
     var previousReplacedBy: BoardActor? = null,
     @Column(name = "previous_replaced_at")
     var previousReplacedAt: Instant? = null,
+    /**
+     * Which content this card is on: starts at zero and goes up by one with every real content
+     * change, in [replacePayload] and nowhere else.
+     *
+     * The undo token. A client holding the previous version echoes back the revision it saw, and
+     * the restore is refused unless that is still the card's. A counter rather than a time because
+     * a time is a wall clock, not an identity — two edits can share a millisecond, and a clock can
+     * stand still or step back. This one cannot, and it does not move for changes that leave the
+     * content alone (dismissing, reordering), which [version] does.
+     */
+    @Column(name = "content_revision", nullable = false, columnDefinition = "bigint not null default 0")
+    var contentRevision: Long = 0,
+    /**
+     * Optimistic-lock version, bumped by Hibernate on every update of the row.
+     *
+     * Every write to a card replaces the whole row, so two transactions that read the same state
+     * would otherwise each write theirs over the other's — an undo silently discarding an edit that
+     * committed in between, along with the only copy of what it replaced. With this, the second
+     * writer's UPDATE matches no row and fails instead of committing a stale card. Not the undo
+     * token — see [contentRevision].
+     */
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint not null default 0")
+    var version: Long = 0,
 ) {
     /**
      * Replaces this card's content, keeping what it said before as the one previous version.
@@ -143,8 +168,8 @@ class BoardCard(
      * nothing and, more importantly, does not overwrite the previous version — a no-op save must not
      * be what takes away the undo for a real change made just before it.
      *
-     * [previousReplacedAt] is what a client echoes back to undo exactly this edit, so it is stored
-     * at the precision it will come back in — see [atClientPrecision].
+     * [contentRevision] goes up with it, which is what names this edit to a client that wants to
+     * undo exactly it. [previousReplacedAt] is for showing when, not for telling edits apart.
      *
      * @return Whether anything changed.
      */
@@ -159,6 +184,7 @@ class BoardCard(
         previousPayload = payload
         previousReplacedBy = by
         previousReplacedAt = stamp
+        contentRevision += 1
         payload = newPayload
         recordChange(change, by, stamp)
         return true
@@ -183,11 +209,10 @@ class BoardCard(
         /**
          * [at], cut to whole milliseconds.
          *
-         * An undo names the edit it undoes by this time and is refused if it no longer matches, so
-         * the value a client holds must equal the stored one exactly. `Instant.now()` can carry
-         * nanoseconds; Postgres keeps microseconds, and a JavaScript `Date` keeps milliseconds. A
-         * stamp any finer than the coarsest of those would make every undo look stale. Milliseconds
-         * survive all three unchanged, and no two edits a person makes are closer together.
+         * So a time shown to a client comes back from the database and through a JavaScript `Date`
+         * unchanged: `Instant.now()` can carry nanoseconds, Postgres keeps microseconds and a `Date`
+         * milliseconds. It says when, and nothing more — it is not unique and is not used to
+         * identify an edit; [contentRevision] is.
          */
         fun atClientPrecision(at: Instant): Instant = at.truncatedTo(ChronoUnit.MILLIS)
     }

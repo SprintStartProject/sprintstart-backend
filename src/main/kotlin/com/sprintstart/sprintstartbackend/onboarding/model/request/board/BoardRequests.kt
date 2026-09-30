@@ -78,12 +78,17 @@ data class TickPathStepTaskRequest(
 /**
  * Putting a card back to what it said before its most recent edit.
  *
- * [replacedAt] is the time of the edit the hire saw and is undoing, echoed back from the card's
- * `previous.replacedAt`. It is what stops a stale undo: if the card has been edited again since —
+ * [revision] names the edit the hire saw and is undoing, echoed back from the card's
+ * `previous.revision`. It is what stops a stale undo: if the card has been edited again since —
  * in another tab, or by a buddy change confirmed elsewhere — the undo the hire pressed is no longer
  * the undo on offer, and restoring anyway would throw away a change they never saw. Optional so an
  * older client still works; a client that sends it gets the check.
+ *
+ * [replacedAt] is the older form of the same check, compared against `previous.replacedAt`. A time
+ * cannot tell two edits apart that land in the same millisecond, so prefer [revision]; when both
+ * are sent, both must match.
  */
 data class RestorePreviousContentRequest(
+    val revision: Long? = null,
     val replacedAt: java.time.Instant? = null,
 )

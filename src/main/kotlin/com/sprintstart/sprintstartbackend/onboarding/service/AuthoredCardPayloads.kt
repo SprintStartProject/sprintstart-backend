@@ -152,5 +152,10 @@ internal fun BoardCard.toPreviousResponse(): BoardCardPreviousResponse? {
     val content = previousPayload ?: return null
     val by = previousReplacedBy ?: return null
     val at = previousReplacedAt ?: return null
-    return BoardCardPreviousResponse(content = authoredContent(content), replacedBy = by, replacedAt = at)
+    return BoardCardPreviousResponse(
+        content = authoredContent(content),
+        replacedBy = by,
+        replacedAt = at,
+        revision = contentRevision,
+    )
 }

@@ -22,6 +22,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPaylo
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistItemPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.LinkPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.NotePayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
@@ -149,6 +150,7 @@ class BoardServiceTest {
         every { boardCardRepository.saveAll(any<List<BoardCard>>()) } answers { firstArg() }
         every { boardCardRepository.findAllByBoardId(any()) } returns emptyList()
         every { boardCardRepository.save(any()) } answers { firstArg() }
+        every { boardCardRepository.saveAndFlush(any()) } answers { firstArg() }
         every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
         every { currentTaskReader.isClaimedGoal(hireId, projectId) } returns false
         every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns emptyList()
@@ -1808,7 +1810,7 @@ class BoardServiceTest {
         val card = noteOnOwnBoard("mine")
         service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
 
-        val response = service.restorePreviousContent(hireId, card.id, card.previousReplacedAt)
+        val response = service.restorePreviousContent(hireId, card.id, card.contentRevision)
 
         assertEquals("mine", textOf(card.payload))
         assertEquals(NoteContent(text = "mine"), response.content)
@@ -1821,9 +1823,9 @@ class BoardServiceTest {
     fun `an undo can be undone`() {
         val card = noteOnOwnBoard("mine")
         service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
-        service.restorePreviousContent(hireId, card.id, replacedAt = null)
+        service.restorePreviousContent(hireId, card.id)
 
-        service.restorePreviousContent(hireId, card.id, card.previousReplacedAt)
+        service.restorePreviousContent(hireId, card.id, card.contentRevision)
 
         assertEquals("the buddy's", textOf(card.payload))
         assertEquals("mine", textOf(card.previousPayload))
@@ -1837,12 +1839,12 @@ class BoardServiceTest {
     fun `a stale undo is refused and changes nothing`() {
         val card = noteOnOwnBoard("one")
         service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
-        val seen = card.previousReplacedAt
+        val seen = card.contentRevision
         card.replacePayload(
             json.encodeToString<BoardCardPayload>(NotePayload(text = "three")),
             BoardCardChange.EDITED,
             BoardActor.BUDDY,
-            assertNotNull(seen).plusSeconds(60),
+            assertNotNull(card.previousReplacedAt).plusSeconds(60),
         )
 
         val refusal = assertThrows<ResponseStatusException> {
@@ -1858,7 +1860,7 @@ class BoardServiceTest {
         val card = noteOnOwnBoard()
 
         val refusal = assertThrows<ResponseStatusException> {
-            service.restorePreviousContent(hireId, card.id, replacedAt = null)
+            service.restorePreviousContent(hireId, card.id)
         }
 
         assertEquals(409, refusal.statusCode.value())
@@ -1873,16 +1875,16 @@ class BoardServiceTest {
             Optional.of(Board(id = card.boardId, userId = UUID.randomUUID(), projectId = projectId))
 
         val refusal = assertThrows<ResponseStatusException> {
-            service.restorePreviousContent(hireId, card.id, replacedAt = null)
+            service.restorePreviousContent(hireId, card.id)
         }
 
         assertEquals(404, refusal.statusCode.value())
     }
 
     /**
-     * The time a client echoes back to undo an edit went through Postgres (microseconds) and JSON,
-     * possibly a JavaScript `Date` (milliseconds). Stored at nanosecond precision, it never matched
-     * again and every undo was refused as stale.
+     * The time shown for an edit went through Postgres (microseconds) and JSON, possibly a JavaScript
+     * `Date` (milliseconds). Stored at nanosecond precision it never matched again, so the legacy
+     * `replacedAt` check would refuse every undo as stale.
      */
     @Test
     fun `an undo sent back with the millisecond time a client holds is not mistaken for stale`() {
@@ -1895,8 +1897,139 @@ class BoardServiceTest {
         )
 
         assertEquals(Instant.parse("2026-09-29T10:15:30.123Z"), card.previousReplacedAt)
-        service.restorePreviousContent(hireId, card.id, Instant.parse("2026-09-29T10:15:30.123Z"))
+        service.restorePreviousContent(hireId, card.id, replacedAt = Instant.parse("2026-09-29T10:15:30.123Z"))
 
         assertEquals("mine", textOf(card.payload))
+    }
+
+    /**
+     * Two different edits inside one millisecond share a time but not a revision, so an undo offered
+     * for the first is refused once the second has landed.
+     */
+    @Test
+    fun `an undo for an earlier edit is refused even when a later one landed in the same millisecond`() {
+        val card = noteOnOwnBoard("A")
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "B")),
+            BoardCardChange.EDITED,
+            BoardActor.HIRE,
+            Instant.parse("2026-09-30T10:00:00.123100Z"),
+        )
+        val offered = card.contentRevision
+        val offeredAt = card.previousReplacedAt
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "C")),
+            BoardCardChange.EDITED,
+            BoardActor.HIRE,
+            Instant.parse("2026-09-30T10:00:00.123900Z"),
+        )
+        assertEquals(offeredAt, card.previousReplacedAt)
+
+        val refusal = assertThrows<ResponseStatusException> {
+            service.restorePreviousContent(hireId, card.id, offered)
+        }
+
+        assertEquals(409, refusal.statusCode.value())
+        assertEquals("C", textOf(card.payload))
+        assertEquals("B", textOf(card.previousPayload))
+    }
+
+    /** The revision moves on every real change and stands still for a save that changes nothing. */
+    @Test
+    fun `the revision counts real content changes only`() {
+        val card = noteOnOwnBoard("one")
+        assertEquals(0, card.contentRevision)
+
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+        assertEquals(1, card.contentRevision)
+
+        service.restorePreviousContent(hireId, card.id, 1)
+        assertEquals(2, card.contentRevision)
+    }
+
+    @Test
+    fun `the board offers the revision to undo, and the same one is accepted`() {
+        val card = noteOnOwnBoard("one")
+        val response = service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+
+        val revision = assertNotNull(response.previous).revision
+
+        service.restorePreviousContent(hireId, card.id, revision)
+        assertEquals("one", textOf(card.payload))
+    }
+
+    @Test
+    fun `a link is kept and restored whole`() {
+        val card = noteOnOwnBoard()
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "x"))
+        val board = Board(userId = hireId, projectId = projectId)
+        val link = BoardCard(
+            boardId = board.id,
+            kind = BoardCardKind.LINK,
+            owner = BoardCardOwner.HIRE,
+            position = 0,
+            payload = json.encodeToString<BoardCardPayload>(
+                LinkPayload(url = "https://example.com/old", label = "Old docs"),
+            ),
+        )
+        every { boardCardRepository.findById(link.id) } returns Optional.of(link)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        onBoard(link, board)
+
+        service.editAuthoredCard(hireId, link.id, LinkCardRequest(url = "https://example.com/new", label = "New"))
+        service.restorePreviousContent(hireId, link.id, link.contentRevision)
+
+        val restored = json.decodeFromString<BoardCardPayload>(assertNotNull(link.payload)) as LinkPayload
+        assertEquals("https://example.com/old", restored.url)
+        assertEquals("Old docs", restored.label)
+    }
+
+    /** A tick is an edit to one line: undoing it brings back that line's done flag and keeps the ids. */
+    @Test
+    fun `a checklist tick is undone with its ids and done flags intact`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        onBoard(card, board)
+        val before = savedChecklist(card)
+
+        service.editAuthoredCard(
+            hireId,
+            card.id,
+            ChecklistCardRequest(
+                title = "Getting started",
+                items = listOf(
+                    ChecklistItemRequest(id = UUID.fromString(firstLineId), text = "Run it locally", done = true),
+                    ChecklistItemRequest(id = UUID.fromString(secondLineId), text = "Fix it", done = true),
+                ),
+            ),
+        )
+        assertEquals(before, json.decodeFromString<BoardCardPayload>(assertNotNull(card.previousPayload)))
+
+        service.restorePreviousContent(hireId, card.id, card.contentRevision)
+
+        assertEquals(before, savedChecklist(card))
+    }
+
+    @Test
+    fun `a checklist rewritten by the buddy is undone to the hire's lines`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+        onBoard(card, board)
+        val before = savedChecklist(card)
+
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            ChecklistCardRequest(items = listOf(ChecklistItemRequest(text = "Something else entirely"))),
+        )
+        service.restorePreviousContent(hireId, card.id, card.contentRevision)
+
+        assertEquals(before, savedChecklist(card))
     }
 }
