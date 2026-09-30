@@ -403,6 +403,7 @@ class BuddyService(
                         linkLabel = proposal.linkLabel,
                         cardIds = proposal.cardIds?.map { it.toString() },
                         cardNames = proposal.cardNames,
+                        basedOn = proposal.basedOn,
                         preview = proposal.preview,
                     ),
                 )

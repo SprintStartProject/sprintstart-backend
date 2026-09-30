@@ -51,4 +51,10 @@ data class BuddyActionRequest(
      * confirm time — ids not on it are skipped, never an error.
      */
     val cardIds: List<UUID>? = null,
+    /**
+     * `edit_note` / `edit_link` / `edit_checklist`: the fingerprint of the card's words the proposal
+     * was made against, echoed back. A confirm whose card no longer matches is refused, so a stale
+     * proposal cannot overwrite what was added after it.
+     */
+    val basedOn: String? = null,
 )

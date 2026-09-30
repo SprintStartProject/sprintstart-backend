@@ -120,6 +120,7 @@ class BuddyBoardWriteActions(
         val linkUrl: String? = null,
         val linkLabel: String? = null,
         val cardIds: List<UUID>? = null,
+        val basedOn: String? = null,
     )
 
     /**

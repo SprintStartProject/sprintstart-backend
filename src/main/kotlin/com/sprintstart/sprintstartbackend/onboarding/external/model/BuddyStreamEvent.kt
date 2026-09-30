@@ -69,6 +69,8 @@ data class BuddyStreamEvent(
      */
     @SerialName("card_ids") val cardIds: List<String>? = null,
     @SerialName("card_names") val cardNames: List<String>? = null,
+    /** `edit_note` / `edit_link` / `edit_checklist`: the card's words as proposed against, echoed back on confirm. */
+    @SerialName("based_on") val basedOn: String? = null,
     /**
      * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
      * instead of per-action payload fields — the client echoes nothing back but this.

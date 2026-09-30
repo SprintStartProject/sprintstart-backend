@@ -100,6 +100,9 @@ class BuddyBoardEditActionsTest {
         ),
     )
 
+    /** What the board holds *now*; a test reassigns it to change a card between propose and confirm. */
+    private var boardCards = cards
+
     private fun card(
         id: UUID,
         kind: BoardCardKind,
@@ -125,7 +128,32 @@ class BuddyBoardEditActionsTest {
     private fun onOneProjectWithBoard() {
         onProjects(ProjectDto(projectId, "Checkout", null))
         every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns BoardResponse(UUID.randomUUID(), projectId, cards)
+        every { boardService.getBoard(userId, projectId) } answers {
+            BoardResponse(UUID.randomUUID(), projectId, boardCards)
+        }
+    }
+
+    /** The hire confirming: who they are, and the board as it stands. */
+    private fun asHireOnBoard() {
+        onOneProjectWithBoard()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+    }
+
+    private fun proposeEdit(name: String, arguments: JsonObject): BuddyActionService.BuddyActionProposal =
+        service.propose(call(name, arguments), userId).proposal ?: error("no proposal for $name")
+
+    private fun editedNote(text: String) = buildJsonObject {
+        put("card_id", noteId.toString())
+        put("text", text)
+    }
+
+    private fun editedChecklist(vararg lines: String) = buildJsonObject {
+        put("card_id", checklistId.toString())
+        putJsonArray("items") { lines.forEach { add(it) } }
+    }
+
+    private fun withCard(id: UUID, content: BoardCardContent) {
+        boardCards = boardCards.map { if (it.id == id) it.copy(content = content) else it }
     }
 
     private fun asHire() {
@@ -181,6 +209,24 @@ class BuddyBoardEditActionsTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("1 of those ids are not on the hire's board")
+    }
+
+    /** The same rule for an id that is not an id at all: dropping it would shrink the proposal silently. */
+    @Test
+    fun `a clean-up naming a malformed id is refused whole`() {
+        onOneProjectWithBoard()
+        val arguments = buildJsonObject {
+            putJsonArray("card_ids") {
+                add(noteId.toString())
+                add("bad-id")
+            }
+        }
+
+        val outcome = service.propose(call("dismiss_cards", arguments), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("1 of those ids are not card ids")
+        assertNothingWritten()
     }
 
     /** Asking about a board must not be what brings one into existence. */
@@ -398,10 +444,16 @@ class BuddyBoardEditActionsTest {
 
     @Test
     fun `confirming a note edit writes it as the buddy's change to that card`() = runTest {
-        asHire()
+        asHireOnBoard()
+        val proposal = proposeEdit("edit_note", editedNote("Deploys run on Tuesdays"))
 
         val result = service.perform(
-            BuddyActionRequest(action = "edit_note", cardId = noteId, noteText = "Deploys run on Tuesdays"),
+            BuddyActionRequest(
+                action = "edit_note",
+                cardId = noteId,
+                noteText = "Deploys run on Tuesdays",
+                basedOn = proposal.basedOn,
+            ),
             jwt,
         )
 
@@ -413,7 +465,8 @@ class BuddyBoardEditActionsTest {
 
     @Test
     fun `confirming a checklist edit sends the lines without ids, for the service to match back`() = runTest {
-        asHire()
+        asHireOnBoard()
+        val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Open a PR"))
 
         service.perform(
             BuddyActionRequest(
@@ -421,6 +474,7 @@ class BuddyBoardEditActionsTest {
                 cardId = checklistId,
                 checklistTitle = "First week",
                 checklistItems = listOf("Run it locally", "  ", "Open a PR"),
+                basedOn = proposal.basedOn,
             ),
             jwt,
         )
@@ -431,6 +485,126 @@ class BuddyBoardEditActionsTest {
         assertThat(checklist.title).isEqualTo("First week")
         assertThat(checklist.items.map { it.text }).containsExactly("Run it locally", "Open a PR")
         assertThat(checklist.items).allMatch { it.id == null }
+    }
+
+    /**
+     * The preview named the lines that would go, worked out against the list as it was. A line added
+     * after that is one the confirm never mentioned, so the confirm must not remove it.
+     */
+    @Test
+    fun `a checklist edit proposed before a line was added is refused at confirm`() = runTest {
+        asHireOnBoard()
+        val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
+        withCard(
+            checklistId,
+            ChecklistContent(
+                title = "Getting started",
+                items = listOf("Run it locally", "Fix it", "Rotate production credentials")
+                    .map { ChecklistItemResponse(id = UUID.randomUUID(), text = it, done = false) },
+            ),
+        )
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "edit_checklist",
+                cardId = checklistId,
+                checklistItems = listOf("Run it locally", "Fix it"),
+                basedOn = proposal.basedOn,
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("changed after this was proposed")
+        assertNothingWritten()
+    }
+
+    /** The refusal to rewrite a note longer than read_board shows only ran at proposal. */
+    @Test
+    fun `a note edit proposed before the note grew is refused at confirm`() = runTest {
+        asHireOnBoard()
+        val proposal = proposeEdit("edit_note", editedNote("Deploys run on Tuesdays"))
+        withCard(noteId, NoteContent(text = "Deploys run on Thursdays. " + "x".repeat(BoardReading.NOTE_PREVIEW)))
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "edit_note",
+                cardId = noteId,
+                noteText = "Deploys run on Tuesdays",
+                basedOn = proposal.basedOn,
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertNothingWritten()
+    }
+
+    @Test
+    fun `a link edit proposed before the link changed is refused at confirm`() = runTest {
+        asHireOnBoard()
+        val proposal = proposeEdit(
+            "edit_link",
+            buildJsonObject {
+                put("card_id", linkId.toString())
+                put("url", "https://wiki/new")
+            },
+        )
+        withCard(linkId, LinkContent(url = "https://wiki/other", label = "Runbook"))
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "edit_link",
+                cardId = linkId,
+                linkUrl = "https://wiki/new",
+                basedOn = proposal.basedOn,
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertNothingWritten()
+    }
+
+    /** Nothing can vouch for a confirm that does not say what it was proposed against. */
+    @Test
+    fun `an edit confirm that carries no fingerprint is refused`() = runTest {
+        asHireOnBoard()
+
+        val result = service.perform(
+            BuddyActionRequest(action = "edit_note", cardId = noteId, noteText = "Deploys run on Tuesdays"),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertNothingWritten()
+    }
+
+    /** An edit keeps ticks, so a tick between the offer and the click changes nothing the confirm showed. */
+    @Test
+    fun `ticking a line after the proposal does not make the confirm stale`() = runTest {
+        asHireOnBoard()
+        val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
+        withCard(
+            checklistId,
+            ChecklistContent(
+                title = "Getting started",
+                items = listOf("Run it locally", "Fix it")
+                    .map { ChecklistItemResponse(id = UUID.randomUUID(), text = it, done = true) },
+            ),
+        )
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "edit_checklist",
+                cardId = checklistId,
+                checklistItems = listOf("Run it locally", "Fix it"),
+                basedOn = proposal.basedOn,
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
     }
 
     /** A card the hire has since removed or changed comes back as a sentence, not a failed confirm. */

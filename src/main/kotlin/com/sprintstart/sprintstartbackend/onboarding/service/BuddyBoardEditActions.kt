@@ -30,6 +30,7 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
+import java.security.MessageDigest
 import java.util.UUID
 
 /**
@@ -155,6 +156,7 @@ class BuddyBoardEditActions(
                 question = null,
                 cardId = card.id,
                 noteText = text,
+                basedOn = versionOf(card),
                 preview = "Rewrite your note “${BoardReading.nameOf(card)}” so it reads as shown.",
             ),
         )
@@ -186,6 +188,7 @@ class BuddyBoardEditActions(
                 cardId = card.id,
                 linkUrl = url,
                 linkLabel = keptLabel,
+                basedOn = versionOf(card),
                 preview = "Change your link “${BoardReading.nameOf(card)}” to " +
                     "${keptLabel?.let { "$it — " }.orEmpty()}$url",
             ),
@@ -239,6 +242,7 @@ class BuddyBoardEditActions(
                 cardId = card.id,
                 checklistTitle = title,
                 checklistItems = items,
+                basedOn = versionOf(card),
                 preview = preview,
             ),
         )
@@ -322,7 +326,7 @@ class BuddyBoardEditActions(
         if (cardId == null || text.isEmpty()) {
             return BuddyActionResponse(ok = false, message = "There was no note change to make.")
         }
-        return edited(userId, projectId, cardId, NoteCardRequest(text = text))
+        return edited(userId, projectId, cardId, payload.basedOn, NoteCardRequest(text = text))
     }
 
     private fun editLink(userId: UUID, projectId: UUID, payload: BoardWritePayload): BuddyActionResponse {
@@ -331,7 +335,7 @@ class BuddyBoardEditActions(
         if (cardId == null || !url.isWebAddress()) {
             return BuddyActionResponse(ok = false, message = "There was no link change to make.")
         }
-        return edited(userId, projectId, cardId, linkRequest(url, payload.linkLabel))
+        return edited(userId, projectId, cardId, payload.basedOn, linkRequest(url, payload.linkLabel))
     }
 
     /** Re-capped here rather than trusted from the confirm, as every free-text payload is. */
@@ -352,15 +356,30 @@ class BuddyBoardEditActions(
                 ?.ifBlank { null },
             items = lines.map { ChecklistItemRequest(text = it) },
         )
-        return edited(userId, projectId, cardId, request)
+        return edited(userId, projectId, cardId, payload.basedOn, request)
     }
 
+    /**
+     * Writes a confirmed edit, unless the card's words have moved on since the proposal read them.
+     *
+     * An edit replaces the card whole, and what the confirm showed — the new text, the lines that
+     * would go, the refusal of a note longer than the buddy can see — was worked out against the
+     * card as it was then. If the hire, or another confirmed action, changed it since, the preview
+     * no longer describes what this would do, so nothing is written and the buddy is asked to look
+     * again. A confirm that carries no fingerprint is refused the same way: nothing can vouch for it.
+     */
     private fun edited(
         userId: UUID,
         projectId: UUID,
         cardId: UUID,
+        basedOn: String?,
         request: AuthoredCardRequest,
     ): BuddyActionResponse {
+        val current = cardsOn(userId, projectId)?.firstOrNull { it.id == cardId }
+        if (current != null && basedOn != versionOf(current)) {
+            return BuddyActionResponse(ok = false, message = CARD_CHANGED)
+        }
+
         boardService.editAuthoredCardForBuddy(userId, projectId, cardId, request)
         return BuddyActionResponse(
             ok = true,
@@ -394,12 +413,26 @@ class BuddyBoardEditActions(
     // -- Reading the board -------------------------------------------------------------------------
 
     /** What is on the hire's board, without creating one for somebody who has never opened it. */
-    private fun cardsOn(scope: Scope): List<BoardCardResponse>? =
-        if (boardService.hasBoard(scope.userId, scope.projectId)) {
-            boardService.getBoard(scope.userId, scope.projectId)?.cards
-        } else {
-            null
+    private fun cardsOn(scope: Scope): List<BoardCardResponse>? = cardsOn(scope.userId, scope.projectId)
+
+    private fun cardsOn(userId: UUID, projectId: UUID): List<BoardCardResponse>? =
+        if (boardService.hasBoard(userId, projectId)) boardService.getBoard(userId, projectId)?.cards else null
+
+    /**
+     * A fingerprint of the words on [card], for telling at confirm time that it is still the card
+     * a proposal was made against. Ticks are left out on purpose: an edit keeps them, so ticking a
+     * line between the offer and the click changes nothing the confirm showed.
+     */
+    private fun versionOf(card: BoardCardResponse): String {
+        val words = when (val content = card.content) {
+            is NoteContent -> listOf("note", content.text)
+            is LinkContent -> listOf("link", content.url, content.label.orEmpty())
+            is ChecklistContent -> listOf("checklist", content.title.orEmpty()) + content.items.map { it.text }
+            else -> listOf(card.kind.name)
         }
+        val digest = MessageDigest.getInstance("SHA-256").digest(words.joinToString("\u0000").toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
 
     /** The one card of the hire's own of [kind] that the call's `card_id` names. */
     private fun ownCard(call: BuddyToolCallDto, scope: Scope, kind: BoardCardKind): Found<BoardCardResponse> {
@@ -421,8 +454,18 @@ class BuddyBoardEditActions(
      * the one it got wrong will describe the proposal as covering it.
      */
     private fun namedCards(call: BuddyToolCallDto, scope: Scope): Found<List<BoardCardResponse>> {
-        val ids = call.uuidListArg("card_ids").distinct().take(MAX_CARDS)
-        if (ids.isEmpty()) return Found.Refused(NO_CARD_IDS)
+        val named = call.stringListArg("card_ids")
+        if (named.isEmpty()) return Found.Refused(NO_CARD_IDS)
+        val parsed = named.map { line -> runCatching { UUID.fromString(line) }.getOrNull() }
+        // Dropping a malformed id would propose a change to fewer cards than the model meant, and
+        // the model would describe the proposal as covering all of them.
+        if (parsed.any { it == null }) {
+            return Found.Refused(
+                "${parsed.count { it == null }} of those ids are not card ids, so nothing was proposed. " +
+                    "Read read_board again and pass only the ids it gives.",
+            )
+        }
+        val ids = parsed.filterNotNull().distinct().take(MAX_CARDS)
 
         val byId = cardsOn(scope).orEmpty().associateBy { it.id }
         val cards = ids.mapNotNull { byId[it] }
@@ -480,9 +523,6 @@ class BuddyBoardEditActions(
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
         runCatching { UUID.fromString(stringArg(name).trim()) }.getOrNull()
 
-    private fun BuddyToolCallDto.uuidListArg(name: String): List<UUID> =
-        stringListArg(name).mapNotNull { runCatching { UUID.fromString(it) }.getOrNull() }
-
     private companion object {
         val HANDLED = setOf(
             BuddyActionType.PLACE_LINK,
@@ -511,6 +551,8 @@ class BuddyBoardEditActions(
         const val NO_CARD_ID = "No card_id was provided. Read read_board to find the card you mean, and pass its id."
         const val NO_CARD_IDS =
             "No card_ids were provided. Read read_board to find the cards you mean, and pass their ids."
+        const val CARD_CHANGED =
+            "That card changed after this was proposed, so nothing was written. Ask your buddy to look at it again."
         const val NOT_A_WEB_ADDRESS = "That is not a web address. A link needs to start with https:// or http://."
 
         private fun cardIdParam() = buildJsonObject {

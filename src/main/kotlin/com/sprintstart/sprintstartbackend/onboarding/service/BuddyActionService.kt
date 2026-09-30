@@ -394,6 +394,7 @@ class BuddyActionService(
                             linkUrl = request.linkUrl,
                             linkLabel = request.linkLabel,
                             cardIds = request.cardIds,
+                            basedOn = request.basedOn,
                         ),
                     )
                     BuddyActionType.OPEN_ORIENTATION,
@@ -665,6 +666,11 @@ class BuddyActionService(
         /** `dismiss_cards` / `reorder_cards`: the cards, in order, and their names for display. */
         val cardIds: List<UUID>? = null,
         val cardNames: List<String>? = null,
+        /**
+         * `edit_note` / `edit_link` / `edit_checklist`: a fingerprint of the card's words as the
+         * proposal read them, echoed back so a confirm can tell the card changed in between.
+         */
+        val basedOn: String? = null,
         /** The board edits: what confirming would change, as one sentence the hire can read. */
         val preview: String? = null,
     )
