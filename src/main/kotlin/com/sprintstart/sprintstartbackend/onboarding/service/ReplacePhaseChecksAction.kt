@@ -65,6 +65,16 @@ private fun problemWith(question: UpdateQuestionRequest, number: Int): String? =
         else -> null
     }
 
+/**
+ * The objects in [raw], or null when there is anything else in it.
+ *
+ * A whole-list replacement deletes what is left out, so an entry that cannot be read must fail the
+ * call instead of being dropped: `[null]` would otherwise read as an empty list, and an empty list
+ * removes every question.
+ */
+private fun objectsOnly(raw: JsonArray): List<JsonObject>? =
+    raw.map { it as? JsonObject ?: return null }
+
 private fun readOption(raw: JsonObject, index: Int) =
     UpdateOptionRequest(
         id = raw.uuid("id"),
@@ -80,6 +90,14 @@ private fun readQuestion(raw: JsonObject, index: Int): Pair<UpdateQuestionReques
     if (raw.text("id").isNotEmpty() && raw.uuid("id") == null) {
         return null to "Question ${index + 1} has an id that is not one from get_phase_checks."
     }
+    val options = if (type == CheckQuestionType.MULTIPLE_CHOICE) {
+        val listed = raw["options"] as? JsonArray ?: JsonArray(emptyList())
+        val objects = objectsOnly(listed)
+            ?: return null to "Question ${index + 1} has an option that is not an object with a label."
+        objects.mapIndexed { i, option -> readOption(option, i) }
+    } else {
+        emptyList()
+    }
     return UpdateQuestionRequest(
         id = raw.uuid("id"),
         position = index,
@@ -87,11 +105,7 @@ private fun readQuestion(raw: JsonObject, index: Int): Pair<UpdateQuestionReques
         question = raw.text("question"),
         explanation = raw.text("explanation").takeIf { it.isNotEmpty() },
         correctAnswer = raw.text("correct_answer").takeIf { type == CheckQuestionType.SHORT_TEXT && it.isNotEmpty() },
-        options = if (type == CheckQuestionType.MULTIPLE_CHOICE) {
-            raw.objectArray("options").mapIndexed { i, option -> readOption(option, i) }
-        } else {
-            emptyList()
-        },
+        options = options,
     ) to null
 }
 
@@ -106,7 +120,12 @@ private fun unknownId(question: UpdateQuestionRequest, current: List<QuestionFor
         .takeIf { question.options.any { it.id != null && it.id !in known } }
 }
 
-private fun readChecks(raw: List<JsonObject>, current: List<QuestionForAdminResponse>): Checks {
+private fun readChecks(list: JsonArray, current: List<QuestionForAdminResponse>): Checks {
+    val raw = objectsOnly(list)
+        ?: return Checks.Invalid(
+            "Every entry of questions has to be a question object, so nothing was read. Pass an empty list only " +
+                "to remove them all.",
+        )
     val questions = mutableListOf<UpdateQuestionRequest>()
     raw.forEachIndexed { index, item ->
         val (question, unreadable) = readQuestion(item, index)
@@ -224,14 +243,15 @@ class ReplacePhaseChecksAction(
     override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft {
         val target = scope.element(PathElementKind.PHASE, call.uuidArgument("phase_id"), context.projectId)
             ?: return TeamActionDraft.Refused(notInScope(PathElementKind.PHASE))
-        if (call.arguments["questions"] !is JsonArray) {
+        val list = call.arguments["questions"] as? JsonArray
+        if (list == null) {
             return TeamActionDraft.Refused(
                 "Pass questions as the complete list, even an empty one. Call get_phase_checks to see the " +
                     "current ones.",
             )
         }
         val current = questionAttemptService.getPhaseQuestions(target.element.id).questions
-        val questions = when (val read = readChecks(call.arguments.objectArray("questions"), current)) {
+        val questions = when (val read = readChecks(list, current)) {
             is Checks.Invalid -> return TeamActionDraft.Refused(read.reason)
             is Checks.Valid -> read.questions
         }
@@ -284,7 +304,8 @@ class ReplacePhaseChecksAction(
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val phaseId: UUID = requireNotNull(params.uuid("phase_id"))
         val current = questionAttemptService.getPhaseQuestions(phaseId).questions
-        val questions = when (val read = readChecks(params.objectArray("questions"), current)) {
+        val stored = params["questions"] as? JsonArray ?: JsonArray(emptyList())
+        val questions = when (val read = readChecks(stored, current)) {
             is Checks.Invalid -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, read.reason)
             is Checks.Valid -> read.questions
         }

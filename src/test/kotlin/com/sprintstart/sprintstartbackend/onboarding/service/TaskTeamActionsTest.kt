@@ -92,6 +92,25 @@ class TaskTeamActionsTest {
         }
 
         @Test
+        fun `a confirm after the step was finished since the preview is turned down`() {
+            f.element(PathElementKind.STEP, stepId, children = 1, stepStatus = StepStatus.IN_PROGRESS)
+            val draft = f.proposed(action.draft(addCall(), f.context))
+            assertThat(draft.preview).doesNotContain("reopens")
+
+            f.element(PathElementKind.STEP, stepId, children = 1, stepStatus = StepStatus.FINISHED)
+
+            assertThat(action.recheck(draft.params, f.context)).contains("finished since", "Offer it again")
+        }
+
+        @Test
+        fun `a confirm for a step the preview said it would reopen goes through`() {
+            f.element(PathElementKind.STEP, stepId, children = 1, stepStatus = StepStatus.FINISHED)
+            val draft = f.proposed(action.draft(addCall(), f.context))
+
+            assertThat(action.recheck(draft.params, f.context)).isNull()
+        }
+
+        @Test
         fun `performing creates the task with what was stored`() =
             runTest {
                 val request = slot<CreateOnboardingTaskRequest>()

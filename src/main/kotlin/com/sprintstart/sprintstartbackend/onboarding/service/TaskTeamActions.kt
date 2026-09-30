@@ -19,6 +19,10 @@ import org.springframework.stereotype.Component
  * edit that quietly un-ticked a task would be doing exactly that.
  */
 
+private const val STEP_FINISHED_SINCE =
+    "The step was finished since this was proposed, and adding a task would reopen it — which the offer did not " +
+        "say — so nothing was changed. Offer it again."
+
 /** Offers to add a task to a step of a member's path. */
 @Component
 class AddTaskAction(
@@ -52,6 +56,7 @@ class AddTaskAction(
         val position = if (placeText.isEmpty()) slots - 1 else placeToPosition(placeText, slots)
         if (position == null) return TeamActionDraft.Refused("Place must be a number from 1 to $slots.")
         val description = call.textArgument("description")
+        val reopens = target.element.stepStatus == StepStatus.FINISHED
 
         return TeamActionDraft.Proposed(
             params = buildJsonObject {
@@ -59,6 +64,8 @@ class AddTaskAction(
                 put("title", title)
                 put("description", description)
                 put("position", position)
+                // Whether the preview announced the reopening, so a confirm can tell it became true since.
+                put("reopens", reopens)
             },
             label = "Add task “${title.forLabel()}”",
             preview = buildString {
@@ -68,7 +75,7 @@ class AddTaskAction(
                 appendLine()
                 if (position < slots - 1) appendLine("The tasks after it move down one place.")
                 append("It starts unfinished.")
-                if (target.element.stepStatus == StepStatus.FINISHED) {
+                if (reopens) {
                     // The service does this, and it is a change to progress the manager has to agree to.
                     append(
                         "\n\nThe step is already finished. A step can only stay finished while all its tasks " +
@@ -85,8 +92,13 @@ class AddTaskAction(
         val target = scope.element(PathElementKind.STEP, params.uuid("step_id"), context.projectId)
             ?: return goneSince(PathElementKind.STEP)
         val position = params.text("position").toIntOrNull() ?: return "That offer is malformed."
-        return "The step has fewer tasks than it had — that place is gone — so nothing was changed. Offer it again."
-            .takeIf { position !in 0..target.element.children }
+        if (position !in 0..target.element.children) {
+            return "The step has fewer tasks than it had — that place is gone — so nothing was changed. Offer it again."
+        }
+        // Finished since the preview: the service would reopen it, which this offer never said.
+        return STEP_FINISHED_SINCE.takeIf {
+            target.element.stepStatus == StepStatus.FINISHED && params.boolean("reopens") != true
+        }
     }
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {

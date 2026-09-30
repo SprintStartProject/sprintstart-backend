@@ -11,7 +11,9 @@ import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.util.UUID
@@ -132,6 +134,40 @@ class ReplacePhaseChecksActionTest {
         val draft = f.proposed(action.draft(replace(), f.context))
 
         assertThat(draft.preview).contains("It will have 0 questions", "Which command builds it?", "Where do logs go?")
+    }
+
+    @Test
+    fun `an entry that is not a question object refuses the whole call instead of clearing the list`() {
+        existing()
+
+        listOf(
+            listOf(JsonNull),
+            listOf(JsonPrimitive("Which command builds it?")),
+            listOf(short(shortId), JsonNull),
+        ).forEach { entries ->
+            val reason = f.refusal(
+                action.draft(
+                    f.call("replace_phase_checks", "phase_id" to phaseId, "questions" to JsonArray(entries)),
+                    f.context,
+                ),
+            )
+
+            assertThat(reason).contains("has to be a question object", "empty list only")
+        }
+    }
+
+    @Test
+    fun `an option that is not an object refuses the question instead of dropping it`() {
+        existing()
+        val bad = f.json(
+            "type" to "MULTIPLE_CHOICE",
+            "question" to "Where do logs go?",
+            "options" to JsonArray(listOf(option(label = "stdout", correct = true), JsonPrimitive("a file"))),
+        )
+
+        val reason = f.refusal(action.draft(replace(bad), f.context))
+
+        assertThat(reason).contains("Question 1 has an option that is not an object")
     }
 
     @Test
