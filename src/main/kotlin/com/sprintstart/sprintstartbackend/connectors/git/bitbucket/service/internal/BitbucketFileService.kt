@@ -25,17 +25,6 @@ import java.util.UUID
  * This service contributes only the two things that differ per provider — the clone coordinates and
  * the shape of a Bitbucket file URL. Cloning, revision tracking, diffing, file reading and hashing
  * all come from [GitIngestionEngine], so they exist once rather than once per connector.
- *
- * A run is full or incremental depending on the connection's stored cursor: a repository that has
- * never been ingested is read in full, and every run after that reads only what changed since the
- * stored revision. The engine selects between the two, so a caller that has not yet ingested a
- * repository does not have to special-case its first run.
- *
- * Exactly one terminal event is published per run. A file that cannot be read is reported on its own
- * as a [BitbucketFileFetchFailedEvent] and does not fail the run, so one oversized or non-UTF-8 file
- * cannot leave a repository stuck on an old revision. Only a failure of the run itself — the clone,
- * the fetch or the diff — publishes [BitbucketFilesFetchingFailedEvent], and in that case the
- * revision cursor is left untouched so the next run retries the same step.
  */
 @Service
 internal class BitbucketFileService(
@@ -49,6 +38,17 @@ internal class BitbucketFileService(
 
     /**
      * Fetches and ingests the files of one connected Bitbucket repository.
+     *
+     * A run is full or incremental depending on the connection's stored cursor: a repository that has
+     * never been ingested is read in full, and every run after that reads only what changed since the
+     * stored revision. The engine selects between the two, so a caller that has not yet ingested a
+     * repository does not have to special-case its first run.
+     *
+     * Exactly one terminal event is published per run. A file that cannot be read is reported on its own
+     * as a [BitbucketFileFetchFailedEvent] and does not fail the run, so one oversized or non-UTF-8 file
+     * cannot leave a repository stuck on an old revision. Only a failure of the run itself — the clone,
+     * the fetch or the diff — publishes [BitbucketFilesFetchingFailedEvent], and in that case the
+     * revision cursor is left untouched so the next run retries the same step.
      *
      * @param repositoryId The id of the connected repository to process.
      * @param transactionId The id of the overall transaction this fetch is part of.

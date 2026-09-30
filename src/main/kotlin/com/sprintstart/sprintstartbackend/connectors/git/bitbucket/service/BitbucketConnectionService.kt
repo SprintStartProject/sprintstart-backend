@@ -61,19 +61,37 @@ internal class BitbucketConnectionService(
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
-    @Tracked("Retrieving all bitbucket sources")
+    /**
+     * Returns all 'sources' of the Bitbucket connector. A source in this context is a Bitbucket repository.
+     *
+     * @return A list of all Bitbucket repositories connected to this application.
+     */
+    @Tracked("Retrieving all Bitbucket sources")
     @Transactional(readOnly = true)
     fun getSources(): List<BitbucketConnection> {
         return connectionRepository.findAll()
     }
 
-    @Tracked("Retrieving all bitbucket sources of project")
+    /**
+     * Returns all 'sources' of a given project (identified by its id).
+     * A source in this context is a Bitbucket repository.
+     *
+     * @param projectId The id of the project to filter for.
+     * @return A list of Bitbucket repositories connected to this application and assigned to the given project.
+     */
+    @Tracked("Retrieving all Bitbucket sources of project")
     @Transactional(readOnly = true)
     fun getSources(projectId: UUID): List<BitbucketConnection> {
         return connectionRepository.findAllByProjectId(projectId)
     }
 
-    @Tracked("Patching bitbucket repository enabled/disabled state")
+    /**
+     * Patches a source. That means, it disables or enables a Bitbucket repository for this application's use.
+     *
+     * @param source The source to patch.
+     * @param newStatus The new status, enabled (true) or disabled (false).
+     */
+    @Tracked("Patching Bitbucket repository enabled/disabled state")
     fun patchSource(source: ConnectorSource, newStatus: Boolean) {
         val (workspace, slug) = source.id.split("/")
         val connection = connectionRepository.findByWorkspaceAndSlug(workspace, slug)
@@ -83,7 +101,17 @@ internal class BitbucketConnectionService(
         connectionRepository.save(connection)
     }
 
-    @Tracked("Connecting a list of bitbucket repositories")
+    /**
+     * Connects several Bitbucket repositories, skipping none on single failures.
+     *
+     * Each repository is connected independently through [connectRepositoryIfExists], so one
+     * repository the credential cannot read is rejected without discarding the others.
+     *
+     * @param authId The authenticated caller subject the credentials are resolved for.
+     * @param request The repositories to connect, each with its own credential and project.
+     * @return One transaction id per `workspace/slug`.
+     */
+    @Tracked("Connecting a list of Bitbucket repositories")
     suspend fun connectRepositoriesIfExist(
         authId: String,
         request: ConnectBitbucketRepositoriesRequest,
@@ -97,6 +125,22 @@ internal class BitbucketConnectionService(
         return ConnectBitbucketRepositoriesResponse(transactionIdsByRepository)
     }
 
+    /**
+     * Connects one Bitbucket repository after verifying it exists and is readable.
+     *
+     * The connection is stored only after Bitbucket confirms the repository and the credential,
+     * so a rejected credential leaves no half-connected row behind. Already-connected
+     * repositories reuse their connection and only link the submitted project. The file, commit
+     * and pull-request ingests launch in the background, so the returned transaction id — not
+     * repository state — is what the connector's events correlate on.
+     *
+     * @param authId The authenticated caller subject the credential is resolved for.
+     * @param request The repository to connect, with its credential and project.
+     * @return The transaction id the connection and ingest events report under.
+     * @throws BitbucketProjectAccessDeniedException when the caller has no access to the project.
+     * @throws AtlassianCredentialNotFoundException when the named credential does not exist.
+     * @throws BitbucketRepositoryDoesNotExistException when Bitbucket has no such repository.
+     */
     @Suppress("ThrowsCount")
     @Tracked("Connecting a bitbucket repository if valid")
     suspend fun connectRepositoryIfExists(
@@ -152,6 +196,15 @@ internal class BitbucketConnectionService(
         return ConnectBitbucketRepositoryResponse(connectRepository(authId, request, transactionId))
     }
 
+    /**
+     * Lists the repositories of one Bitbucket workspace the caller's credential can read.
+     *
+     * Discovery is scoped to a single workspace because Bitbucket retired cross-workspace
+     * repository listing. Each entry reports whether it is already connected.
+     *
+     * @param request The workspace, credential, and page to discover.
+     * @return One page of the workspace's repositories with their connection state.
+     */
     @Tracked("Discovering bitbucket repositories")
     @Transactional(readOnly = true)
     suspend fun discoverRepositoriesOfWorkspace(

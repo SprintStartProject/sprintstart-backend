@@ -39,7 +39,7 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-/** Exposes connecting a Bitbucket repository to the application. */
+/** Exposes connecting, discovering, linking and updating Bitbucket repositories. */
 @Tag(name = "Bitbucket Connector", description = "Connect Bitbucket Cloud repositories.")
 @RestController
 @RequestMapping("/api/v1/bitbucket")
@@ -56,6 +56,10 @@ internal class BitbucketConnectionController(
      * the transaction id the connector's events correlate on rather than the repository state.
      * A credential that does not exist surfaces as 404 through the shared Atlassian credential
      * exception handler.
+     *
+     * @param jwt The authentication principal the repository's credential is resolved for.
+     * @param request The repository to connect, with its own credential and project.
+     * @return 202 with one transaction id.
      */
     @Operation(
         summary = "Connect a Bitbucket repository",
@@ -159,6 +163,7 @@ internal class BitbucketConnectionController(
         ],
     )
     @GetMapping("/discover/workspace/{workspace}")
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     suspend fun discoverRepositoriesOfWorkspace(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -208,6 +213,7 @@ internal class BitbucketConnectionController(
         ],
     )
     @PostMapping("/connections/{repositoryId}/projects/{projectId}")
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     suspend fun addRepositoryToProject(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -248,6 +254,7 @@ internal class BitbucketConnectionController(
         ],
     )
     @DeleteMapping("/connections/{repositoryId}/projects/{projectId}")
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasAnyRole('PM', 'ADMIN')")
     suspend fun removeRepositoryFromProject(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -261,12 +268,7 @@ internal class BitbucketConnectionController(
     }
 
     /**
-     * Re-ingests one connected repository.
-     *
-     * Files, commits and pull requests are read only for whatever changed since the cursors the
-     * connection already carries, so an unchanged repository costs one fetch and one check per
-     * collector and downloads no file. The work runs in the background, hence the returned
-     * transaction id rather than the resulting state.
+     * Re-ingests one connected repository incrementally on top of already ingested data.
      *
      * A repository whose source is disabled is refused: disabling is how a caller pauses ingestion,
      * and an explicit update of a paused repository is answered rather than quietly performed.
@@ -307,7 +309,7 @@ internal class BitbucketConnectionController(
     }
 
     /**
-     * Re-ingests every connected repository the caller may reach.
+     * Re-ingests every connected repository the caller may reach incrementally on top of the already ingested data.
      *
      * Each repository is updated on its own, so one repository whose credential was revoked does not
      * stop the others. Disabled repositories are skipped rather than updated: a batch call is not a
