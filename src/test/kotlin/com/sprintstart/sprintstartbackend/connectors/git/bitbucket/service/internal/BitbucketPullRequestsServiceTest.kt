@@ -78,7 +78,7 @@ class BitbucketPullRequestsServiceTest {
         service.fetchAndIngestPullRequests(connection.id, transactionId)
 
         coVerify {
-            bitbucketClient.fetchAllPullRequests("sprintstart", "sprintstart-backend", "api-token", null)
+            bitbucketClient.fetchAllPullRequests("sprintstart", "sprintstart-backend", secret(), null)
         }
     }
 
@@ -94,7 +94,7 @@ class BitbucketPullRequestsServiceTest {
             bitbucketClient.fetchAllPullRequests(
                 "sprintstart",
                 "sprintstart-backend",
-                "api-token",
+                secret(),
                 cursor.toString(),
             )
         }
@@ -242,8 +242,8 @@ class BitbucketPullRequestsServiceTest {
 
         service.fetchAndIngestPullRequests(connection.id, transactionId)
 
-        coVerify { bitbucketClient.fetchAllPullRequestComments("sprintstart", "sprintstart-backend", 7, "api-token") }
-        coVerify { bitbucketClient.fetchAllPullRequestComments("sprintstart", "sprintstart-backend", 8, "api-token") }
+        coVerify { bitbucketClient.fetchAllPullRequestComments("sprintstart", "sprintstart-backend", 7, secret()) }
+        coVerify { bitbucketClient.fetchAllPullRequestComments("sprintstart", "sprintstart-backend", 8, secret()) }
     }
 
     @Test
