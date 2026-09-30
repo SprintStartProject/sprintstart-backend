@@ -73,6 +73,16 @@ class BuddyTeamTools(
         }
 
     /**
+     * The area [toolName] belongs to, whether a read tool or an action; `null` for the team reads,
+     * `open_area` and names that are no tool at all.
+     */
+    fun areaOf(toolName: String): TeamArea? =
+        areaTools.values.firstOrNull { it.handles(toolName) }?.area
+            ?: buddyProposalService.actionAreas().firstOrNull { area ->
+                buddyProposalService.actionSpecs(setOf(area)).any { it.name == toolName }
+            }
+
+    /**
      * Opens the area the model named, so its tools are mounted from the next hop on.
      *
      * @return The area opened, or `null` with the reason when no such area has tools.
@@ -89,13 +99,16 @@ class BuddyTeamTools(
                 toolResult = "There is no area called “$requested”. Areas you can open: $available.",
             )
         }
-        val names = (areaTools[area]?.toolSpecs().orEmpty() + buddyProposalService.actionSpecs(setOf(area)))
-            .joinToString(", ") { it.name }
+        val names = toolNamesIn(area).joinToString(", ")
         return OpenAreaOutcome(
             area = area,
             toolResult = "Opened ${area.name.lowercase()}. These tools are available from your next step: $names.",
         )
     }
+
+    /** The read tools and actions an opened [area] mounts, by name. */
+    private fun toolNamesIn(area: TeamArea): List<String> =
+        (areaTools[area]?.toolSpecs().orEmpty() + buddyProposalService.actionSpecs(setOf(area))).map { it.name }
 
     /**
      * Runs one team-mode tool for [context], refusing any tool that was not mounted for this hop.
@@ -279,7 +292,16 @@ class BuddyTeamTools(
             name = OPEN_AREA,
             description = "Open one area of the manager's work so its tools become available on your next " +
                 "step. Open an area only when the manager asks about something in it; its tools are not " +
-                "available until you have opened it.",
+                "available until you have opened it. An area you open or use stays open for your next few " +
+                "replies, so you do not open it again to act on something you discussed. If a tool you need " +
+                "is not there, open its area first, or call it by the name listed below: its area is opened " +
+                "for you and you call it again on your next step. Never say something has been offered for " +
+                "confirmation unless a tool of an opened area did it.\n\nThe areas, and the tools in each:\n" +
+                // Names, not definitions: the model can only call a tool it knows exists, and the conversation
+                // keeps text only, so without them a later message never learns what an area holds.
+                openableAreas().sorted().joinToString("\n") {
+                    "- ${it.name.lowercase()}: ${it.summary} (tools: ${toolNamesIn(it).joinToString(", ")})"
+                },
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
