@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.NotePayload
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
@@ -176,7 +177,7 @@ class BuddyBoardEditActionsTest {
     private fun assertNothingWritten() {
         verify(exactly = 0) { boardService.dismissForBuddy(any(), any(), any()) }
         verify(exactly = 0) { boardService.reorderForBuddy(any(), any(), any()) }
-        verify(exactly = 0) { boardService.editAuthoredCardForBuddy(any(), any(), any(), any()) }
+        verify(exactly = 0) { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) }
         verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any(), any()) }
     }
 
@@ -226,6 +227,49 @@ class BuddyBoardEditActionsTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("1 of those ids are not card ids")
+        assertNothingWritten()
+    }
+
+    @Test
+    fun `a clean-up whose list holds a blank or an object entry is refused whole`() {
+        onOneProjectWithBoard()
+        val blank = buildJsonObject {
+            putJsonArray("card_ids") {
+                add(noteId.toString())
+                add(" ")
+            }
+        }
+        val objectEntry = buildJsonObject {
+            putJsonArray("card_ids") {
+                add(noteId.toString())
+                add(buildJsonObject { put("id", "bad-id") })
+            }
+        }
+
+        listOf(blank, objectEntry).forEach { arguments ->
+            val outcome = service.propose(call("dismiss_cards", arguments), userId)
+
+            assertThat(outcome.proposal).isNull()
+            assertThat(outcome.toolResult).contains("1 of those ids are not card ids")
+        }
+        assertNothingWritten()
+    }
+
+    /** A cap that cut the list would drop the ids past it, unknown ones included, without a word. */
+    @Test
+    fun `a clean-up naming more cards than one proposal covers is refused, not cut short`() {
+        onOneProjectWithBoard()
+        val arguments = buildJsonObject {
+            putJsonArray("card_ids") {
+                add(noteId.toString())
+                repeat(60) { add(UUID.randomUUID().toString()) }
+            }
+        }
+
+        val outcome = service.propose(call("dismiss_cards", arguments), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("more than one proposal can cover")
         assertNothingWritten()
     }
 
@@ -459,7 +503,7 @@ class BuddyBoardEditActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.editAuthoredCardForBuddy(userId, projectId, noteId, capture(request)) }
+        verify { boardService.editAuthoredCardForBuddy(userId, projectId, noteId, capture(request), proposal.basedOn) }
         assertThat(request.captured).isEqualTo(NoteCardRequest(text = "Deploys run on Tuesdays"))
     }
 
@@ -480,7 +524,15 @@ class BuddyBoardEditActionsTest {
         )
 
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.editAuthoredCardForBuddy(userId, projectId, checklistId, capture(request)) }
+        verify {
+            boardService.editAuthoredCardForBuddy(
+                userId,
+                projectId,
+                checklistId,
+                capture(request),
+                proposal.basedOn,
+            )
+        }
         val checklist = request.captured as ChecklistCardRequest
         assertThat(checklist.title).isEqualTo("First week")
         assertThat(checklist.items.map { it.text }).containsExactly("Run it locally", "Open a PR")
@@ -488,21 +540,15 @@ class BuddyBoardEditActionsTest {
     }
 
     /**
-     * The preview named the lines that would go, worked out against the list as it was. A line added
-     * after that is one the confirm never mentioned, so the confirm must not remove it.
+     * Whether the card is still the one the proposal read is decided by `BoardService`, under the
+     * card's lock. What is owed here is carrying the fingerprint there, and saying the refusal.
      */
     @Test
-    fun `a checklist edit proposed before a line was added is refused at confirm`() = runTest {
+    fun `a stale edit is refused by the service and comes back as the reason`() = runTest {
         asHireOnBoard()
         val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
-        withCard(
-            checklistId,
-            ChecklistContent(
-                title = "Getting started",
-                items = listOf("Run it locally", "Fix it", "Rotate production credentials")
-                    .map { ChecklistItemResponse(id = UUID.randomUUID(), text = it, done = false) },
-            ),
-        )
+        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) } throws
+            ResponseStatusException(HttpStatus.CONFLICT, BoardCardVersion.CARD_CHANGED)
 
         val result = service.perform(
             BuddyActionRequest(
@@ -516,102 +562,25 @@ class BuddyBoardEditActionsTest {
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("changed after this was proposed")
-        assertNothingWritten()
     }
 
-    /** The refusal to rewrite a note longer than read_board shows only ran at proposal. */
+    /** The fingerprint is of the card as read, so the same words give the same one from either side. */
     @Test
-    fun `a note edit proposed before the note grew is refused at confirm`() = runTest {
+    fun `the proposal's fingerprint is the one the stored card gives`() = runTest {
         asHireOnBoard()
-        val proposal = proposeEdit("edit_note", editedNote("Deploys run on Tuesdays"))
-        withCard(noteId, NoteContent(text = "Deploys run on Thursdays. " + "x".repeat(BoardReading.NOTE_PREVIEW)))
+        val note = proposeEdit("edit_note", editedNote("Deploys run on Tuesdays"))
+        val checklist = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
 
-        val result = service.perform(
-            BuddyActionRequest(
-                action = "edit_note",
-                cardId = noteId,
-                noteText = "Deploys run on Tuesdays",
-                basedOn = proposal.basedOn,
-            ),
-            jwt,
-        )
-
-        assertThat(result.ok).isFalse()
-        assertNothingWritten()
-    }
-
-    @Test
-    fun `a link edit proposed before the link changed is refused at confirm`() = runTest {
-        asHireOnBoard()
-        val proposal = proposeEdit(
-            "edit_link",
-            buildJsonObject {
-                put("card_id", linkId.toString())
-                put("url", "https://wiki/new")
-            },
-        )
-        withCard(linkId, LinkContent(url = "https://wiki/other", label = "Runbook"))
-
-        val result = service.perform(
-            BuddyActionRequest(
-                action = "edit_link",
-                cardId = linkId,
-                linkUrl = "https://wiki/new",
-                basedOn = proposal.basedOn,
-            ),
-            jwt,
-        )
-
-        assertThat(result.ok).isFalse()
-        assertNothingWritten()
-    }
-
-    /** Nothing can vouch for a confirm that does not say what it was proposed against. */
-    @Test
-    fun `an edit confirm that carries no fingerprint is refused`() = runTest {
-        asHireOnBoard()
-
-        val result = service.perform(
-            BuddyActionRequest(action = "edit_note", cardId = noteId, noteText = "Deploys run on Tuesdays"),
-            jwt,
-        )
-
-        assertThat(result.ok).isFalse()
-        assertNothingWritten()
-    }
-
-    /** An edit keeps ticks, so a tick between the offer and the click changes nothing the confirm showed. */
-    @Test
-    fun `ticking a line after the proposal does not make the confirm stale`() = runTest {
-        asHireOnBoard()
-        val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
-        withCard(
-            checklistId,
-            ChecklistContent(
-                title = "Getting started",
-                items = listOf("Run it locally", "Fix it")
-                    .map { ChecklistItemResponse(id = UUID.randomUUID(), text = it, done = true) },
-            ),
-        )
-
-        val result = service.perform(
-            BuddyActionRequest(
-                action = "edit_checklist",
-                cardId = checklistId,
-                checklistItems = listOf("Run it locally", "Fix it"),
-                basedOn = proposal.basedOn,
-            ),
-            jwt,
-        )
-
-        assertThat(result.ok).isTrue()
+        assertThat(note.basedOn)
+            .isEqualTo(BoardCardVersion.of(NotePayload(text = "Deploys run on Thursdays")))
+        assertThat(checklist.basedOn).isNotNull()
     }
 
     /** A card the hire has since removed or changed comes back as a sentence, not a failed confirm. */
     @Test
     fun `a confirm whose card has gone comes back as the reason`() = runTest {
         asHire()
-        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any()) } throws
+        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "No such note on your board")
 
         val result = service.perform(BuddyActionRequest(action = "edit_note", cardId = noteId, noteText = "New"), jwt)

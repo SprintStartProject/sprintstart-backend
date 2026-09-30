@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -455,7 +456,7 @@ class BuddyActionServiceTest {
         assertThat(outcome.proposal?.taskId).isEqualTo(taskId)
         assertThat(outcome.toolResult).contains("confirm")
         // Proposing must not claim anything.
-        verify(exactly = 0) { userGoalService.claimForMe(any(), any(), any()) }
+        verify(exactly = 0) { userGoalService.claimForMe(any(), any(), any(), any()) }
     }
 
     @Test
@@ -570,7 +571,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } returns GoalView(
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } returns GoalView(
             proposalId = taskId,
             title = "Fix the login redirect",
             summary = null,
@@ -588,7 +589,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } returns GoalView(
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } returns GoalView(
             proposalId = taskId,
             title = "Fix the login redirect",
             summary = null,
@@ -607,7 +608,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } throws
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } throws
             ResponseStatusException(HttpStatus.CONFLICT, "only a live task can be claimed as a goal")
 
         val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)

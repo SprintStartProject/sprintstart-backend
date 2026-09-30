@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -468,7 +469,7 @@ class BuddyActionService(
         }
         // Claiming also pins the current-task card (see `UserGoalService.claimForMe`), so the
         // message below can promise it is on the board.
-        val goal = userGoalService.claimForMe(authId, projectId, taskId)
+        val goal = userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY)
         return BuddyActionResponse(
             ok = true,
             message = "You're now working toward “${goal.title}” — I'll shape your next steps around it. " +

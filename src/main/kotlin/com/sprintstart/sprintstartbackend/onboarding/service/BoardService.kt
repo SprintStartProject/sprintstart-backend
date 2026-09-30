@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toLastChangeRe
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
@@ -195,6 +196,7 @@ class BoardService(
         projectId: UUID,
         kind: BoardCardKind,
         subject: String? = null,
+        by: BoardActor = BoardActor.BUDDY,
     ): PlacementOutcome {
         val member = memberOrNull(userId, projectId) ?: return PlacementOutcome.NOT_A_MEMBER
 
@@ -238,7 +240,7 @@ class BoardService(
                 // actually did.
                 placedAt = now,
                 subject = storedSubject.takeIf { kind.takesSubject },
-            ).apply { recordChange(BoardCardChange.CREATED, BoardActor.BUDDY, now) },
+            ).apply { recordChange(BoardCardChange.CREATED, by, now) },
         )
         return PlacementOutcome.PLACED
     }
@@ -252,11 +254,19 @@ class BoardService(
      * [place] stays the only thing it can call.
      *
      * Only for kinds without a subject, where one row per kind is the whole identity.
+     *
+     * @param by Who placed or brought back the card: the hire for a grab by hand, the buddy for one
+     *   the hire confirmed. Recorded as the card's latest change either way.
      */
     @Transactional
-    fun placeOrRevive(userId: UUID, projectId: UUID, kind: BoardCardKind): PlacementOutcome {
+    fun placeOrRevive(
+        userId: UUID,
+        projectId: UUID,
+        kind: BoardCardKind,
+        by: BoardActor,
+    ): PlacementOutcome {
         require(!kind.takesSubject) { "$kind is identified by its subject; revive it through place()" }
-        val outcome = place(userId, projectId, kind)
+        val outcome = place(userId, projectId, kind, by = by)
         if (outcome != PlacementOutcome.DISMISSED_BY_HIRE) return outcome
 
         val board = boardRepository.findByUserIdAndProjectId(userId, projectId) ?: return outcome
@@ -264,8 +274,11 @@ class BoardService(
             .findAllByBoardId(board.id)
             .firstOrNull { it.kind == kind && it.state == BoardCardState.DISMISSED }
             ?: return outcome
+        // Back on the board is a placement by whoever did it, so the card stops saying it was dismissed.
+        val now = Instant.now()
         card.state = BoardCardState.ACTIVE
-        card.placedAt = Instant.now()
+        card.placedAt = now
+        card.recordChange(BoardCardChange.CREATED, by, now)
         boardCardRepository.save(card)
         return PlacementOutcome.PLACED
     }
@@ -596,8 +609,11 @@ class BoardService(
      * silently undo the work already ticked off it, and a tick still lands on a line rather than a
      * position. A line the edit drops is gone; a new one arrives unticked.
      *
+     * @param basedOn The fingerprint ([BoardCardVersion]) of the card as the proposal read it.
      * @throws ResponseStatusException 404 when they are not a member of [projectId], or the card is
-     * not an active card of that kind on that project's board; 400 when the content is empty.
+     * not an active card of that kind on that project's board; 400 when the content is empty; 409
+     * when the card's words are not those [basedOn] names, or it is a note longer than the buddy can
+     * read, so that replacing it whole would lose what the proposal never showed.
      */
     @Transactional
     fun editAuthoredCardForBuddy(
@@ -605,8 +621,17 @@ class BoardService(
         projectId: UUID,
         cardId: UUID,
         request: AuthoredCardRequest,
+        basedOn: String?,
     ): BoardCardResponse {
         val (card, member) = buddyEditableCardOrThrow(userId, projectId, cardId, request.kind)
+        // Decided on the row this transaction holds the lock on, so nothing can change it between
+        // this check and the replace below. A missing fingerprint cannot vouch for anything.
+        if (basedOn == null || basedOn != BoardCardVersion.of(card.decodedPayload())) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, BoardCardVersion.CARD_CHANGED)
+        }
+        if (request is NoteCardRequest && card.noteLength() > BoardReading.NOTE_PREVIEW) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, BoardCardVersion.NOTE_TOO_LONG_TO_REPLACE)
+        }
         val content = if (request is ChecklistCardRequest) {
             request.keepingLinesOf(card.checklistOrThrow())
         } else {
@@ -923,7 +948,8 @@ class BoardService(
         cardId: UUID,
         kind: BoardCardKind,
     ): Pair<BoardCard, Board> {
-        val card = boardCardRepository.findById(cardId).orElse(null)
+        // Locked, so a hire edit and a buddy edit of the same card cannot interleave their writes.
+        val card = boardCardRepository.findLockedById(cardId)
         val board = card?.let { boardRepository.findById(it.boardId).orElse(null) }
         val refusal = when {
             card == null || board == null || board.userId != userId || card.owner != BoardCardOwner.HIRE ->
