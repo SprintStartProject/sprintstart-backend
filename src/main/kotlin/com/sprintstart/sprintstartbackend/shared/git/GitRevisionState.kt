@@ -57,7 +57,7 @@ class GitRevisionState(
                 true
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: RuntimeException) {
+            } catch (@Suppress("SwallowedException") e: RuntimeException) {
                 false
             }
         }

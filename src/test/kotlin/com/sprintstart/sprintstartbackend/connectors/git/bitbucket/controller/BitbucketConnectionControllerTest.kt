@@ -125,7 +125,9 @@ class BitbucketConnectionControllerTest {
             mockMvc
                 .perform(asyncDispatch(asyncResult))
                 .andExpect(status().isAccepted)
-                .andExpect(jsonPath("$.transactionIdsByRepository['sprintstart/backend']").value(transactionId.toString()))
+                .andExpect(
+                    jsonPath("$.transactionIdsByRepository['sprintstart/backend']").value(transactionId.toString()),
+                )
 
             coVerify { updatesService.updateAllRepositories("mockId") }
         }

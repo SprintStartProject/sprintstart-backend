@@ -97,6 +97,7 @@ internal class BitbucketWorkspaceService(
      * @param transactionId The ingestion run the fetch reports under.
      * @throws AtlassianCredentialNotFoundException when the named credential cannot be resolved.
      */
+    @Suppress("ThrowsCount")
     private suspend fun connectWorkspace(
         workspace: String,
         authId: String,

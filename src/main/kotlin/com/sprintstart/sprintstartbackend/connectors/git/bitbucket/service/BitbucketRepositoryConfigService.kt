@@ -57,7 +57,8 @@ internal class BitbucketRepositoryConfigService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving all Bitbucket repository configs")
     fun getAll(authId: String): List<GetBitbucketRepositoryConfigResponse> =
-        configRepository.findAll()
+        configRepository
+            .findAll()
             .filter { config -> userApi.canAccessConnection(authId, config.repository.projectIds) }
             .map { GetBitbucketRepositoryConfigResponse.of(it) }
 
@@ -70,7 +71,8 @@ internal class BitbucketRepositoryConfigService(
     @Transactional
     @Tracked("Configuring all Bitbucket repositories")
     fun configureAll(authId: String, request: ConfigureBitbucketRepositoryRequest) {
-        val configs = configRepository.findAll()
+        val configs = configRepository
+            .findAll()
             .filter { config -> userApi.canAccessConnection(authId, config.repository.projectIds) }
 
         configs.forEach { config -> applyConfig(config, request) }

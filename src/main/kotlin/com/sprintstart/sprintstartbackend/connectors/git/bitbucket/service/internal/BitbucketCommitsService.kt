@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal
 
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits.BitbucketCommitFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits.BitbucketCommitsFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits.BitbucketCommitsFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits.BitbucketCommitsFetchingStartedEvent
@@ -9,11 +8,8 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.excepti
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
-import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
-import com.sprintstart.sprintstartbackend.connectors.git.utils.GitSourceUrls
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

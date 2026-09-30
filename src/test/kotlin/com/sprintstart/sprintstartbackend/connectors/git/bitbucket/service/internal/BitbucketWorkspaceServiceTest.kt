@@ -172,8 +172,10 @@ class BitbucketWorkspaceServiceTest {
         coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } returns workspaceMetadata()
         coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, TOKEN) } returns workspaceMembers()
 
-        val first = launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
-        val second = launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
+        val first =
+            launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
+        val second =
+            launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
         joinAll(first, second)
 
         coVerify(exactly = 1) { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) }

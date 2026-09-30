@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.bitbucket
 
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.files.BitbucketFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.BitbucketArtifactFailedMapper
-import com.sprintstart.sprintstartbackend.ingestion.model.mapper.BitbucketArtifactMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.BitbucketIngestionRunService
 import com.sprintstart.sprintstartbackend.ingestion.service.FailedArtifactService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.BitbucketArtifactProviderService
