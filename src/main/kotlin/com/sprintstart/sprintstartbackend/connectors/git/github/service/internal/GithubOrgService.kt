@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -13,20 +14,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.respo
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMetadataResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubOrganizationRepository
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingStartedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataMember
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeam
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataTeamMember
-import com.sprintstart.sprintstartbackend.connectors.github.models.GithubOrganization
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.OrgMembersResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.api.responses.OrgMetadataResponse
-import com.sprintstart.sprintstartbackend.connectors.github.models.client.graphql.Team
-import com.sprintstart.sprintstartbackend.connectors.github.repository.GithubOrganizationRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
