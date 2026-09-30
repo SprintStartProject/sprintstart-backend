@@ -240,6 +240,8 @@ class BuddyPathStepActionTest {
         val phase = phase("Deployment", steps = listOf(step("Read the runbook", StepStatus.FINISHED)))
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
         every { buddyPathTools.findPhase(userId, phase.id) } returns phase
+        // Finished, but nothing waits on it: adding a step reopens no other phase.
+        every { buddyPathTools.phasesOf(userId) } returns listOf(phase)
         val created = slot<CreateOnboardingStepRequest>()
         every {
             onboardingStepPlacementService.createConnectedStepForMe(
@@ -373,6 +375,36 @@ class BuddyPathStepActionTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("would lock that again")
+    }
+
+    @Test
+    fun `a step proposed before its phase was finished is not added after it was`() = runTest {
+        // Proposed while "Setup" was still open. The hire then finished it on their page and started
+        // on "First change", which waits on it. Clicking the old button would reopen "Setup" and lock
+        // the phase they are now working in -- the rule the proposal enforces has to hold at the
+        // click as well.
+        val done = step("Read the runbook", StepStatus.FINISHED)
+        val finished = phase("Setup", steps = listOf(done))
+        val current = phase("First change").copy(blockerIds = setOf(finished.id))
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findPhase(userId, finished.id) } returns finished
+        every { buddyPathTools.phasesOf(userId) } returns listOf(finished, current)
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "add_path_step",
+                phaseId = finished.id,
+                title = "Refresher",
+                description = "Reread the runbook.",
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("changed since this was suggested")
+        verify(exactly = 0) {
+            onboardingStepPlacementService.createConnectedStepForMe(any(), any(), any(), any(), any(), any())
+        }
     }
 
     @Test

@@ -21,8 +21,10 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.security.oauth2.jwt.Jwt
@@ -329,9 +331,11 @@ class BuddyPathActionTest {
         )
 
         assertThat(outcome.proposal?.label).isEqualTo("Send this answer: “Sprint planning”")
-        // The answer is carried as the hire said it and re-matched at confirm time, so the option
-        // that is recorded is the one whose label they read on the button.
-        assertThat(outcome.proposal?.answer).isEqualTo("planning")
+        // The resolved option travels with the proposal, next to the label the button shows, so the
+        // confirm checks what the hire read instead of matching their words a second time.
+        assertThat(outcome.proposal?.answer).isEqualTo("Sprint planning")
+        assertThat(outcome.proposal?.optionIds)
+            .containsExactly(question.options.first { it.label == "Sprint planning" }.id)
         assertThat(outcome.toolResult).contains("do not tell them whether it is correct")
         verify(exactly = 0) { questionAttemptService.submitQuestionAttemptForMe(any(), any(), any()) }
     }
@@ -352,7 +356,12 @@ class BuddyPathActionTest {
         } returns graded(correct = true, explanation = "Scope is agreed in planning.")
 
         val result = service.perform(
-            BuddyActionRequest(action = "answer_question", questionId = question.id, answer = "planning"),
+            BuddyActionRequest(
+                action = "answer_question",
+                questionId = question.id,
+                answer = "Sprint planning",
+                optionIds = listOf(planning.id),
+            ),
             jwt,
         )
 
@@ -373,7 +382,12 @@ class BuddyPathActionTest {
             graded(correct = false, feedback = "Not the product owner.")
 
         val result = service.perform(
-            BuddyActionRequest(action = "answer_question", questionId = question.id, answer = "The PO"),
+            BuddyActionRequest(
+                action = "answer_question",
+                questionId = question.id,
+                answer = "The PO",
+                optionIds = listOf(question.options.first { it.label == "The PO" }.id),
+            ),
             jwt,
         )
 
@@ -399,6 +413,121 @@ class BuddyPathActionTest {
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("already passed")
+        verify(exactly = 0) { questionAttemptService.submitQuestionAttemptForMe(any(), any(), any()) }
+    }
+
+    @Test
+    fun `several options the hire picked are proposed and sent as one set`() = runTest {
+        // Graded on the exact set picked: a question with two right options can only be passed by
+        // sending both in one attempt, never one at a time.
+        val question = question(
+            "What do you need installed?",
+            QuestionStatus.OPEN,
+            options = listOf("Git", "Docker", "Excel"),
+        )
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findQuestion(userId, question.id) } returns question
+        val submitted = slot<SubmitQuestionAttemptRequest>()
+        every {
+            questionAttemptService.submitQuestionAttemptForMe(authId, question.id, capture(submitted))
+        } returns graded(correct = true)
+
+        val outcome = service.propose(
+            BuddyToolCallDto(
+                id = "c0",
+                name = "answer_question",
+                arguments = buildJsonObject {
+                    put("question_id", question.id.toString())
+                    putJsonArray("selected_options") {
+                        add("docker")
+                        add("Git")
+                    }
+                },
+            ),
+            userId,
+        )
+        val proposal = outcome.proposal!!
+        // In the question's order, whatever order the hire said them in.
+        assertThat(proposal.label).isEqualTo("Send this answer: “Git, Docker”")
+
+        service.perform(
+            BuddyActionRequest(
+                action = "answer_question",
+                questionId = question.id,
+                answer = proposal.answer,
+                optionIds = proposal.optionIds,
+            ),
+            jwt,
+        )
+
+        assertThat(submitted.captured.selectedOptionIds)
+            .containsExactlyInAnyOrderElementsOf(question.options.filter { it.label != "Excel" }.map { it.id })
+    }
+
+    @Test
+    fun `two options in one answer are sent back to be passed separately, not guessed at`() {
+        val question = question(
+            "What do you need installed?",
+            QuestionStatus.OPEN,
+            options = listOf("Git", "Docker", "Excel"),
+        )
+        every { buddyPathTools.findQuestion(userId, question.id) } returns question
+
+        val outcome = service.propose(
+            call("answer_question", "question_id" to question.id.toString(), "answer" to "Git and Docker"),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("selected_options")
+    }
+
+    @Test
+    fun `an answer confirmed after its options were renamed is not sent`() = runTest {
+        // The button said "Sprint planning". The PM has since renamed that option: sending its id
+        // now would record an answer the hire never read, and re-matching their words could pick a
+        // different option altogether.
+        val proposedAgainst = question(
+            "Which meeting sets the sprint scope?",
+            QuestionStatus.OPEN,
+            options = listOf("Sprint planning", "Retro"),
+        )
+        val planning = proposedAgainst.options.first { it.label == "Sprint planning" }
+        val now = proposedAgainst.copy(
+            options = proposedAgainst.options.map {
+                if (it.id == planning.id) it.copy(label = "Daily standup") else it.copy(label = "Release planning")
+            },
+        )
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findQuestion(userId, now.id) } returns now
+
+        val result = service.perform(
+            BuddyActionRequest(
+                action = "answer_question",
+                questionId = now.id,
+                answer = "Sprint planning",
+                optionIds = listOf(planning.id),
+            ),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("changed since this was suggested")
+        verify(exactly = 0) { questionAttemptService.submitQuestionAttemptForMe(any(), any(), any()) }
+    }
+
+    @Test
+    fun `a multiple-choice confirm without the resolved options sends nothing`() = runTest {
+        val question = question("Who runs the retro?", QuestionStatus.OPEN, options = listOf("The SM", "The PO"))
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { buddyPathTools.findQuestion(userId, question.id) } returns question
+
+        val result = service.perform(
+            BuddyActionRequest(action = "answer_question", questionId = question.id, answer = "The SM"),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
         verify(exactly = 0) { questionAttemptService.submitQuestionAttemptForMe(any(), any(), any()) }
     }
 

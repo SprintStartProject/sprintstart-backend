@@ -398,6 +398,7 @@ class BuddyService(
                         phaseId = proposal.phaseId?.toString(),
                         onboardingTaskId = proposal.onboardingTaskId?.toString(),
                         answer = proposal.answer,
+                        optionIds = proposal.optionIds.takeIf { it.isNotEmpty() }?.map { it.toString() },
                         description = proposal.description,
                         reason = proposal.reason,
                         waitsOnIds = proposal.waitsOnIds.takeIf { it.isNotEmpty() }?.map { it.toString() },

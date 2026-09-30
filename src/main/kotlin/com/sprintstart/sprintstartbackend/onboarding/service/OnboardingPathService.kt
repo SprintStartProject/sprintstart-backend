@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -212,6 +213,26 @@ class OnboardingPathService(
                     passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
                     attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
                 )
+            }.orElse(null)
+
+    /**
+     * One phase of the user's own path that generation left empty (or that failed), in the hire's
+     * form, or `null`.
+     *
+     * [findPathForUserId] leaves these out of `phases` -- a hire should not be walked through a phase
+     * with nothing in it -- and reports them only as `generationIssues`. They are exactly what the
+     * buddy's `add_path_step` exists to repair, though, so it needs them by id: resolved through the
+     * owner's own path like every other lookup, so an id from anywhere else is not found.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving a hidden onboarding phase by user id")
+    fun findHiddenPhaseForUserId(userId: UUID, phaseId: UUID): GetOnboardingPhaseForUserResponse? =
+        onboardingPathRepository
+            .findOnboardingPathByUserId(userId)
+            .map { path ->
+                path.phases
+                    .firstOrNull { it.id == phaseId && it.generationStatus.isHiddenFromUser() }
+                    ?.toGetForUserResponse()
             }.orElse(null)
 
 //  ========================== Methods for admins ==========================

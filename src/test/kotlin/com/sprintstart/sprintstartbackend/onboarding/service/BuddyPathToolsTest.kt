@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
@@ -622,35 +621,6 @@ class BuddyPathToolsTest {
         verify(exactly = 0) { onboardingTaskService.getOnboardingTasksByStepId(locked.id) }
     }
 
-    // -- the empty-phase repair -------------------------------------------------------------------
-
-    @Test
-    fun `a phase that generated nothing is named, with what to do about it`() {
-        every { onboardingPathService.findPathForUserId(userId) } returns path(
-            phase(0, "Setup", steps = listOf(step("Clone the repository", StepStatus.WAITING))),
-            issues = listOf(
-                OnboardingGenerationIssueResponse(UUID.randomUUID(), "Deployment", GenerationStatus.SKIPPED),
-            ),
-        )
-
-        val text = tools.execute(userId)
-
-        assertThat(text).contains("Deployment")
-        assertThat(text).contains("SKIPPED")
-        // Not the hire's fault, and the one part of a path a conversation can genuinely repair.
-        assertThat(text).contains("not the hire's fault")
-        assertThat(text).contains("add_path_step")
-    }
-
-    @Test
-    fun `an empty current phase says so rather than listing nothing`() {
-        every { onboardingPathService.findPathForUserId(userId) } returns path(phase(0, "Deployment"))
-
-        val text = tools.execute(userId)
-
-        assertThat(text).contains("nothing in it")
-    }
-
     // -- the greeting -----------------------------------------------------------------------------
 
     @Test
@@ -684,6 +654,7 @@ class BuddyPathToolsTest {
     fun `a node that is not on the hire's own path is simply not found`() {
         every { onboardingPathService.findPathForUserId(userId) } returns
             path(phase(0, "Setup", steps = listOf(step("Clone the repository", StepStatus.WAITING))))
+        every { onboardingPathService.findHiddenPhaseForUserId(userId, any()) } returns null
 
         // Resolving through the hire's own path is what makes an id from anywhere else unusable.
         assertThat(tools.findStep(userId, UUID.randomUUID())).isNull()

@@ -670,6 +670,8 @@ class BuddyActionService(
         /** The checklist line `complete_task` would tick off. See the request DTO for why not [taskId]. */
         val onboardingTaskId: UUID? = null,
         val answer: String? = null,
+        /** The options a multiple-choice `answer_question` [answer] stands for. See the request DTO. */
+        val optionIds: List<UUID> = emptyList(),
         val description: String? = null,
         /** The reason `request_skip` would send to the PM. */
         val reason: String? = null,

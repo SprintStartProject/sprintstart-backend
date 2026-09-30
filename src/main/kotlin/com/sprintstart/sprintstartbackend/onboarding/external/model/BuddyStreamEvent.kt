@@ -52,6 +52,8 @@ data class BuddyStreamEvent(
     @SerialName("phase_id") val phaseId: String? = null,
     @SerialName("onboarding_task_id") val onboardingTaskId: String? = null,
     val answer: String? = null,
+    /** `answer_question` confirm payload: the options the answer on the button stands for. */
+    @SerialName("option_ids") val optionIds: List<String>? = null,
     val description: String? = null,
     /** `request_skip` confirm payload: the reason that goes to the PM. */
     val reason: String? = null,

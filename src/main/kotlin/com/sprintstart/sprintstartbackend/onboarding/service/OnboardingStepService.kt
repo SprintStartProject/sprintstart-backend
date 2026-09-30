@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
@@ -92,6 +93,13 @@ class OnboardingStepService(
         val phase = onboardingPhaseRepository
             .findByIdAndPathUserId(phaseId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
+
+        // A phase generation left empty is hidden from the hire until something is in it. This is
+        // that something -- typically the buddy repairing it -- so the phase comes back into view
+        // with the step, instead of the step landing somewhere nobody can see.
+        if (phase.generationStatus.isHiddenFromUser()) {
+            phase.generationStatus = GenerationStatus.GENERATED
+        }
 
         // Shift right
         shiftStepsRight(phase, request)

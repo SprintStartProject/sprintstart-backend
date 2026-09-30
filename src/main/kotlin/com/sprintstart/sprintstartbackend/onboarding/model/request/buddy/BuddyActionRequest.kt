@@ -48,14 +48,19 @@ data class BuddyActionRequest(
      */
     val onboardingTaskId: UUID? = null,
     /**
-     * The hire's answer to a knowledge question, in their own words, for `answer_question`.
-     *
-     * Matched to an option server-side for a multiple-choice question rather than being sent as an
-     * option id, for the same reason `record_assessment` re-reads the level from its word: what is
-     * recorded should be derived from what the hire was shown, not from something a client
-     * substituted afterwards.
+     * The hire's answer to a knowledge question, for `answer_question`: their own words for a text
+     * question, and for multiple choice the option labels exactly as the confirm button showed them.
      */
     val answer: String? = null,
+    /**
+     * The options a multiple-choice [answer] stands for, as resolved when it was proposed.
+     *
+     * Checked at confirm time against the question as it is *now*: every option must still exist
+     * and still read the way [answer] shows it, or nothing is sent. Re-matching the hire's words
+     * instead could land on a different option after a PM renamed them, recording an answer other
+     * than the one the hire read on the button.
+     */
+    val optionIds: List<UUID> = emptyList(),
     /** What a step added by `add_path_step` is about, one or two sentences. */
     val description: String? = null,
     /** The reason `request_skip` sends to the PM, in the words the hire confirmed. */

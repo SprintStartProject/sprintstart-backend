@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
 import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
@@ -376,6 +377,49 @@ class OnboardingPathServiceTest {
             every { userApi.isAdmin(callerAuthId) } returns false
 
             assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+        }
+    }
+
+    @Nested
+    inner class FindHiddenPhaseForUserId {
+        /**
+         * A phase generation left empty is hidden from `phases` and only reported as an issue -- but it
+         * is what the buddy's add_path_step repairs, so it has to be findable by id, through the
+         * owner's own path.
+         */
+        @Test
+        fun `a phase generation left empty is hidden from the hire's path but found for repair`() {
+            val path = makePath()
+            val empty = OnboardingPhase(
+                path = path,
+                position = 1,
+                title = "Deployment",
+                description = "How a change reaches production",
+                generationStatus = GenerationStatus.SKIPPED,
+            )
+            path.phases += empty
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+            every { questionAttemptRepository.findPassedQuestionIdsByUserId(userId) } returns emptyList()
+            every { questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId) } returns emptyList()
+
+            val read = service.findPathForUserId(userId)!!
+            val repairable = service.findHiddenPhaseForUserId(userId, empty.id)
+
+            assertTrue(read.phases.none { it.id == empty.id })
+            assertEquals(empty.id, read.generationIssues.single().phaseId)
+            assertEquals("How a change reaches production", read.generationIssues.single().description)
+            assertEquals(empty.id, repairable?.id)
+        }
+
+        @Test
+        fun `a visible phase or one from another path is not a hidden phase of theirs`() {
+            val path = makePath()
+            val visible = OnboardingPhase(path = path, position = 0, title = "Setup", description = "")
+            path.phases += visible
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+
+            assertNull(service.findHiddenPhaseForUserId(userId, visible.id))
+            assertNull(service.findHiddenPhaseForUserId(userId, UUID.randomUUID()))
         }
     }
 

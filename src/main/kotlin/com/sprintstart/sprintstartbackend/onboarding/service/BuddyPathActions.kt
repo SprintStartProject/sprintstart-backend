@@ -124,7 +124,7 @@ class BuddyPathActions(
         when (type) {
             BuddyActionType.COMPLETE_STEP -> completeStep(authId, request.stepId)
             BuddyActionType.COMPLETE_TASK -> completeTask(authId, request.onboardingTaskId)
-            BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request.questionId, request.answer)
+            BuddyActionType.ANSWER_QUESTION -> answerQuestion(authId, request)
             BuddyActionType.REQUEST_SKIP -> requestSkip(authId, request.stepId, request.reason)
             BuddyActionType.ADD_PATH_STEP -> addPathStep(authId, request)
             else -> error("${type.toolName} is not a path action")
@@ -198,13 +198,22 @@ class BuddyPathActions(
     /**
      * Offers to send the hire's own answer to a knowledge question.
      *
-     * ### Why the answer is text and not an option id
+     * ### Why the mentor passes words and not option ids
      *
      * The mentor is not told which option is correct (see [BuddyPathTools]), so what it passes here
-     * is what the hire said — "the second one", "the retro", the words themselves — and the match to
-     * an option happens server-side in [matchOption], once here and once at confirm time, from the
-     * same input. That is deliberate: an option id in the proposal would be the mentor choosing, and
-     * the point is that the hire chooses.
+     * is what the hire said — "the retro", or "Git" and "Docker" as two picks — and the match to
+     * options happens server-side in [matchOption]. An option id from the mentor would be the mentor
+     * choosing, and the point is that the hire chooses.
+     *
+     * ### Why the proposal carries option ids anyway
+     *
+     * Once matched, the *resolved* options go on the proposal next to the labels the button shows,
+     * and the confirm checks those instead of matching the words again. A PM can rename options
+     * without changing their ids, and a re-match after that could land on an option the hire never
+     * read.
+     *
+     * Multiple choice takes a set: an attempt is graded on the exact set picked, so a question with
+     * two right options can only be passed by sending both in one attempt.
      *
      * A match that cannot be made comes back naming the options, so the mentor asks again instead of
      * guessing on the hire's behalf.
@@ -224,9 +233,12 @@ class BuddyPathActions(
                 "No question of this hire's own path has that id. Read get_my_onboarding_path again.",
             )
         val answer = call.stringArg("answer").trim()
+        val isChoice = question.type == CheckQuestionType.MULTIPLE_CHOICE
+        // Each option the hire picked, one per entry. A lone `answer` is one pick.
+        val picks = call.stringListArg("selected_options").ifEmpty { listOf(answer) }.filter { it.isNotBlank() }
 
         val refusal = when {
-            answer.isBlank() ->
+            (if (isChoice) picks.isEmpty() else answer.isBlank()) ->
                 "No answer was provided. This has to be the hire's own answer in their own words — " +
                     "ask them what they want to send, and never answer it for them."
             question.status == QuestionStatus.PASSED ->
@@ -239,16 +251,23 @@ class BuddyPathActions(
         }
         if (refusal != null) return refused(refusal)
 
-        val shown = if (question.type == CheckQuestionType.MULTIPLE_CHOICE) {
-            matchOption(question, answer)?.label
-                ?: return refused(
-                    "“$answer” does not match exactly one of the options for that question. The " +
-                        "options are: ${question.options.joinToString("; ") { it.label }}. Ask the " +
-                        "hire which of them they mean and pass that back.",
-                )
+        val chosen = if (isChoice) {
+            val matched = picks
+                .map { pick ->
+                    matchOption(question, pick)
+                        ?: return refused(
+                            "“$pick” does not match exactly one of the options for that question. The " +
+                                "options are: ${question.options.joinToString("; ") { it.label }}. Ask the " +
+                                "hire which of them they mean and pass that back — if they picked more than " +
+                                "one, pass each as its own entry in selected_options.",
+                        )
+                }.toSet()
+            // In the question's own order, so the button reads the way the options are listed.
+            question.options.filter { it in matched }
         } else {
-            answer
+            emptyList()
         }
+        val shown = if (isChoice) shownChoice(chosen) else answer
 
         return BuddyActionService.ProposeOutcome(
             toolResult = "Proposed to the hire: send “$shown” as their answer to " +
@@ -261,7 +280,8 @@ class BuddyPathActions(
                 label = "Send this answer: “${shown.take(ANSWER_LABEL_LIMIT)}”",
                 question = null,
                 questionId = question.id,
-                answer = answer,
+                answer = shown,
+                optionIds = chosen.map { it.id },
             ),
         )
     }
@@ -590,7 +610,9 @@ class BuddyPathActions(
      * shown as a failed action would read as the buddy having broken rather than as the hire having
      * missed, on the one surface where missing is supposed to be ordinary.
      */
-    private fun answerQuestion(authId: String, questionId: UUID?, answer: String?): BuddyActionResponse {
+    private fun answerQuestion(authId: String, request: BuddyActionRequest): BuddyActionResponse {
+        val questionId = request.questionId
+        val answer = request.answer
         if (questionId == null || answer.isNullOrBlank()) {
             return BuddyActionResponse(ok = false, message = "No answer was proposed to send.")
         }
@@ -613,12 +635,17 @@ class BuddyPathActions(
         }
 
         val submission = if (question.type == CheckQuestionType.MULTIPLE_CHOICE) {
-            val option = matchOption(question, answer)
-                ?: return BuddyActionResponse(
+            // The options the button stood for, still there and still reading the way it showed
+            // them. Anything else is a proposal about a question that has since changed.
+            val byId = question.options.associateBy { it.id }
+            val chosen = request.optionIds.mapNotNull { byId[it] }
+            if (chosen.isEmpty() || chosen.size != request.optionIds.size || shownChoice(chosen) != answer) {
+                return BuddyActionResponse(
                     ok = false,
-                    message = "I couldn't tell which option “$answer” meant, so nothing was sent.",
+                    message = "That question changed since this was suggested, so nothing was sent — ask me again.",
                 )
-            SubmitQuestionAttemptRequest(selectedOptionIds = listOf(option.id))
+            }
+            SubmitQuestionAttemptRequest(selectedOptionIds = chosen.map { it.id }.distinct())
         } else {
             SubmitQuestionAttemptRequest(textAnswer = answer)
         }
@@ -644,13 +671,16 @@ class BuddyPathActions(
         if (phaseId == null || title.isNullOrBlank()) {
             return BuddyActionResponse(ok = false, message = "No step was proposed to add.")
         }
-        val phase = buddyPathTools.findPhase(resolveUserId(authId), phaseId)
+        val userId = resolveUserId(authId)
+        val phase = buddyPathTools.findPhase(userId, phaseId)
             ?: return BuddyActionResponse(ok = false, message = "That phase isn't on your path.")
 
         // Checked again: the path can change between the button and the click, and a placement
         // that was sound then can be a loop or point at something finished now.
         val placement = PathStepPlacement(phase, request.waitsOnIds.toSet(), request.unlocksIds.toSet())
-        if (placement.problem() != null) {
+        // The finished-phase rule too: a phase the hire finished after the button was shown must not
+        // be reopened by clicking it, locking what they have since started in the phases after it.
+        if (placement.problem() != null || reopensFinishedPhase(userId, phase) != null) {
             return BuddyActionResponse(
                 ok = false,
                 message = "Your path changed since this was suggested, so the step wasn't added — ask me again.",
@@ -694,8 +724,8 @@ class BuddyPathActions(
      * option — "the first one" against two options that start alike is ambiguous, and guessing there
      * would record an answer the hire did not give.
      *
-     * Called from the proposal and from the confirm with the same input, so the option that ends up
-     * recorded is the one whose label the hire read on the button.
+     * Only called when proposing. The confirm checks the ids the proposal resolved instead of
+     * matching again (see [proposeAnswer]).
      */
     private fun matchOption(
         question: GetOnboardingQuestionForUserResponse,
@@ -747,6 +777,18 @@ class BuddyPathActions(
         }
         return raw.mapNotNull { runCatching { UUID.fromString(it.trim()) }.getOrNull() }.toSet()
     }
+
+    /** What the confirm button shows for a set of options, and what the confirm checks it against. */
+    private fun shownChoice(options: List<QuestionOptionForUserResponse>): String =
+        options.joinToString(", ") { it.label.trim() }
+
+    /** Reads a list of strings the model passed, tolerating a single string where a list was asked for. */
+    private fun BuddyToolCallDto.stringListArg(name: String): List<String> =
+        when (val value = arguments[name]) {
+            is JsonArray -> value.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim() }
+            is JsonPrimitive -> listOfNotNull(value.contentOrNull?.trim())
+            else -> emptyList()
+        }.filter { it.isNotEmpty() }
 
     /** Reads a UUID argument the model passed to a tool, or null when it is missing/unparseable. */
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
@@ -824,7 +866,9 @@ class BuddyPathActions(
                 "path. Read get_my_onboarding_path for the question_id and the options they are " +
                 "looking at. Pass THEIR answer, in their words — for a multiple-choice question, " +
                 "whichever option they picked; it is matched to an option for you, and an answer " +
-                "that matches none comes back so you can ask again. This does NOT record anything " +
+                "that matches none comes back so you can ask again. If they picked MORE THAN ONE " +
+                "option, pass every one of them in selected_options: an attempt is graded on the " +
+                "whole set, so sending one at a time can never pass. This does NOT record anything " +
                 "by itself; they see a confirm button showing the answer that will be sent. An " +
                 "attempt is kept whether it is right or wrong. You are a tutor here, not an " +
                 "examiner and not a shortcut: explain the material the question is about, from the " +
@@ -847,10 +891,19 @@ class BuddyPathActions(
                                 "option they picked — the label, or enough of it to identify it.",
                         )
                     }
+                    putJsonObject("selected_options") {
+                        put("type", "array")
+                        putJsonObject("items") { put("type", "string") }
+                        put(
+                            "description",
+                            "Multiple choice only, when they picked more than one option: each one " +
+                                "as its own entry, the label or enough of it to identify it. Takes " +
+                                "the place of answer.",
+                        )
+                    }
                 }
                 putJsonArray("required") {
                     add("question_id")
-                    add("answer")
                 }
             },
         )

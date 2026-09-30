@@ -295,9 +295,14 @@ class BuddyPathTools(
      * Used by [BuddyPathActions] to check a proposal *before* the hire sees a button, and to put
      * the real title on it. A button that names the thing it will change is the last chance anybody
      * has to notice the mentor meant a different step.
+     *
+     * Includes the phases generation left empty, which the hire's own read hides: repairing one of
+     * those with `add_path_step` is the case the empty-phase section of the read asks for, and a
+     * lookup that could not see them refused exactly that.
      */
     fun findPhase(userId: UUID, phaseId: UUID): GetOnboardingPhaseForUserResponse? =
         onboardingPathService.findPathForUserId(userId)?.phases?.firstOrNull { it.id == phaseId }
+            ?: onboardingPathService.findHiddenPhaseForUserId(userId, phaseId)
 
     /** Every phase of the hire's own path, or empty when they have none. */
     fun phasesOf(userId: UUID): List<GetOnboardingPhaseForUserResponse> =
@@ -800,12 +805,21 @@ class BuddyPathTools(
             "These phases came back with nothing in them, because the project's own material did " +
                 "not support them:",
         )
-        issues.take(AHEAD_SHOWN).forEach { appendLine("- ${quoted(it.title)} (${it.status})") }
+        issues.take(AHEAD_SHOWN).forEach { issue ->
+            append("- ${quoted(issue.title)} (${issue.status}) [phase_id: ${issue.phaseId}]")
+            appendLine(
+                issue.description
+                    .takeIf { it.isNotBlank() }
+                    ?.let { ": $it" }
+                    .orEmpty(),
+            )
+        }
         appendLine(
-            "That is not the hire's fault and not something trying again fixes. Their titles say " +
-                "what each was meant to cover, so they are subjects you can talk through -- and if " +
-                "something concrete comes out of that conversation, offer add_path_step so the " +
-                "phase stops being empty.",
+            "That is not the hire's fault and not something trying again fixes. Their titles and " +
+                "descriptions say what each was meant to cover, so they are subjects you can talk " +
+                "through -- and if something concrete comes out of that conversation, offer " +
+                "add_path_step with that phase_id so the phase stops being empty. Once it has a step, " +
+                "the phase shows up on their path.",
         )
     }
 
