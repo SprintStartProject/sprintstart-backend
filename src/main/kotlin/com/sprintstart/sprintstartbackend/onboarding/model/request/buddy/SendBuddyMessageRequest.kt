@@ -16,6 +16,7 @@ import java.util.UUID
  * conversation either way.
  */
 data class SendBuddyMessageRequest(
+    val sessionId: UUID,
     val content: String,
     /** Defaults to the full mentor, so a client that has never heard of the switch is unaffected. */
     val capabilitiesEnabled: Boolean = true,

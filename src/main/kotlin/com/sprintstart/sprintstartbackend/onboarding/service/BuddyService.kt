@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
@@ -17,7 +18,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGenerateSessionTitleRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -57,13 +61,16 @@ class BuddyService(
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
     private val applicationScope: CoroutineScope,
+    private val buddyAiClient: BuddyAiClient,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    /** Finds or creates a user's one ongoing buddy session. */
-    fun getOrCreateSession(userId: UUID): BuddySession =
-        buddySessionRepository.findByUserId(userId)
-            ?: buddySessionRepository.save(BuddySession(userId = userId))
+    /** Finds a user's ongoing buddy sessions. */
+    fun getSessions(authId: String): GetSessionsResponse {
+        val userId = resolveUserId(authId)
+        val sessions = buddySessionRepository.findByUserId(userId).map { it.toResponse() }.toList()
+        return GetSessionsResponse(sessions)
+    }
 
     /**
      * Returns the current visit's buddy messages, oldest first.
@@ -74,14 +81,31 @@ class BuddyService(
      * The boundary is the last opening marker, never [BuddySession.summarizedCount].
      * Keying it to the compaction cursor makes a hire's own scrollback shrink as the model folds.
      */
-    fun getMessagesForMe(authId: String): List<BuddyMessageResponse> {
+    fun getMessagesForMe(authId: String, sessionId: UUID): List<BuddyMessageResponse> {
         val userId = resolveUserId(authId)
-        val session = buddySessionRepository.findByUserId(userId) ?: return emptyList()
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Buddy session not found for current user")
         val messages = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
         // No marker anywhere falls back to showing *everything*, never nothing.
         return messages
             .drop(messages.indexOfLast { it.opening }.takeIf { it >= 0 } ?: 0)
             .map { it.toResponse() }
+    }
+
+    /**
+     * Creates a new session for the current user.
+     *
+     * @param authId The ID of the currently authenticated user.
+     * @param projectId The (optional) ID of the project the chat is linked to.
+     */
+    fun createSession(authId: String, projectId: UUID?): CreateSessionResponse {
+        val userId = resolveUserId(authId)
+        val session = BuddySession(
+            userId = userId,
+            projectId = projectId,
+        )
+        buddySessionRepository.save(session)
+        return CreateSessionResponse(session.id)
     }
 
     /**
@@ -97,9 +121,12 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun streamOpenForMe(authId: String): Flow<BuddyStreamEvent> {
+    suspend fun streamOpenForMe(authId: String, sessionId: UUID): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
-        val session = getOrCreateSession(userId)
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
 
         val all = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
 
@@ -225,17 +252,28 @@ class BuddyService(
      * This turn must never ask the AI to fold. A fold runs before the reply is composed, and
      * since the cursor advances by exactly what it folds, the window would then sit at [WINDOW]
      * permanently — an extra serialized model call on every turn. [BuddyCompactionService] folds
-     * afterwards instead; a fold that has not happened yet just means a longer window this turn.
+     * afterward instead; a fold that has not happened yet just means a longer window this turn.
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
     suspend fun sendMessageForMe(
         authId: String,
+        sessionId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
     ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
-        val session = getOrCreateSession(userId)
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
+
+        // Check if title has to be generated
+        if (session.title.isBlank()) {
+            val generatedTitle = buddyAiClient.getSessionTitle(AiGenerateSessionTitleRequest(content))
+            session.title = generatedTitle.title
+            buddySessionRepository.save(session)
+        }
 
         // Read history before saving the new message so it isn't sent to the AI service twice.
         // Everything the summary already covers stays out of the prompt.
@@ -263,7 +301,7 @@ class BuddyService(
         // Both resolved once per turn, not per hop: neither can change mid-conversation, and
         // re-reading would cost a membership lookup on every step of the agent loop.
         val vocabulary = vocabulary()
-        val projectIds = projectIdsFor(userId)
+        val projectIds = session.projectId?.let { listOf(it.toString()) } ?: projectIdsFor(userId)
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
