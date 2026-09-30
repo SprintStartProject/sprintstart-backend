@@ -79,6 +79,16 @@ enum class BoardCardKind(
     SUGGESTED_TASKS(Placement.MENTOR),
 
     /**
+     * The whole live starter-work pool, ranked for this hire, to browse and grab from by hand.
+     *
+     * Baseline, unlike [SUGGESTED_TASKS]: picking your own task is not something the mentor should
+     * have to decide to offer. The buddy stays the way to get help choosing; this is the way to
+     * choose without asking anybody. Same ranking and same reasons as `GET /me/matches`, so the card
+     * and the conversation cannot disagree about which task fits best.
+     */
+    TASK_POOL(Placement.BASELINE),
+
+    /**
      * What the hire has shown they can do, and what they are still short of.
      *
      * Placed rather than baseline because it is only worth looking at once there is something on
