@@ -1,14 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataMember
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataMember
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper

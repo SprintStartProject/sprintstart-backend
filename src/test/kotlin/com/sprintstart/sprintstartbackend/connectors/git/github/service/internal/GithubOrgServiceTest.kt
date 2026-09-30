@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
@@ -15,13 +16,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.TeamOrganization
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubOrganizationRepository
-import com.sprintstart.sprintstartbackend.connectors.git.github.service.internal.GithubOrgService
-import com.sprintstart.sprintstartbackend.connectors.github.GithubClient
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.org.GithubOrgMetadataFetchingStartedEvent
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest

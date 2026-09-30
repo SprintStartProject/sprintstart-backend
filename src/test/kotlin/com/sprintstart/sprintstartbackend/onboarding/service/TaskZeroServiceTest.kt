@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredPullRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus

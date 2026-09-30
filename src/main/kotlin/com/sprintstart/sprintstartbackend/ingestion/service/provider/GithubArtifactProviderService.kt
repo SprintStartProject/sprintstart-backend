@@ -2,8 +2,6 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -59,11 +57,17 @@ class GithubArtifactProviderService(
     fun persistArtifact(command: GithubArtifactCommand) {
         val runId = command.ingestionRunId
         val projectIds = when (command.metadata) {
-            is GithubArtifactMetadata ->
+            is GithubArtifactMetadata -> {
                 githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
-            is GithubOrgMetadataArtifactMetadata ->
+            }
+
+            is GithubOrgMetadataArtifactMetadata -> {
                 githubRepositoryApi.getProjectIdsByOwner(command.metadata.login).toMutableSet()
-            else -> mutableSetOf()
+            }
+
+            else -> {
+                mutableSetOf()
+            }
         }
 
         val existing = artifactRepository.findBySourceId(command.sourceId)
