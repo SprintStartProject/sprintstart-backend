@@ -305,6 +305,7 @@ class BuddyService(
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
+            val reasoning = mutableListOf<String>()
             var citations: List<BuddyCitationDto> = emptyList()
             var answer: String? = null
             var step = 0
@@ -314,6 +315,7 @@ class BuddyService(
                 val response = onboardingAiClient.buddyAgentTurn(
                     agentRequest(messages, tools, step, session, vocabulary, projectIds, capabilitiesEnabled),
                 )
+                reasoning += response.reasoning
                 citations = response.citations
                 if (response.final) {
                     answer = response.text
@@ -335,7 +337,7 @@ class BuddyService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            emitAgentReply(reply, citations)
+            emitAgentReply(reply, reasoning, citations)
 
             buddyMessageRepository.save(
                 BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
