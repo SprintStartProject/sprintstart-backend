@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.mapper.effectivePermissionGroup
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
@@ -276,6 +277,14 @@ class UserApiService(
             .findByAuthId(authId)
             .map { user -> Role.ADMIN in user.roles }
             .orElse(false)
+
+    @Transactional(readOnly = true)
+    @Tracked("Reading user permission group")
+    override fun getPermissionGroup(userId: UUID): Role? =
+        userRepository
+            .findById(userId)
+            .map { it.effectivePermissionGroup() }
+            .orElse(null)
 
     override fun canManageProject(authId: String, projectId: UUID): Boolean {
         val user = userRepository.findByAuthId(authId).orElse(null)

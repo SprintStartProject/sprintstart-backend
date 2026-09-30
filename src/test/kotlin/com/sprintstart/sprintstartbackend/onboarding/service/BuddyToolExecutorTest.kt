@@ -39,6 +39,7 @@ class BuddyToolExecutorTest {
         every { getGithubLoginByUserId(any()) } returns "sam"
     }
     private val buddyBoardTools: BuddyBoardTools = mockk(relaxed = true)
+    private val buddyAppGuideTools: BuddyAppGuideTools = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
 
@@ -67,6 +68,7 @@ class BuddyToolExecutorTest {
         projectMembershipApi,
         arrivalStepService,
         competencyPlacementService,
+        buddyAppGuideTools,
     )
 
     private val userId = UUID.randomUUID()
@@ -221,7 +223,21 @@ class BuddyToolExecutorTest {
             "get_suggested_tasks",
             "search_canonical_answers",
             "get_teammates",
+            "get_app_guide",
         )
+    }
+
+    @Test
+    fun `answers the app guide for the caller and the page they are on`() {
+        every { buddyAppGuideTools.guideFor(userId, "/team-management") } returns "the guide"
+
+        val result = executor.execute(
+            BuddyToolCallDto(id = "c1", name = "get_app_guide"),
+            userId,
+            currentPage = "/team-management",
+        )
+
+        assertThat(result).isEqualTo("the guide")
     }
 
     /**

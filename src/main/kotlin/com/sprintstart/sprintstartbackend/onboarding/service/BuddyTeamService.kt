@@ -139,6 +139,7 @@ class BuddyTeamService(
         projectId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
         val session = getOrCreateSession(userId, projectId)
@@ -153,7 +154,12 @@ class BuddyTeamService(
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
         )
 
-        val context = TeamToolContext(userId = userId, authId = authId, projectId = projectId)
+        val context = TeamToolContext(
+            userId = userId,
+            authId = authId,
+            projectId = projectId,
+            currentPage = currentPage,
+        )
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)

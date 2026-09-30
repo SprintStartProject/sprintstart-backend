@@ -1,0 +1,70 @@
+package com.sprintstart.sprintstartbackend.onboarding.service
+
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+
+class AppGuideTest {
+    /**
+     * Pinned on purpose. The guide is a hand-written copy of the frontend's routes, so adding,
+     * renaming or removing a page has to be a deliberate edit here — check the frontend's
+     * `AppRouter.tsx` and `accessPolicy.ts` when this fails, not just the expected list.
+     */
+    @Test
+    fun `describes exactly these routes`() {
+        assertThat(AppGuide.pages.map { it.path }).containsExactly(
+            "/",
+            "/board",
+            "/chat",
+            "/buddy",
+            "/knowledge-base",
+            "/onboarding",
+            "/settings",
+            "/pm-dashboard",
+            "/team-management",
+            "/team/{member_id}",
+            "/data-ingestion",
+            "/blueprints",
+            "/hire-setup",
+            "/insights/knowledge-requests",
+            "/insights/faq",
+            "/insights/knowledge-gaps",
+            "/insights/onboarding",
+            "/admin",
+        )
+    }
+
+    /** Anything else would render as a new tab to somebody else's site, or not as a link at all. */
+    @Test
+    fun `every path is root-relative`() {
+        AppGuide.pages.forEach { page ->
+            assertThat(page.path).startsWith("/").doesNotStartWith("//")
+        }
+    }
+
+    /** The frontend only narrows PM access on pages that PM, HR and admins can all open. */
+    @Test
+    fun `a manager-scoped page is open to PM, HR and admins`() {
+        AppGuide.pages.filter { it.managerScoped }.forEach { page ->
+            assertThat(page.roles).containsExactlyInAnyOrder(Role.PM, Role.HR, Role.ADMIN)
+        }
+    }
+
+    @Test
+    fun `names the page behind a detail route`() {
+        assertThat(AppGuide.pageAt("/team/1234")?.name).isEqualTo("Team member")
+        assertThat(AppGuide.pageAt("/chat/abc")?.name).isEqualTo("Chat")
+        assertThat(AppGuide.pageAt("/blueprints/abc")?.name).isEqualTo("Blueprints")
+    }
+
+    /** `/team-management` starts with `/team`, but not with the member page's `/team/`. */
+    @Test
+    fun `does not mistake team management for a member page`() {
+        assertThat(AppGuide.pageAt("/team-management")?.name).isEqualTo("Team Management")
+    }
+
+    @Test
+    fun `knows nothing about a route it does not describe`() {
+        assertThat(AppGuide.pageAt("/nowhere")).isNull()
+    }
+}

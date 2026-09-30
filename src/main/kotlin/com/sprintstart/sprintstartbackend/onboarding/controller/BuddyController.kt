@@ -217,13 +217,19 @@ class BuddyController(
     ): Flow<BuddyStreamEvent> {
         val teamProjectId = request.teamProjectId
         return if (teamProjectId == null) {
-            buddyService.sendMessageForMe(jwt.subject, request.content, request.capabilitiesEnabled)
+            buddyService.sendMessageForMe(
+                jwt.subject,
+                request.content,
+                request.capabilitiesEnabled,
+                request.currentPage,
+            )
         } else {
             buddyTeamService.sendMessageForMe(
                 jwt.subject,
                 teamProjectId,
                 request.content,
                 request.capabilitiesEnabled,
+                request.currentPage,
             )
         }
     }

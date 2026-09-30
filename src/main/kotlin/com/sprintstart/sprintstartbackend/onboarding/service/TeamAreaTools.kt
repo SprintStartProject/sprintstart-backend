@@ -19,6 +19,8 @@ data class TeamToolContext(
     val userId: UUID,
     val authId: String,
     val projectId: UUID,
+    /** The app path the manager was on when they spoke, for the app guide; null when not sent. */
+    val currentPage: String? = null,
 )
 
 /**

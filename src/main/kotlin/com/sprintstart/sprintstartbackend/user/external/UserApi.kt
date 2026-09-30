@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.external
 
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import java.time.Instant
@@ -91,6 +92,18 @@ interface UserApi {
      * @return `true` when the user exists and is an admin.
      */
     fun isAdmin(authId: String): Boolean
+
+    /**
+     * Returns the one permission group a user's pages are gated by: the highest of their roles.
+     *
+     * The same collapse the user response's `permissionGroup` makes, and the value the frontend's
+     * access policy decides every route on — so a module describing the app to somebody can describe
+     * exactly the pages they can open.
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @return The highest role the user holds, or `null` when the user does not exist.
+     */
+    fun getPermissionGroup(userId: UUID): Role?
 
     /**
      * Returns the GitHub account a user contributes as, if they have declared one.
