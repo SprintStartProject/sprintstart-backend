@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.PhaseCheckQues
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.every
 import io.mockk.just
@@ -260,6 +261,120 @@ class OnboardingPathServiceTest {
             assertThrows<ResponseStatusException> {
                 service.deleteOnboardingPathForMe(authId)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
+    inner class RequireMayReplacePath {
+        private val callerAuthId = "auth|caller"
+        private val ownerAuthId = "auth|owner"
+        private val projectA = UUID.randomUUID()
+        private val projectB = UUID.randomUUID()
+        private val blueprintA = UUID.randomUUID()
+
+        private fun givenPathFrom(project: UUID?) {
+            val blueprintId = project?.let { blueprintA }
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintId))
+            if (blueprintId != null) {
+                every { blueprintPathRepository.findById(blueprintId) } returns
+                    Optional.of(mockk<BlueprintPath> { every { projectId } returns project })
+            }
+        }
+
+        private fun givenOwnerAssignedTo(vararg projects: UUID) {
+            every { userApi.getAuthIdByUserId(userId) } returns Optional.of(ownerAuthId)
+            every { userApi.getOnboardingProfileByAuthId(ownerAuthId) } returns Optional.of(
+                UserOnboardingProfile(id = userId, projectIds = projects.toSet(), projectRoles = emptyMap()),
+            )
+        }
+
+        private fun assertForbidden(block: () -> Unit) {
+            assertThrows<ResponseStatusException>(block).also { assertEquals(403, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `lets anybody build a first path`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
+
+            service.requireMayReplacePath(callerAuthId, userId, projectA)
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `refuses a rebuild by a caller who does not manage the target project`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, projectA) }
+        }
+
+        @Test
+        fun `refuses a rebuild for an owner who is not assigned to the target project`() {
+            givenPathFrom(projectA)
+            givenOwnerAssignedTo(projectA)
+            every { userApi.canManageProject(callerAuthId, projectB) } returns true
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, projectB) }
+        }
+
+        @Test
+        fun `lets the target project's manager replace a path from another project`() {
+            // A member with a path from A joins B: B's manager must be able to move them, or
+            // only an admin could.
+            givenPathFrom(projectA)
+            givenOwnerAssignedTo(projectA, projectB)
+            every { userApi.canManageProject(callerAuthId, projectB) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, projectB)
+
+            verify(exactly = 0) { userApi.canManageProject(callerAuthId, projectA) }
+        }
+
+        @Test
+        fun `lets a rebuild replace a path whose origin is unknown`() {
+            givenPathFrom(null)
+            givenOwnerAssignedTo(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, projectA)
+        }
+
+        @Test
+        fun `lets the origin project's manager delete the path`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `refuses deleting a path from a project the caller does not manage`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+        }
+
+        @Test
+        fun `leaves deleting a path of unknown origin to admins`() {
+            givenPathFrom(null)
+            every { userApi.isAdmin(callerAuthId) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+
+            every { userApi.isAdmin(callerAuthId) } returns true
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `treats a path whose blueprint was deleted as of unknown origin`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintA))
+            every { blueprintPathRepository.findById(blueprintA) } returns Optional.empty()
+            every { userApi.isAdmin(callerAuthId) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
         }
     }
 

@@ -271,6 +271,12 @@ class UserApiService(
 
     @Transactional(readOnly = true)
     @Tracked("Checking if user manages project")
+    override fun isAdmin(authId: String): Boolean =
+        userRepository
+            .findByAuthId(authId)
+            .map { user -> Role.ADMIN in user.roles }
+            .orElse(false)
+
     override fun canManageProject(authId: String, projectId: UUID): Boolean {
         val user = userRepository.findByAuthId(authId).orElse(null)
             ?: return false

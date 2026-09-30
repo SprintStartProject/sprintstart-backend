@@ -104,12 +104,16 @@ class OnboardingPathService(
      * Refuses [callerAuthId] replacing or deleting [userId]'s path when that is not theirs to decide.
      *
      * A user's first path is theirs to build, so without a path there is nothing to check. An
-     * existing one holds the user's progress, and only somebody who manages the project it is for
-     * may throw it away:
+     * existing one holds the user's progress, so throwing it away is a manager's call:
      *
-     * - rebuilding from [projectId] needs the caller to manage [projectId];
-     * - and a path built from another project may only be replaced or deleted by somebody who also
-     *   manages *that* project, since a user has one path across all their projects.
+     * - **Rebuilding** from [projectId] needs the caller to manage [projectId] and the owner to be
+     *   assigned to it. Where the old path came from does not matter: a user has one path across
+     *   all their projects, and a member who joins project B with a path from A must be able to get
+     *   one for B from B's manager -- otherwise only an admin could ever move them.
+     * - **Deleting** replaces the path with nothing, so it is decided by the project the path was
+     *   built from: the caller must manage that project. A path whose origin is unknown (its
+     *   blueprint was deleted, or it came from a system-wide one) has no manager to vouch for it,
+     *   so only an admin may delete it.
      *
      * @param callerAuthId The acting user's auth ID.
      * @param userId The path's owner.
@@ -120,17 +124,44 @@ class OnboardingPathService(
     @Tracked("Checking whether an onboarding path may be replaced")
     fun requireMayReplacePath(callerAuthId: String, userId: UUID, projectId: UUID?) {
         val origin = findPathOrigin(userId) ?: return
-        if (projectId != null && !userApi.canManageProject(callerAuthId, projectId)) {
+        if (projectId != null) {
+            requireMayRebuildFrom(callerAuthId, userId, projectId)
+            return
+        }
+        val builtFrom = origin.builtFromProjectId
+        val mayDelete = if (builtFrom == null) {
+            userApi.isAdmin(callerAuthId)
+        } else {
+            userApi.canManageProject(callerAuthId, builtFrom)
+        }
+        if (!mayDelete) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                if (builtFrom == null) {
+                    "Only an admin can delete an onboarding path whose project is unknown"
+                } else {
+                    "The onboarding path was built from a project the caller does not manage"
+                },
+            )
+        }
+    }
+
+    private fun requireMayRebuildFrom(callerAuthId: String, userId: UUID, projectId: UUID) {
+        if (!userApi.canManageProject(callerAuthId, projectId)) {
             throw ResponseStatusException(
                 HttpStatus.FORBIDDEN,
                 "Only the project manager can rebuild an existing onboarding path",
             )
         }
-        val builtFrom = origin.builtFromProjectId ?: return
-        if (builtFrom != projectId && !userApi.canManageProject(callerAuthId, builtFrom)) {
+        val ownerAssigned = userApi
+            .getAuthIdByUserId(userId)
+            .flatMap { authId -> userApi.getOnboardingProfileByAuthId(authId) }
+            .map { profile -> projectId in profile.projectIds }
+            .orElse(false)
+        if (!ownerAssigned) {
             throw ResponseStatusException(
                 HttpStatus.FORBIDDEN,
-                "The onboarding path was built from a project the caller does not manage",
+                "The path's owner is not assigned to project: $projectId",
             )
         }
     }

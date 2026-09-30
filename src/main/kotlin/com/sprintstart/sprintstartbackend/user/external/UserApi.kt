@@ -82,6 +82,17 @@ interface UserApi {
     fun canManageProject(authId: String, projectId: UUID): Boolean
 
     /**
+     * Checks whether a user holds the global admin role.
+     *
+     * For rules that must fall back to "admin only" when no project can vouch for an action -- an
+     * auth ID rather than an `Authentication`, like [canManageProject].
+     *
+     * @param authId External authentication identifier.
+     * @return `true` when the user exists and is an admin.
+     */
+    fun isAdmin(authId: String): Boolean
+
+    /**
      * Returns the GitHub account a user contributes as, if they have declared one.
      *
      * Artifact verification uses this to attribute a submitted pull request to the hire who
