@@ -63,7 +63,7 @@ internal class BitbucketRepositoryVisibilityService(
             credentialApi.findAllSecretsByAuthId(authId)
         }
         val visible = credentials.any { credential ->
-            bitbucketClient.repositoryExists(connection.workspace, connection.slug, credential.apiToken)
+            bitbucketClient.repositoryExists(connection.workspace, connection.slug, credential)
         }
 
         if (!visible) {

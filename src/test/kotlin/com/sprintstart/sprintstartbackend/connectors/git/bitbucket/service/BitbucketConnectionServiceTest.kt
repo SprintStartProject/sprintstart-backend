@@ -79,7 +79,7 @@ class BitbucketConnectionServiceTest {
     fun `stores the connection and starts ingesting on a new repository`() = runTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
-        coEvery { bitbucketClient.repositoryExists("sprintstart", "sprintstart-backend", "api-token") } returns true
+        coEvery { bitbucketClient.repositoryExists("sprintstart", "sprintstart-backend", secret()) } returns true
         every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns null
         val saved = slot<BitbucketConnection>()
         every { connectionRepository.save(capture(saved)) } answers { firstArg() }

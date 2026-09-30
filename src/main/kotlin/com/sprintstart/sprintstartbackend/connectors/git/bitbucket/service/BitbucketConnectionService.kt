@@ -181,7 +181,7 @@ internal class BitbucketConnectionService(
             throw AtlassianCredentialNotFoundException(authId, request.credentialName)
         }
 
-        if (!bitbucketClient.repositoryExists(request.workspace, request.slug, cred.apiToken)) {
+        if (!bitbucketClient.repositoryExists(request.workspace, request.slug, cred)) {
             eventPublisher.publishEvent(
                 BitbucketRepositoryConnectionFailedEvent(
                     transactionId,
@@ -210,12 +210,13 @@ internal class BitbucketConnectionService(
     suspend fun discoverRepositoriesOfWorkspace(
         request: DiscoverBitbucketRepositoriesRequest,
     ): DiscoverBitbucketRepositoriesResponse {
+        println("TESTSET")
         val token = credentialApi.findSecret(request.authId, request.credentialName)
             ?: throw AtlassianCredentialNotFoundException(request.authId, request.credentialName)
 
         val discoveredRepositories = bitbucketClient.discoverRepositoriesOfWorkspace(
             request.workspace,
-            token.apiToken,
+            token,
             request.page,
             request.pageSize,
         )

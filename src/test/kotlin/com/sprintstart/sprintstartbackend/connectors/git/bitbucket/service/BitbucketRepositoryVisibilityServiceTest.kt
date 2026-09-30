@@ -33,7 +33,7 @@ class BitbucketRepositoryVisibilityServiceTest {
     fun `accepts a caller whose first stored credential can see the repository`() = runTest {
         every { connectionRepository.findById(repositoryId) } returns Optional.of(connection())
         every { credentialApi.findAllSecretsByAuthId("auth-id") } returns listOf(secret("token-a"))
-        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", "token-a") } returns true
+        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", secret("token-a")) } returns true
 
         service.requireCallerCanSeeConnection("auth-id", repositoryId)
     }
@@ -42,19 +42,19 @@ class BitbucketRepositoryVisibilityServiceTest {
     fun `tries the next stored credential when one cannot see the repository`() = runTest {
         every { connectionRepository.findById(repositoryId) } returns Optional.of(connection())
         every { credentialApi.findAllSecretsByAuthId("auth-id") } returns listOf(secret("token-a"), secret("token-b"))
-        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", "token-a") } returns false
-        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", "token-b") } returns true
+        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", secret("token-a")) } returns false
+        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", secret("token-b")) } returns true
 
         service.requireCallerCanSeeConnection("auth-id", repositoryId)
 
-        coVerify(exactly = 1) { bitbucketClient.repositoryExists("sprintstart", "backend", "token-a") }
+        coVerify(exactly = 1) { bitbucketClient.repositoryExists("sprintstart", "backend", secret("token-a")) }
     }
 
     @Test
     fun `refuses a caller none of whose credentials can see the repository`() = runTest {
         every { connectionRepository.findById(repositoryId) } returns Optional.of(connection())
         every { credentialApi.findAllSecretsByAuthId("auth-id") } returns listOf(secret("token-a"))
-        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", "token-a") } returns false
+        coEvery { bitbucketClient.repositoryExists("sprintstart", "backend", secret("token-a")) } returns false
 
         assertThrows<BitbucketRepositoryConnectionNotFoundException> {
             service.requireCallerCanSeeConnection("auth-id", repositoryId)

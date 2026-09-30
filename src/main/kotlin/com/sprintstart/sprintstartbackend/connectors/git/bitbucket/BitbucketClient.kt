@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.BitbucketPage
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoveredRepository
@@ -21,6 +22,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Base64
 
 /**
  * Talks to the Bitbucket Cloud REST API, version 2.0.
@@ -37,7 +39,7 @@ import java.time.format.DateTimeFormatter
  *   every request is wrapped in a small bounded retry rather than being pushed onto callers.
  *
  * Tokens are passed per call rather than read off a connection entity: this client owns transport,
- * and the caller that resolved the credential is the one that knows which token applies.
+ * and the caller that resolved the credential is the one that knows which credential applies.
  *
  * @constructor Creates the client from the shared transport and the application configuration.
  * @param webClient Performs the outbound HTTP calls. Owns transport only.
@@ -59,15 +61,18 @@ class BitbucketClient(
      * the workspace metadata artifact.
      *
      * @param workspace The workspace id, as it appears in a repository URL.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @return The workspace's metadata.
      * @throws WebClientException if the workspace does not exist or the token cannot read it.
      * @throws kotlinx.serialization.SerializationException if the response body cannot be deserialized.
      */
-    suspend fun fetchWorkspaceMetadata(workspace: String, token: String): WorkspaceMetadataResponse =
+    suspend fun fetchWorkspaceMetadata(
+        workspace: String,
+        credentials: AtlassianCredentialSecret,
+    ): WorkspaceMetadataResponse =
         executeGet(
             uri = "${workspaceUri(workspace)}?fields=$WORKSPACE_FIELDS",
-            token = token,
+            credentials = credentials,
             requestContext = "workspace metadata of '$workspace'",
         )
 
@@ -78,15 +83,18 @@ class BitbucketClient(
      * rather than one page of it.
      *
      * @param workspace The workspace whose members should be read.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @return The workspace's members.
      * @throws WebClientException if the request fails with a non-2xx status.
      * @throws kotlinx.serialization.SerializationException if a response body cannot be deserialized.
      */
-    suspend fun getWorkspaceMembers(workspace: String, token: String): WorkspaceMembersResponse {
+    suspend fun getWorkspaceMembers(
+        workspace: String,
+        credentials: AtlassianCredentialSecret,
+    ): WorkspaceMembersResponse {
         val members = fetchAllPages<WorkspaceMemberResponse>(
             firstPageUri = "${workspaceUri(workspace)}/members?pagelen=$PAGE_LENGTH&fields=$WORKSPACE_MEMBER_FIELDS",
-            token = token,
+            credentials = credentials,
             requestContext = "workspace members of '$workspace'",
         )
         return WorkspaceMembersResponse(members = members)
@@ -102,13 +110,13 @@ class BitbucketClient(
      *
      * @param workspace The workspace owning the repository.
      * @param slug The repository's slug within that workspace.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @return true when the repository is readable with this token, false otherwise.
      * @throws WebClientException if the request fails with a status other than 404.
      */
-    suspend fun repositoryExists(workspace: String, slug: String, token: String): Boolean =
+    suspend fun repositoryExists(workspace: String, slug: String, credentials: AtlassianCredentialSecret): Boolean =
         try {
-            executeRawGet(repositoryUri(workspace, slug), token, "repository '$workspace/$slug'")
+            executeRawGet(repositoryUri(workspace, slug), credentials, "repository '$workspace/$slug'")
             true
         } catch (exception: WebClientException) {
             if (exception.statusCode == 404) {
@@ -126,7 +134,7 @@ class BitbucketClient(
      * in the API and zero-based in the connector, hence the `+ 1`.
      *
      * @param workspace The workspace whose repositories should be listed.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @param page The zero-based index of the page to fetch.
      * @param pageSize The number of repositories to fetch per page.
      * @return The repositories on that page.
@@ -135,14 +143,14 @@ class BitbucketClient(
      */
     suspend fun discoverRepositoriesOfWorkspace(
         workspace: String,
-        token: String,
+        credentials: AtlassianCredentialSecret,
         page: Int,
         pageSize: Int,
     ): DiscoverRepositoriesResponse {
         val response: BitbucketPage<DiscoveredRepository> = executeGet(
             uri = "$apiBaseUrl/repositories/${urlEncode(workspace)}" +
                 "?pagelen=$pageSize&page=${page + 1}&fields=$REPOSITORY_FIELDS",
-            token = token,
+            credentials = credentials,
             requestContext = "repository discovery of '$workspace'",
         )
         return DiscoverRepositoriesResponse(response.values)
@@ -163,7 +171,7 @@ class BitbucketClient(
      *
      * @param workspace The workspace owning the repository.
      * @param slug The repository's slug within that workspace.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @param sinceTimestamp Optional ISO 8601 instant. When given, only pull requests updated on or
      * after it are returned.
      * @return The matching pull requests.
@@ -173,12 +181,12 @@ class BitbucketClient(
     suspend fun fetchAllPullRequests(
         workspace: String,
         slug: String,
-        token: String,
+        credentials: AtlassianCredentialSecret,
         sinceTimestamp: String? = null,
     ): List<PullRequest> =
         fetchAllPages<PullRequest>(
             firstPageUri = buildPullRequestsUri(workspace, slug, sinceTimestamp),
-            token = token,
+            credentials = credentials,
             requestContext = "pull requests of '$workspace/$slug'",
         )
 
@@ -193,7 +201,7 @@ class BitbucketClient(
      * @param workspace The workspace owning the repository.
      * @param slug The repository's slug within that workspace.
      * @param pullRequestId The pull request whose comments should be read.
-     * @param token The Bitbucket API token used to authenticate the request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @return The pull request's comments.
      * @throws WebClientException if a request fails with a non-2xx status.
      * @throws kotlinx.serialization.SerializationException if a response body cannot be deserialized.
@@ -202,12 +210,12 @@ class BitbucketClient(
         workspace: String,
         slug: String,
         pullRequestId: Int,
-        token: String,
+        credentials: AtlassianCredentialSecret,
     ): List<PullRequestComment> =
         fetchAllPages<PullRequestComment>(
             firstPageUri = "${repositoryUri(workspace, slug)}/pullrequests/$pullRequestId" +
                 "/comments?pagelen=$PAGE_LENGTH&fields=$PULL_REQUEST_COMMENT_FIELDS",
-            token = token,
+            credentials = credentials,
             requestContext = "comments of pull request $pullRequestId in '$workspace/$slug'",
         )
 
@@ -253,7 +261,7 @@ class BitbucketClient(
      * first page.
      *
      * @param firstPageUri The absolute URI of the first page, including any filter parameters.
-     * @param token The Bitbucket API token used to authenticate each request.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @param requestContext Describes the collection for retry log messages.
      * @return All items across all pages, in the order the API returned them.
      * @throws WebClientException if any request fails with a non-2xx status.
@@ -261,14 +269,14 @@ class BitbucketClient(
      */
     private suspend inline fun <reified T> fetchAllPages(
         firstPageUri: String,
-        token: String,
+        credentials: AtlassianCredentialSecret,
         requestContext: String,
     ): List<T> {
         val items = mutableListOf<T>()
         var nextUri: String? = firstPageUri
 
         while (nextUri != null) {
-            val page: BitbucketPage<T> = executeGet(nextUri, token, requestContext)
+            val page: BitbucketPage<T> = executeGet(nextUri, credentials, requestContext)
             items += page.values
             nextUri = page.next
         }
@@ -281,7 +289,7 @@ class BitbucketClient(
      *
      * @param uri The absolute request URI. Collection URLs taken from a `next` link are passed
      * through unchanged.
-     * @param token The Bitbucket API token to authenticate with.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @param requestContext Describes the resource for retry log messages.
      * @return The decoded response body.
      * @throws WebClientException if the request still fails after the retry budget is spent.
@@ -289,11 +297,11 @@ class BitbucketClient(
      */
     private suspend inline fun <reified T> executeGet(
         uri: String,
-        token: String,
+        credentials: AtlassianCredentialSecret,
         requestContext: String,
     ): T =
         withRateLimitRetry(requestContext) {
-            authorizedGet(uri, token).sync().perform<T>()
+            authorizedGet(uri, credentials).sync().perform<T>()
         }
 
     /**
@@ -302,13 +310,13 @@ class BitbucketClient(
      * Used where only the status code carries meaning, so nothing is deserialized.
      *
      * @param uri The absolute request URI.
-     * @param token The Bitbucket API token to authenticate with.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @param requestContext Describes the resource for retry log messages.
      * @throws WebClientException if the request still fails after the retry budget is spent.
      */
-    private suspend fun executeRawGet(uri: String, token: String, requestContext: String) {
+    private suspend fun executeRawGet(uri: String, credentials: AtlassianCredentialSecret, requestContext: String) {
         withRateLimitRetry(requestContext) {
-            authorizedGet(uri, token).sync().performRaw()
+            authorizedGet(uri, credentials).sync().performRaw()
         }
     }
 
@@ -363,22 +371,36 @@ class BitbucketClient(
      * Every call in this client goes through here, so the transport concerns — the authorization
      * scheme and the accepted content type — are decided in exactly one place.
      *
-     * Authentication uses bearer credentials, which Bitbucket Cloud accepts for API tokens and
-     * which need only the token itself. The shared `AtlassianCredentialApi` also hands back the
-     * account email, but bearer does not use it; switching to Bitbucket's alternative of
-     * `Basic <email:api_token>` changes only the header built here.
+     * Authentication uses HTTP Basic with the credential's email as the username and its API token
+     * as the password, which is the scheme Bitbucket Cloud accepts for personal API tokens. Bearer
+     * only authenticates OAuth and workspace access tokens, so it cannot authenticate the stored
+     * credentials this client is handed.
      *
      * @param uri The absolute request URI. Collection URLs taken from a `next` link are passed
      * through unchanged.
-     * @param token The Bitbucket API token to authenticate with.
+     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
      * @return The prepared request, ready for `.sync()`.
      */
-    private fun authorizedGet(uri: String, token: String): RequestBuilder =
+    private fun authorizedGet(uri: String, credentials: AtlassianCredentialSecret): RequestBuilder =
         webClient
             .get()
             .uri(uri)
             .header("Accept", "application/json")
-            .header("Authorization", "Bearer $token")
+            .header("Authorization", "Basic ${basicCredentials(credentials)}")
+
+    /**
+     * Encodes one credential pair for the `Authorization` header.
+     *
+     * Base64 of `email:token` in UTF-8, per RFC 7617. Kept separate so no call site ever logs or
+     * concatenates the plaintext pair itself.
+     *
+     * @param credentials The credential whose email and API token to encode.
+     * @return The Base64 `email:token` pair, without the `Basic` prefix.
+     */
+    private fun basicCredentials(credentials: AtlassianCredentialSecret): String =
+        Base64.getEncoder().encodeToString(
+            "${credentials.userEmail}:${credentials.apiToken}".toByteArray(StandardCharsets.UTF_8),
+        )
 
     /** Builds the URI of a workspace resource. */
     private fun workspaceUri(workspace: String): String =

@@ -127,14 +127,14 @@ internal class BitbucketPullRequestsService(
         .fetchAllPullRequests(
             connection.workspace,
             connection.slug,
-            credential.apiToken,
+            credential,
             connection.lastPullRequestsSyncAt?.toString(),
         ).map {
             val prComments = bitbucketClient.fetchAllPullRequestComments(
                 connection.workspace,
                 connection.slug,
                 it.id,
-                credential.apiToken,
+                credential,
             )
             it.asEvent(connection, prComments, transactionId)
         }.forEach(eventPublisher::publishEvent)

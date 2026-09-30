@@ -83,7 +83,7 @@ class BitbucketWorkspaceServiceTest {
         every { eventPublisher.publishEvent(capture(published)) } just runs
         every { workspaceRepository.findById(WORKSPACE) } returns Optional.empty()
         every { credentialApi.findSecret(AUTH_ID, CREDENTIAL_NAME) } returns credential()
-        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } throws RuntimeException("boom")
+        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) } throws RuntimeException("boom")
 
         assertFailsWith<RuntimeException> {
             service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, transactionId)
@@ -132,8 +132,8 @@ class BitbucketWorkspaceServiceTest {
         every { workspaceRepository.findById(WORKSPACE) } returns Optional.of(staleMarker())
         every { credentialApi.findSecret(any(), any()) } returns credential()
         every { workspaceRepository.save(any()) } answers { firstArg() }
-        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } returns workspaceMetadata()
-        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, TOKEN) } returns workspaceMembers()
+        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) } returns workspaceMetadata()
+        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, credential()) } returns workspaceMembers()
 
         service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, transactionId)
 
@@ -148,8 +148,8 @@ class BitbucketWorkspaceServiceTest {
             Optional.of(BitbucketWorkspace(slug = WORKSPACE, name = "SprintStart", fetchedAt = null))
         every { credentialApi.findSecret(any(), any()) } returns credential()
         every { workspaceRepository.save(any()) } answers { firstArg() }
-        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } returns workspaceMetadata()
-        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, TOKEN) } returns workspaceMembers()
+        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) } returns workspaceMetadata()
+        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, credential()) } returns workspaceMembers()
 
         service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, transactionId)
 
@@ -169,8 +169,8 @@ class BitbucketWorkspaceServiceTest {
             firstArg<BitbucketWorkspace>().also { markers[it.slug] = it }
         }
         every { credentialApi.findSecret(any(), any()) } returns credential()
-        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } returns workspaceMetadata()
-        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, TOKEN) } returns workspaceMembers()
+        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) } returns workspaceMetadata()
+        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, credential()) } returns workspaceMembers()
 
         val first =
             launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
@@ -178,7 +178,7 @@ class BitbucketWorkspaceServiceTest {
             launch { service.connectWorkspaceIfNecessary(WORKSPACE, AUTH_ID, CREDENTIAL_NAME, UUID.randomUUID()) }
         joinAll(first, second)
 
-        coVerify(exactly = 1) { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) }
+        coVerify(exactly = 1) { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) }
     }
 
     @Test
@@ -200,8 +200,8 @@ class BitbucketWorkspaceServiceTest {
         every { workspaceRepository.findById(any()) } returns Optional.empty()
         every { credentialApi.findSecret(any(), any()) } returns credential()
         every { workspaceRepository.save(any()) } answers { firstArg() }
-        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, TOKEN) } returns workspaceMetadata()
-        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, TOKEN) } returns workspaceMembers()
+        coEvery { bitbucketClient.fetchWorkspaceMetadata(WORKSPACE, credential()) } returns workspaceMetadata()
+        coEvery { bitbucketClient.getWorkspaceMembers(WORKSPACE, credential()) } returns workspaceMembers()
     }
 
     private fun freshMarker() = BitbucketWorkspace(
@@ -216,9 +216,7 @@ class BitbucketWorkspaceServiceTest {
         fetchedAt = Instant.now().minusSeconds(25 * 60 * 60),
     )
 
-    private fun credential() = mockk<AtlassianCredentialSecret> {
-        every { apiToken } returns TOKEN
-    }
+    private fun credential() = AtlassianCredentialSecret(userEmail = "user@example.com", apiToken = TOKEN)
 
     private fun workspaceMetadata() = WorkspaceMetadataResponse(
         uuid = "{ws-uuid}",

@@ -108,8 +108,8 @@ internal class BitbucketWorkspaceService(
             val credential = credentialApi.findSecret(authId, credentialName)
                 ?: throw AtlassianCredentialNotFoundException(authId, credentialName)
 
-            val metadata = bitbucketClient.fetchWorkspaceMetadata(workspace, credential.apiToken)
-            val members = bitbucketClient.getWorkspaceMembers(workspace, credential.apiToken)
+            val metadata = bitbucketClient.fetchWorkspaceMetadata(workspace, credential)
+            val members = bitbucketClient.getWorkspaceMembers(workspace, credential)
 
             eventPublisher.publishEvent(buildFetchedEvent(transactionId, workspace, metadata, members))
 
