@@ -3,10 +3,15 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
 /**
  * The bounded catalog of cards a board can hold.
  *
- * A closed catalog, never free-form content. A card the buddy places is a request to show a
- * *known* read, never a request to render prose it wrote about the hire's state: the mentor decides
- * what to show, the backend decides what it says. Cards the *hire* writes are the exception —
- * that content is prose, it is theirs, and the mentor cannot touch it.
+ * A closed catalog of *live* kinds. A live card the buddy places is a request to show a *known*
+ * read, never a request to render prose it wrote about the hire's state: the mentor decides what to
+ * show, the backend decides what it says — and that part is applied without asking.
+ *
+ * The authored kinds are the other half: prose, and the hire's. The buddy may write and edit those
+ * too, on the same terms as any change it makes to the hire's board — it proposes, the hire
+ * confirms what would change, and the card records afterwards that the buddy made the change
+ * (`BoardCard.recordChange`). Pre-approval and attribution are what replaced "the mentor cannot
+ * touch it"; neither is optional.
  *
  * A live card stores nothing but its own existence; the content is re-read on every board
  * load from the same services the buddy's tools use, so a card and the tool of the same name cannot
@@ -143,7 +148,7 @@ enum class BoardCardKind(
      */
     PATH_STEP(Placement.MENTOR, takesSubject = true),
 
-    /** Something the hire wrote down. Markdown, theirs, and nothing reads it back as fact. */
+    /** Something written down for the hire. Markdown, theirs, and nothing reads it back as fact. */
     NOTE(Placement.AUTHORED),
 
     /** A link the hire wants to keep. The smallest possible card, and probably the most used. */
@@ -180,11 +185,13 @@ enum class BoardCardKind(
         MENTOR,
 
         /**
-         * Written by the hire.
+         * Written by the hire, or by the buddy for them behind a confirm — theirs either way.
          *
-         * The only cards that carry stored content, the only ones a board may hold several of, and
-         * the only ones the mentor must never touch. A board the mentor can tidy is a board the
-         * hire cannot trust to keep what they put on it.
+         * The only cards that carry stored content, and the only ones a board may hold several of.
+         * The mentor may create and edit these, but never directly: every such write is a proposal
+         * the hire confirms, and is attributed to the mentor on the card once it lands. A board the
+         * mentor could tidy silently would be one the hire cannot trust to keep what they put on it;
+         * one where every change was theirs to agree to, and says whose it was, still can be.
          */
         AUTHORED,
     }

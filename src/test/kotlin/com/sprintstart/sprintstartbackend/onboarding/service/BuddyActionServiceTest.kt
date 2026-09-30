@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -47,7 +48,7 @@ class BuddyActionServiceTest {
         userApi,
         attestationService,
         competencyPlacementService,
-        BuddyBoardWriteActions(boardService),
+        BuddyBoardWriteActions(boardService, BuddyBoardEditActions(boardService)),
     )
 
     private val userId = UUID.randomUUID()
@@ -108,7 +109,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes exactly the twelve action tools`() {
+    fun `exposes exactly the eighteen action tools`() {
         assertThat(service.actionSpecs().map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "claim_task_zero",
@@ -122,6 +123,12 @@ class BuddyActionServiceTest {
             "place_note",
             "tick_checklist_items",
             "reword_checklist_item",
+            "place_link",
+            "edit_note",
+            "edit_link",
+            "edit_checklist",
+            "dismiss_cards",
+            "reorder_cards",
         )
     }
 
@@ -177,6 +184,29 @@ class BuddyActionServiceTest {
 
         assertThat(outcome.proposal).isNull()
         assertThat(outcome.toolResult).contains("not on a project")
+    }
+
+    /**
+     * The board writes' reason lines come from a table rather than an exhaustive `when`, so the
+     * compiler no longer points at a new one that was left out. This does instead: every board write
+     * has to be able to say what it could not do for a hire with no project.
+     */
+    @Test
+    fun `every board write can say what it cannot do for a hire on no project`() {
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
+        val boardWrites = service.actionSpecs().map { it.name }.filter { name ->
+            name.contains("checklist") ||
+                name.contains("card") ||
+                name.startsWith("place_") ||
+                name.startsWith("edit_")
+        }
+
+        assertThat(boardWrites).hasSize(11)
+        boardWrites.forEach { name ->
+            val outcome = service.propose(call(name), userId)
+            assertThat(outcome.proposal).isNull()
+            assertThat(outcome.toolResult).contains("not on a project").contains("board")
+        }
     }
 
     @Test
@@ -426,7 +456,7 @@ class BuddyActionServiceTest {
         assertThat(outcome.proposal?.taskId).isEqualTo(taskId)
         assertThat(outcome.toolResult).contains("confirm")
         // Proposing must not claim anything.
-        verify(exactly = 0) { userGoalService.claimForMe(any(), any(), any()) }
+        verify(exactly = 0) { userGoalService.claimForMe(any(), any(), any(), any()) }
     }
 
     @Test
@@ -541,7 +571,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } returns GoalView(
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } returns GoalView(
             proposalId = taskId,
             title = "Fix the login redirect",
             summary = null,
@@ -559,7 +589,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } returns GoalView(
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } returns GoalView(
             proposalId = taskId,
             title = "Fix the login redirect",
             summary = null,
@@ -578,7 +608,7 @@ class BuddyActionServiceTest {
         asHire()
         onOneProject()
         val taskId = UUID.randomUUID()
-        every { userGoalService.claimForMe(authId, projectId, taskId) } throws
+        every { userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY) } throws
             ResponseStatusException(HttpStatus.CONFLICT, "only a live task can be claimed as a goal")
 
         val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)
