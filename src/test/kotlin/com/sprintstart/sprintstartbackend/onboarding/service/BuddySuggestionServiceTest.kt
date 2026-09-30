@@ -36,6 +36,13 @@ class BuddySuggestionServiceTest {
             .containsExactly("How am I doing?", "What should I work on?")
     }
 
+    @Test
+    fun `offers to explain the page the hire is on`() {
+        mounted(BuddyAppGuideTools.GET_APP_GUIDE)
+
+        assertThat(service.forHire(userId).single().question).isEqualTo("What can I do on this page?")
+    }
+
     /**
      * The whole point of deriving rather than listing: a chip appears exactly when its tool does.
      * Unlike the tool, a chip is something the hire *sees*, so getting this wrong is louder.

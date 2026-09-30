@@ -88,8 +88,8 @@ object AppGuide {
             howTos = listOf(
                 AppGuideHowTo(
                     "change which widgets show",
-                    "add or remove widgets with the widget picker; \"Reset your dashboard\" " +
-                        "restores the default layout",
+                    "\"Edit dashboard\" → add or remove widgets (\"Your widgets\"), then \"Done\"; " +
+                        "resetting restores the default layout",
                 ),
             ),
         ),
@@ -130,8 +130,8 @@ object AppGuide {
             howTos = listOf(
                 AppGuideHowTo(
                     "work through a step",
-                    "open the step in the current phase, start it, and mark it done when finished; " +
-                        "\"Ask the buddy\" on a step or question brings it into this chat",
+                    "open the step in the current phase → \"Start step\", and \"Mark as complete\" " +
+                        "when finished",
                 ),
             ),
             matches = listOf("/onboarding/"),
