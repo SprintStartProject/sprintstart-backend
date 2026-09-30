@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.upload.controller
 
 import com.sprintstart.sprintstartbackend.upload.model.dto.request.DeleteArtifactsRequest
 import com.sprintstart.sprintstartbackend.upload.model.dto.request.UploadArtifactsRequest
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.service.UploadService
@@ -113,12 +114,16 @@ class UploadController(
      *
      * @param jwt Authenticated JWT used to resolve the current user.
      * @param request Deletion metadata containing artifact ids and the target project.
-     * @return No content when the deletion batch has been processed.
+     * @return 200 with the deleted ids and a failure entry per id that was not deleted. Missing,
+     *   foreign-project and storage-failed ids land in `failed`; they never fail the whole request.
      */
     @Operation(summary = "Delete project uploads")
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "204", description = "Deletion batch processed"),
+            ApiResponse(
+                responseCode = "200",
+                description = "Deletion batch processed; body lists deletedIds and per-id failures",
+            ),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role or project access"),
             ApiResponse(responseCode = "404", description = "Authenticated user not found"),
@@ -135,15 +140,12 @@ class UploadController(
         @Valid
         @RequestPart("request")
         request: DeleteArtifactsRequest,
-    ): ResponseEntity<Void> {
-        uploadService.deleteUpload(
-            authId = jwt.subject,
-            artifactIds = request.artifactIds,
-            projectId = request.projectId,
+    ): ResponseEntity<DeleteUploadsResponse> =
+        ResponseEntity.ok(
+            uploadService.deleteUpload(
+                authId = jwt.subject,
+                artifactIds = request.artifactIds,
+                projectId = request.projectId,
+            ),
         )
-
-        return ResponseEntity
-            .noContent()
-            .build()
-    }
 }

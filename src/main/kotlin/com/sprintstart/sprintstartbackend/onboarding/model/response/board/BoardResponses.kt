@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
@@ -60,6 +61,7 @@ data class BoardCardResponse(
     JsonSubTypes.Type(value = OpenPullRequestsContent::class, name = "OPEN_PULL_REQUESTS"),
     JsonSubTypes.Type(value = CurrentTaskContent::class, name = "CURRENT_TASK"),
     JsonSubTypes.Type(value = SuggestedTasksContent::class, name = "SUGGESTED_TASKS"),
+    JsonSubTypes.Type(value = TaskPoolContent::class, name = "TASK_POOL"),
     JsonSubTypes.Type(value = CompetencyProgressContent::class, name = "COMPETENCY_PROGRESS"),
     JsonSubTypes.Type(value = MemoryRecapContent::class, name = "MEMORY_RECAP"),
     JsonSubTypes.Type(value = DiagramContent::class, name = "DIAGRAM"),
@@ -153,6 +155,34 @@ data class BoardSuggestedTaskResponse(
     val title: String,
     val url: String?,
     val reasons: List<String>,
+)
+
+/**
+ * Every live task the hire may grab, best fit first.
+ *
+ * [currentTaskId] is the task they are on, if any, so the card can mark it rather than offering to
+ * grab what is already theirs. The order is the ranking; the client filters, never re-sorts.
+ */
+data class TaskPoolContent(
+    override val kind: BoardCardKind = BoardCardKind.TASK_POOL,
+    val tasks: List<BoardPoolTaskResponse>,
+    val currentTaskId: UUID?,
+) : BoardCardContent
+
+/** One task in the pool, with what the hire needs to choose it — and no score. */
+data class BoardPoolTaskResponse(
+    val taskId: UUID,
+    val title: String,
+    val summary: String?,
+    /** Why this is a reasonable first task, in the words of whoever put it in the pool. */
+    val rationale: String?,
+    val url: String?,
+    val taskType: TaskType,
+    val reasons: List<String>,
+    /** Among the top of the ranking and matched on at least one signal. */
+    val bestFit: Boolean,
+    /** Three-valued like the pool's own field: only `true` means somebody is on it. */
+    val sourceHasAssignee: Boolean?,
 )
 
 /** Something the hire wrote down. The one card whose text the board did not read from anywhere. */

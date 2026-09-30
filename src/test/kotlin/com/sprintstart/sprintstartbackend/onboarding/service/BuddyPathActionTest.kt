@@ -70,7 +70,6 @@ class BuddyPathActionTest {
         userGoalService = mockk(relaxed = true),
         userApi = userApi,
         attestationService = mockk(relaxed = true),
-        boardService = mockk(relaxed = true),
         competencyPlacementService = mockk(relaxed = true),
         buddyPathActions = pathActions,
         boardWrites = BuddyBoardWriteActions(mockk(relaxed = true)),
