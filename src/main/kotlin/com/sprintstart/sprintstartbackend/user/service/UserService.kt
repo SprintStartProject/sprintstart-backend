@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnab
 import com.sprintstart.sprintstartbackend.user.model.response.project.MyProjectResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.DeleteUserResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.GetUserResponse
+import com.sprintstart.sprintstartbackend.user.repository.DashboardLayoutRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.context.ApplicationEventPublisher
@@ -38,6 +39,7 @@ class UserService(
     private val keycloakAdminClient: KeycloakAdminClient,
     private val githubLoginService: GithubLoginService,
     private val jiraDisplayNameService: JiraDisplayNameService,
+    private val dashboardLayoutRepository: DashboardLayoutRepository,
 ) {
     /**
      * Returns all persisted users.
@@ -224,6 +226,7 @@ class UserService(
 
         keycloakAdminClient.deleteUser(authId)
         projectRepository.clearManagerForUser(id)
+        dashboardLayoutRepository.deleteByUserId(id)
         userRepository.deleteRolesByUserId(id)
         userRepository.deleteProjectionById(id)
         // What other modules recorded about this person is theirs to erase; only they know what
