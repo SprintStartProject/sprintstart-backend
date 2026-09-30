@@ -239,7 +239,10 @@ class AdminProjectController(
     /**
      * Assigns users to a project.
      *
-     * Existing assignments are left unchanged. Project-specific roles are not changed by this endpoint.
+     * Existing assignments are left unchanged. A regular user belongs to exactly one project, so
+     * assigning one moves them: their memberships in other projects, including the project roles held
+     * there, are removed, and their onboarding path is reset. Users with the PM or ADMIN role keep
+     * their other memberships.
      *
      * @param projectId Project identifier.
      * @param request User assignment payload.
@@ -247,7 +250,9 @@ class AdminProjectController(
      */
     @Operation(
         summary = "Assign project users",
-        description = "Assigns one or more users to a project without changing project-specific roles.",
+        description = "Assigns one or more users to a project. Regular users are moved: their memberships " +
+            "in other projects, the project roles held there and their onboarding path are removed. " +
+            "Users with the PM or ADMIN role keep their other memberships.",
     )
     @ApiResponses(
         value = [
