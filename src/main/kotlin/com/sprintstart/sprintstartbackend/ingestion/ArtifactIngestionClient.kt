@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.AiArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AiArtifactSummaryStreamMessage
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactIngestStatusAiResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ProjectMembershipsDeletedAiResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.RunArtifactsIngestResponse
@@ -19,6 +20,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
 import java.net.URI
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -105,6 +107,33 @@ class ArtifactIngestionClient(
         }
 
     /**
+     * Reads the AI index state of artifacts. Read-only on the AI side.
+     *
+     * Bounded by [INGEST_STATUS_TIMEOUT]: the Knowledge Base asks on every page view, so a hung AI
+     * service must cost the user a short wait, not a request that never returns. The shared
+     * client only has a connect timeout.
+     *
+     * @param artifactIds Ids to look up (the AI accepts at most 100), sent as repeated
+     *   `artifact_ids` query parameters.
+     * @return One item per distinct requested id, in request order; `unknown` for ids without record.
+     * @throws IngestionResponseException when the AI service returns a non-successful HTTP response.
+     * @throws java.io.IOException when the AI service is unreachable or does not answer in time.
+     * @throws kotlinx.serialization.SerializationException when the body has an unexpected shape.
+     */
+    suspend fun fetchIngestStatus(artifactIds: Collection<UUID>): ArtifactIngestStatusAiResponse {
+        val query = artifactIds.joinToString("&") { "artifact_ids=$it" }
+        return try {
+            webClient
+                .get()
+                .uri(uri("/api/v1/ingest/status?$query"))
+                .sync(timeout = INGEST_STATUS_TIMEOUT)
+                .perform<ArtifactIngestStatusAiResponse>()
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw IngestionResponseException("Failed to read ingest status (HTTP ${e.statusCode}): ${e.body}")
+        }
+    }
+
+    /**
      * Opens an SSE stream for a summary of [artifactId].
      *
      * The returned [Flow] is cold; the connection is not opened until collection begins.
@@ -143,4 +172,9 @@ class ArtifactIngestionClient(
             }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")
+
+    companion object {
+        /** Upper bound for one AI status lookup; the metadata read behind it is a keyed select. */
+        val INGEST_STATUS_TIMEOUT: Duration = Duration.ofSeconds(3)
+    }
 }

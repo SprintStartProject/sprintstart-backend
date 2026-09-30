@@ -1,10 +1,20 @@
 package com.sprintstart.sprintstartbackend.ingestion.controller
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactAiStatusResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentRedirectResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactContentResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
+import com.sprintstart.sprintstartbackend.ingestion.service.MAX_AI_STATUS_IDS
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -12,6 +22,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -25,12 +36,23 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import java.net.URI
+import java.time.LocalDate
 import java.util.UUID
 
 private const val DEFAULT_PAGE = "1"
 private const val DEFAULT_SIZE = "20"
 private const val MAX_PAGE_SIZE = 100L
+private const val FROM_DESCRIPTION =
+    "First activity day to include (last content change, else import), ISO yyyy-MM-dd, " +
+        "read as a UTC calendar day (inclusive). Must not be after `to`, else 400."
+private const val TO_DESCRIPTION =
+    "Last activity day to include (last content change, else import), ISO yyyy-MM-dd, " +
+        "read as a UTC calendar day (inclusive)."
+private const val LANGUAGES_DESCRIPTION =
+    "Language display names to keep (repeatable, case-insensitive), e.g. Kotlin. " +
+        "Artifacts without a language are excluded while set."
 
 /**
  * Read-only HTTP entry point for opening one artifact.
@@ -48,6 +70,7 @@ private const val MAX_PAGE_SIZE = 100L
 class ArtifactController(
     private val artifactService: ArtifactService,
     private val artifactQueryService: ArtifactQueryService,
+    private val artifactAiStatusService: ArtifactAiStatusService,
 ) {
     /**
      * Returns a paginated artifact list across all projects for administrative callers.
@@ -89,26 +112,190 @@ class ArtifactController(
         summary = "Get project artifacts",
         description =
             "Returns a paginated artifact list limited to one project visible to the " +
-                "authenticated user. When a filter is provided, the search is performed " +
+                "authenticated user. When a filter or criteria are provided, the search is performed " +
                 "case-insensitively across the configured searchable fields.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Project artifact page returned successfully"),
+            ApiResponse(
+                responseCode = "400",
+                description = "Invalid query or pagination parameters, unknown sort, malformed date, or from after to",
+            ),
             ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
         ],
     )
     fun getProjectArtifacts(
         @RequestParam(defaultValue = DEFAULT_PAGE) @Min(1) page: Int,
         @RequestParam(defaultValue = DEFAULT_SIZE) @Min(1) @Max(MAX_PAGE_SIZE) size: Int,
-        @RequestParam(defaultValue = "") filter: String,
+        // `filter` predates `search` and kept its own contract (a fragment matched against title,
+        // type, source system and metadata) until the Knowledge Base moved server-side. It is now
+        // an alias of `search`: nothing in this repo sends it, and it stays only so an outside
+        // client that does is not broken by a query whose meaning it cannot see changing.
+        @Parameter(description = "Deprecated alias of `search`; send `search` instead")
+        @RequestParam(defaultValue = "")
+        filter: String,
+        @Parameter(
+            description = "Case-insensitive match against the artifact's title, source id and source url",
+        )
+        @RequestParam(required = false)
+        search: String?,
+        @RequestParam(required = false) types: Set<ArtifactType>?,
+        @RequestParam(required = false) sources: Set<SourceSystem>?,
+        @RequestParam(required = false) repositories: Set<String>?,
+        @RequestParam(required = false) format: UploadFormat?,
+        @Parameter(
+            description = "Row order: ADDED_DESC (newest import first, the default), " +
+                "CHANGED_DESC (latest content change first, falling back to the import time) or " +
+                "TITLE_ASC (case-insensitive, untitled last). Any other value is rejected with 400.",
+        )
+        @RequestParam(defaultValue = "ADDED_DESC")
+        sort: ArtifactSort,
+        @Parameter(description = FROM_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        from: LocalDate?,
+        @Parameter(description = TO_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        to: LocalDate?,
+        @Parameter(description = LANGUAGES_DESCRIPTION)
+        @RequestParam(required = false)
+        languages: Set<String>?,
         @Parameter(
             description = "UUID of the project whose artifacts should be returned",
         ) @PathVariable projectId: UUID,
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
-    ): ResponseEntity<ArtifactPageResponse> =
+    ): ResponseEntity<ArtifactPageResponse> {
+        val effectiveSearch = search ?: (if (filter.isNotBlank()) filter else null)
+        val criteria = ArtifactFilterCriteria(
+            search = effectiveSearch,
+            types = types,
+            sources = sources,
+            repositories = repositories,
+            format = format,
+            from = from,
+            to = to,
+            languages = languages,
+        )
+        return ResponseEntity.ok(
+            artifactQueryService.getProjectArtifacts(page, size, criteria, sort, projectId, jwt.subject),
+        )
+    }
+
+    @GetMapping("projects/{projectId}/artifacts/facets")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get project artifact facets",
+        description = "Returns aggregated counts for artifact facets scoped to a project.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Facet counts returned successfully"),
+            ApiResponse(
+                responseCode = "400",
+                description = "Invalid facet query parameters, malformed date, or from after to",
+            ),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+        ],
+    )
+    fun getProjectArtifactFacets(
+        @RequestParam(required = false) search: String?,
+        @RequestParam(required = false) types: Set<ArtifactType>?,
+        @RequestParam(required = false) sources: Set<SourceSystem>?,
+        @RequestParam(required = false) repositories: Set<String>?,
+        @RequestParam(required = false) format: UploadFormat?,
+        @Parameter(description = FROM_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        from: LocalDate?,
+        @Parameter(description = TO_DESCRIPTION)
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+        to: LocalDate?,
+        @Parameter(description = LANGUAGES_DESCRIPTION)
+        @RequestParam(required = false)
+        languages: Set<String>?,
+        @Parameter(
+            description = "UUID of the project whose artifact facets should be calculated",
+        ) @PathVariable projectId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactFacetsResponse> {
+        val criteria = ArtifactFilterCriteria(
+            search = search,
+            types = types,
+            sources = sources,
+            repositories = repositories,
+            format = format,
+            from = from,
+            to = to,
+            languages = languages,
+        )
+        return ResponseEntity.ok(
+            artifactQueryService.getProjectArtifactFacets(projectId, criteria, jwt.subject),
+        )
+    }
+
+    /**
+     * Returns the AI index state of the artifacts shown on one Knowledge Base page.
+     *
+     * Separate from the list on purpose: the list never waits for, or fails because of, the AI
+     * service; the frontend asks for chips after the page rendered. The id cap is checked here,
+     * at the HTTP edge, before any project lookup. AI trouble is never a 5xx: it comes back as
+     * `aiAvailable = false`.
+     */
+    @GetMapping("projects/{projectId}/artifacts/ai-status")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get AI index status of project artifacts",
+        description = "Per-id AI index state; ids outside the project are omitted.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "Status per visible id; aiAvailable=false when the AI could not be asked",
+            ),
+            ApiResponse(responseCode = "400", description = "More than 100 ids, or a malformed id"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+        ],
+    )
+    suspend fun getProjectArtifactAiStatus(
+        @Parameter(description = "Artifact ids to check (repeatable, at most 100)")
+        @RequestParam(required = false)
+        ids: List<UUID>?,
+        @Parameter(description = "UUID of the project the artifacts belong to")
+        @PathVariable
+        projectId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactAiStatusResponse> {
+        val requested = ids.orEmpty()
+        if (requested.size > MAX_AI_STATUS_IDS) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "At most $MAX_AI_STATUS_IDS ids per request")
+        }
+        return ResponseEntity.ok(artifactAiStatusService.getAiStatus(jwt.subject, projectId, requested))
+    }
+
+    @GetMapping("projects/{projectId}/artifacts/{artifactId}")
+    @PreAuthorize("hasRole('USER')")
+    @Operation(
+        summary = "Get single artifact",
+        description = "Returns metadata for one artifact when the caller has access to the requested project.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Artifact returned successfully"),
+            ApiResponse(responseCode = "403", description = "Caller has no access to the project"),
+            ApiResponse(responseCode = "404", description = "Artifact not found in project"),
+        ],
+    )
+    fun getArtifact(
+        @Parameter(description = "UUID of the project that scopes artifact access") @PathVariable projectId: UUID,
+        @Parameter(description = "UUID of the artifact to return") @PathVariable artifactId: UUID,
+        @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
+    ): ResponseEntity<ArtifactResponse> =
         ResponseEntity.ok(
-            artifactQueryService.getProjectArtifacts(page, size, filter, projectId, jwt.subject),
+            artifactQueryService.getArtifact(projectId, artifactId, jwt.subject),
         )
 
     /**
