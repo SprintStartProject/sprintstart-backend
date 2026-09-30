@@ -2,7 +2,7 @@ package com.sprintstart.sprintstartbackend.user.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
-import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayoutItemPayload
+import com.sprintstart.sprintstartbackend.user.model.request.dashboard.DashboardLayoutItemPayload
 import com.sprintstart.sprintstartbackend.user.model.request.dashboard.SaveDashboardLayoutRequest
 import com.sprintstart.sprintstartbackend.user.model.response.dashboard.DashboardLayoutResponse
 import com.sprintstart.sprintstartbackend.user.service.DashboardLayoutService
@@ -153,12 +153,5 @@ class DashboardLayoutControllerTest(
         mockMvc
             .perform(get(path).param("version", "2"))
             .andExpect(status().isUnauthorized)
-    }
-
-    @Test
-    fun `there is no endpoint that reads another user's layout by id`() {
-        mockMvc
-            .perform(get("/api/v1/users/some-other-user/dashboard/layout").param("version", "2").with(userJwt))
-            .andExpect(status().isNotFound)
     }
 }

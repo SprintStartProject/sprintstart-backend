@@ -1,7 +1,5 @@
 package com.sprintstart.sprintstartbackend.user.model.request.dashboard
 
-import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayoutItemPayload
-import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayoutLimits
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size

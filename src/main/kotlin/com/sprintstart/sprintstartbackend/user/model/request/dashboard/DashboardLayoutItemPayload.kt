@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.user.model.entity
+package com.sprintstart.sprintstartbackend.user.model.request.dashboard
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size

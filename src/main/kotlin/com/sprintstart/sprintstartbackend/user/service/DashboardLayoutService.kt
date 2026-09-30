@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayout
-import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayoutItemPayload
+import com.sprintstart.sprintstartbackend.user.model.request.dashboard.DashboardLayoutItemPayload
 import com.sprintstart.sprintstartbackend.user.model.request.dashboard.SaveDashboardLayoutRequest
 import com.sprintstart.sprintstartbackend.user.model.response.dashboard.DashboardLayoutResponse
 import com.sprintstart.sprintstartbackend.user.repository.DashboardLayoutRepository

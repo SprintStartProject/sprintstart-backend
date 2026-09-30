@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.response.dashboard
 
-import com.sprintstart.sprintstartbackend.user.model.entity.DashboardLayoutItemPayload
+import com.sprintstart.sprintstartbackend.user.model.request.dashboard.DashboardLayoutItemPayload
 import java.time.Instant
 
 /**
