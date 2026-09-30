@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.external.model
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -80,6 +81,7 @@ data class BuddyAgentRequest(
      * one, and a hop that lost the mode would answer a manager as if they were a new hire.
      */
     @SerialName("team_mode") val teamMode: Boolean = false,
+    @SerialName("filters") val filters: BuddySessionFilters? = null,
 )
 
 /**

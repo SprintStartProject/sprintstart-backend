@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.FaqInsightsConfig
-import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
+import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
@@ -50,7 +50,7 @@ class FaqLiveUpdateServiceTest {
         transactionManager = transactionManager,
     )
 
-    private fun event(question: String = "How do I get VPN access?") = ChatQuestionAskedEvent(
+    private fun event(question: String = "How do I get VPN access?") = QuestionAskedEvent(
         messageId = UUID.randomUUID(),
         chatId = UUID.randomUUID(),
         projectId = projectId,

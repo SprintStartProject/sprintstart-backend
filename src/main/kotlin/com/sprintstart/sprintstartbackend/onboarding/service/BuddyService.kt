@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.onboarding.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
@@ -15,6 +16,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabul
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -62,6 +65,7 @@ class BuddyService(
     private val buddyCompactionService: BuddyCompactionService,
     private val applicationScope: CoroutineScope,
     private val buddyAiClient: BuddyAiClient,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -174,7 +178,7 @@ class BuddyService(
             finishOpen(session, streamed.toString(), opening)
             // Whatever the previous visit left unfolded gets folded now, while the hire is reading
             // the greeting rather than waiting on it.
-            compactInBackground(userId)
+            compactInBackground(userId, session.id)
         }
     }
 
@@ -186,9 +190,9 @@ class BuddyService(
      * else. The point of the whole change is that no hire is ever blocked on this, so it must
      * not be awaited here, and [BuddyCompactionService.compactIfNeeded] never throws.
      */
-    private fun compactInBackground(userId: UUID) {
+    private fun compactInBackground(userId: UUID, sessionId: UUID) {
         applicationScope.launch {
-            buddyCompactionService.compactIfNeeded(userId)
+            buddyCompactionService.compactIfNeeded(userId, sessionId)
         }
     }
 
@@ -261,6 +265,7 @@ class BuddyService(
         sessionId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        filters: BuddySessionFilters?,
     ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
         val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
@@ -282,9 +287,25 @@ class BuddyService(
             .drop(session.summarizedCount)
             .map { it.toAgentMessage() }
 
-        buddyMessageRepository.save(
-            BuddyMessage(session = session, role = BuddyMessageRole.USER, content = content),
+        val message = BuddyMessage(
+            session = session,
+            role = BuddyMessageRole.USER,
+            content = content,
         )
+
+        buddyMessageRepository.save(message)
+
+        session.projectId?.let { projectId ->
+            eventPublisher.publishEvent(
+                QuestionAskedEvent(
+                    messageId = message.id,
+                    chatId = session.id,
+                    projectId = projectId,
+                    question = questionForFaq,
+                    askedAt = message.createdAt,
+                ),
+            )
+        }
 
         // The AI reasoner sees the read-only tools *and* the action tools it may propose. An action
         // tool call never mutates here — it produces a proposal the hire must confirm out-of-band.
@@ -313,7 +334,16 @@ class BuddyService(
             while (answer == null && step < MAX_AGENT_STEPS) {
                 step++
                 val response = onboardingAiClient.buddyAgentTurn(
-                    agentRequest(messages, tools, step, session, vocabulary, projectIds, capabilitiesEnabled),
+                    agentRequest(
+                        messages,
+                        tools,
+                        step,
+                        session,
+                        vocabulary,
+                        projectIds,
+                        capabilitiesEnabled,
+                        filters,
+                    ),
                 )
                 reasoning += response.reasoning
                 citations = response.citations
@@ -344,7 +374,7 @@ class BuddyService(
             )
             // Only now, with the reply persisted and the hire reading it. Folding before this point
             // is what the whole change exists to stop.
-            compactInBackground(userId)
+            compactInBackground(userId, session.id)
         }
     }
 
@@ -373,6 +403,7 @@ class BuddyService(
         vocabulary: BuddyVocabularyDto,
         projectIds: List<String>,
         capabilitiesEnabled: Boolean,
+        filters: BuddySessionFilters?,
     ): BuddyAgentRequest =
         BuddyAgentRequest(
             messages = messages,
@@ -389,6 +420,7 @@ class BuddyService(
             // mode would rebuild a mentor offering to act, mid-conversation with a hire who asked
             // it not to.
             capabilitiesEnabled = capabilitiesEnabled,
+            filters = filters,
         )
 
     /**

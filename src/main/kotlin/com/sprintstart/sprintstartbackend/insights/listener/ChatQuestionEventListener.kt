@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.listener
 
-import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
+import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.service.FaqLiveUpdateService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -27,7 +27,7 @@ class ChatQuestionEventListener(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @EventListener
-    fun handleQuestionAsked(event: ChatQuestionAskedEvent) {
+    fun handleQuestionAsked(event: QuestionAskedEvent) {
         applicationScope.launch {
             try {
                 faqLiveUpdateService.onQuestionAsked(event)

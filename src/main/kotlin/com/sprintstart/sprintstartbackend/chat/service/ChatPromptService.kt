@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.chat.ChatAiClient
-import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
+import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -119,7 +119,7 @@ internal class ChatPromptService(
         // to hand off asynchronously — nothing here waits on them, and the user's answer must not
         // be delayed by analytics.
         eventPublisher.publishEvent(
-            ChatQuestionAskedEvent(
+            QuestionAskedEvent(
                 messageId = msg.id,
                 chatId = chat.id,
                 projectId = projectId,

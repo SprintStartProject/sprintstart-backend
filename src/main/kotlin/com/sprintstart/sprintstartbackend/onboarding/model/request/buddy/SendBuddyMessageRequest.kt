@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.request.buddy
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import java.util.UUID
 
 /**
@@ -25,7 +26,8 @@ data class SendBuddyMessageRequest(
      *
      * A different conversation, not a flag on the same one: team talk has its own transcript and
      * memory per project. The caller must manage the project, which is checked on every turn — this
-     * field names the project, it never authorises anything.
+     * field names the project, it never authorizes anything.
      */
     val teamProjectId: UUID? = null,
+    val filters: BuddySessionFilters? = null,
 )

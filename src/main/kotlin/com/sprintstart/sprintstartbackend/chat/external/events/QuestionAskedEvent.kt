@@ -16,7 +16,7 @@ import java.util.UUID
  * @property question the raw question text, unredacted
  * @property askedAt when the question was asked
  */
-data class ChatQuestionAskedEvent(
+data class QuestionAskedEvent(
     val messageId: UUID,
     val chatId: UUID,
     val projectId: UUID,

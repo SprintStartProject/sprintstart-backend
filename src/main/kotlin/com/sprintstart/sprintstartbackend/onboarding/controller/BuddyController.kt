@@ -277,6 +277,7 @@ class BuddyController(
                 request.sessionId,
                 request.content,
                 request.capabilitiesEnabled,
+                request.filters,
             )
         } else {
             buddyTeamService.sendMessageForMe(
