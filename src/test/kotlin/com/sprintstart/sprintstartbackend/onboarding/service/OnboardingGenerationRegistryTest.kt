@@ -19,6 +19,9 @@ import kotlinx.coroutines.withTimeout
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
 /**
@@ -109,5 +112,56 @@ class OnboardingGenerationRegistryTest {
         }
 
         assertThat(registry.status(authId)).isNull()
+    }
+
+    @Test
+    fun `the start hook runs before a new generation and can refuse it`() {
+        assertThrows<ResponseStatusException> {
+            registry.startOrAttach(authId, projectId, beforeStart = {
+                throw ResponseStatusException(HttpStatus.FORBIDDEN)
+            })
+        }
+
+        verify(exactly = 0) { personalizationService.personalize(any(), any()) }
+        assertThat(registry.status(authId)).isNull()
+    }
+
+    @Test
+    fun `attaching does not run the start hook`(): Unit = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        every { personalizationService.personalize(authId, projectId) } returns flow {
+            emit(OnboardingSseEvent(type = "stage", name = "Setup", detail = "Waiting"))
+            release.await()
+            emit(OnboardingSseEvent(type = "done"))
+        }
+        registry.startOrAttach(authId, projectId).take(1).toList()
+
+        var hookRuns = 0
+        val attached = registry.startOrAttach(authId, projectId, beforeStart = { hookRuns++ })
+        release.complete(Unit)
+        withTimeout(5_000) { attached.toList() }
+
+        assertThat(hookRuns).isZero()
+    }
+
+    @Test
+    fun `a same-project attach refuses a run for another project`(): Unit = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        every { personalizationService.personalize(authId, projectId) } returns flow {
+            emit(OnboardingSseEvent(type = "stage", name = "Setup", detail = "Waiting"))
+            release.await()
+            emit(OnboardingSseEvent(type = "done"))
+        }
+        registry.startOrAttach(authId, projectId).take(1).toList()
+
+        val refused = assertThrows<ResponseStatusException> {
+            registry.startOrAttach(authId, UUID.randomUUID(), sameProjectOnly = true)
+        }
+        // Without the flag an attach still ignores the project, as the member's own page relies on.
+        val attached = registry.startOrAttach(authId, UUID.randomUUID())
+        release.complete(Unit)
+
+        assertThat(refused.statusCode).isEqualTo(HttpStatus.CONFLICT)
+        assertThat(withTimeout(5_000) { attached.toList() }.last().type).isEqualTo("done")
     }
 }
