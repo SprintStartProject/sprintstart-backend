@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionPag
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.UUID
 
 @Service
@@ -33,6 +34,31 @@ internal class NotionPageConnectionPersistenceService(
         return connectionRepository
             .findAllByProjectIdOrderByCreatedAtAsc(projectId)
             .map { it.toResponse() }
+    }
+
+    @Transactional(readOnly = true)
+    fun requireConnection(projectId: UUID, connectionId: UUID): NotionPageConnection {
+        return connectionRepository.findByIdAndProjectId(connectionId, projectId)
+            ?: throw NotionPageConnectionNotFoundException(connectionId, projectId)
+    }
+
+    @Transactional
+    fun recordSuccessfulSync(
+        projectId: UUID,
+        connectionId: UUID,
+        pageTitle: String,
+        pageUrl: String,
+        lastEditedTime: Instant,
+        contentHash: String,
+    ) {
+        val connection = connectionRepository.findByIdAndProjectId(connectionId, projectId)
+            ?: throw NotionPageConnectionNotFoundException(connectionId, projectId)
+        connection.pageTitle = pageTitle
+        connection.pageUrl = pageUrl
+        connection.lastEditedTime = lastEditedTime
+        connection.contentHash = contentHash
+        connection.lastSyncedAt = Instant.now()
+        connectionRepository.saveAndFlush(connection)
     }
 
     @Transactional

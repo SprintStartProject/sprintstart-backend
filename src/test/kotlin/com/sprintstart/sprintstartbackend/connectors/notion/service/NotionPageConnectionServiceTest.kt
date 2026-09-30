@@ -2,9 +2,9 @@ package com.sprintstart.sprintstartbackend.connectors.notion.service
 
 import com.sprintstart.sprintstartbackend.connectors.notion.NotionRichText
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionClient
-import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionPagePropertyResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionParentResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPagePropertyResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiParentResponse
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -66,18 +66,18 @@ internal class NotionPageConnectionServiceTest {
         id: String,
         title: List<NotionRichText>? = null,
         includeTitleProperty: Boolean = true,
-    ): NotionPageResponse {
+    ): NotionApiPageResponse {
         val properties = if (includeTitleProperty) {
-            mapOf("Name" to NotionPagePropertyResponse(type = "title", title = title))
+            mapOf("Name" to NotionApiPagePropertyResponse(type = "title", title = title))
         } else {
             emptyMap()
         }
-        return NotionPageResponse(
+        return NotionApiPageResponse(
             id = id,
             url = "https://www.notion.so/$id",
             lastEditedTime = "2026-09-27T10:00:00.000Z",
             inTrash = false,
-            parent = NotionParentResponse(type = "workspace", workspace = true),
+            parent = NotionApiParentResponse(type = "workspace", workspace = true),
             properties = properties,
         )
     }

@@ -38,18 +38,19 @@ internal class NotionClientTest : NotionClientTestSupport() {
     }
 
     @Test
-    fun `retrieves one block batch with encoded cursor and unchanged pagination metadata`() = runTest {
-        enqueueJson(batch(listOf(block("one")), nextCursor = "next"))
+    fun `encodes block id and continuation cursor while collecting blocks`() = runTest {
+        val cursor = "a+b &c/?#"
+        enqueueJson(batch(listOf(block("one")), nextCursor = cursor))
+        enqueueJson(batch(listOf(block("two"))))
 
-        val result = client.getBlockChildrenBatch(NOTION_TEST_TOKEN, "block/id", "a+b &c/?#")
+        val result = client.getAllBlockChildren(NOTION_TEST_TOKEN, "block/id")
 
-        assertThat(result.results.map { it.id }).containsExactly("one")
-        assertThat(result.hasMore).isTrue()
-        assertThat(result.nextCursor).isEqualTo("next")
-        val request = takeRequest()
-        assertThat(request.requestUrl?.encodedPath).isEqualTo("/v1/blocks/block%2Fid/children")
-        assertThat(request.requestUrl?.queryParameter("page_size")).isEqualTo("100")
-        assertThat(request.requestUrl?.queryParameter("start_cursor")).isEqualTo("a+b &c/?#")
+        assertThat(result.map { it.id }).containsExactly("one", "two")
+        val firstRequest = takeRequest()
+        assertThat(firstRequest.requestUrl?.encodedPath).isEqualTo("/v1/blocks/block%2Fid/children")
+        assertThat(firstRequest.requestUrl?.queryParameter("page_size")).isEqualTo("100")
+        assertThat(firstRequest.requestUrl?.queryParameter("start_cursor")).isNull()
+        assertThat(takeRequest().requestUrl?.queryParameter("start_cursor")).isEqualTo(cursor)
     }
 
     @Test
@@ -72,9 +73,9 @@ internal class NotionClientTest : NotionClientTestSupport() {
     fun `posts page search filter and omits cursor on first request`() = runTest {
         enqueueJson(batch(listOf(page("page-one"))))
 
-        val result = client.searchPagesBatch(NOTION_TEST_TOKEN)
+        val result = client.discoverPages(NOTION_TEST_TOKEN)
 
-        assertThat(result.results.single().id).isEqualTo("page-one")
+        assertThat(result.single().id).isEqualTo("page-one")
         val request = takeRequest()
         assertThat(request.method).isEqualTo("POST")
         assertThat(request.path).isEqualTo("/v1/search")
@@ -91,11 +92,13 @@ internal class NotionClientTest : NotionClientTestSupport() {
 
     @Test
     fun `search cursor is preserved and JSON escaped rather than URL encoded`() = runTest {
-        enqueueJson(batch())
         val cursor = "a+b&\"\\cursor"
+        enqueueJson(batch(nextCursor = cursor))
+        enqueueJson(batch())
 
-        client.searchPagesBatch(NOTION_TEST_TOKEN, cursor)
+        client.discoverPages(NOTION_TEST_TOKEN)
 
+        takeRequest()
         val body = NotionJsonFixtures.json.parseToJsonElement(takeRequest().body.readUtf8()).jsonObject
         assertThat(body.getValue("start_cursor").jsonPrimitive.content).isEqualTo(cursor)
     }
@@ -147,9 +150,9 @@ internal class NotionClientTest : NotionClientTestSupport() {
             enqueueJson(body)
             assertThrows<NotionInvalidResponseException> {
                 if (search) {
-                    client.searchPagesBatch(NOTION_TEST_TOKEN)
+                    client.discoverPages(NOTION_TEST_TOKEN)
                 } else {
-                    client.getBlockChildrenBatch(NOTION_TEST_TOKEN, "p")
+                    client.getAllBlockChildren(NOTION_TEST_TOKEN, "p")
                 }
             }
         }
@@ -216,7 +219,7 @@ internal class NotionClientTest : NotionClientTestSupport() {
         enqueueError(status, "5")
         enqueueJson(batch())
 
-        client.searchPagesBatch(NOTION_TEST_TOKEN)
+        client.discoverPages(NOTION_TEST_TOKEN)
 
         assertThat(server.requestCount).isEqualTo(2)
         assertThat(waits).containsExactly(Duration.ofSeconds(5))
@@ -243,7 +246,7 @@ internal class NotionClientTest : NotionClientTestSupport() {
         enqueueError(529, "60")
 
         assertThrows<NotionExternalServiceException> { client.validateConnection(NOTION_TEST_TOKEN) }
-        assertThrows<NotionRequestDeferredException> { client.searchPagesBatch("another-pat") }
+        assertThrows<NotionRequestDeferredException> { client.discoverPages("another-pat") }
 
         assertThat(server.requestCount).isEqualTo(1)
         assertThat(waits).isEmpty()

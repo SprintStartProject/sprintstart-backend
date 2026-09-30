@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
-class NotionPageResponsesTest {
+class NotionApiPageResponsesTest {
     private val json = NotionJsonFixtures.json
 
     @Test
     fun `decodes page identity edit time and workspace parent`() {
-        val page = json.decodeFromString<NotionPageResponse>(NotionJsonFixtures.read("page.json"))
+        val page = json.decodeFromString<NotionApiPageResponse>(NotionJsonFixtures.read("page.json"))
 
         assertThat(page.id).isEqualTo("11111111-1111-4111-8111-111111111111")
         assertThat(page.url).isEqualTo("https://www.notion.so/11111111111141118111111111111111")
@@ -28,7 +28,7 @@ class NotionPageResponsesTest {
 
     @Test
     fun `preserves title fragments under a user chosen property name`() {
-        val page = json.decodeFromString<NotionPageResponse>(NotionJsonFixtures.read("page.json"))
+        val page = json.decodeFromString<NotionApiPageResponse>(NotionJsonFixtures.read("page.json"))
 
         assertThat(page.properties).containsKey("Document title")
         val title = checkNotNull(page.properties.values.single { it.type == "title" }.title)
@@ -39,7 +39,7 @@ class NotionPageResponsesTest {
 
     @Test
     fun `decodes search continuation without filtering results in the model`() {
-        val response = json.decodeFromString<NotionSearchResponse>(NotionJsonFixtures.read("search-pages.json"))
+        val response = json.decodeFromString<NotionApiSearchResponse>(NotionJsonFixtures.read("search-pages.json"))
 
         assertThat(response.hasMore).isTrue()
         assertThat(response.nextCursor).isEqualTo("opaque-next-cursor")
@@ -52,7 +52,7 @@ class NotionPageResponsesTest {
 
     @Test
     fun `decodes an empty final search batch`() {
-        val response = json.decodeFromString<NotionSearchResponse>(
+        val response = json.decodeFromString<NotionApiSearchResponse>(
             """{"results": [], "has_more": false, "next_cursor": null}""",
         )
 
@@ -64,7 +64,7 @@ class NotionPageResponsesTest {
     @ParameterizedTest
     @ValueSource(strings = ["page_id", "block_id", "data_source_id", "database_id"])
     fun `decodes each parent id variant`(type: String) {
-        val parent = json.decodeFromString<NotionParentResponse>(
+        val parent = json.decodeFromString<NotionApiParentResponse>(
             """{"type": "$type", "$type": "55555555-5555-4555-8555-555555555555"}""",
         )
 
@@ -81,7 +81,7 @@ class NotionPageResponsesTest {
 
     @Test
     fun `accepts an empty title without inventing text`() {
-        val property = json.decodeFromString<NotionPagePropertyResponse>(
+        val property = json.decodeFromString<NotionApiPagePropertyResponse>(
             """{"id":"title", "type":"title", "title":[]}""",
         )
 
@@ -92,10 +92,10 @@ class NotionPageResponsesTest {
     @ValueSource(strings = ["id", "url", "last_edited_time", "in_trash", "parent", "properties"])
     fun `rejects missing required page fields`(field: String) {
         val valid = json.parseToJsonElement(NotionJsonFixtures.read("page.json")).jsonObject
-        json.decodeFromJsonElement<NotionPageResponse>(valid)
+        json.decodeFromJsonElement<NotionApiPageResponse>(valid)
 
         assertThatThrownBy {
-            json.decodeFromJsonElement<NotionPageResponse>(JsonObject(valid - field))
+            json.decodeFromJsonElement<NotionApiPageResponse>(JsonObject(valid - field))
         }.isInstanceOf(SerializationException::class.java)
     }
 }

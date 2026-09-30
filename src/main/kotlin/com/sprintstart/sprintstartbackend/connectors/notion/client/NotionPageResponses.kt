@@ -5,8 +5,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class NotionSearchResponse(
-    val results: List<NotionPageResponse>,
+data class NotionApiSearchResponse(
+    val results: List<NotionApiPageResponse>,
     @SerialName("next_cursor")
     val nextCursor: String?,
     @SerialName("has_more")
@@ -14,19 +14,19 @@ data class NotionSearchResponse(
 )
 
 @Serializable
-data class NotionPageResponse(
+data class NotionApiPageResponse(
     val id: String,
     val url: String,
     @SerialName("last_edited_time")
     val lastEditedTime: String,
     @SerialName("in_trash")
     val inTrash: Boolean,
-    val parent: NotionParentResponse,
-    val properties: Map<String, NotionPagePropertyResponse>,
+    val parent: NotionApiParentResponse,
+    val properties: Map<String, NotionApiPagePropertyResponse>,
 )
 
 @Serializable
-data class NotionParentResponse(
+data class NotionApiParentResponse(
     val type: String,
     val workspace: Boolean? = null,
     @SerialName("page_id")
@@ -40,7 +40,7 @@ data class NotionParentResponse(
 )
 
 @Serializable
-data class NotionPagePropertyResponse(
+data class NotionApiPagePropertyResponse(
     val type: String,
     val title: List<NotionRichText>? = null,
 )

@@ -43,7 +43,7 @@ internal class NotionClient(
         }
     }
 
-    suspend fun getBlockChildrenBatch(
+    private suspend fun getBlockChildrenBatch(
         token: String,
         blockId: String,
         startCursor: String? = null,
@@ -106,11 +106,11 @@ internal class NotionClient(
         return nodes
     }
 
-    suspend fun getPage(token: String, pageId: String): NotionPageResponse {
+    suspend fun getPage(token: String, pageId: String): NotionApiPageResponse {
         return performGet(notionPageUri(baseUri, pageId), token, "retrieving page")
     }
 
-    suspend fun searchPagesBatch(token: String, startCursor: String? = null): NotionSearchResponse {
+    private suspend fun searchPagesBatch(token: String, startCursor: String? = null): NotionApiSearchResponse {
         val body = buildJsonObject {
             put("page_size", PAGE_SIZE)
             putJsonObject("filter") {
@@ -119,7 +119,7 @@ internal class NotionClient(
             }
             if (startCursor != null) put("start_cursor", startCursor)
         }
-        val response = performPost<NotionSearchResponse>(
+        val response = performPost<NotionApiSearchResponse>(
             notionSearchUri(baseUri),
             token,
             body,
@@ -129,8 +129,8 @@ internal class NotionClient(
         return response
     }
 
-    suspend fun discoverPages(token: String): List<NotionPageResponse> {
-        val pages = mutableListOf<NotionPageResponse>()
+    suspend fun discoverPages(token: String): List<NotionApiPageResponse> {
+        val pages = mutableListOf<NotionApiPageResponse>()
         val usedCursors = mutableSetOf<String>()
         var cursor: String? = null
         while (true) {
