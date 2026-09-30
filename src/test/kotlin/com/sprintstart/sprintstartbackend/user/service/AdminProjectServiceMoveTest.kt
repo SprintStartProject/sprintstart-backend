@@ -157,6 +157,35 @@ class AdminProjectServiceMoveTest {
         assertThat(moves).isEmpty()
     }
 
+    /** The global roles decide, not the label shown in the UI, which ranks HR above PM. */
+    @Test
+    fun `assignUsers keeps the other memberships of a user who is both HR and PM`() {
+        val target = project("Target")
+        val user = member(Role.HR, of = listOf(project("Old"))).apply { roles.add(Role.PM) }
+        val moves = stubAssignment(target, user)
+
+        service.assignUsers(target.id, AssignProjectUsersRequest(userIds = setOf(user.id)))
+
+        verify(exactly = 0) { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) }
+        assertThat(moves).isEmpty()
+    }
+
+    @Test
+    fun `assignUsers moves only the users that have another membership and returns the target members`() {
+        val oldProject = project("Old")
+        val target = project("Target")
+        val moved = member(Role.USER, of = listOf(oldProject))
+        val untouched = member(Role.USER, of = emptyList())
+        val movedAssignment = moved.projectAssignments.single()
+        val moves = stubAssignment(target, moved, untouched)
+
+        val members = service.assignUsers(target.id, AssignProjectUsersRequest(userIds = setOf(moved.id, untouched.id)))
+
+        verify(exactly = 1) { assignmentRepository.deleteAll(listOf(movedAssignment)) }
+        assertThat(moves.map { it.userId }).containsExactly(moved.id)
+        assertThat(members.map { it.id }).containsExactlyInAnyOrder(moved.id, untouched.id)
+    }
+
     /** A user holding [role] who is already a member of each project in [of]. */
     private fun member(role: Role, of: List<Project>): User {
         val user = user(username = "member-${UUID.randomUUID()}").apply { roles.add(role) }
@@ -166,23 +195,29 @@ class AdminProjectServiceMoveTest {
 
     /**
      * Stubs assigning [joining] to [target] and returns the list every [UserMovedToProjectEvent]
-     * published during the call is captured into.
+     * published during the call is captured into. Saved assignments show up in the member list
+     * read afterwards, like they do in the database.
      */
     private fun stubAssignment(
         target: Project,
-        joining: User,
+        vararg joining: User,
         alreadyMember: Boolean = false,
     ): List<UserMovedToProjectEvent> {
         val moves = mutableListOf<UserMovedToProjectEvent>()
+        val saved = mutableListOf<ProjectUserAssignment>()
         val existing = if (alreadyMember) {
-            listOf(ProjectUserAssignment(user = joining, project = target))
+            joining.map { ProjectUserAssignment(user = it, project = target) }
         } else {
             emptyList()
         }
         every { projectRepository.findById(target.id) } returns Optional.of(target)
-        every { userRepository.findAllById(setOf(joining.id)) } returns listOf(joining)
-        every { assignmentRepository.findAllByProjectId(target.id) } returns existing
-        every { assignmentRepository.saveAll(any<List<ProjectUserAssignment>>()) } answers { firstArg() }
+        every { userRepository.findAllById(joining.map { it.id }.toSet()) } returns joining.toList()
+        every { assignmentRepository.findAllByProjectId(target.id) } answers { existing + saved }
+        every { assignmentRepository.saveAll(any<List<ProjectUserAssignment>>()) } answers {
+            val assignments = firstArg<List<ProjectUserAssignment>>()
+            saved.addAll(assignments)
+            assignments
+        }
         every { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) } just runs
         every { eventPublisher.publishEvent(capture(moves)) } just runs
         return moves

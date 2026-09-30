@@ -17,18 +17,11 @@ class UserMovedToProjectListenerTest {
 
     /**
      * The path was built from the old project's blueprint. Deleting it lets the personalize flow
-     * build a new one from the project the user moved into.
+     * build a new one from the project the user moved into. Everything else onboarding holds is
+     * scoped to a project already, so the path is all that is touched.
      */
     @Test
-    fun `moving a user deletes their onboarding path`() {
-        listener.onUserMovedToProject(UserMovedToProjectEvent(userId, UUID.randomUUID(), listOf(UUID.randomUUID())))
-
-        verify(exactly = 1) { onboardingPathRepository.deleteByUserId(userId) }
-    }
-
-    /** Only the path is reset. Everything else onboarding holds is scoped to a project already. */
-    @Test
-    fun `moving a user touches nothing but the path of that user`() {
+    fun `moving a user deletes only their onboarding path`() {
         listener.onUserMovedToProject(UserMovedToProjectEvent(userId, UUID.randomUUID(), listOf(UUID.randomUUID())))
 
         verify(exactly = 1) { onboardingPathRepository.deleteByUserId(userId) }
