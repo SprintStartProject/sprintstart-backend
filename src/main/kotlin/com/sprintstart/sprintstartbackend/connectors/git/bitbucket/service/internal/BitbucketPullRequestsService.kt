@@ -24,6 +24,13 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 import java.util.UUID
 
+/**
+ * Ingests the pull requests of a connected Bitbucket repository through the REST API.
+ *
+ * Unlike files and commits, pull requests have no local clone to read from, so this service pages
+ * the Bitbucket API filtered by `updated_on` since the connection's stored cursor and publishes one
+ * event per pull request with its comments.
+ */
 @Service
 internal class BitbucketPullRequestsService(
     private val connectionRepository: BitbucketConnectionRepository,
@@ -105,6 +112,13 @@ internal class BitbucketPullRequestsService(
         credentialApi.findSecret(connection.credentialAuthId, connection.credentialName)
             ?: throw AtlassianCredentialNotFoundException(connection.credentialAuthId, connection.credentialName)
 
+    /**
+     * Performs the fetching & ingesting of pull requests, given a Bitbucket instance.
+     *
+     * @param connection The Bitbucket connection to fetch pull requests from.
+     * @param credential The Bitbucket credential to use.
+     * @param transactionId The id of this transaction.
+     */
     private suspend fun fetchAndIngestPullRequests(
         connection: BitbucketConnection,
         credential: AtlassianCredentialSecret,
@@ -126,6 +140,13 @@ internal class BitbucketPullRequestsService(
         }.forEach(eventPublisher::publishEvent)
 }
 
+/**
+ * Maps a [PullRequest] to a [BitbucketPullRequestFetchedEvent], using the given params.
+ *
+ * @param connection The Bitbucket connection this PR belongs to.
+ * @param comments The comments of this PR.
+ * @param transactionId The id of this transaction.
+ */
 private fun PullRequest.asEvent(
     connection: BitbucketConnection,
     comments: List<PullRequestComment>,

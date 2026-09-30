@@ -21,14 +21,8 @@ import java.util.UUID
  * revoking a credential in one place stops every repository that used it.
  *
  * Each collector owns its own cursor, which is what makes an ingest incremental: files and commits
- * hold the revision their last ingest reached, and pull requests hold the instant theirs started.
- * An empty revision means "never ingested", which the ingestion engine treats as "read everything";
- * a null timestamp means the same for pull requests. They are tracked separately because the
- * ingests are independent: reading one fully must not make the others look already done.
- *
- * [projectIdsInternal] is what makes the repository's artifacts visible to the AI index. Artifacts
- * are shared across every project the connection is linked to, so connecting the same repository to
- * a second project reuses this connection instead of storing a second one.
+ * hold the revision their last ingest reached, pull requests hold the instant theirs started. An
+ * empty revision and a null timestamp both mean "never ingested".
  *
  * @property lastSha The revision whose files were last ingested.
  * @property lastCommitsSyncedSha The revision whose commits were last ingested.

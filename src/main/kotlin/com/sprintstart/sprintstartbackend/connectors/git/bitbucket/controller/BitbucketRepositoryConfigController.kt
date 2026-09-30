@@ -35,8 +35,9 @@ internal class BitbucketRepositoryConfigController(
     private val configService: BitbucketRepositoryConfigService,
 ) {
     /**
-     * Configures the update behaviour of every connected repository at once.
+     * Configures the update behavior of every connected repository at once.
      *
+     * @param jwt The authentication principal.
      * @param request The schedule and auto-update flag to apply to all repositories.
      * @return 204 with an empty body.
      */
@@ -52,8 +53,8 @@ internal class BitbucketRepositoryConfigController(
             ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
         ],
     )
-    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PutMapping
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun configureAll(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -66,6 +67,7 @@ internal class BitbucketRepositoryConfigController(
     /**
      * Retrieves the update configuration of every connected repository.
      *
+     * @param jwt The authentication principal.
      * @return 200 with the list of configurations.
      */
     @Operation(
@@ -80,6 +82,7 @@ internal class BitbucketRepositoryConfigController(
         ],
     )
     @GetMapping
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun getAll(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -89,6 +92,7 @@ internal class BitbucketRepositoryConfigController(
     /**
      * Configures the update behaviour of one repository.
      *
+     * @param jwt The authentication principal.
      * @param workspace The Bitbucket workspace the repository belongs to.
      * @param slug The repository slug.
      * @param request The schedule and auto-update flag to apply.
@@ -107,8 +111,8 @@ internal class BitbucketRepositoryConfigController(
             ApiResponse(responseCode = "404", description = "Config for the repository was not found"),
         ],
     )
-    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PutMapping("/{workspace}/{slug}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun configureRepository(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
@@ -123,6 +127,7 @@ internal class BitbucketRepositoryConfigController(
     /**
      * Retrieves the update configuration of one repository.
      *
+     * @param jwt The authentication principal.
      * @param workspace The Bitbucket workspace the repository belongs to.
      * @param slug The repository slug.
      * @return 200 with the repository's configuration.
@@ -141,6 +146,7 @@ internal class BitbucketRepositoryConfigController(
         ],
     )
     @GetMapping("/{workspace}/{slug}")
+    @ResponseStatus(HttpStatus.OK)
     @PreAuthorize("hasRole('ADMIN') or hasRole('PM')")
     fun getConfigOfRepository(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,

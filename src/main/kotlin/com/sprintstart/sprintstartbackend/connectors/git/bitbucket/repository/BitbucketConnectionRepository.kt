@@ -13,6 +13,13 @@ import java.util.UUID
 
 @Repository
 internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnection, UUID> {
+    /**
+     * Finds the connection for one repository addressed by its coordinates.
+     *
+     * @param workspace The Bitbucket workspace owning the repository.
+     * @param slug The repository's slug within [workspace].
+     * @return The connection, or `null` when the repository is not connected.
+     */
     @Query(
         """
             SELECT b
@@ -29,9 +36,10 @@ internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnec
     /**
      * Lists the connections linked to one project.
      *
-     * The join is against the project-id collection rather than a mapped relation, so a connection
-     * linked to several projects is returned once per matching project without duplicating itself —
-     * hence the distinct.
+     * The join is against the project-id collection, so a connection linked to several projects is
+     * returned once — hence the distinct.
+     *
+     * @param projectId The project whose connections should be returned.
      */
     @Query(
         """

@@ -46,7 +46,10 @@ internal class BitbucketCommitsService(
      */
     @Tracked("Fetching and ingesting commits of Bitbucket repository")
     suspend fun fetchAndIngestCommitsOfRepository(repositoryId: UUID, transactionId: UUID) {
-        val connection = findConnection(repositoryId)
+        val connection = withContext(Dispatchers.IO) {
+            connectionRepository.findById(repositoryId)
+        }.orElseThrow { BitbucketRepositoryNotConnectedException(repositoryId) }
+
         publishStarted(connection, transactionId)
 
         val outcome = try {
@@ -71,11 +74,12 @@ internal class BitbucketCommitsService(
         publishCompleted(connection, transactionId)
     }
 
-    private suspend fun findConnection(repositoryId: UUID): BitbucketConnection =
-        withContext(Dispatchers.IO) {
-            connectionRepository.findById(repositoryId)
-        }.orElseThrow { BitbucketRepositoryNotConnectedException(repositoryId) }
-
+    /**
+     * Creates and publishes a [BitbucketCommitsFetchingStartedEvent].
+     *
+     * @param connection The Bitbucket connection the transaction belongs to.
+     * @param transactionId The id of the current transaction.
+     */
     private fun publishStarted(connection: BitbucketConnection, transactionId: UUID) {
         eventPublisher.publishEvent(
             BitbucketCommitsFetchingStartedEvent(
@@ -87,6 +91,12 @@ internal class BitbucketCommitsService(
         )
     }
 
+    /**
+     * Creates and publishes a [BitbucketCommitsFetchingCompletedEvent].
+     *
+     * @param connection The Bitbucket connection the transaction belongs to.
+     * @param transactionId The id of the current transaction.
+     */
     private fun publishCompleted(connection: BitbucketConnection, transactionId: UUID) {
         eventPublisher.publishEvent(
             BitbucketCommitsFetchingCompletedEvent(
@@ -98,6 +108,13 @@ internal class BitbucketCommitsService(
         )
     }
 
+    /**
+     * Creates and publishes a [BitbucketCommitsFetchingFailedEvent].
+     *
+     * @param connection The Bitbucket connection the transaction belongs to.
+     * @param transactionId The id of the current transaction.
+     * @param reason The reason of failure.
+     */
     private fun publishFailed(connection: BitbucketConnection, transactionId: UUID, reason: String) {
         eventPublisher.publishEvent(
             BitbucketCommitsFetchingFailedEvent(

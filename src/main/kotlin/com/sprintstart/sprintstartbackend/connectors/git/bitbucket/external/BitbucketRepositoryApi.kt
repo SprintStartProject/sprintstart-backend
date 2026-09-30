@@ -5,12 +5,9 @@ import java.util.UUID
 /**
  * Module-facing API for reading and repairing the project links of connected Bitbucket repositories.
  *
- * Other modules — ingestion above all — must not reach into the connector's persistence. The project
- * links matter to them because ingestion only announces an artifact to the AI index for the projects
- * its repository is linked to, so a caller that cannot read these ids cannot decide where an ingested
- * artifact belongs.
- *
- * Mirrors the GitHub connector's `GithubRepositoryApi`.
+ * Other modules — ingestion above all — must not reach into the connector's persistence. The links
+ * matter to them because an artifact is only announced to the AI index for the projects its
+ * repository is linked to. Mirrors the GitHub connector's `GithubRepositoryApi`.
  */
 interface BitbucketRepositoryApi {
     /**
