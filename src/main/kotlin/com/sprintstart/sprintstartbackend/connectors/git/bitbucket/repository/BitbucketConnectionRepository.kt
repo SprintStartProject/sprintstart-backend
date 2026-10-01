@@ -34,6 +34,31 @@ internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnec
     ): BitbucketConnection?
 
     /**
+     * Finds the connection for one repository addressed by its coordinates, together with the
+     * projects it is linked to.
+     *
+     * The project ids are fetched in the same query because a reconnect adds the submitted project
+     * to them after the loading coroutine context, and with it the Hibernate session, is gone.
+     *
+     * @param workspace The Bitbucket workspace owning the repository.
+     * @param slug The repository's slug within [workspace].
+     * @return The connection with its project ids loaded, or `null` when the repository is not connected.
+     */
+    @Query(
+        """
+            SELECT b
+            FROM BitbucketConnection b
+            LEFT JOIN FETCH b.projectIdsInternal
+            WHERE b.workspace = :workspace
+            AND b.slug = :slug
+        """,
+    )
+    fun findWithProjectIdsByWorkspaceAndSlug(
+        @Param("workspace") workspace: String,
+        @Param("slug") slug: String,
+    ): BitbucketConnection?
+
+    /**
      * Finds one connection together with the projects it is linked to.
      *
      * The project ids are fetched in the same query because callers check access against them

@@ -210,7 +210,6 @@ internal class BitbucketConnectionService(
     suspend fun discoverRepositoriesOfWorkspace(
         request: DiscoverBitbucketRepositoriesRequest,
     ): DiscoverBitbucketRepositoriesResponse {
-        println("TESTSET")
         val token = credentialApi.findSecret(request.authId, request.credentialName)
             ?: throw AtlassianCredentialNotFoundException(request.authId, request.credentialName)
 
@@ -231,7 +230,7 @@ internal class BitbucketConnectionService(
                 DiscoveredBitbucketRepository(
                     request.workspace,
                     repo.slug,
-                    repo.fullName,
+                    repo.name,
                     repo.isPrivate,
                     repo.url,
                     alreadyConnected.any { request.workspace == it.workspace && repo.slug == it.slug },
@@ -247,7 +246,7 @@ internal class BitbucketConnectionService(
         transactionId: UUID,
     ): UUID {
         val alreadyConnected = withContext(Dispatchers.IO) {
-            connectionRepository.findByWorkspaceAndSlug(request.workspace, request.slug)
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug(request.workspace, request.slug)
         }
         if (alreadyConnected != null) {
             linkProject(alreadyConnected, request.projectId)

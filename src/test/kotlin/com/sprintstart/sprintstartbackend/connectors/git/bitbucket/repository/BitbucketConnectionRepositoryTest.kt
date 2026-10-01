@@ -135,6 +135,24 @@ class BitbucketConnectionRepositoryTest {
         assertThat(repository.findWithProjectIdsById(UUID.randomUUID())).isNull()
     }
 
+    /**
+     * A reconnect adds the submitted project to the loaded connection after its session is gone,
+     * so the project ids have to arrive with the query rather than lazily.
+     */
+    @Test
+    fun `findWithProjectIdsByWorkspaceAndSlug loads the project ids with the connection`() {
+        val projectIds = mutableSetOf(UUID.randomUUID(), UUID.randomUUID())
+        val wanted = store(workspace = "acme", slug = "api", projectIds = projectIds)
+        store(workspace = "acme", slug = "web")
+
+        val found = repository.findWithProjectIdsByWorkspaceAndSlug("acme", "api")
+        entityManager.clear()
+
+        assertThat(found?.id).isEqualTo(wanted.id)
+        assertThat(found?.projectIds).containsExactlyInAnyOrderElementsOf(projectIds)
+        assertThat(repository.findWithProjectIdsByWorkspaceAndSlug("acme", "missing")).isNull()
+    }
+
     @Test
     fun `findAllWithProjectIds returns each connection once with its project ids`() {
         val projectIds = mutableSetOf(UUID.randomUUID(), UUID.randomUUID())
