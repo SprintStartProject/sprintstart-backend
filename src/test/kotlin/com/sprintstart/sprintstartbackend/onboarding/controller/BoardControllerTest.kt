@@ -2,11 +2,14 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardPreviousResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
@@ -26,6 +29,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
@@ -39,6 +43,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -210,6 +215,110 @@ class BoardControllerTest(
                     .content("""{"kind":"NOTE","text":"deploys are on Thursdays"}""")
                     .with(userJwt),
             ).andExpect(status().isOk)
+    }
+
+    /** The time of the edit being undone reaches the service, so a stale undo can be refused. */
+    @Test
+    fun `restorePreviousContent passes on which edit the caller is undoing`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, 3L, null) } returns noteCard()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":3}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+    }
+
+    /** What a client needs to show an undo and to send it back: the earlier content, who, when, which. */
+    @Test
+    fun `restorePreviousContent answers with the card and the version it can now undo`() {
+        val cardId = UUID.randomUUID()
+        val replacedAt = Instant.parse("2026-09-30T10:00:00.123Z")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, 1L, null) } returns noteCard().copy(
+            previous = BoardCardPreviousResponse(
+                content = NoteContent(text = "deploys are on Fridays"),
+                replacedBy = BoardActor.HIRE,
+                replacedAt = replacedAt,
+                revision = 2,
+            ),
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":1}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.content.text").value("deploys are on Thursdays"))
+            .andExpect(jsonPath("$.previous.content.kind").value("NOTE"))
+            .andExpect(jsonPath("$.previous.content.text").value("deploys are on Fridays"))
+            .andExpect(jsonPath("$.previous.replacedBy").value("HIRE"))
+            .andExpect(jsonPath("$.previous.replacedAt").value("2026-09-30T10:00:00.123Z"))
+            .andExpect(jsonPath("$.previous.revision").value(2))
+    }
+
+    /** No body is an older client: it still works, only without the staleness check. */
+    @Test
+    fun `restorePreviousContent works without a body`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null, null) } returns noteCard()
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous").with(userJwt))
+            .andExpect(status().isOk)
+    }
+
+    /** The legacy time-based check still reaches the service for clients that send it. */
+    @Test
+    fun `restorePreviousContent still passes on replacedAt`() {
+        val cardId = UUID.randomUUID()
+        val replacedAt = java.time.Instant.parse("2026-09-29T10:15:30Z")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null, replacedAt) } returns noteCard()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"replacedAt":"2026-09-29T10:15:30Z"}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `restorePreviousContent answers 409 when the service refuses a stale undo`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, 1L, null) } throws
+            ResponseStatusException(HttpStatus.CONFLICT, "That card has changed since — nothing was undone")
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":1}""")
+                    .with(userJwt),
+            ).andExpect(status().isConflict)
+    }
+
+    /** A write that loses the version check is a conflict the client can reload from, not a 500. */
+    @Test
+    fun `restorePreviousContent answers 409 when the card changed while it ran`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, null, null) } throws
+            ObjectOptimisticLockingFailureException(BoardCard::class.java, cardId)
+
+        mockMvc
+            .perform(post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous").with(userJwt))
+            .andExpect(status().isConflict)
     }
 
     @Test

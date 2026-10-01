@@ -5,8 +5,6 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardCha
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPayload
@@ -17,28 +15,15 @@ import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
-import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import org.springframework.http.HttpStatus
@@ -65,11 +50,9 @@ class BoardService(
     private val boardCardRepository: BoardCardRepository,
     private val projectMembershipApi: ProjectMembershipApi,
     private val onboardingMetricsService: OnboardingMetricsService,
-    private val openPullRequestReader: OpenPullRequestReader,
+    private val liveContent: LiveCardContentReader,
     private val currentTaskReader: CurrentTaskReader,
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
-    private val myCompetencyService: MyCompetencyService,
-    private val buddySessionRepository: BuddySessionRepository,
     private val boardDiagramRepository: BoardDiagramRepository,
     private val boardDiagramService: BoardDiagramService,
     private val arrivalStepService: ArrivalStepService,
@@ -229,7 +212,7 @@ class BoardService(
             }
         }
 
-        val now = Instant.now()
+        val now = BoardCard.atClientPrecision(Instant.now())
         boardCardRepository.save(
             BoardCard(
                 boardId = board.id,
@@ -428,7 +411,7 @@ class BoardService(
             ?: boardRepository.save(Board(userId = userId, projectId = projectId))
         val existing = boardCardRepository.findAllByBoardId(board.id)
 
-        val now = Instant.now()
+        val now = BoardCard.atClientPrecision(Instant.now())
         val card = boardCardRepository.save(
             BoardCard(
                 boardId = board.id,
@@ -456,15 +439,65 @@ class BoardService(
     fun editAuthoredCard(userId: UUID, cardId: UUID, request: AuthoredCardRequest): BoardCardResponse {
         val (card, board) = editableCardOrThrow(userId, cardId, request.kind)
 
-        val before = card.payload
-        card.payload = json.encodeToString(request.toPayload())
-        card.recordChange(changeBetween(before, card.payload), BoardActor.HIRE)
-        boardCardRepository.save(card)
+        val next = json.encodeToString(request.toPayload())
+        if (card.replacePayload(next, changeBetween(card.payload, next), BoardActor.HIRE)) {
+            boardCardRepository.saveAndFlush(card)
+        }
 
         val member = memberOrNull(userId, board.projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
         val arrivalSteps = arrivalStepService.forHire(member.userId)
         return card.toResponse(member, board.projectId, timeline = null, arrivalSteps = arrivalSteps)
+    }
+
+    /**
+     * Puts one of the hire's cards back to what it said before its most recent edit — theirs or the
+     * buddy's.
+     *
+     * **Restoring is itself an edit.** The content being replaced becomes the new previous version,
+     * so an undo can be undone, and the card records that the hire made it. Nothing older is kept:
+     * a depth of one is what undo needs (see [BoardCard.previousPayload]).
+     *
+     * @param revision Which edit is being undone, as the hire saw it ([BoardCard.contentRevision]).
+     * When given and no longer the card's latest, nothing is restored.
+     * @param replacedAt The same edit by its time, for clients that do not send a revision. Checked
+     * in addition when given.
+     * @throws ResponseStatusException 404 when the card is not one of theirs; 409 when it is off
+     * their board, has nothing to restore, or has been edited again since the undo was offered.
+     * A write that lands between this read and its save fails the version check and surfaces as a
+     * 409 too (see `BoardExceptionHandler`).
+     */
+    @Transactional
+    fun restorePreviousContent(
+        userId: UUID,
+        cardId: UUID,
+        revision: Long? = null,
+        replacedAt: Instant? = null,
+    ): BoardCardResponse {
+        val (card, board) = editableCardOrThrow(userId, cardId, kind = null)
+        val onBoard = card.state == BoardCardState.ACTIVE
+        val stale = (revision != null && revision != card.contentRevision) ||
+            (replacedAt != null && replacedAt != card.previousReplacedAt)
+        val previous = card.previousPayload?.takeIf { onBoard && !stale } ?: throw ResponseStatusException(
+            HttpStatus.CONFLICT,
+            when {
+                !onBoard -> "That card is not on your board — bring it back first"
+                stale -> "That card has changed since — nothing was undone"
+                else -> "That card has no earlier version to go back to"
+            },
+        )
+
+        card.replacePayload(previous, BoardCardChange.EDITED, BoardActor.HIRE)
+        boardCardRepository.saveAndFlush(card)
+
+        val member = memberOrNull(userId, board.projectId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
+        return card.toResponse(
+            member,
+            board.projectId,
+            timeline = null,
+            arrivalSteps = arrivalStepService.forHire(userId),
+        )
     }
 
     /**
@@ -497,13 +530,16 @@ class BoardService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "There were no lines to add")
         }
 
-        card.payload = json.encodeToString<BoardCardPayload>(
-            existing.copy(
-                items = existing.items +
-                    added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(
+                existing.copy(
+                    items = existing.items +
+                        added.map { ChecklistItemPayload(id = UUID.randomUUID().toString(), text = it) },
+                ),
             ),
+            BoardCardChange.EDITED,
+            BoardActor.BUDDY,
         )
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
         boardCardRepository.save(card)
 
         return card.toResponse(
@@ -548,8 +584,11 @@ class BoardService(
         }
         if (ticked == 0) return 0
 
-        card.payload = json.encodeToString<BoardCardPayload>(existing.copy(items = items))
-        card.recordChange(BoardCardChange.TICKED, BoardActor.BUDDY)
+        card.replacePayload(
+            json.encodeToString<BoardCardPayload>(existing.copy(items = items)),
+            BoardCardChange.TICKED,
+            BoardActor.BUDDY,
+        )
         boardCardRepository.save(card)
 
         return ticked
@@ -586,15 +625,19 @@ class BoardService(
         val matches = existing.items.filter { it.text.trim().lowercase() == wanted }
         if (matches.size != 1) return false
 
-        card.payload = json.encodeToString<BoardCardPayload>(
-            existing.copy(
-                items = existing.items.map { item ->
-                    if (item.id == matches.first().id) item.copy(text = words) else item
-                },
-            ),
+        val reworded = existing.copy(
+            items = existing.items.map { item ->
+                if (item.id == matches.first().id) item.copy(text = words) else item
+            },
         )
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
-        boardCardRepository.save(card)
+        if (card.replacePayload(
+                json.encodeToString<BoardCardPayload>(reworded),
+                BoardCardChange.EDITED,
+                BoardActor.BUDDY,
+            )
+        ) {
+            boardCardRepository.save(card)
+        }
 
         return true
     }
@@ -638,9 +681,9 @@ class BoardService(
             request
         }
 
-        card.payload = json.encodeToString(content.toPayload())
-        card.recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
-        boardCardRepository.save(card)
+        if (card.replacePayload(json.encodeToString(content.toPayload()), BoardCardChange.EDITED, BoardActor.BUDDY)) {
+            boardCardRepository.save(card)
+        }
 
         return card.toResponse(
             member,
@@ -770,149 +813,20 @@ class BoardService(
     ): BoardCardContent = when (card.kind) {
         BoardCardKind.PATH_TO_FIRST_CONTRIBUTION -> pathContent(member, timeline)
         BoardCardKind.ARRIVAL_STEPS -> arrivalStepsContent(arrivalSteps)
-        BoardCardKind.OPEN_PULL_REQUESTS -> openPullRequestsContent(member, projectId)
-        BoardCardKind.CURRENT_TASK -> currentTaskContent(member.userId, projectId)
+        BoardCardKind.OPEN_PULL_REQUESTS -> liveContent.openPullRequests(member, projectId)
+        BoardCardKind.CURRENT_TASK -> liveContent.currentTask(member.userId, projectId)
         BoardCardKind.SUGGESTED_TASKS -> BoardTaskCards.suggested(matches())
         BoardCardKind.TASK_POOL -> BoardTaskCards.pool(
             matches(),
             currentTaskId = currentTaskReader.currentTaskFor(member.userId, projectId)?.id,
         )
-        BoardCardKind.COMPETENCY_PROGRESS -> competencyProgressContent(member.userId)
-        BoardCardKind.MEMORY_RECAP -> memoryRecapContent(member.userId)
+        BoardCardKind.COMPETENCY_PROGRESS -> liveContent.competencyProgress(member.userId)
+        BoardCardKind.MEMORY_RECAP -> liveContent.memoryRecap(member.userId)
         // The one card served from a cache: its content costs a model call.
         // [BoardDiagramService] owns whether that cache is still valid.
         BoardCardKind.DIAGRAM -> boardDiagramService.contentFor(card.subject.orEmpty(), diagram)
         BoardCardKind.PATH_STEP -> pathStepContent(card.subject, pathSteps)
         BoardCardKind.NOTE, BoardCardKind.LINK, BoardCardKind.CHECKLIST -> authoredContent(card.payload)
-    }
-
-    /**
-     * What is still outstanding before this hire can work, counted by how each step was settled.
-     *
-     * The same read the hire's own `GET /me/arrival` serves, so the card and that endpoint cannot
-     * disagree — the rule every other card here follows.
-     *
-     * Counted per rigor and never totalled. A step the system observed and a step somebody
-     * ticked are different facts, and a single blended figure here would be meaningless.
-     */
-    private fun arrivalStepsContent(steps: List<ResolvedArrivalStep>): ArrivalStepsContent {
-        val responses: List<ArrivalStepResponse> = steps.map { it.toResponse() }
-
-        return ArrivalStepsContent(
-            steps = responses,
-            observedCount = responses.count { it.rigor == Rigor.OBSERVED },
-            declaredCount = responses.count { it.rigor == Rigor.DECLARED },
-            outstandingCount = responses.count { !it.settled },
-        )
-    }
-
-    /**
-     * The hire's ledger, split at the bar rather than summed into a percentage.
-     *
-     * The same read and the same level-0 exclusion as the buddy's `get_my_competencies` tool.
-     * Level 0 means "asked, saw no evidence" — a placement, not a competency — so it is
-     * filtered out here. The ledger is global, not per project.
-     */
-    private fun competencyProgressContent(userId: UUID): CompetencyProgressContent {
-        val (held, inProgress) = myCompetencyService
-            .getCompetenciesForUser(userId)
-            .filter { it.level > 0 }
-            .partition { it.level >= it.targetLevel }
-        return CompetencyProgressContent(
-            held = held.map { it.toBoardResponse() },
-            inProgress = inProgress.map { it.toBoardResponse() },
-        )
-    }
-
-    private fun MyCompetencyResponse.toBoardResponse() = BoardCompetencyResponse(
-        competencyKey = competencyKey,
-        label = label,
-        level = level,
-        targetLevel = targetLevel,
-    )
-
-    /**
-     * What the mentor remembers, read and never written.
-     *
-     * Not [BuddyService.getOrCreateSession] — hydrating a card must not create a session.
-     */
-    private fun memoryRecapContent(userId: UUID): MemoryRecapContent {
-        val session = buddySessionRepository.findByUserId(userId)
-        return MemoryRecapContent(
-            memory = session?.summary,
-            messagesRemembered = session?.summarizedCount ?: 0,
-        )
-    }
-
-    /**
-     * The task the hire is on, read — never assigned.
-     *
-     * Read through [CurrentTaskReader], not `TaskZeroService.getForHire`, which assigns on
-     * read. Hydration runs on every page load, so it must not be able to hand out a task.
-     *
-     * A card with no task on it is a real state and says so.
-     */
-    private fun currentTaskContent(userId: UUID, projectId: UUID): CurrentTaskContent {
-        val task = currentTaskReader.currentTaskFor(userId, projectId)
-        return CurrentTaskContent(
-            taskId = task?.id,
-            title = task?.title,
-            summary = task?.summary,
-            url = task?.sourceUrl,
-            // True for a goal the hire claimed, false for a Task 0 they were handed.
-            chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
-            // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
-            // card can say so without a lookup of its own.
-            closedAtSource = task?.status == ProposalStatus.STALE,
-        )
-    }
-
-    /**
-     * The path card's content, from the same timeline the PM dashboard reads.
-     *
-     * A hire with no timeline at all still gets the card, with every moment unreached: "nothing has
-     * happened yet" is the honest day-one state and is exactly what somebody on day one should see,
-     * rather than a card that is missing until they have already made progress.
-     */
-    private fun pathContent(
-        member: ProjectMember,
-        timeline: HireTimelineResponse?,
-    ): PathToFirstContributionContent = PathToFirstContributionContent(
-        moments = listOf(
-            // Joined comes from the membership rather than the timeline, so it is still shown when
-            // there is no timeline to read.
-            BoardMomentResponse(BoardMomentKey.JOINED, member.joinedAt),
-            BoardMomentResponse(BoardMomentKey.TASK_CLAIMED, timeline?.firstTaskClaimedAt),
-            // The timeline's field names still say "pull request"; the values behind them are
-            // composed from contributions of any kind, which is why the card can name them
-            // generally.
-            BoardMomentResponse(BoardMomentKey.WORK_SUBMITTED, timeline?.firstContributionOpenedAt),
-            BoardMomentResponse(BoardMomentKey.FIRST_RESPONSE, timeline?.firstResponseAt),
-            BoardMomentResponse(BoardMomentKey.WORK_ACCEPTED, timeline?.firstContributionAcceptedAt),
-        ),
-        acceptedCount = timeline?.acceptedContributionCount ?: 0,
-        autonomyReachedAt = timeline?.autonomyReachedAt,
-        stalledReason = timeline?.stalledReason,
-    )
-
-    private fun openPullRequestsContent(
-        member: ProjectMember,
-        projectId: UUID,
-    ): OpenPullRequestsContent {
-        val login = member.githubLogin
-        val open = openPullRequestReader.openFor(projectId, login)
-        return OpenPullRequestsContent(
-            pullRequests = open.map { pullRequest ->
-                BoardPullRequestResponse(
-                    artifactId = pullRequest.artifactId,
-                    number = pullRequest.number,
-                    title = pullRequest.title,
-                    url = pullRequest.sourceUrl,
-                    waitingHours = openPullRequestReader.waitingHours(pullRequest),
-                )
-            },
-            attributionMissing = login.isNullOrBlank(),
-        )
     }
 
     private fun BoardCard.toResponse(
@@ -934,6 +848,7 @@ class BoardService(
         placedAt = placedAt,
         content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps, matches),
         lastChange = toLastChangeResponse(),
+        previous = toPreviousResponse(),
     )
 
     /**
@@ -946,7 +861,7 @@ class BoardService(
     private fun editableCardOrThrow(
         userId: UUID,
         cardId: UUID,
-        kind: BoardCardKind,
+        kind: BoardCardKind?,
     ): Pair<BoardCard, Board> {
         // Locked, so a hire edit and a buddy edit of the same card cannot interleave their writes.
         val card = boardCardRepository.findLockedById(cardId)
@@ -954,7 +869,7 @@ class BoardService(
         val refusal = when {
             card == null || board == null || board.userId != userId || card.owner != BoardCardOwner.HIRE ->
                 ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
-            card.kind != kind ->
+            kind != null && card.kind != kind ->
                 ResponseStatusException(HttpStatus.BAD_REQUEST, "That card is a ${card.kind}, not a $kind")
             else -> null
         }

@@ -18,6 +18,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.stereotype.Service
@@ -350,6 +351,14 @@ class BuddyActionService(
             // A precondition the underlying route enforces (not a member, blank question, …). Relay
             // its reason rather than failing the whole confirm with an HTTP error.
             BuddyActionResponse(ok = false, message = ex.reason ?: "That didn't go through — try again in a moment.")
+        } catch (@Suppress("SwallowedException") ex: OptimisticLockingFailureException) {
+            // A board card is version-checked, so a write that lost a race with another change to
+            // the same card committed nothing. Say so instead of failing the confirm with a 500: the
+            // hire can ask again against what the card says now.
+            BuddyActionResponse(
+                ok = false,
+                message = "That card changed while I was working on it, so nothing was changed. Ask me again.",
+            )
         }
     }
 
