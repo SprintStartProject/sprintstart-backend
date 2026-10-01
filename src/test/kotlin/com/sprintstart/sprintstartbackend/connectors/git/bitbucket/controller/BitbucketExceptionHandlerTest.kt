@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.controller
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConfigNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotEnabledException
 import org.assertj.core.api.Assertions.assertThat
@@ -53,6 +54,22 @@ class BitbucketExceptionHandlerTest {
         )
 
         assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+    }
+
+    @Test
+    fun `answers 404 when Bitbucket has no such repository or hides it from the credential`() {
+        val response = handler.handleRepositoryDoesNotExist(
+            BitbucketRepositoryDoesNotExistException(
+                workspace = "sprintstart",
+                slug = "missing",
+                credentialName = "team-token",
+            ),
+        )
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        assertThat(response.body?.message)
+            .contains("sprintstart/missing")
+            .contains("team-token")
     }
 
     @Test
