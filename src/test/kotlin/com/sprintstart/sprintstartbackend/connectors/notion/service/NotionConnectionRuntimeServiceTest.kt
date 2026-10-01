@@ -33,12 +33,13 @@ class NotionConnectionRuntimeServiceTest {
         val projectId = UUID.randomUUID()
         val existing = connection(projectId = projectId)
         val missingId = UUID.randomUUID()
+        val requested = linkedMapOf(existing.id to false, missingId to true)
         every {
-            repository.findAllByIdInAndProjectId(listOf(existing.id, missingId), projectId)
+            repository.findAllByIdInAndProjectId(requested.keys, projectId)
         } returns listOf(existing)
 
         assertFailsWith<NotionPageConnectionNotFoundException> {
-            service.patchSources(projectId, linkedMapOf(existing.id to false, missingId to true))
+            service.patchSources(projectId, requested)
         }
         assertThat(existing.sourceEnabled).isTrue()
     }
