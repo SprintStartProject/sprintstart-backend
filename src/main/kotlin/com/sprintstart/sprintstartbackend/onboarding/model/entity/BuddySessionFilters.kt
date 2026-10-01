@@ -12,5 +12,4 @@ class BuddySessionFilters(
     var from: String?,
     @SerialName("time_to")
     var to: String?,
-) {
-}
+)

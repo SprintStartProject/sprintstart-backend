@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.onboarding.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCitationDto

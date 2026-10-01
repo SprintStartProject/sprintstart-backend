@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.FaqInsightsConfig
-import com.sprintstart.sprintstartbackend.onboarding.external.BuddyQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqDocument
@@ -17,6 +16,7 @@ import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiEx
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiFaqGroupMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.FaqResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
+import com.sprintstart.sprintstartbackend.onboarding.external.BuddyQuestionApi
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyQuestion
 import io.mockk.Runs
 import io.mockk.coEvery

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.insights.listener
 
-import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.service.FaqLiveUpdateService
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory

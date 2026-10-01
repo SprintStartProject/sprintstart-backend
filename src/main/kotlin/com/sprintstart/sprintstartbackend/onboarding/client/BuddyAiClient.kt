@@ -12,7 +12,7 @@ import java.net.URI
 @Component
 class BuddyAiClient(
     private val webClient: WebClient,
-    private val applicationConfig: ApplicationConfig
+    private val applicationConfig: ApplicationConfig,
 ) {
     suspend fun getSessionTitle(request: AiGenerateSessionTitleRequest) =
         try {

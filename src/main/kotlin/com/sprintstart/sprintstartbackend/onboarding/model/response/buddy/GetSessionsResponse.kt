@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.response.buddy
 
-import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import java.time.Instant
 import java.util.UUID
 

@@ -5,5 +5,4 @@ import kotlinx.serialization.Serializable
 @Serializable
 class AiGenerateSessionTitleResponse(
     val title: String,
-) {
-}
+)

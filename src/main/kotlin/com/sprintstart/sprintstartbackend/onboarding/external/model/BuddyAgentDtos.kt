@@ -196,5 +196,5 @@ data class BuddyAgentResponse(
     val messages: List<BuddyAgentMessageDto> = emptyList(),
     @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
     val citations: List<BuddyCitationDto> = emptyList(),
-    val reasoning: List<String> = emptyList()
+    val reasoning: List<String> = emptyList(),
 )
