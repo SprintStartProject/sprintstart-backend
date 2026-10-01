@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardCha
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPayload
@@ -18,19 +17,13 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.board.Checkli
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import org.springframework.http.HttpStatus
@@ -57,11 +50,9 @@ class BoardService(
     private val boardCardRepository: BoardCardRepository,
     private val projectMembershipApi: ProjectMembershipApi,
     private val onboardingMetricsService: OnboardingMetricsService,
-    private val openPullRequestReader: OpenPullRequestReader,
+    private val liveContent: LiveCardContentReader,
     private val currentTaskReader: CurrentTaskReader,
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
-    private val myCompetencyService: MyCompetencyService,
-    private val buddySessionRepository: BuddySessionRepository,
     private val boardDiagramRepository: BoardDiagramRepository,
     private val boardDiagramService: BoardDiagramService,
     private val arrivalStepService: ArrivalStepService,
@@ -822,94 +813,20 @@ class BoardService(
     ): BoardCardContent = when (card.kind) {
         BoardCardKind.PATH_TO_FIRST_CONTRIBUTION -> pathContent(member, timeline)
         BoardCardKind.ARRIVAL_STEPS -> arrivalStepsContent(arrivalSteps)
-        BoardCardKind.OPEN_PULL_REQUESTS -> openPullRequestsContent(member, projectId)
-        BoardCardKind.CURRENT_TASK -> currentTaskContent(member.userId, projectId)
+        BoardCardKind.OPEN_PULL_REQUESTS -> liveContent.openPullRequests(member, projectId)
+        BoardCardKind.CURRENT_TASK -> liveContent.currentTask(member.userId, projectId)
         BoardCardKind.SUGGESTED_TASKS -> BoardTaskCards.suggested(matches())
         BoardCardKind.TASK_POOL -> BoardTaskCards.pool(
             matches(),
             currentTaskId = currentTaskReader.currentTaskFor(member.userId, projectId)?.id,
         )
-        BoardCardKind.COMPETENCY_PROGRESS -> competencyProgressContent(member.userId)
-        BoardCardKind.MEMORY_RECAP -> memoryRecapContent(member.userId)
+        BoardCardKind.COMPETENCY_PROGRESS -> liveContent.competencyProgress(member.userId)
+        BoardCardKind.MEMORY_RECAP -> liveContent.memoryRecap(member.userId)
         // The one card served from a cache: its content costs a model call.
         // [BoardDiagramService] owns whether that cache is still valid.
         BoardCardKind.DIAGRAM -> boardDiagramService.contentFor(card.subject.orEmpty(), diagram)
         BoardCardKind.PATH_STEP -> pathStepContent(card.subject, pathSteps)
         BoardCardKind.NOTE, BoardCardKind.LINK, BoardCardKind.CHECKLIST -> authoredContent(card.payload)
-    }
-
-    /**
-     * The hire's ledger, split at the bar rather than summed into a percentage.
-     *
-     * The same read and the same level-0 exclusion as the buddy's `get_my_competencies` tool.
-     * Level 0 means "asked, saw no evidence" — a placement, not a competency — so it is
-     * filtered out here. The ledger is global, not per project.
-     */
-    private fun competencyProgressContent(userId: UUID): CompetencyProgressContent {
-        val (held, inProgress) = myCompetencyService
-            .getCompetenciesForUser(userId)
-            .filter { it.level > 0 }
-            .partition { it.level >= it.targetLevel }
-        return CompetencyProgressContent(
-            held = held.map { it.toBoardResponse() },
-            inProgress = inProgress.map { it.toBoardResponse() },
-        )
-    }
-
-    /**
-     * What the mentor remembers, read and never written.
-     *
-     * Not [BuddyService.getOrCreateSession] — hydrating a card must not create a session.
-     */
-    private fun memoryRecapContent(userId: UUID): MemoryRecapContent {
-        val session = buddySessionRepository.findByUserId(userId)
-        return MemoryRecapContent(
-            memory = session?.summary,
-            messagesRemembered = session?.summarizedCount ?: 0,
-        )
-    }
-
-    /**
-     * The task the hire is on, read — never assigned.
-     *
-     * Read through [CurrentTaskReader], not `TaskZeroService.getForHire`, which assigns on
-     * read. Hydration runs on every page load, so it must not be able to hand out a task.
-     *
-     * A card with no task on it is a real state and says so.
-     */
-    private fun currentTaskContent(userId: UUID, projectId: UUID): CurrentTaskContent {
-        val task = currentTaskReader.currentTaskFor(userId, projectId)
-        return CurrentTaskContent(
-            taskId = task?.id,
-            title = task?.title,
-            summary = task?.summary,
-            url = task?.sourceUrl,
-            // True for a goal the hire claimed, false for a Task 0 they were handed.
-            chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
-            // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
-            // card can say so without a lookup of its own.
-            closedAtSource = task?.status == ProposalStatus.STALE,
-        )
-    }
-
-    private fun openPullRequestsContent(
-        member: ProjectMember,
-        projectId: UUID,
-    ): OpenPullRequestsContent {
-        val login = member.githubLogin
-        val open = openPullRequestReader.openFor(projectId, login)
-        return OpenPullRequestsContent(
-            pullRequests = open.map { pullRequest ->
-                BoardPullRequestResponse(
-                    artifactId = pullRequest.artifactId,
-                    number = pullRequest.number,
-                    title = pullRequest.title,
-                    url = pullRequest.sourceUrl,
-                    waitingHours = openPullRequestReader.waitingHours(pullRequest),
-                )
-            },
-            attributionMissing = login.isNullOrBlank(),
-        )
     }
 
     private fun BoardCard.toResponse(
