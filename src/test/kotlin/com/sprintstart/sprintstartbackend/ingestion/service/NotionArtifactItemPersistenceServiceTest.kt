@@ -54,7 +54,9 @@ class NotionArtifactItemPersistenceServiceTest {
 
         val created = service.persist(run.id, projectId, command)
         val artifact = artifactSlot.captured
-        every { artifactRepository.findBySourceSystemAndSourceId(SourceSystem.NOTION, command.sourceId) } returns artifact
+        every {
+            artifactRepository.findBySourceSystemAndSourceId(SourceSystem.NOTION, command.sourceId)
+        } returns artifact
         val unchanged = service.persist(run.id, projectId, command)
         val updated = service.persist(run.id, projectId, command.copy(bodyText = "changed body"))
 

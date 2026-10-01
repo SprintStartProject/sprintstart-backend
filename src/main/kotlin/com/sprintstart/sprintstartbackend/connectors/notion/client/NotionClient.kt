@@ -185,7 +185,9 @@ internal class NotionClient(
 }
 
 private fun validateNotionPagination(hasMore: Boolean, nextCursor: String?, requestContext: String) {
-    if ((hasMore && nextCursor.isNullOrBlank()) || (!hasMore && nextCursor != null)) {
+    val missingContinuationCursor = hasMore && nextCursor.isNullOrBlank()
+    val unexpectedContinuationCursor = !hasMore && nextCursor != null
+    if (missingContinuationCursor || unexpectedContinuationCursor) {
         throw NotionInvalidResponseException(requestContext)
     }
 }

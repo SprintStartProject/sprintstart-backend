@@ -33,14 +33,15 @@ class NotionApiResponsesTest {
 
     @Test
     fun `decodes pagination fields when another batch is available`() {
-        val body = """
+        val body =
+            """
             {
               "object": "list",
               "results": [],
               "has_more": true,
               "next_cursor": "next-batch-cursor"
             }
-        """.trimIndent()
+            """.trimIndent()
 
         val response = json.decodeFromString<NotionBlocksResponse>(body)
 
@@ -51,7 +52,8 @@ class NotionApiResponsesTest {
 
     @Test
     fun `decodes a block without a table row payload`() {
-        val body = """
+        val body =
+            """
             {
               "object": "block",
               "id": "bbbbbbbb-bbbb-4bbb-8bbb-000000000001",
@@ -63,7 +65,7 @@ class NotionApiResponsesTest {
                 "has_row_header": false
               }
             }
-        """.trimIndent()
+            """.trimIndent()
 
         val block = json.decodeFromString<NotionBlockResponse>(body)
 

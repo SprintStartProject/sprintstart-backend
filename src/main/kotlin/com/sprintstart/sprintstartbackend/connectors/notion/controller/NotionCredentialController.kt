@@ -87,7 +87,7 @@ internal class NotionCredentialController(
     ): ResponseEntity<NotionCredentialResponse> {
         val response = credentialService.changeToken(
             authId = jwt.subject,
-            request = request
+            request = request,
         )
         return ResponseEntity.ok(response)
     }

@@ -37,9 +37,17 @@ class NotionPageArtifactMapperTest {
         assertThat(result.lastEditedTime).isEqualTo(Instant.parse("2026-09-27T10:00:00Z"))
         assertThat(result.metadata.connectionId).isEqualTo(connection.id)
         assertThat(result.metadata.pageId).isEqualTo("page-1")
-        assertThat(result.metadata.sections.single().heading).isEqualTo("Runbook")
+        assertThat(
+            result.metadata.sections
+                .single()
+                .heading,
+        ).isEqualTo("Runbook")
         assertThat(result.metadata.tables).containsExactlyElementsOf(parsed.tables)
-        assertThat(result.metadata.codeBlocks.single().code).isEqualTo("kubectl apply")
+        assertThat(
+            result.metadata.codeBlocks
+                .single()
+                .code,
+        ).isEqualTo("kubectl apply")
     }
 
     @Test

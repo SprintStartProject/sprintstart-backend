@@ -20,16 +20,23 @@ class NotionBlockParserTest {
     @Test
     fun `renders document order and collects plain headings tables and raw code`() {
         val heading = NotionBlockNode(
-            NotionBlockResponse("heading", "heading_1", false, heading1 = NotionHeadingPayload(
-                listOf(NotionRichText("Setup", annotations = annotations(bold = true))),
-            )),
+            NotionBlockResponse(
+                "heading",
+                "heading_1",
+                false,
+                heading1 = NotionHeadingPayload(
+                    listOf(NotionRichText("Setup", annotations = annotations(bold = true))),
+                ),
+            ),
         )
-        val result = parser.parse(listOf(
-            heading,
-            textNode("paragraph", "Install Docker"),
-            table(listOf(listOf("Name", "Purpose"), listOf("DB", "Storage"))),
-            code("val answer = 42"),
-        ))
+        val result = parser.parse(
+            listOf(
+                heading,
+                textNode("paragraph", "Install Docker"),
+                table(listOf(listOf("Name", "Purpose"), listOf("DB", "Storage"))),
+                code("val answer = 42"),
+            ),
+        )
 
         val markdownTable = "| Name | Purpose |\n| --- | --- |\n| DB | Storage |"
         assertThat(result.bodyText).isEqualTo(
@@ -50,9 +57,13 @@ class NotionBlockParserTest {
     @Test
     fun `keeps nested list descendants indented`() {
         val nodes = listOf(
-            textNode("numbered_list_item", "First", listOf(
-                textNode("bulleted_list_item", "Child", listOf(textNode("bulleted_list_item", "Grandchild"))),
-            )),
+            textNode(
+                "numbered_list_item",
+                "First",
+                listOf(
+                    textNode("bulleted_list_item", "Child", listOf(textNode("bulleted_list_item", "Grandchild"))),
+                ),
+            ),
             textNode("numbered_list_item", "Second"),
             textNode("paragraph", "Break"),
             textNode("numbered_list_item", "Restart"),
@@ -72,7 +83,9 @@ class NotionBlockParserTest {
 
     @Test
     fun `preserves toggle and unknown container children without accidental code indentation`() {
-        val columns = textNode("column_list", "", listOf(textNode("column", "", listOf(textNode("paragraph", "Inside")))))
+        val paragraph = textNode("paragraph", "Inside")
+        val column = textNode("column", "", listOf(paragraph))
+        val columns = textNode("column_list", "", listOf(column))
         val toggle = textNode("toggle", "Details", listOf(columns))
 
         assertThat(parser.parse(listOf(toggle)).bodyText).isEqualTo("Details\n\nInside")
@@ -88,10 +101,15 @@ class NotionBlockParserTest {
 
     @Test
     fun `renders both checkbox states`() {
-        assertThat(parser.parse(listOf(
-            textNode("to_do", "Done", checked = true),
-            textNode("to_do", "Pending"),
-        )).bodyText).isEqualTo("- [x] Done\n\n- [ ] Pending")
+        assertThat(
+            parser
+                .parse(
+                    listOf(
+                        textNode("to_do", "Done", checked = true),
+                        textNode("to_do", "Pending"),
+                    ),
+                ).bodyText,
+        ).isEqualTo("- [x] Done\n\n- [ ] Pending")
     }
 
     @ParameterizedTest
@@ -105,9 +123,19 @@ class NotionBlockParserTest {
     @Test
     fun `decodes and renders all four heading levels and ignores empty headings`() {
         val nodes = (1..4).map { level ->
-            val json = """{"id":"h$level","type":"heading_$level","has_children":false,"heading_$level":{"rich_text":[{"plain_text":"Title $level"}]}}"""
+            val json =
+                """
+                {
+                  "id":"h$level",
+                  "type":"heading_$level",
+                  "has_children":false,
+                  "heading_$level":{"rich_text":[{"plain_text":"Title $level"}]}
+                }
+                """.trimIndent()
             NotionBlockNode(Json.decodeFromString<NotionBlockResponse>(json))
-        } + NotionBlockNode(NotionBlockResponse("empty", "heading_1", false, heading1 = NotionHeadingPayload(emptyList())))
+        } + NotionBlockNode(
+            NotionBlockResponse("empty", "heading_1", false, heading1 = NotionHeadingPayload(emptyList())),
+        )
 
         val parsed = parser.parse(nodes)
 
@@ -151,11 +179,17 @@ class NotionBlockParserTest {
 
     @Test
     fun `normalizes table width and escapes pipes backslashes and line breaks in headers and data`() {
-        val result = parser.parse(listOf(table(listOf(
-            listOf("A|B", "C\\D"),
-            listOf("One\r\nTwo"),
-            listOf("1", "2", "extra"),
-        ))))
+        val result = parser.parse(
+            listOf(
+                table(
+                    listOf(
+                        listOf("A|B", "C\\D"),
+                        listOf("One\r\nTwo"),
+                        listOf("1", "2", "extra"),
+                    ),
+                ),
+            ),
+        )
 
         assertThat(result.bodyText).isEqualTo(
             "| A\\|B | C\\\\D |\n| --- | --- |\n| One Two |  |\n| 1 | 2 |",
@@ -170,11 +204,18 @@ class NotionBlockParserTest {
     @Test
     fun `renders code metadata and caption`() {
         val source = "val x = 1"
-        val node = NotionBlockNode(NotionBlockResponse("code", "code", false, code = NotionCodePayload(
-            richText = listOf(NotionRichText(source, annotations = annotations(bold = true))),
-            language = "kotlin",
-            caption = listOf(NotionRichText("Example")),
-        )))
+        val node = NotionBlockNode(
+            NotionBlockResponse(
+                "code",
+                "code",
+                false,
+                code = NotionCodePayload(
+                    richText = listOf(NotionRichText(source, annotations = annotations(bold = true))),
+                    language = "kotlin",
+                    caption = listOf(NotionRichText("Example")),
+                ),
+            ),
+        )
         val result = parser.parse(listOf(node))
 
         assertThat(result.bodyText).isEqualTo("```kotlin\n$source\n```\n\nExample")
@@ -183,22 +224,26 @@ class NotionBlockParserTest {
 
     @Test
     fun `renders bold rich text`() {
-        val node = paragraph(listOf(
-            NotionRichText("Read "),
-            NotionRichText("docs", annotations = annotations(bold = true)),
-            NotionRichText(" later"),
-        ))
+        val node = paragraph(
+            listOf(
+                NotionRichText("Read "),
+                NotionRichText("docs", annotations = annotations(bold = true)),
+                NotionRichText(" later"),
+            ),
+        )
 
         assertThat(parser.parse(listOf(node)).bodyText).isEqualTo("Read **docs** later")
     }
 
     @Test
     fun `renders italic and strike annotations`() {
-        val node = paragraph(listOf(
-            NotionRichText("Hello", annotations = annotations(bold = true)),
-            NotionRichText(" "),
-            NotionRichText("world", annotations = annotations(italic = true, strike = true)),
-        ))
+        val node = paragraph(
+            listOf(
+                NotionRichText("Hello", annotations = annotations(bold = true)),
+                NotionRichText(" "),
+                NotionRichText("world", annotations = annotations(italic = true, strike = true)),
+            ),
+        )
 
         assertThat(parser.parse(listOf(node)).bodyText).isEqualTo("**Hello** ~~*world*~~")
     }
@@ -228,7 +273,9 @@ class NotionBlockParserTest {
     }
 
     private fun paragraph(fragments: List<NotionRichText>): NotionBlockNode {
-        return NotionBlockNode(NotionBlockResponse("p", "paragraph", false, paragraph = NotionTextBlockPayload(fragments)))
+        return NotionBlockNode(
+            NotionBlockResponse("p", "paragraph", false, paragraph = NotionTextBlockPayload(fragments)),
+        )
     }
 
     private fun textNode(
@@ -255,10 +302,14 @@ class NotionBlockParserTest {
 
     private fun table(rows: List<List<String>>, width: Int = 2, header: Boolean = true): NotionBlockNode {
         val children = rows.mapIndexed { index, cells ->
-            NotionBlockNode(NotionBlockResponse(
-                "$index", "table_row", false,
-                tableRow = NotionTableRow(cells.map { listOf(NotionRichText(it)) }),
-            ))
+            NotionBlockNode(
+                NotionBlockResponse(
+                    "$index",
+                    "table_row",
+                    false,
+                    tableRow = NotionTableRow(cells.map { listOf(NotionRichText(it)) }),
+                ),
+            )
         }
         return NotionBlockNode(
             NotionBlockResponse("table", "table", true, table = NotionTablePayload(width, header, false)),
@@ -267,9 +318,14 @@ class NotionBlockParserTest {
     }
 
     private fun code(text: String): NotionBlockNode {
-        return NotionBlockNode(NotionBlockResponse(
-            "code", "code", false, code = NotionCodePayload(listOf(NotionRichText(text)), "kotlin"),
-        ))
+        return NotionBlockNode(
+            NotionBlockResponse(
+                "code",
+                "code",
+                false,
+                code = NotionCodePayload(listOf(NotionRichText(text)), "kotlin"),
+            ),
+        )
     }
 
     private fun annotations(

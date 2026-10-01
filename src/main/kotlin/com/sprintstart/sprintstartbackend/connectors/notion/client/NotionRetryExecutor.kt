@@ -55,26 +55,46 @@ internal class NotionRetryExecutor(
             try {
                 return request()
             } catch (exception: CancellationException) {
-                throw exception
+                propagateCancellation(exception)
             } catch (exception: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw exception
+                propagateInterruption(exception)
             } catch (exception: WebClientException) {
                 val wait = retryDelayOrThrow(exception, requestContext, attempt)
                 logRetry(requestContext, attempt, exception.statusCode, wait)
                 sleeper.sleep(wait)
             } catch (exception: IOException) {
-                if (exception is SSLException || attempt >= config.maxAttempts) {
-                    throw NotionTransportException(requestContext, attempt, exception !is SSLException)
-                }
-                val wait = configuredDelay(attempt)
+                val wait = transportRetryDelayOrThrow(exception, requestContext, attempt)
                 logRetry(requestContext, attempt, null, wait)
                 sleeper.sleep(wait)
             } catch (@Suppress("SwallowedException") exception: SerializationException) {
-                throw NotionInvalidResponseException(requestContext, attempt)
+                invalidResponse(requestContext, attempt)
             }
             attempt++
         }
+    }
+
+    private fun transportRetryDelayOrThrow(
+        exception: IOException,
+        requestContext: String,
+        attempt: Int,
+    ): Duration {
+        if (exception is SSLException || attempt >= config.maxAttempts) {
+            throw NotionTransportException(requestContext, attempt, exception !is SSLException)
+        }
+        return configuredDelay(attempt)
+    }
+
+    private fun propagateCancellation(exception: CancellationException): Nothing {
+        throw exception
+    }
+
+    private fun propagateInterruption(exception: InterruptedException): Nothing {
+        Thread.currentThread().interrupt()
+        throw exception
+    }
+
+    private fun invalidResponse(requestContext: String, attempt: Int): Nothing {
+        throw NotionInvalidResponseException(requestContext, attempt)
     }
 
     private fun retryDelayOrThrow(

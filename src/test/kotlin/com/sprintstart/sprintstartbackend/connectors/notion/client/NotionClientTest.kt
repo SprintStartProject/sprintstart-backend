@@ -86,8 +86,20 @@ internal class NotionClientTest : NotionClientTestSupport() {
         val body = NotionJsonFixtures.json.parseToJsonElement(request.body.readUtf8()).jsonObject
         assertThat(body.keys).containsExactlyInAnyOrder("page_size", "filter")
         assertThat(body.getValue("page_size").jsonPrimitive.content).isEqualTo("100")
-        assertThat(body.getValue("filter").jsonObject.getValue("value").jsonPrimitive.content).isEqualTo("page")
-        assertThat(body.getValue("filter").jsonObject.getValue("property").jsonPrimitive.content).isEqualTo("object")
+        assertThat(
+            body
+                .getValue("filter")
+                .jsonObject
+                .getValue("value")
+                .jsonPrimitive.content,
+        ).isEqualTo("page")
+        assertThat(
+            body
+                .getValue("filter")
+                .jsonObject
+                .getValue("property")
+                .jsonPrimitive.content,
+        ).isEqualTo("object")
     }
 
     @Test

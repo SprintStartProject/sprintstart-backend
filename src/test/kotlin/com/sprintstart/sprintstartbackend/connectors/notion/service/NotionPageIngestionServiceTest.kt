@@ -136,7 +136,16 @@ class NotionPageIngestionServiceTest {
             .isEqualTo("Notion page artifact could not be persisted")
             .doesNotContain("database detail")
         verify(exactly = 1) { ingestionApi.failRun(result.runId, any()) }
-        verify(exactly = 0) { connectionPersistenceService.recordSuccessfulSync(any(), any(), any(), any(), any(), any()) }
+        verify(exactly = 0) {
+            connectionPersistenceService.recordSuccessfulSync(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
     }
 
     private fun connection(): NotionPageConnection {

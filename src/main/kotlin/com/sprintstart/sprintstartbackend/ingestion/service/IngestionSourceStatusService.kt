@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceInstanceIngestionStatusResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
@@ -30,6 +32,7 @@ class IngestionSourceStatusService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
     private val confluenceConnectionApi: ConfluenceConnectionApi,
+    private val notionConnectionApi: NotionConnectionApi,
     private val ingestionRunRepository: IngestionRunRepository,
     private val artifactRepository: ArtifactRepository,
 ) {
@@ -47,6 +50,7 @@ class IngestionSourceStatusService(
         val githubStatuses = githubRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val confluenceStatuses = confluenceConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+        val notionStatuses = notionConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val uploadStatuses = if (projectId != null) {
             val uploadCount = artifactRepository.countUploadArtifactsByProjectId(projectId)
             val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
@@ -86,7 +90,7 @@ class IngestionSourceStatusService(
             emptyList()
         }
 
-        return githubStatuses + jiraStatuses + confluenceStatuses + uploadStatuses
+        return githubStatuses + jiraStatuses + confluenceStatuses + notionStatuses + uploadStatuses
     }
 
     private fun GithubSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
@@ -159,6 +163,31 @@ class IngestionSourceStatusService(
             failedCount = lastRun?.failedCount ?: 0,
             failedItems = lastRun?.failedItems.orEmpty(),
             artifactCount = artifactRepository.countConfluenceArtifactsByConnectionId(connectionId.toString()),
+            lastCommitsSyncAt = null,
+            lastIssuesSyncAt = null,
+            lastPullRequestsSyncAt = null,
+        )
+    }
+
+    private fun NotionSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
+        val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId)
+        return SourceInstanceIngestionStatusResponse(
+            sourceSystem = SourceSystem.NOTION,
+            sourceId = sourceRef,
+            displayName = pageTitle,
+            repositoryId = null,
+            owner = null,
+            name = null,
+            sourceUrl = pageUrl,
+            connectionStatus = status,
+            enabled = enabled,
+            lastRunTime = lastRun?.startedAt,
+            ingestedCount = lastRun?.ingestedCount ?: 0,
+            updatedCount = lastRun?.updatedCount ?: 0,
+            deletedCount = lastRun?.deletedCount ?: 0,
+            failedCount = lastRun?.failedCount ?: 0,
+            failedItems = lastRun?.failedItems.orEmpty(),
+            artifactCount = artifactRepository.countNotionArtifactsByConnectionId(connectionId.toString()),
             lastCommitsSyncAt = null,
             lastIssuesSyncAt = null,
             lastPullRequestsSyncAt = null,

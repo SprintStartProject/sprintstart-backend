@@ -38,8 +38,12 @@ internal fun NotionPageConnection.toResponse(): NotionPageConnectionResponse {
 }
 
 internal fun NotionApiPageResponse.toDiscoveredPageResponse(): NotionDiscoveredPageResponse {
-    var title = properties.values.firstOrNull { property -> property.type == "title" }?.title?.map { it.plainText }
-        ?.joinToString(separator = "")?.trim()
+    var title = properties.values
+        .firstOrNull { property -> property.type == "title" }
+        ?.title
+        ?.map { it.plainText }
+        ?.joinToString(separator = "")
+        ?.trim()
         ?: "Untitled"
     title = title.ifBlank { "Untitled" }
     return NotionDiscoveredPageResponse(

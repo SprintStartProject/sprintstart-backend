@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.Noti
 import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionPageConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.notion.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionPageConnectionRepository
+import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -59,6 +60,24 @@ internal class NotionPageConnectionPersistenceService(
         connection.contentHash = contentHash
         connection.lastSyncedAt = Instant.now()
         connectionRepository.saveAndFlush(connection)
+    }
+
+    @Transactional
+    fun configureSchedule(
+        projectId: UUID,
+        connectionId: UUID,
+        scheduleSpec: ScheduleSpec,
+        schedule: String,
+        autoUpdate: Boolean,
+        nextSyncAt: Instant?,
+    ): NotionPageConnectionResponse {
+        val connection = connectionRepository.findByIdAndProjectId(connectionId, projectId)
+            ?: throw NotionPageConnectionNotFoundException(connectionId, projectId)
+        connection.scheduleSpec = scheduleSpec
+        connection.schedule = schedule
+        connection.autoUpdate = autoUpdate
+        connection.nextSyncAt = nextSyncAt
+        return connectionRepository.saveAndFlush(connection).toResponse()
     }
 
     @Transactional

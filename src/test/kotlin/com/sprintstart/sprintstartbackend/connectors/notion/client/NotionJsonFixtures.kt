@@ -15,7 +15,9 @@ internal object NotionJsonFixtures {
 
     fun block(type: String): JsonObject {
         val response = json.parseToJsonElement(read("supported-blocks.json")).jsonObject
-        return response.getValue("results").jsonArray
+        return response
+            .getValue("results")
+            .jsonArray
             .map { it.jsonObject }
             .single { it.getValue("type").jsonPrimitive.content == type }
     }

@@ -31,7 +31,11 @@ class NotionApiPageResponsesTest {
         val page = json.decodeFromString<NotionApiPageResponse>(NotionJsonFixtures.read("page.json"))
 
         assertThat(page.properties).containsKey("Document title")
-        val title = checkNotNull(page.properties.values.single { it.type == "title" }.title)
+        val title = checkNotNull(
+            page.properties.values
+                .single { it.type == "title" }
+                .title,
+        )
         assertThat(title.map { it.plainText }).containsExactly("SprintStart ", "Playground")
         assertThat(title.last().annotations?.bold).isTrue()
         assertThat(page.properties.getValue("Status").title).isNull()

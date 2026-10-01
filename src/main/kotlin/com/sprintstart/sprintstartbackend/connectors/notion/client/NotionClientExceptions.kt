@@ -9,14 +9,20 @@ internal sealed class NotionClientException(
     val attempts: Int,
 ) : RuntimeException(message)
 
-internal class NotionAuthenticationException(requestContext: String, attempts: Int = 1) :
-    NotionClientException("Notion authentication failed while $requestContext", requestContext, 401, attempts)
+internal class NotionAuthenticationException(
+    requestContext: String,
+    attempts: Int = 1,
+) : NotionClientException("Notion authentication failed while $requestContext", requestContext, 401, attempts)
 
-internal class NotionAccessDeniedException(requestContext: String, attempts: Int = 1) :
-    NotionClientException("Notion access was denied while $requestContext", requestContext, 403, attempts)
+internal class NotionAccessDeniedException(
+    requestContext: String,
+    attempts: Int = 1,
+) : NotionClientException("Notion access was denied while $requestContext", requestContext, 403, attempts)
 
-internal class NotionResourceNotFoundException(requestContext: String, attempts: Int = 1) :
-    NotionClientException("Notion resource was not found while $requestContext", requestContext, 404, attempts)
+internal class NotionResourceNotFoundException(
+    requestContext: String,
+    attempts: Int = 1,
+) : NotionClientException("Notion resource was not found while $requestContext", requestContext, 404, attempts)
 
 internal class NotionExternalServiceException(
     requestContext: String,
@@ -36,11 +42,14 @@ internal class NotionTransportException(
     val retryExhausted: Boolean,
 ) : NotionClientException("Notion transport failed while $requestContext", requestContext, null, attempts)
 
-internal class NotionInvalidResponseException(requestContext: String, attempts: Int = 1) :
-    NotionClientException("Notion returned an invalid response while $requestContext", requestContext, null, attempts)
+internal class NotionInvalidResponseException(
+    requestContext: String,
+    attempts: Int = 1,
+) : NotionClientException("Notion returned an invalid response while $requestContext", requestContext, null, attempts)
 
-internal class NotionRequestDeferredException(requestContext: String) :
-    NotionClientException("Notion request wait budget exceeded while $requestContext", requestContext, null, 0)
+internal class NotionRequestDeferredException(
+    requestContext: String,
+) : NotionClientException("Notion request wait budget exceeded while $requestContext", requestContext, null, 0)
 
 internal fun WebClientException.toSafeNotionException(
     requestContext: String,

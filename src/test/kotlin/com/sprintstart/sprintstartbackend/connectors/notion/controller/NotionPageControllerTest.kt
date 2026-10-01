@@ -3,9 +3,13 @@ package com.sprintstart.sprintstartbackend.connectors.notion.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.notion.NotionConnector
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ConfigureNotionScheduleRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionPageConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
+import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
 import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionPageConnectionService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
@@ -27,6 +31,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.async
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -43,6 +48,9 @@ internal class NotionPageControllerTest {
 
     @MockkBean
     private lateinit var pageConnectionService: NotionPageConnectionService
+
+    @MockkBean
+    private lateinit var connector: NotionConnector
 
     @MockkBean(name = "projectAuth")
     private lateinit var projectAuthorization: ProjectAuthorization
@@ -159,6 +167,44 @@ internal class NotionPageControllerTest {
 
         verify(exactly = 1) { pageConnectionService.getConnections(projectId) }
         verify(exactly = 1) { pageConnectionService.deleteConnection(projectId, connectionId) }
+    }
+
+    @Test
+    fun `ADMIN configures automatic synchronization`() {
+        val request = ConfigureNotionScheduleRequest(ScheduleSpec.Interval(30), autoUpdate = true)
+        every { pageConnectionService.configureSchedule(projectId, connectionId, request) } returns
+            connectionResponse().copy(autoUpdate = true, schedule = "0 */30 * * * *")
+
+        mockMvc
+            .perform(
+                put("${connectionsPath()}/$connectionId/schedule")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+                    .with(adminJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.autoUpdate").value(true))
+            .andExpect(jsonPath("$.schedule").value("0 */30 * * * *"))
+
+        verify(exactly = 1) { pageConnectionService.configureSchedule(projectId, connectionId, request) }
+    }
+
+    @Test
+    fun `PM manually synchronizes a project connection`() {
+        val expected = NotionIngestionResult(UUID.randomUUID(), connectionId, NotionIngestionOutcome.UNCHANGED)
+        coEvery { connector.ingest(projectId, connectionId) } returns expected
+
+        val asyncResult = mockMvc
+            .perform(post("${connectionsPath()}/$connectionId/update").with(pmJwt))
+            .andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.connectionId").value(connectionId.toString()))
+            .andExpect(jsonPath("$.outcome").value("UNCHANGED"))
+
+        coVerify(exactly = 1) { connector.ingest(projectId, connectionId) }
     }
 
     private fun connectionsPath(): String {

@@ -6,5 +6,5 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class NotionTableRow(
     @SerialName("cells")
-    val cells : List<List<NotionRichText>>,
+    val cells: List<List<NotionRichText>>,
 )

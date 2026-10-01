@@ -16,7 +16,7 @@ import java.util.UUID
 )
 data class SourceInstanceIngestionStatusResponse(
     @field:Schema(
-        description = "Source system the connected instance belongs to: GITHUB, JIRA, or CONFLUENCE.",
+        description = "Source system the connected instance belongs to: GITHUB, JIRA, CONFLUENCE, or NOTION.",
     )
     val sourceSystem: SourceSystem,
     @field:Schema(

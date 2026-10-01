@@ -1,9 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.service
 
 import com.sprintstart.sprintstartbackend.connectors.notion.NotionBlockParser
-import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionBody
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionBlockNode
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionClient
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionFailure
@@ -47,7 +45,7 @@ internal class NotionPageIngestionService(
         } catch (exception: CancellationException) {
             markFailedAndPropagate(runId, exception)
         } catch (exception: InterruptedException) {
-            markFailedAndPropagateInterruption(runId, exception)
+            markFailedAndPropagate(runId, exception)
         }
     }
 
@@ -56,150 +54,101 @@ internal class NotionPageIngestionService(
         projectId: UUID,
         connection: NotionPageConnection,
     ): NotionIngestionResult {
-        val token = try {
-            withContext(Dispatchers.IO) {
-                credentialPersistenceService.requireToken(
-                    authId = connection.credentialAuthId,
-                    name = connection.credentialName,
+        return try {
+            val token = executeStep(NotionIngestionFailureStage.FETCHING, FETCHING_FAILURE_MESSAGE) {
+                withContext(Dispatchers.IO) {
+                    credentialPersistenceService.requireToken(
+                        authId = connection.credentialAuthId,
+                        name = connection.credentialName,
+                    )
+                }
+            }
+            val page = executeStep(NotionIngestionFailureStage.FETCHING, FETCHING_FAILURE_MESSAGE) {
+                notionClient.getPage(token, connection.pageId)
+            }
+            if (page.inTrash || page.parent.type in DATA_SOURCE_PARENT_TYPES) {
+                return failRun(
+                    runId,
+                    connection.id,
+                    NotionIngestionFailureStage.FETCHING,
+                    UNSUPPORTED_PAGE_MESSAGE,
                 )
             }
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: InterruptedException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.FETCHING,
-                FETCHING_FAILURE_MESSAGE,
-                exception
-            )
-        }
 
-        val page = try {
-            notionClient.getPage(token, connection.pageId)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: InterruptedException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.FETCHING,
-                FETCHING_FAILURE_MESSAGE,
-                exception
-            )
-        }
-        if (page.inTrash || page.parent.type in DATA_SOURCE_PARENT_TYPES) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.FETCHING,
-                UNSUPPORTED_PAGE_MESSAGE,
-            )
-        }
+            val lastEditedTime = executeStep(NotionIngestionFailureStage.FETCHING, INVALID_PAGE_MESSAGE) {
+                Instant.parse(page.lastEditedTime)
+            }
+            if (connection.contentHash != null && connection.lastEditedTime == lastEditedTime) {
+                return finishUnchanged(runId, projectId, connection, page, lastEditedTime)
+            }
 
-        val lastEditedTime = try {
-            Instant.parse(page.lastEditedTime)
-        } catch (exception: RuntimeException) {
-            return failRun(runId, connection.id, NotionIngestionFailureStage.FETCHING, INVALID_PAGE_MESSAGE, exception)
-        }
-        if (connection.contentHash != null && connection.lastEditedTime == lastEditedTime) {
-            return finishUnchanged(runId, projectId, connection, page, lastEditedTime)
-        }
+            val blockTree = executeStep(NotionIngestionFailureStage.FETCHING, FETCHING_FAILURE_MESSAGE) {
+                notionClient.getBlockTree(token = token, blockId = page.id)
+            }
+            val parsed = executeStep(NotionIngestionFailureStage.PARSING, PARSING_FAILURE_MESSAGE) {
+                parser.parse(blockTree)
+            }
+            val command = executeStep(NotionIngestionFailureStage.PARSING, MAPPING_FAILURE_MESSAGE) {
+                artifactMapper.toCommand(connection, page, parsed)
+            }
+            val writeResult = executeStep(NotionIngestionFailureStage.PERSISTENCE, PERSISTENCE_FAILURE_MESSAGE) {
+                ingestionApi.persistPage(runId, projectId, command)
+            }
 
-        val blockTree = try {
-            notionClient.getBlockTree(token = token, blockId = page.id)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: InterruptedException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.FETCHING,
-                FETCHING_FAILURE_MESSAGE,
-                exception
-            )
-        }
-        val parsed = parse(runId, connection.id, blockTree) ?: return failedResult(
-            runId,
-            connection.id,
-            NotionIngestionFailureStage.PARSING,
-            PARSING_FAILURE_MESSAGE,
-        )
-        val command = try {
-            artifactMapper.toCommand(connection, page, parsed)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.PARSING,
-                MAPPING_FAILURE_MESSAGE,
-                exception
-            )
-        }
-        val writeResult = try {
-            ingestionApi.persistPage(runId, projectId, command)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
-                runId,
-                connection.id,
-                NotionIngestionFailureStage.PERSISTENCE,
-                PERSISTENCE_FAILURE_MESSAGE,
-                exception
-            )
-        }
+            executeStep(NotionIngestionFailureStage.PERSISTENCE, SYNC_STATE_FAILURE_MESSAGE) {
+                connectionPersistenceService.recordSuccessfulSync(
+                    projectId = projectId,
+                    connectionId = connection.id,
+                    pageTitle = command.title,
+                    pageUrl = command.sourceUrl,
+                    lastEditedTime = command.lastEditedTime,
+                    contentHash = writeResult.contentHash,
+                )
+                ingestionApi.finishRun(runId, successfulItemCount = 1)
+            }
 
-        try {
-            connectionPersistenceService.recordSuccessfulSync(
-                projectId = projectId,
+            NotionIngestionResult(
+                runId = runId,
                 connectionId = connection.id,
-                pageTitle = command.title,
-                pageUrl = command.sourceUrl,
-                lastEditedTime = command.lastEditedTime,
-                contentHash = writeResult.contentHash,
+                outcome = writeResult.outcome.toIngestionOutcome(),
             )
-            ingestionApi.finishRun(runId, successfulItemCount = 1)
-        } catch (exception: CancellationException) {
-            throw exception
-        } catch (exception: RuntimeException) {
-            return failRun(
+        } catch (exception: NotionIngestionStepException) {
+            failRun(
                 runId,
                 connection.id,
-                NotionIngestionFailureStage.PERSISTENCE,
-                SYNC_STATE_FAILURE_MESSAGE,
-                exception
+                exception.stage,
+                exception.failureMessage,
+                exception.stepCause,
             )
         }
-
-        return NotionIngestionResult(
-            runId = runId,
-            connectionId = connection.id,
-            outcome = writeResult.outcome.toIngestionOutcome(),
-        )
     }
 
-    private fun parse(
-        runId: UUID,
-        connectionId: UUID,
-        blockTree: List<NotionBlockNode>,
-    ): ParsedNotionBody? {
+    private suspend fun <T> executeStep(
+        stage: NotionIngestionFailureStage,
+        failureMessage: String,
+        operation: suspend () -> T,
+    ): T {
         return try {
-            parser.parse(blockTree)
+            operation()
         } catch (exception: CancellationException) {
-            throw exception
+            propagate(exception)
+        } catch (exception: InterruptedException) {
+            propagate(exception)
         } catch (exception: RuntimeException) {
-            failRun(runId, connectionId, NotionIngestionFailureStage.PARSING, PARSING_FAILURE_MESSAGE, exception)
-            null
+            failStep(stage, failureMessage, exception)
         }
+    }
+
+    private fun propagate(exception: Exception): Nothing {
+        throw exception
+    }
+
+    private fun failStep(
+        stage: NotionIngestionFailureStage,
+        failureMessage: String,
+        cause: RuntimeException,
+    ): Nothing {
+        throw NotionIngestionStepException(stage, failureMessage, cause)
     }
 
     private fun finishUnchanged(
@@ -228,7 +177,7 @@ internal class NotionPageIngestionService(
                 connection.id,
                 NotionIngestionFailureStage.PERSISTENCE,
                 SYNC_STATE_FAILURE_MESSAGE,
-                exception
+                exception,
             )
         }
     }
@@ -277,13 +226,10 @@ internal class NotionPageIngestionService(
         }
     }
 
-    private fun markFailedAndPropagate(runId: UUID, exception: CancellationException): Nothing {
-        markRunFailed(runId)
-        throw exception
-    }
-
-    private fun markFailedAndPropagateInterruption(runId: UUID, exception: InterruptedException): Nothing {
-        Thread.currentThread().interrupt()
+    private fun markFailedAndPropagate(runId: UUID, exception: Exception): Nothing {
+        if (exception is InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
         markRunFailed(runId)
         throw exception
     }
@@ -301,3 +247,9 @@ internal class NotionPageIngestionService(
         const val TERMINAL_FAILURE_MESSAGE = "Notion page ingestion terminated before completion"
     }
 }
+
+private class NotionIngestionStepException(
+    val stage: NotionIngestionFailureStage,
+    val failureMessage: String,
+    val stepCause: RuntimeException,
+) : RuntimeException(stepCause)

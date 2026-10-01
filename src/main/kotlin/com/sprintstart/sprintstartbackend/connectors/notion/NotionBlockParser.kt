@@ -42,111 +42,7 @@ class NotionBlockParser {
                 continue
             }
 
-            val markdown = when (block.type) {
-                "table" -> {
-                    val table = renderTable(node)
-                    if (table.isNotBlank()) {
-                        tables.add(table)
-                    }
-                    table
-                }
-
-                "paragraph" -> renderRichText(checkNotNull(block.paragraph).richText)
-
-                "heading_1" -> {
-                    val heading = checkNotNull(block.heading1)
-                    val text = renderRichText(heading.richText)
-                    val plainText = heading.richText.joinToString("") { it.plainText }.trim()
-                    if (plainText.isBlank()) {
-                        null
-                    } else {
-                        sections.add(ParsedNotionSection(plainText, 1))
-                        "# $text"
-                    }
-                }
-
-                "heading_2" -> {
-                    val heading = checkNotNull(block.heading2)
-                    val text = renderRichText(heading.richText)
-                    val plainText = heading.richText.joinToString("") { it.plainText }.trim()
-                    if (plainText.isBlank()) {
-                        null
-                    } else {
-                        sections.add(ParsedNotionSection(plainText, 2))
-                        "## $text"
-                    }
-                }
-
-                "heading_3" -> {
-                    val heading = checkNotNull(block.heading3)
-                    val text = renderRichText(heading.richText)
-                    val plainText = heading.richText.joinToString("") { it.plainText }.trim()
-                    if (plainText.isBlank()) {
-                        null
-                    } else {
-                        sections.add(ParsedNotionSection(plainText, 3))
-                        "### $text"
-                    }
-                }
-
-                "heading_4" -> {
-                    val heading = checkNotNull(block.heading4)
-                    val text = renderRichText(heading.richText)
-                    val plainText = heading.richText.joinToString("") { it.plainText }.trim()
-                    if (plainText.isBlank()) {
-                        null
-                    } else {
-                        sections.add(ParsedNotionSection(plainText, 4))
-                        "#### $text"
-                    }
-                }
-
-                "bulleted_list_item" -> {
-                    val item = checkNotNull(block.bulletedListItem)
-                    "- ${renderRichText(item.richText)}"
-                }
-
-                "numbered_list_item" -> {
-                    val item = checkNotNull(block.numberedListItem)
-                    "1. ${renderRichText(item.richText)}"
-                }
-
-                "to_do" -> {
-                    val toDo = checkNotNull(block.toDo)
-                    val checkbox = if (toDo.checked) "[x]" else "[ ]"
-                    "- $checkbox ${renderRichText(toDo.richText)}"
-                }
-
-                "quote" -> {
-                    val quote = checkNotNull(block.quote)
-                    val text = renderRichText(quote.richText)
-                    text.lines().joinToString(separator = "\n") { line -> "> $line" }
-                }
-
-                "callout" -> {
-                    val callout = checkNotNull(block.callout)
-                    val text = renderRichText(callout.richText)
-                    text.lines().joinToString(separator = "\n") { line -> "> $line" }
-                }
-
-                "toggle" -> {
-                    val toggle = checkNotNull(block.toggle)
-                    renderRichText(toggle.richText)
-                }
-
-                "code" -> {
-                    val code = checkNotNull(block.code)
-                    val text = code.richText.joinToString(separator = "") { fragment -> fragment.plainText }
-                    codeBlocks.add(ParsedNotionCodeBlock(code.language, text))
-                    val codeMarkdown = "```${code.language}\n$text\n```"
-                    val caption = renderRichText(code.caption)
-                    listOf(codeMarkdown, caption)
-                        .filter { part -> part.isNotBlank() }
-                        .joinToString(separator = "\n\n")
-                }
-
-                else -> null
-            }
+            val markdown = renderBlock(node, sections, tables, codeBlocks)
 
             if (!markdown.isNullOrBlank()) {
                 bodyBlocks.add(markdown.prependIndent(indentation))
@@ -168,6 +64,94 @@ class NotionBlockParser {
                 )
             }
         }
+    }
+
+    private fun renderBlock(
+        node: NotionBlockNode,
+        sections: MutableList<ParsedNotionSection>,
+        tables: MutableList<String>,
+        codeBlocks: MutableList<ParsedNotionCodeBlock>,
+    ): String? {
+        val block = node.block
+        return when (block.type) {
+            "table" -> {
+                val table = renderTable(node)
+                if (table.isNotBlank()) {
+                    tables.add(table)
+                }
+                table
+            }
+
+            "paragraph" -> renderRichText(checkNotNull(block.paragraph).richText)
+            in HEADING_TYPES -> renderHeading(node, sections)
+            in LIST_TYPES -> renderListItem(node)
+            "quote", "callout" -> renderQuote(node)
+            "toggle" -> renderRichText(checkNotNull(block.toggle).richText)
+            "code" -> renderCode(node, codeBlocks)
+            else -> null
+        }
+    }
+
+    private fun renderHeading(
+        node: NotionBlockNode,
+        sections: MutableList<ParsedNotionSection>,
+    ): String? {
+        val block = node.block
+        val level = block.type.removePrefix("heading_").toInt()
+        val richText = when (level) {
+            1 -> checkNotNull(block.heading1).richText
+            2 -> checkNotNull(block.heading2).richText
+            3 -> checkNotNull(block.heading3).richText
+            4 -> checkNotNull(block.heading4).richText
+            else -> return null
+        }
+        val plainText = richText.joinToString("") { fragment -> fragment.plainText }.trim()
+        if (plainText.isBlank()) {
+            return null
+        }
+        sections.add(ParsedNotionSection(plainText, level))
+        return "${"#".repeat(level)} ${renderRichText(richText)}"
+    }
+
+    private fun renderListItem(node: NotionBlockNode): String {
+        val block = node.block
+        return when (block.type) {
+            "bulleted_list_item" -> "- ${renderRichText(checkNotNull(block.bulletedListItem).richText)}"
+            "numbered_list_item" -> "1. ${renderRichText(checkNotNull(block.numberedListItem).richText)}"
+            "to_do" -> {
+                val toDo = checkNotNull(block.toDo)
+                val checkbox = if (toDo.checked) "[x]" else "[ ]"
+                "- $checkbox ${renderRichText(toDo.richText)}"
+            }
+
+            else -> error("Unsupported Notion list block type: ${block.type}")
+        }
+    }
+
+    private fun renderQuote(node: NotionBlockNode): String {
+        val block = node.block
+        val richText = if (block.type == "quote") {
+            checkNotNull(block.quote).richText
+        } else {
+            checkNotNull(block.callout).richText
+        }
+        return renderRichText(richText)
+            .lines()
+            .joinToString(separator = "\n") { line -> "> $line" }
+    }
+
+    private fun renderCode(
+        node: NotionBlockNode,
+        codeBlocks: MutableList<ParsedNotionCodeBlock>,
+    ): String {
+        val code = checkNotNull(node.block.code)
+        val text = code.richText.joinToString(separator = "") { fragment -> fragment.plainText }
+        codeBlocks.add(ParsedNotionCodeBlock(code.language, text))
+        val codeMarkdown = "```${code.language}\n$text\n```"
+        val caption = renderRichText(code.caption)
+        return listOf(codeMarkdown, caption)
+            .filter { part -> part.isNotBlank() }
+            .joinToString(separator = "\n\n")
     }
 
     internal fun extractCellTexts(row: NotionTableRow): List<String> {
@@ -238,6 +222,7 @@ class NotionBlockParser {
     }
 
     private companion object {
+        val HEADING_TYPES = setOf("heading_1", "heading_2", "heading_3", "heading_4")
         val LIST_TYPES = setOf("bulleted_list_item", "numbered_list_item", "to_do")
     }
 }

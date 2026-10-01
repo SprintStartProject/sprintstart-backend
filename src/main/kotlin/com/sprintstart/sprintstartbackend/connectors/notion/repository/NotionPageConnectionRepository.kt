@@ -12,9 +12,12 @@ internal interface NotionPageConnectionRepository : JpaRepository<NotionPageConn
 
     fun findAllByProjectIdOrderByCreatedAtAsc(projectId: UUID): List<NotionPageConnection>
 
+    fun findAllByIdInAndProjectId(ids: Collection<UUID>, projectId: UUID): List<NotionPageConnection>
+
     fun existsByProjectIdAndPageId(projectId: UUID, pageId: String): Boolean
 
     fun existsByCredentialAuthIdAndCredentialName(authId: String, credentialName: String): Boolean
+
     fun findAllByCredentialAuthIdAndCredentialName(authId: String, credentialName: String): List<NotionPageConnection>
 
     fun findAllByAutoUpdateTrueAndSourceEnabledTrueAndNextSyncAtLessThanEqualOrderByNextSyncAtAsc(

@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepos
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -23,6 +25,7 @@ class IngestionSourceStatusServiceTest {
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
     private val jiraInstanceApi = mockk<JiraInstanceApi>()
     private val confluenceConnectionApi = mockk<ConfluenceConnectionApi>(relaxed = true)
+    private val notionConnectionApi = mockk<NotionConnectionApi>(relaxed = true)
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val service =
@@ -30,6 +33,7 @@ class IngestionSourceStatusServiceTest {
             githubRepositoryApi,
             jiraInstanceApi,
             confluenceConnectionApi,
+            notionConnectionApi,
             ingestionRunRepository,
             artifactRepository,
         )
@@ -275,6 +279,53 @@ class IngestionSourceStatusServiceTest {
         val response = service.getStatusPerSourceInstance(projectId).single()
 
         assertThat(response.displayName).isEqualTo("ENG")
+    }
+
+    @Test
+    fun `maps project scoped Notion page with latest run and artifact count`() {
+        val projectId = UUID.randomUUID()
+        val connectionId = UUID.randomUUID()
+        val sourceUrl = "https://www.notion.so/engineering-runbook"
+        val instance = NotionSourceInstanceDto(
+            connectionId = connectionId,
+            sourceRef = sourceUrl,
+            pageId = "page-1",
+            pageTitle = "Engineering Runbook",
+            pageUrl = sourceUrl,
+            status = "CONNECTED",
+            enabled = true,
+            lastSyncedAt = Instant.parse("2026-09-30T11:00:00Z"),
+        )
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.NOTION,
+            sourceInstanceId = connectionId,
+            sourceInstanceRef = sourceUrl,
+            startedAt = Instant.parse("2026-09-30T12:00:00Z"),
+            ingestedCount = 1,
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(projectId) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
+        every { confluenceConnectionApi.getSourceInstances(projectId) } returns emptyList()
+        every { notionConnectionApi.getSourceInstances(projectId) } returns listOf(instance)
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId) } returns run
+        every { artifactRepository.countNotionArtifactsByConnectionId(connectionId.toString()) } returns 1
+        every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 0
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId) } returns null
+
+        val response = service.getStatusPerSourceInstance(projectId).single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.NOTION)
+        assertThat(response.sourceId).isEqualTo(sourceUrl)
+        assertThat(response.displayName).isEqualTo("Engineering Runbook")
+        assertThat(response.sourceUrl).isEqualTo(sourceUrl)
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(1)
+        assertThat(response.artifactCount).isEqualTo(1)
     }
 
     @Test

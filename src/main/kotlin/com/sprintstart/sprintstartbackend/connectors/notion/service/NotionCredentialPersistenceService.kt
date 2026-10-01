@@ -32,7 +32,7 @@ internal class NotionCredentialPersistenceService(
                 NotionCredential(
                     id = credentialId,
                     token = token,
-                )
+                ),
             )
         } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
             throw NotionCredentialAlreadyExistsException(name)
@@ -96,7 +96,7 @@ internal class NotionCredentialPersistenceService(
                     id = newId,
                     token = oldCredential.token,
                     createdAt = oldCredential.createdAt,
-                )
+                ),
             )
         } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
             throw NotionCredentialAlreadyExistsException(newName)
@@ -142,7 +142,6 @@ internal class NotionCredentialPersistenceService(
             .findById(credentialId)
             .orElseThrow {
                 NotionCredentialNotFoundException(name)
-            }
-            .token
+            }.token
     }
 }
