@@ -21,6 +21,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.dao.OptimisticLockingFailureException
 import org.springframework.http.HttpStatus
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.server.ResponseStatusException
@@ -628,5 +629,18 @@ class BuddyActionServiceTest {
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("not a member")
+    }
+
+    @Test
+    fun `a card that changed under a confirmed action comes back as a sentence, not a failure`() = runTest {
+        asHire()
+        onOneProject()
+        every { taskZeroService.getForHire(userId, projectId) } throws
+            OptimisticLockingFailureException("card changed")
+
+        val result = service.perform(BuddyActionRequest(action = "claim_task_zero"), jwt)
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).contains("changed")
     }
 }

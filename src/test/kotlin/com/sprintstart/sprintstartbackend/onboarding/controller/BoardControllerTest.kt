@@ -2,12 +2,14 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardPreviousResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
@@ -41,6 +43,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
@@ -228,6 +231,36 @@ class BoardControllerTest(
                     .content("""{"revision":3}""")
                     .with(userJwt),
             ).andExpect(status().isOk)
+    }
+
+    /** What a client needs to show an undo and to send it back: the earlier content, who, when, which. */
+    @Test
+    fun `restorePreviousContent answers with the card and the version it can now undo`() {
+        val cardId = UUID.randomUUID()
+        val replacedAt = Instant.parse("2026-09-30T10:00:00.123Z")
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.restorePreviousContent(userId, cardId, 1L, null) } returns noteCard().copy(
+            previous = BoardCardPreviousResponse(
+                content = NoteContent(text = "deploys are on Fridays"),
+                replacedBy = BoardActor.HIRE,
+                replacedAt = replacedAt,
+                revision = 2,
+            ),
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards/$cardId/restore-previous")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"revision":1}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.content.text").value("deploys are on Thursdays"))
+            .andExpect(jsonPath("$.previous.content.kind").value("NOTE"))
+            .andExpect(jsonPath("$.previous.content.text").value("deploys are on Fridays"))
+            .andExpect(jsonPath("$.previous.replacedBy").value("HIRE"))
+            .andExpect(jsonPath("$.previous.replacedAt").value("2026-09-30T10:00:00.123Z"))
+            .andExpect(jsonPath("$.previous.revision").value(2))
     }
 
     /** No body is an older client: it still works, only without the staleness check. */

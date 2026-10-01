@@ -2115,6 +2115,23 @@ class BoardServiceTest {
         assertEquals("B", textOf(card.previousPayload))
     }
 
+    /** Two undo requests carrying the same token: the second finds the card already moved on. */
+    @Test
+    fun `a second undo with the same revision is refused and changes nothing`() {
+        val card = noteOnOwnBoard("one")
+        service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
+        val offered = card.contentRevision
+        service.restorePreviousContent(hireId, card.id, offered)
+
+        val refusal = assertThrows<ResponseStatusException> {
+            service.restorePreviousContent(hireId, card.id, offered)
+        }
+
+        assertEquals(409, refusal.statusCode.value())
+        assertEquals("one", textOf(card.payload))
+        assertEquals("two", textOf(card.previousPayload))
+    }
+
     /** The revision moves on every real change and stands still for a save that changes nothing. */
     @Test
     fun `the revision counts real content changes only`() {
