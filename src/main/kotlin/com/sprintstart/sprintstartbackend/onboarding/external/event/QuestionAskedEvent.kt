@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.external.events
+package com.sprintstart.sprintstartbackend.onboarding.external.event
 
 import java.time.Instant
 import java.util.UUID

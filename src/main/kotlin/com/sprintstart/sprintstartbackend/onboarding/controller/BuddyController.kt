@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.controller
 
-import com.sprintstart.sprintstartbackend.chat.models.requests.CreateChatRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.CreateSessionRequest
@@ -8,6 +7,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.SendBud
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddySuggestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
@@ -98,7 +98,7 @@ class BuddyController(
     fun getMessagesForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam sessionId: UUID,
+        @RequestParam sessionId: UUID?,
         @Parameter(
             description = "The managed project whose team-mode conversation to return. Omit for the caller's own.",
         )
@@ -151,8 +151,8 @@ class BuddyController(
         @Valid @RequestBody request: CreateSessionRequest,
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-    ) {
-        buddyService.createSession(jwt.subject, request.projectId)
+    ): CreateSessionResponse {
+        return buddyService.createSession(jwt.subject, request.projectId)
     }
 
     /**
@@ -210,7 +210,7 @@ class BuddyController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = "The session to open")
-        @RequestParam(required = true) sessionId: UUID,
+        @RequestParam(required = true) sessionId: UUID?,
         @Parameter(description = "The managed project to open team mode for. Omit for the caller's own buddy.")
         @RequestParam(required = false) teamProjectId: UUID?,
     ): Flow<BuddyStreamEvent> =

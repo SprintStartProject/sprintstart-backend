@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
 import com.sprintstart.sprintstartbackend.chat.repository.ChatMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.service.BuddyQuestionApiService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -15,7 +16,7 @@ import java.util.UUID
 class ChatQuestionApiServiceTest {
     private val messageRepository = mockk<ChatMessageRepository>()
     private val projectId: UUID = UUID.randomUUID()
-    private val service = ChatQuestionApiService(messageRepository)
+    private val service = BuddyQuestionApiService(messageRepository)
 
     @Test
     fun `getUserQuestionsForProject maps the project's user messages to questions`() {

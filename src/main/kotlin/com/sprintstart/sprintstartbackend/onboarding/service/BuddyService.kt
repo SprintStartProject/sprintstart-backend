@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.onboarding.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
@@ -72,7 +72,7 @@ class BuddyService(
     /** Finds a user's ongoing buddy sessions. */
     fun getSessions(authId: String): GetSessionsResponse {
         val userId = resolveUserId(authId)
-        val sessions = buddySessionRepository.findByUserId(userId).map { it.toResponse() }.toList()
+        val sessions = buddySessionRepository.findByUserIdOrderByCreatedAtDesc(userId).map { it.toResponse() }.toList()
         return GetSessionsResponse(sessions)
     }
 
@@ -85,8 +85,11 @@ class BuddyService(
      * The boundary is the last opening marker, never [BuddySession.summarizedCount].
      * Keying it to the compaction cursor makes a hire's own scrollback shrink as the model folds.
      */
-    fun getMessagesForMe(authId: String, sessionId: UUID): List<BuddyMessageResponse> {
+    fun getMessagesForMe(authId: String, sessionId: UUID?): List<BuddyMessageResponse> {
         val userId = resolveUserId(authId)
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
         val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Buddy session not found for current user")
         val messages = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
@@ -125,8 +128,11 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun streamOpenForMe(authId: String, sessionId: UUID): Flow<BuddyStreamEvent> {
+    suspend fun streamOpenForMe(authId: String, sessionId: UUID?): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
         val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
             HttpStatus.NOT_FOUND,
             "Session not found for current user",
@@ -262,12 +268,15 @@ class BuddyService(
      */
     suspend fun sendMessageForMe(
         authId: String,
-        sessionId: UUID,
+        sessionId: UUID?,
         content: String,
         capabilitiesEnabled: Boolean = true,
         filters: BuddySessionFilters?,
     ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
         val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
             HttpStatus.NOT_FOUND,
             "Session not found for current user",
@@ -294,6 +303,8 @@ class BuddyService(
         )
 
         buddyMessageRepository.save(message)
+
+        val questionForFaq = stripQuotedSelection(message.content)
 
         session.projectId?.let { projectId ->
             eventPublisher.publishEvent(
@@ -529,4 +540,11 @@ class BuddyService(
         // emitted token reproduces the answer exactly (newlines and punctuation preserved).
         val TOKEN_CHUNK = Regex("(?<= )")
     }
+
+    private fun stripQuotedSelection(content: String): String =
+        content
+            .lineSequence()
+            .filterNot { it.trimStart().startsWith(">") }
+            .joinToString("\n")
+            .trim()
 }

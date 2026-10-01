@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.FaqInsightsConfig
-import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest

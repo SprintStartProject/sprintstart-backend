@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.chat.ChatAiClient
-import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.listener
 
-import com.sprintstart.sprintstartbackend.chat.external.events.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.service.FaqLiveUpdateService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
