@@ -280,7 +280,7 @@ class BitbucketClientTest {
 
             assertThat(result).isEmpty()
             val request = mockWebServer.takeRequest()
-            assertThat(request.path).startsWith("/repositories/owner/repo/pullrequests?pagelen=100")
+            assertThat(request.path).startsWith("/repositories/owner/repo/pullrequests?pagelen=50")
             listOf("OPEN", "MERGED", "DECLINED", "SUPERSEDED").forEach { state ->
                 assertThat(request.path).contains("state=$state")
             }

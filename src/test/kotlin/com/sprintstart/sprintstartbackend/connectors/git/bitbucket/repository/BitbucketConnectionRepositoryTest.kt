@@ -119,6 +119,36 @@ class BitbucketConnectionRepositoryTest {
         assertThat(found.map { it.id }).containsExactly(api.id)
     }
 
+    /**
+     * The access check reads the project ids after the session that loaded the connection is
+     * gone, so they have to arrive with the query rather than lazily.
+     */
+    @Test
+    fun `findWithProjectIdsById loads the project ids with the connection`() {
+        val projectIds = mutableSetOf(UUID.randomUUID(), UUID.randomUUID())
+        val stored = store(projectIds = projectIds)
+
+        val found = repository.findWithProjectIdsById(stored.id)
+        entityManager.clear()
+
+        assertThat(found?.projectIds).containsExactlyInAnyOrderElementsOf(projectIds)
+        assertThat(repository.findWithProjectIdsById(UUID.randomUUID())).isNull()
+    }
+
+    @Test
+    fun `findAllWithProjectIds returns each connection once with its project ids`() {
+        val projectIds = mutableSetOf(UUID.randomUUID(), UUID.randomUUID())
+        val linked = store(workspace = "acme", slug = "api", projectIds = projectIds)
+        val unlinked = store(workspace = "acme", slug = "web")
+
+        val found = repository.findAllWithProjectIds()
+        entityManager.clear()
+
+        assertThat(found.map { it.id }).containsExactlyInAnyOrder(linked.id, unlinked.id)
+        assertThat(found.single { it.id == linked.id }.projectIds).containsExactlyInAnyOrderElementsOf(projectIds)
+        assertThat(found.single { it.id == unlinked.id }.projectIds).isEmpty()
+    }
+
     private fun store(
         workspace: String = "acme",
         slug: String = "api",
