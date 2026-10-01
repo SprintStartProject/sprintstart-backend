@@ -168,7 +168,7 @@ class BitbucketUpdatesServiceTest {
         val enabled = connection("sprintstart", "backend", projectIds = setOf(projectId))
         val disabled =
             connection("sprintstart", "paused", projectIds = setOf(projectId)).apply { sourceEnabled = false }
-        every { connectionRepository.findAll() } returns listOf(enabled, disabled)
+        every { connectionRepository.findAllWithProjectIds() } returns listOf(enabled, disabled)
         every { connectionRepository.findById(enabled.id) } returns Optional.of(enabled)
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
@@ -182,7 +182,7 @@ class BitbucketUpdatesServiceTest {
     fun `update-all skips repositories linked to none of the caller's projects`() = runTest {
         val mine = connection("sprintstart", "backend", projectIds = setOf(projectId))
         val foreign = connection("other", "repo", projectIds = setOf(UUID.randomUUID()))
-        every { connectionRepository.findAll() } returns listOf(mine, foreign)
+        every { connectionRepository.findAllWithProjectIds() } returns listOf(mine, foreign)
         every { connectionRepository.findById(mine.id) } returns Optional.of(mine)
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
         every { userApi.userHasAccessToProject(authId, foreign.projectIds.single()) } returns false
@@ -200,7 +200,7 @@ class BitbucketUpdatesServiceTest {
     @Test
     fun `update-all returns the transaction id of each updated repository`() = runTest {
         val enabled = connection("sprintstart", "backend", projectIds = setOf(projectId))
-        every { connectionRepository.findAll() } returns listOf(enabled)
+        every { connectionRepository.findAllWithProjectIds() } returns listOf(enabled)
         every { connectionRepository.findById(enabled.id) } returns Optional.of(enabled)
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
@@ -214,7 +214,7 @@ class BitbucketUpdatesServiceTest {
     @Test
     fun `a scoped update reaches a repository through any linked project`() = runTest {
         val linked = connection("sprintstart", "backend", projectIds = setOf(projectId))
-        every { connectionRepository.findById(linked.id) } returns Optional.of(linked)
+        every { connectionRepository.findWithProjectIdsById(linked.id) } returns linked
         every { userApi.userHasAccessToProject(authId, projectId) } returns true
 
         service.updateRepository(authId, linked.id)
@@ -225,11 +225,24 @@ class BitbucketUpdatesServiceTest {
     @Test
     fun `a scoped update answers an unreachable repository as unknown`() = runTest {
         val foreign = connection("other", "repo", projectIds = setOf(UUID.randomUUID()))
-        every { connectionRepository.findById(foreign.id) } returns Optional.of(foreign)
+        every { connectionRepository.findWithProjectIdsById(foreign.id) } returns foreign
         every { userApi.userHasAccessToProject(authId, any()) } returns false
 
         assertThrows<BitbucketRepositoryConnectionNotFoundException> {
             service.updateRepository(authId, foreign.id)
+        }
+
+        coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }
+        verify(exactly = 0) { eventPublisher.publishEvent(any<BitbucketRepositoryUpdateStartedEvent>()) }
+    }
+
+    @Test
+    fun `a scoped update fails when the repository is not connected`() = runTest {
+        val missingId = UUID.randomUUID()
+        every { connectionRepository.findWithProjectIdsById(missingId) } returns null
+
+        assertThrows<BitbucketRepositoryNotConnectedException> {
+            service.updateRepository(authId, missingId)
         }
 
         coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }

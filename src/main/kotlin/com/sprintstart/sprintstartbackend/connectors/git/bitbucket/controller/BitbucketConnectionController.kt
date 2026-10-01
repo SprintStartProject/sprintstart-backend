@@ -55,7 +55,8 @@ internal class BitbucketConnectionController(
      * The connection is stored and the repository is cloned asynchronously, so the response carries
      * the transaction id the connector's events correlate on rather than the repository state.
      * A credential that does not exist surfaces as 404 through the shared Atlassian credential
-     * exception handler.
+     * exception handler, and a repository Bitbucket cannot find or show to that credential as 404
+     * through the Bitbucket exception handler.
      *
      * @param jwt The authentication principal the repository's credential is resolved for.
      * @param request The repository to connect, with its own credential and project.
@@ -74,7 +75,11 @@ internal class BitbucketConnectionController(
             ),
             ApiResponse(responseCode = "400", description = "Request body is invalid"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "404", description = "The named credential does not exist"),
+            ApiResponse(
+                responseCode = "404",
+                description = "The named credential does not exist, or the repository does not exist or is " +
+                    "not readable with it",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -116,7 +121,11 @@ internal class BitbucketConnectionController(
             ApiResponse(responseCode = "400", description = "Request body is invalid"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Caller has no access to a target project"),
-            ApiResponse(responseCode = "404", description = "A named credential does not exist"),
+            ApiResponse(
+                responseCode = "404",
+                description = "A named credential does not exist, or a repository does not exist or is not " +
+                    "readable with it",
+            ),
         ],
     )
     @PostMapping("/connect/all")

@@ -235,7 +235,7 @@ class BitbucketClient(
         buildString {
             append(repositoryUri(workspace, slug))
             append("/pullrequests?pagelen=")
-            append(PAGE_LENGTH)
+            append(PULL_REQUEST_PAGE_LENGTH)
             PULL_REQUEST_STATES.forEach { state ->
                 append("&state=")
                 append(state)
@@ -430,6 +430,12 @@ class BitbucketClient(
          * collection here is walked in full, so asking for a larger page saves round trips.
          */
         const val PAGE_LENGTH = 100
+
+        /**
+         * Items requested per page of the pull request listing. That endpoint caps the page at 50
+         * and answers a larger `pagelen` with `400 Invalid pagelen` instead of clamping it.
+         */
+        const val PULL_REQUEST_PAGE_LENGTH = 50
 
         /**
          * Every pull request state Bitbucket can report. Requested together so a sync sees merges

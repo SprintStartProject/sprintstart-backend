@@ -34,6 +34,65 @@ internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnec
     ): BitbucketConnection?
 
     /**
+     * Finds the connection for one repository addressed by its coordinates, together with the
+     * projects it is linked to.
+     *
+     * The project ids are fetched in the same query because a reconnect adds the submitted project
+     * to them after the loading coroutine context, and with it the Hibernate session, is gone.
+     *
+     * @param workspace The Bitbucket workspace owning the repository.
+     * @param slug The repository's slug within [workspace].
+     * @return The connection with its project ids loaded, or `null` when the repository is not connected.
+     */
+    @Query(
+        """
+            SELECT b
+            FROM BitbucketConnection b
+            LEFT JOIN FETCH b.projectIdsInternal
+            WHERE b.workspace = :workspace
+            AND b.slug = :slug
+        """,
+    )
+    fun findWithProjectIdsByWorkspaceAndSlug(
+        @Param("workspace") workspace: String,
+        @Param("slug") slug: String,
+    ): BitbucketConnection?
+
+    /**
+     * Finds one connection together with the projects it is linked to.
+     *
+     * The project ids are fetched in the same query because callers check access against them
+     * after the loading coroutine context, and with it the Hibernate session, is gone.
+     *
+     * @param id The id of the connection.
+     * @return The connection with its project ids loaded, or `null` when it does not exist.
+     */
+    @Query(
+        """
+            SELECT b
+            FROM BitbucketConnection b
+            LEFT JOIN FETCH b.projectIdsInternal
+            WHERE b.id = :id
+        """,
+    )
+    fun findWithProjectIdsById(@Param("id") id: UUID): BitbucketConnection?
+
+    /**
+     * Lists every connection together with the projects it is linked to.
+     *
+     * Fetches the project ids eagerly for the same reason as [findWithProjectIdsById]; the
+     * distinct collapses the one row per linked project the fetch join produces.
+     */
+    @Query(
+        """
+            SELECT DISTINCT b
+            FROM BitbucketConnection b
+            LEFT JOIN FETCH b.projectIdsInternal
+        """,
+    )
+    fun findAllWithProjectIds(): List<BitbucketConnection>
+
+    /**
      * Lists the connections linked to one project.
      *
      * The join is against the project-id collection, so a connection linked to several projects is

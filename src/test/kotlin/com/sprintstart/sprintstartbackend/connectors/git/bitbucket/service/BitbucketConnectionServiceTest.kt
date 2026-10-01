@@ -7,11 +7,14 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClie
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoverRepositoriesResponse
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoveredRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.DiscoverBitbucketRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketRepositoryConfigRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.BitbucketConnectionService
@@ -80,7 +83,9 @@ class BitbucketConnectionServiceTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists("sprintstart", "sprintstart-backend", secret()) } returns true
-        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns null
+        every {
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug("sprintstart", "sprintstart-backend")
+        } returns null
         val saved = slot<BitbucketConnection>()
         every { connectionRepository.save(capture(saved)) } answers { firstArg() }
         val savedConfig = slot<BitbucketRepositoryConfig>()
@@ -127,7 +132,9 @@ class BitbucketConnectionServiceTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
-        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns
+        every {
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug("sprintstart", "sprintstart-backend")
+        } returns
             existingConnection(projectIdsInternal = mutableSetOf(projectId))
 
         service.connectRepositoryIfExists("auth-id", request)
@@ -149,7 +156,9 @@ class BitbucketConnectionServiceTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
-        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns existing
+        every {
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug("sprintstart", "sprintstart-backend")
+        } returns existing
         every { connectionRepository.save(any<BitbucketConnection>()) } answers { firstArg() }
 
         service.connectRepositoryIfExists("auth-id", request)
@@ -169,7 +178,9 @@ class BitbucketConnectionServiceTest {
         every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
         every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
         coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
-        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns
+        every {
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug("sprintstart", "sprintstart-backend")
+        } returns
             existingConnection(projectIdsInternal = mutableSetOf(projectId))
 
         service.connectRepositoryIfExists("auth-id", request)
@@ -230,6 +241,58 @@ class BitbucketConnectionServiceTest {
 
         verify(exactly = 0) { connectionRepository.save(any()) }
         coVerify(exactly = 0) { fileService.fetchAndIngestFilesOfRepository(any(), any()) }
+    }
+
+    /**
+     * The client labels a discovered repository with its display name, not with `full_name`, which
+     * repeats the workspace the caller already scoped the discovery to.
+     */
+    @Test
+    fun `discovery reports each repository's display name and connection state`() = runTest {
+        every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
+        coEvery { bitbucketClient.discoverRepositoriesOfWorkspace("sprintstart", secret(), 0, 20) } returns
+            DiscoverRepositoriesResponse(
+                listOf(
+                    DiscoveredRepository(
+                        name = "SprintStart Backend",
+                        slug = "sprintstart-backend",
+                        fullName = "sprintstart/sprintstart-backend",
+                        isPrivate = true,
+                    ),
+                    DiscoveredRepository(
+                        name = "SprintStart Frontend",
+                        slug = "sprintstart-frontend",
+                        fullName = "sprintstart/sprintstart-frontend",
+                    ),
+                ),
+            )
+        every {
+            connectionRepository.findAllByWorkspaceAndSlugIn(
+                "sprintstart",
+                listOf("sprintstart-backend", "sprintstart-frontend"),
+            )
+        } returns listOf(existingConnection().apply { sourceEnabled = false })
+
+        val response = service.discoverRepositoriesOfWorkspace(
+            DiscoverBitbucketRepositoriesRequest(
+                workspace = "sprintstart",
+                authId = "auth-id",
+                credentialName = "team-token",
+                page = 0,
+                pageSize = 20,
+            ),
+        )
+
+        assertThat(response.repositories.map { it.name })
+            .containsExactly("SprintStart Backend", "SprintStart Frontend")
+        with(response.repositories.first()) {
+            assertThat(alreadyConnected).isTrue()
+            assertThat(enabled).isFalse()
+        }
+        with(response.repositories.last()) {
+            assertThat(alreadyConnected).isFalse()
+            assertThat(enabled).isNull()
+        }
     }
 
     private fun secret() = AtlassianCredentialSecret(userEmail = "user@example.com", apiToken = "api-token")
