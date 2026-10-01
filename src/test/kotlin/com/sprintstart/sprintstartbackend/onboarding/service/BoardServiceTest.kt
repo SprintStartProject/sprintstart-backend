@@ -30,6 +30,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingReso
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistItemRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
@@ -67,6 +68,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
@@ -709,7 +711,7 @@ class BoardServiceTest {
         val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
 
-        val outcome = service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK)
+        val outcome = service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
 
         // Grabbing is the hire saying "this is what I'm working on", which is what the card says.
         assertEquals(BoardService.PlacementOutcome.PLACED, outcome)
@@ -1315,9 +1317,159 @@ class BoardServiceTest {
     private fun savedChecklist(card: BoardCard): ChecklistPayload =
         assertNotNull(json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload)) as? ChecklistPayload)
 
+    private fun versionOf(card: BoardCard) = BoardCardVersion.of(card.decodedPayload())
+
     private fun onBoard(card: BoardCard, board: Board) {
         every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
         every { boardCardRepository.findLockedById(card.id) } returns card
+    }
+
+    // -- A buddy edit is only as good as the card it was proposed against -------------------------
+
+    private fun buddyEdit(card: BoardCard, basedOn: String?, request: AuthoredCardRequest) =
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, request, basedOn)
+
+    private fun secondLineChecklist() = ChecklistCardRequest(
+        title = "Getting started",
+        items = listOf(ChecklistItemRequest(text = "Run it locally"), ChecklistItemRequest(text = "Fix it")),
+    )
+
+    /**
+     * The fingerprint is checked on the row this transaction holds the lock on, so a change that
+     * lands after the proposal — however late — is one the write refuses rather than removes.
+     */
+    @Test
+    fun `a checklist replace refuses when a line was added after the proposal`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val added = ChecklistItemPayload(UUID.randomUUID().toString(), "Rotate production credentials")
+        card.payload = json.encodeToString<BoardCardPayload>(
+            ChecklistPayload(title = "Getting started", items = savedChecklist(card).items + added),
+        )
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, secondLineChecklist())
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        assertEquals(3, savedChecklist(card).items.size)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a note replace refuses when the note grew past what the buddy can read`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val grown = NotePayload(text = "x".repeat(BoardReading.NOTE_PREVIEW + 1))
+        card.payload = json.encodeToString<BoardCardPayload>(grown)
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Even a fingerprint that matches cannot license rewriting a note the buddy only saw the start of. */
+    @Test
+    fun `a note longer than the buddy can read is never replaced whole`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        card.payload =
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "x".repeat(BoardReading.NOTE_PREVIEW + 1)))
+        onBoard(card, board)
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, versionOf(card), NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a link replace refuses when the link changed after the proposal`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = BoardCard(
+            boardId = board.id,
+            kind = BoardCardKind.LINK,
+            owner = BoardCardOwner.HIRE,
+            position = 0,
+            payload = json.encodeToString<BoardCardPayload>(LinkPayload(url = "https://wiki/old")),
+        )
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        card.payload = json.encodeToString<BoardCardPayload>(LinkPayload(url = "https://wiki/other"))
+
+        assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, LinkCardRequest(url = "https://wiki/new"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a buddy edit with no fingerprint is refused`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+
+        assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, null, NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `ticking a line after the proposal does not make a checklist replace stale`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val ticked = savedChecklist(card).items.map { it.copy(done = true) }
+        card.payload =
+            json.encodeToString<BoardCardPayload>(ChecklistPayload(title = "Getting started", items = ticked))
+
+        buddyEdit(card, proposedAgainst, secondLineChecklist())
+
+        assertEquals(listOf(true, true), savedChecklist(card).items.map { it.done })
+    }
+
+    // -- Who placed or brought back a card ---------------------------------------------------------
+
+    @Test
+    fun `a current-task card placed by a hand grab is the hire's placement`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns emptyList()
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
+
+        assertEquals(BoardCardChange.CREATED, saved.captured.lastChange)
+        assertEquals(BoardActor.HIRE, saved.captured.lastChangedBy)
+    }
+
+    @Test
+    fun `a revived card stops saying it was dismissed and says who brought it back`() {
+        val board = existingBoard()
+        val long = Instant.parse("2026-01-01T00:00:00Z")
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+            .apply { recordChange(BoardCardChange.DISMISSED, BoardActor.BUDDY, long) }
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
+
+        assertEquals(BoardCardState.ACTIVE, dismissed.state)
+        assertEquals(BoardCardChange.CREATED, dismissed.lastChange)
+        assertEquals(BoardActor.HIRE, dismissed.lastChangedBy)
+        assertTrue(assertNotNull(dismissed.lastChangedAt).isAfter(long))
     }
 
     /**
@@ -1535,7 +1687,7 @@ class BoardServiceTest {
     fun `the hire ticking their own checklist is recorded as a tick by the hire`() {
         val board = Board(userId = hireId, projectId = projectId)
         val card = checklistCard(board)
-        every { boardCardRepository.findById(card.id) } returns Optional.of(card)
+        every { boardCardRepository.findLockedById(card.id) } returns card
         every { boardRepository.findById(board.id) } returns Optional.of(board)
 
         service.editAuthoredCard(
@@ -1560,7 +1712,13 @@ class BoardServiceTest {
         val card = noteCard(board)
         onBoard(card, board)
 
-        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "Deploys run on Tuesdays"))
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            NoteCardRequest(text = "Deploys run on Tuesdays"),
+            versionOf(card),
+        )
 
         val saved = json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload))
         assertEquals(NotePayload(text = "Deploys run on Tuesdays"), saved)
@@ -1592,6 +1750,7 @@ class BoardServiceTest {
                     ChecklistItemRequest(text = "Open a PR", done = true),
                 ),
             ),
+            versionOf(card),
         )
 
         val checklist = savedChecklist(card)
@@ -1609,7 +1768,13 @@ class BoardServiceTest {
         onBoard(card, board)
 
         assertFailsWith<ResponseStatusException> {
-            service.editAuthoredCardForBuddy(hireId, projectId, card.id, LinkCardRequest(url = "https://example.com"))
+            service.editAuthoredCardForBuddy(
+                hireId,
+                projectId,
+                card.id,
+                LinkCardRequest(url = "https://example.com"),
+                versionOf(card),
+            )
         }
 
         verify(exactly = 0) { boardCardRepository.save(any()) }
@@ -1773,6 +1938,7 @@ class BoardServiceTest {
             projectId,
             card.id,
             NoteCardRequest(text = "Deploys run on Tuesdays"),
+            versionOf(card),
         )
 
         assertEquals(BoardActor.BUDDY, card.previousReplacedBy)
@@ -1797,7 +1963,7 @@ class BoardServiceTest {
     @Test
     fun `saving a note unchanged keeps the undo for the edit before it`() {
         val card = noteOnOwnBoard("one")
-        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "two"))
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "two"), versionOf(card))
 
         service.editAuthoredCard(hireId, card.id, NoteCardRequest(text = "two"))
 
@@ -1808,7 +1974,13 @@ class BoardServiceTest {
     @Test
     fun `undoing a buddy edit puts the hire's words back, as an edit by the hire`() {
         val card = noteOnOwnBoard("mine")
-        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            NoteCardRequest(text = "the buddy's"),
+            versionOf(card),
+        )
 
         val response = service.restorePreviousContent(hireId, card.id, card.contentRevision)
 
@@ -1822,7 +1994,13 @@ class BoardServiceTest {
     @Test
     fun `an undo can be undone`() {
         val card = noteOnOwnBoard("mine")
-        service.editAuthoredCardForBuddy(hireId, projectId, card.id, NoteCardRequest(text = "the buddy's"))
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            NoteCardRequest(text = "the buddy's"),
+            versionOf(card),
+        )
         service.restorePreviousContent(hireId, card.id)
 
         service.restorePreviousContent(hireId, card.id, card.contentRevision)
@@ -2027,6 +2205,7 @@ class BoardServiceTest {
             projectId,
             card.id,
             ChecklistCardRequest(items = listOf(ChecklistItemRequest(text = "Something else entirely"))),
+            versionOf(card),
         )
         service.restorePreviousContent(hireId, card.id, card.contentRevision)
 

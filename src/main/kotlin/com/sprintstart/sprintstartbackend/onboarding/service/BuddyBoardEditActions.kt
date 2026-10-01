@@ -30,7 +30,6 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import org.springframework.stereotype.Component
 import org.springframework.web.server.ResponseStatusException
-import java.security.MessageDigest
 import java.util.UUID
 
 /**
@@ -156,7 +155,7 @@ class BuddyBoardEditActions(
                 question = null,
                 cardId = card.id,
                 noteText = text,
-                basedOn = versionOf(card),
+                basedOn = BoardCardVersion.of(card.content),
                 preview = "Rewrite your note “${BoardReading.nameOf(card)}” so it reads as shown.",
             ),
         )
@@ -188,7 +187,7 @@ class BuddyBoardEditActions(
                 cardId = card.id,
                 linkUrl = url,
                 linkLabel = keptLabel,
-                basedOn = versionOf(card),
+                basedOn = BoardCardVersion.of(card.content),
                 preview = "Change your link “${BoardReading.nameOf(card)}” to " +
                     "${keptLabel?.let { "$it — " }.orEmpty()}$url",
             ),
@@ -242,7 +241,7 @@ class BuddyBoardEditActions(
                 cardId = card.id,
                 checklistTitle = title,
                 checklistItems = items,
-                basedOn = versionOf(card),
+                basedOn = BoardCardVersion.of(card.content),
                 preview = preview,
             ),
         )
@@ -364,9 +363,9 @@ class BuddyBoardEditActions(
      *
      * An edit replaces the card whole, and what the confirm showed — the new text, the lines that
      * would go, the refusal of a note longer than the buddy can see — was worked out against the
-     * card as it was then. If the hire, or another confirmed action, changed it since, the preview
-     * no longer describes what this would do, so nothing is written and the buddy is asked to look
-     * again. A confirm that carries no fingerprint is refused the same way: nothing can vouch for it.
+     * card as it was then. [basedOn] is the fingerprint of that card; `BoardService` compares it
+     * against the row it holds the lock on, because a check made here would leave a gap before
+     * that lock is taken. A confirm that carries no fingerprint is refused the same way.
      */
     private fun edited(
         userId: UUID,
@@ -375,12 +374,7 @@ class BuddyBoardEditActions(
         basedOn: String?,
         request: AuthoredCardRequest,
     ): BuddyActionResponse {
-        val current = cardsOn(userId, projectId)?.firstOrNull { it.id == cardId }
-        if (current != null && basedOn != versionOf(current)) {
-            return BuddyActionResponse(ok = false, message = CARD_CHANGED)
-        }
-
-        boardService.editAuthoredCardForBuddy(userId, projectId, cardId, request)
+        boardService.editAuthoredCardForBuddy(userId, projectId, cardId, request, basedOn)
         return BuddyActionResponse(
             ok = true,
             message = "Updated. The card shows it was your buddy's change, and it's still yours to edit.",
@@ -418,22 +412,6 @@ class BuddyBoardEditActions(
     private fun cardsOn(userId: UUID, projectId: UUID): List<BoardCardResponse>? =
         if (boardService.hasBoard(userId, projectId)) boardService.getBoard(userId, projectId)?.cards else null
 
-    /**
-     * A fingerprint of the words on [card], for telling at confirm time that it is still the card
-     * a proposal was made against. Ticks are left out on purpose: an edit keeps them, so ticking a
-     * line between the offer and the click changes nothing the confirm showed.
-     */
-    private fun versionOf(card: BoardCardResponse): String {
-        val words = when (val content = card.content) {
-            is NoteContent -> listOf("note", content.text)
-            is LinkContent -> listOf("link", content.url, content.label.orEmpty())
-            is ChecklistContent -> listOf("checklist", content.title.orEmpty()) + content.items.map { it.text }
-            else -> listOf(card.kind.name)
-        }
-        val digest = MessageDigest.getInstance("SHA-256").digest(words.joinToString("\u0000").toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
-    }
-
     /** The one card of the hire's own of [kind] that the call's `card_id` names. */
     private fun ownCard(call: BuddyToolCallDto, scope: Scope, kind: BoardCardKind): Found<BoardCardResponse> {
         val cardId = call.uuidArg("card_id") ?: return Found.Refused(NO_CARD_ID)
@@ -454,18 +432,32 @@ class BuddyBoardEditActions(
      * the one it got wrong will describe the proposal as covering it.
      */
     private fun namedCards(call: BuddyToolCallDto, scope: Scope): Found<List<BoardCardResponse>> {
-        val named = call.stringListArg("card_ids")
-        if (named.isEmpty()) return Found.Refused(NO_CARD_IDS)
-        val parsed = named.map { line -> runCatching { UUID.fromString(line) }.getOrNull() }
-        // Dropping a malformed id would propose a change to fewer cards than the model meant, and
+        // The raw array, not a cleaned-up list: dropping a blank, a non-string or a malformed id, or
+        // cutting the list at a cap, would propose a change to fewer cards than the model meant, and
         // the model would describe the proposal as covering all of them.
+        val named = call.arguments["card_ids"] as? JsonArray
+        if (named == null || named.isEmpty()) return Found.Refused(NO_CARD_IDS)
+        if (named.size > MAX_CARDS) {
+            return Found.Refused(
+                "${named.size} ids is more than one proposal can cover (at most $MAX_CARDS), so nothing " +
+                    "was proposed. Propose fewer cards at a time.",
+            )
+        }
+        val parsed = named.map { entry ->
+            (entry as? JsonPrimitive)
+                ?.takeIf { it.isString }
+                ?.content
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+        }
         if (parsed.any { it == null }) {
             return Found.Refused(
                 "${parsed.count { it == null }} of those ids are not card ids, so nothing was proposed. " +
                     "Read read_board again and pass only the ids it gives.",
             )
         }
-        val ids = parsed.filterNotNull().distinct().take(MAX_CARDS)
+        val ids = parsed.filterNotNull().distinct()
 
         val byId = cardsOn(scope).orEmpty().associateBy { it.id }
         val cards = ids.mapNotNull { byId[it] }
@@ -551,8 +543,7 @@ class BuddyBoardEditActions(
         const val NO_CARD_ID = "No card_id was provided. Read read_board to find the card you mean, and pass its id."
         const val NO_CARD_IDS =
             "No card_ids were provided. Read read_board to find the cards you mean, and pass their ids."
-        const val CARD_CHANGED =
-            "That card changed after this was proposed, so nothing was written. Ask your buddy to look at it again."
+        const val CARD_CHANGED = BoardCardVersion.CARD_CHANGED
         const val NOT_A_WEB_ADDRESS = "That is not a web address. A link needs to start with https:// or http://."
 
         private fun cardIdParam() = buildJsonObject {

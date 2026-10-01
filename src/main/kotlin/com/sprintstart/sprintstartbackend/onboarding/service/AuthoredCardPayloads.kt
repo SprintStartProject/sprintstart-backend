@@ -113,6 +113,13 @@ internal fun BoardCard.checklistOrThrow(): ChecklistPayload =
     payload?.let { boardPayloadJson.decodeFromString<BoardCardPayload>(it) } as? ChecklistPayload
         ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "That card holds no checklist")
 
+/** The card's stored content, or null for a row without any. */
+internal fun BoardCard.decodedPayload(): BoardCardPayload? =
+    payload?.let { boardPayloadJson.decodeFromString<BoardCardPayload>(it) }
+
+/** How long the note on this card is, in characters; 0 for a card that holds no note. */
+internal fun BoardCard.noteLength(): Int = (decodedPayload() as? NotePayload)?.text?.length ?: 0
+
 /**
  * The request as something storable, rejecting content that would leave a card saying nothing.
  *
