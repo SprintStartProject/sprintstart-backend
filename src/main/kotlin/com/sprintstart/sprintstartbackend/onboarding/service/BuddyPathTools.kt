@@ -86,7 +86,17 @@ class BuddyPathTools(
     fun execute(userId: UUID): String {
         val path = onboardingPathService.findPathForUserId(userId) ?: return NO_PATH
         val phases = path.phases.sortedBy { it.position }
-        if (phases.isEmpty()) return NO_PHASES
+        if (phases.isEmpty()) {
+            // Nothing visible is not the same as nothing there: every phase may have come back empty
+            // from generation, and those are hidden from `phases` but are exactly what add_path_step
+            // repairs. Only a path with no phases at all is the authoring problem NO_PHASES describes.
+            if (path.generationIssues.isEmpty()) return NO_PHASES
+            return buildString {
+                append(ONLY_EMPTY_PHASES)
+                appendEmptyPhases(path)
+                append(NEWLINE + CLOSING)
+            }
+        }
 
         return when (val where = PathStanding.of(phases)) {
             // A path whose phases all came back empty was never started, let alone finished: say
@@ -96,8 +106,15 @@ class BuddyPathTools(
                     appendCurrentPhase(phases.last(), phases.lastIndex, phases)
                     appendEmptyPhases(path)
                 }
-            } else {
+            } else if (path.generationIssues.isEmpty()) {
                 FINISHED_PATH.format(phases.size)
+            } else {
+                // Finished with what is visible, not with the path: phases that came back empty are
+                // still there to be filled, and "nothing left on it" would close the one door to that.
+                buildString {
+                    append(FINISHED_VISIBLE.format(phases.size))
+                    appendEmptyPhases(path)
+                }
             }
             is PathStanding.Choosing -> buildString {
                 appendChoice(where.phases, phases)
@@ -243,13 +260,26 @@ class BuddyPathTools(
         val path = onboardingPathService.findPathForUserId(userId) ?: return null
         val phases = path.phases.sortedBy { it.position }
         if (phases.isEmpty()) {
-            return "Onboarding path:\nTheir path has no phases in it, so there is nothing on it to do yet."
+            val empty = path.generationIssues
+            return if (empty.isEmpty()) {
+                "Onboarding path:\nTheir path has no phases in it, so there is nothing on it to do yet."
+            } else {
+                "Onboarding path:\nEvery one of their ${empty.size} phases came back with nothing in it, so " +
+                    "there is nothing on it to do yet -- but those phases can be worked out together and " +
+                    "filled in."
+            }
         }
 
         return buildString {
             appendLine("Onboarding path:")
             when (val where = PathStanding.of(phases)) {
-                PathStanding.Finished -> appendLine("They have finished every phase of their path.")
+                PathStanding.Finished -> appendLine(
+                    if (path.generationIssues.isEmpty()) {
+                        "They have finished every phase of their path."
+                    } else {
+                        "They have finished every phase of their path that has something in it."
+                    },
+                )
                 is PathStanding.Choosing -> appendLine(
                     "${where.phases.size} phases are open to them and nothing in them is started yet: " +
                         where.phases.joinToString(", ") { quoted(it.title) } + ". Which one comes next is " +
@@ -885,6 +915,15 @@ class BuddyPathTools(
         const val FINISHED_PATH =
             "The hire's onboarding path has %d phases and every one of them is finished. There is " +
                 "nothing left on it."
+
+        const val FINISHED_VISIBLE =
+            "Every phase of the hire's onboarding path that has something in it is finished (%d of " +
+                "them). What is left are phases that came back empty -- they are not done, they were " +
+                "never filled."
+
+        const val ONLY_EMPTY_PHASES =
+            "Every phase of the hire's onboarding path came back empty, so there is nothing on it to " +
+                "work through yet. That is not the hire's fault, and it is not a dead end."
 
         const val NO_PHASES =
             "The hire's onboarding path exists but has no phases in it at all, so there is nothing " +

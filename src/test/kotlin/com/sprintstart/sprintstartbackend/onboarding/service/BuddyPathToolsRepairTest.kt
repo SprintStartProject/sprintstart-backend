@@ -3,6 +3,10 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
+import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnboardingPathForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingGenerationIssueResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
@@ -94,7 +98,88 @@ class BuddyPathToolsRepairTest {
         assertThat(text).contains("nothing in it")
     }
 
+    // -- no open visible phase left: the repair still has to reach the mentor --------------------
+    //
+    // Built from real entities through the real mapper, because that is where the hiding happens: a
+    // hand-made response could carry a hidden phase in `phases` that the real read never would.
+
+    @Test
+    fun `a path whose every phase came back empty still names them, with what to repair them with`() {
+        val path = OnboardingPath(userId = userId)
+        val deployment = hiddenPhase(path, 0, "Deployment", GenerationStatus.SKIPPED)
+        every { onboardingPathService.findPathForUserId(userId) } returns path.toGetForUserResponse()
+
+        val text = tools.execute(userId)
+
+        // Not "no phases at all, an authoring problem -- point them at their PM".
+        assertThat(text).doesNotContain("authoring problem")
+        assertThat(text).contains("phase_id: ${deployment.id}")
+        assertThat(text).contains("add_path_step")
+    }
+
+    @Test
+    fun `finishing every visible phase is not finishing a path with empty phases on it`() {
+        val path = OnboardingPath(userId = userId)
+        val setup = OnboardingPhase(path = path, position = 0, title = "Setup", description = "")
+        setup.steps += OnboardingStep(
+            phase = setup,
+            position = 0,
+            title = "Clone the repository",
+            description = "",
+            type = StepType.TASK,
+            estimatedMinutes = 10,
+            expectedOutcome = "",
+            status = StepStatus.FINISHED,
+        )
+        path.phases += setup
+        val deployment = hiddenPhase(path, 1, "Deployment", GenerationStatus.FAILED)
+        every { onboardingPathService.findPathForUserId(userId) } returns path.toGetForUserResponse()
+
+        val text = tools.execute(userId)
+
+        assertThat(text).doesNotContain("nothing left on it")
+        assertThat(text).contains("phase_id: ${deployment.id}")
+        assertThat(text).contains("add_path_step")
+    }
+
+    @Test
+    fun `the greeting does not call a path of empty phases one without phases`() {
+        val path = OnboardingPath(userId = userId)
+        hiddenPhase(path, 0, "Deployment", GenerationStatus.EMPTY)
+        every { onboardingPathService.findPathForUserId(userId) } returns path.toGetForUserResponse()
+
+        val snapshot = tools.snapshotFor(userId)
+
+        assertThat(snapshot).doesNotContain("no phases in it")
+        assertThat(snapshot).contains("came back with nothing in it")
+    }
+
+    @Test
+    fun `the greeting does not call a path finished while a phase of it came back empty`() {
+        every { onboardingPathService.findPathForUserId(userId) } returns path(
+            phase(0, "Setup", steps = listOf(step("Clone the repository", StepStatus.FINISHED))),
+            issues = listOf(
+                OnboardingGenerationIssueResponse(UUID.randomUUID(), "Deployment", GenerationStatus.SKIPPED),
+            ),
+        )
+
+        val snapshot = tools.snapshotFor(userId)
+
+        assertThat(snapshot).contains("every phase of their path that has something in it")
+        assertThat(snapshot).contains("came back with nothing in them")
+    }
+
     // -- fixtures ---------------------------------------------------------------------------------
+
+    /** A phase generation left empty, on a real path, so the real mapper hides it. */
+    private fun hiddenPhase(path: OnboardingPath, position: Int, title: String, status: GenerationStatus) =
+        OnboardingPhase(
+            path = path,
+            position = position,
+            title = title,
+            description = "What the phase was meant to cover",
+            generationStatus = status,
+        ).also { path.phases += it }
 
     private fun path(
         vararg phases: GetOnboardingPhaseForUserResponse,
