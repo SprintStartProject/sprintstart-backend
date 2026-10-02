@@ -61,6 +61,7 @@ fun OnboardingPath.toGetForUserResponse(
                     phaseId = phase.id,
                     title = phase.title,
                     status = phase.generationStatus,
+                    description = phase.description,
                 )
             },
     )

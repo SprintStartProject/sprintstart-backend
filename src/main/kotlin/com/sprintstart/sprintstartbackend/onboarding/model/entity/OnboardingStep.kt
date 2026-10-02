@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.entity
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import jakarta.persistence.CascadeType
@@ -27,6 +28,15 @@ class OnboardingStep(
     var type: StepType,
     @Column(name = "is_ai_assisted", nullable = false, columnDefinition = "boolean not null default true")
     var aiAssisted: Boolean = true,
+    /**
+     * Who put this step here. Defaults to [StepOrigin.GENERATED], which is what a blueprint copy is
+     * and what every row written before this column existed became: the ones a person authored are
+     * still recognisable by `aiAssisted` being false, and the badge falls back to that -- see
+     * `StepOriginBadge`.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(16) not null default 'GENERATED'")
+    var origin: StepOrigin = StepOrigin.GENERATED,
     @Column(nullable = true)
     var estimatedMinutes: Int,
     @OneToMany(

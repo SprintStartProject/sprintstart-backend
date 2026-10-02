@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.response.step
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
 import java.util.UUID
@@ -18,4 +19,6 @@ data class CreateOnboardingStepResponse(
     val graphX: Double? = null,
     val graphY: Double? = null,
     val blockerIds: Set<UUID> = emptySet(),
+    /** Who put this step on the path: generated, a PM, the hire, or their buddy. */
+    val origin: StepOrigin = StepOrigin.GENERATED,
 )
