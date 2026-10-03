@@ -70,7 +70,7 @@ class GitIngestionEngineTest {
     @Test
     fun `reports every tracked file and returns the ingested revision`() = runTest {
         existingFile("Main.kt")
-        coEvery { revisionState.currentRevision(repositoryPath) } returns REVISION
+        coEvery { revisionState.updateLocal(repositoryPath) } returns REVISION
         coEvery { workingTree.trackedFiles(repositoryPath) } returns listOf("Main.kt")
         coEvery { workingTree.readFile(repositoryPath, "Main.kt") } returns GitFileRead.Text("fun main() {}", "hash")
 
@@ -90,7 +90,7 @@ class GitIngestionEngineTest {
     @Test
     fun `reads a file through the shared hash rather than hashing content again`() = runTest {
         existingFile("Main.kt")
-        coEvery { revisionState.currentRevision(any()) } returns REVISION
+        coEvery { revisionState.updateLocal(any()) } returns REVISION
         coEvery { workingTree.trackedFiles(any()) } returns listOf("Main.kt")
         coEvery { workingTree.readFile(any(), "Main.kt") } returns GitFileRead.Text("text", "given-hash")
 
@@ -106,7 +106,7 @@ class GitIngestionEngineTest {
     @Test
     fun `skips binary files without reporting them as changes or failures`() = runTest {
         existingFile("logo.png")
-        coEvery { revisionState.currentRevision(any()) } returns REVISION
+        coEvery { revisionState.updateLocal(any()) } returns REVISION
         coEvery { workingTree.trackedFiles(any()) } returns listOf("logo.png")
         coEvery { workingTree.readFile(any(), "logo.png") } returns GitFileRead.Binary
 
@@ -121,7 +121,7 @@ class GitIngestionEngineTest {
     fun `reports a file it could not read and still completes the rest`() = runTest {
         existingFile("good.kt")
         existingFile("big.json")
-        coEvery { revisionState.currentRevision(any()) } returns REVISION
+        coEvery { revisionState.updateLocal(any()) } returns REVISION
         coEvery { workingTree.trackedFiles(any()) } returns listOf("good.kt", "big.json")
         coEvery { workingTree.readFile(any(), "good.kt") } returns GitFileRead.Text("x", "hash")
         coEvery { workingTree.readFile(any(), "big.json") } returns GitFileRead.TooLarge(900)
@@ -138,7 +138,7 @@ class GitIngestionEngineTest {
     fun `hands changes over in batches of the configured size`() = runTest {
         val paths = (1..5).map { "File$it.kt" }
         paths.forEach(::existingFile)
-        coEvery { revisionState.currentRevision(any()) } returns REVISION
+        coEvery { revisionState.updateLocal(any()) } returns REVISION
         coEvery { workingTree.trackedFiles(any()) } returns paths
         coEvery { workingTree.readFile(any(), any()) } returns GitFileRead.Text("x", "hash")
 
@@ -155,14 +155,32 @@ class GitIngestionEngineTest {
     @Test
     fun `reads everything when the caller has no cursor yet`() = runTest {
         existingFile("Main.kt")
-        coEvery { revisionState.currentRevision(any()) } returns REVISION
+        coEvery { revisionState.updateLocal(any()) } returns REVISION
         coEvery { workingTree.trackedFiles(any()) } returns listOf("Main.kt")
         coEvery { workingTree.readFile(any(), any()) } returns GitFileRead.Text("x", "hash")
 
         engine().ingestFileChangesSince(coordinates, "", sink)
 
-        coVerify(exactly = 0) { revisionState.updateLocal(any()) }
+        coVerify { revisionState.updateLocal(repositoryPath) }
         coVerify { workingTree.trackedFiles(repositoryPath) }
+    }
+
+    /**
+     * A full ingest must see the remote's revision even when the cached clone is stale: a retry
+     * after a failed first ingest would otherwise re-read the revision the failed attempt left
+     * behind.
+     */
+    @Test
+    fun `fetches before a full ingest instead of reading the cached revision as-is`() = runTest {
+        existingFile("Main.kt")
+        coEvery { revisionState.updateLocal(repositoryPath) } returns NEW_REVISION
+        coEvery { workingTree.trackedFiles(any()) } returns listOf("Main.kt")
+        coEvery { workingTree.readFile(any(), any()) } returns GitFileRead.Text("x", "hash")
+
+        val outcome = engine().ingestWorkingTree(coordinates, sink)
+
+        assertThat(outcome.revision).isEqualTo(NEW_REVISION)
+        coVerify(exactly = 0) { revisionState.currentRevision(any()) }
     }
 
     @Test

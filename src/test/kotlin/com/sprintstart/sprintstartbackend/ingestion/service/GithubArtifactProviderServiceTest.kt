@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -433,6 +434,60 @@ class GithubArtifactProviderServiceTest {
     }
 
     @Test
+    fun `reconcileDeletedFiles removes stored files the full ingest did not see`() {
+        val run = ingestionRun()
+        val kept = artifact(hash = "hash", sourceId = "github:owner/repo:FILE:README.md")
+        val stale = artifact(hash = "hash", sourceId = "github:owner/repo:FILE:deleted.md")
+        val issue = artifact(
+            artifactType = ArtifactType.ISSUE,
+            sourceId = "github:owner/repo:ISSUE:42",
+            hash = "hash",
+        )
+        every {
+            artifactRepository.findAllBySourceIdPrefix("github:owner/repo:FILE:")
+        } returns listOf(kept, stale, issue)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.deleteById(any()) } returns Unit
+
+        service.reconcileDeletedFiles(
+            GithubFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                repositoryOwner = "owner",
+                repositoryName = "repo",
+                visitedPaths = setOf("README.md"),
+            ),
+        )
+
+        verify { artifactRepository.deleteById(stale.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(kept.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(issue.id) }
+        assertThat(run.deletedCount).isEqualTo(1)
+        assertThat(run.artifactIdsToDeindex).containsExactly(stale.id.toString())
+    }
+
+    @Test
+    fun `reconcileDeletedFiles leaves the run alone when nothing is stale`() {
+        val kept = artifact(sourceId = "github:owner/repo:FILE:README.md", hash = "hash")
+        every {
+            artifactRepository.findAllBySourceIdPrefix("github:owner/repo:FILE:")
+        } returns listOf(kept)
+
+        service.reconcileDeletedFiles(
+            GithubFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                repositoryOwner = "owner",
+                repositoryName = "repo",
+                visitedPaths = setOf("README.md"),
+            ),
+        )
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { artifactRepository.deleteById(any()) }
+    }
+
+    @Test
     fun `deleteFileArtifact throws when run is missing`() {
         val event = GithubFileDeletedEvent(
             transactionId = runId,
@@ -599,10 +654,11 @@ class GithubArtifactProviderServiceTest {
         artifactType: ArtifactType = ArtifactType.FILE,
         hash: String?,
         projectIds: Set<UUID> = emptySet(),
+        sourceId: String? = null,
     ) = Artifact(
         projectIdsInternal = projectIds.toMutableSet(),
         sourceSystem = SourceSystem.GITHUB,
-        sourceId = "github:owner/repo:${artifactType.name}:src/main/App.kt",
+        sourceId = sourceId ?: "github:owner/repo:${artifactType.name}:src/main/App.kt",
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
         artifactType = artifactType,
         title = "App.kt",

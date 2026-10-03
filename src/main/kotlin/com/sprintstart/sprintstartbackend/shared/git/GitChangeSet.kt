@@ -37,9 +37,13 @@ class GitChangeSet(
         withContext(Dispatchers.IO) {
             gitRunner
                 .exec(repositoryPath, onDiskOperations.gitDiffCmp(fromRevision, toRevision))
-                .lineSequence()
-                .map(String::trim)
+                .split(NUL)
                 .filter(String::isNotEmpty)
-                .toList()
+                .distinct()
         }
+
+    private companion object {
+        /** Terminator used by `git diff -z`, which makes any file name representable. */
+        const val NUL = '\u0000'
+    }
 }

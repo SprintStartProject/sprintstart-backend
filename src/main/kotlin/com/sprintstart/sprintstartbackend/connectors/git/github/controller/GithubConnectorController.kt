@@ -149,6 +149,10 @@ internal class GithubConnectorController(
      * Connects a list of repositories to the Github connector. This operation fetches
      * all files, commits, issues, and pull requests from each specified repository.
      *
+     * Repositories are connected in order and the batch aborts on the first failure, so the
+     * entries after a failing repository are not attempted. Connections stored before the failure
+     * stay stored, but the batch answers with the failure instead of a per-repository result.
+     *
      * @param jwt the authentication principal representing the user making the request
      * @param request the request object containing the list of repositories to be connected
      * @return a ResponseEntity containing the result of the repository connection process

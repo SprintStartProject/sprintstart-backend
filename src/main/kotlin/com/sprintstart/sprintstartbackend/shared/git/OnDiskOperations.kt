@@ -93,11 +93,13 @@ class OnDiskOperations {
     /**
      * Lists the names of files that changed between [previousSha] and [currentSha].
      *
-     * Output is one relative file path per line. Passes `--name-only` so file contents
-     * are not included — callers read file contents directly from disk after diffing.
+     * Output is NUL-terminated (`-z`), one relative file path per entry. Passes `--name-only`
+     * so file contents are not included — callers read file contents directly from disk after
+     * diffing. `-z` disables Git's quoting of unusual names, so non-ASCII, whitespace and
+     * newline characters survive as literal path bytes.
      */
     fun gitDiffCmp(previousSha: String, currentSha: String) =
-        ProcessBuilder("git", "diff", "$previousSha..$currentSha", "--name-only")
+        ProcessBuilder("git", "diff", "-z", "--name-only", "$previousSha..$currentSha")
 
     /**
      * Lists every tracked file of the working tree, each terminated by NUL.

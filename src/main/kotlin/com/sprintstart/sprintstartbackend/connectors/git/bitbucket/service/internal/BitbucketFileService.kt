@@ -112,10 +112,6 @@ internal class BitbucketFileService(
             )
         }
 
-        withContext(Dispatchers.IO) {
-            connectionRepository.updateFileCursor(connection.id, outcome.revision)
-        }
-
         outcome.resyncedPaths?.let { visitedPaths ->
             eventPublisher.publishEvent(
                 BitbucketFilesResyncedEvent(
@@ -126,6 +122,10 @@ internal class BitbucketFileService(
                     visitedPaths = visitedPaths,
                 ),
             )
+        }
+
+        withContext(Dispatchers.IO) {
+            connectionRepository.updateFileCursor(connection.id, outcome.revision)
         }
 
         eventPublisher.publishEvent(

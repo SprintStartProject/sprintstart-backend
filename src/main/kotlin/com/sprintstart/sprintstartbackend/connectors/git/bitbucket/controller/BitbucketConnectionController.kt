@@ -96,10 +96,11 @@ internal class BitbucketConnectionController(
     /**
      * Connects several Bitbucket repositories in one request.
      *
-     * Each repository is connected on its own, so a repository the caller's credential cannot read
-     * is rejected without discarding the ones that were accepted. Connecting a repository that is
-     * already connected reuses its connection and only links the submitted project, exactly like the
-     * single-repository endpoint.
+     * Repositories are connected in order and the batch aborts on the first failure, so a
+     * repository the caller's credential cannot read stops the entries after it. Connections
+     * stored before the failure stay stored, but the batch answers with the failure instead of a
+     * per-repository result. Connecting a repository that is already connected reuses its
+     * connection and only links the submitted project, exactly like the single-repository endpoint.
      *
      * @param jwt The authentication principal the repository's credential is resolved for.
      * @param request The repositories to connect, each with its own credential and project.
@@ -108,8 +109,9 @@ internal class BitbucketConnectionController(
     @Operation(
         summary = "Connect several Bitbucket repositories",
         description =
-            "Connects each submitted repository independently and starts cloning the ones that are " +
-                "new. Already-connected repositories are reused and only linked to the submitted project.",
+            "Connects each submitted repository in order, aborting on the first failure, and starts " +
+                "cloning the ones that are new. Already-connected repositories are reused and only " +
+                "linked to the submitted project.",
     )
     @ApiResponses(
         value = [
@@ -281,6 +283,7 @@ internal class BitbucketConnectionController(
      *
      * A repository whose source is disabled is refused: disabling is how a caller pauses ingestion,
      * and an explicit update of a paused repository is answered rather than quietly performed.
+     * A connection the caller cannot see answers the same 404 as an unknown id.
      *
      * @param repositoryId The connected repository to update.
      * @return 202 with the transaction id the connector's progress events report under.
@@ -300,10 +303,14 @@ internal class BitbucketConnectionController(
             ),
             ApiResponse(
                 responseCode = "400",
-                description = "Repository connection not found, or its source is disabled",
+                description = "The repository's source is disabled",
             ),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
+            ApiResponse(
+                responseCode = "404",
+                description = "Repository connection not found or invisible to the caller",
+            ),
         ],
     )
     @PostMapping("/connections/{repositoryId}/update")

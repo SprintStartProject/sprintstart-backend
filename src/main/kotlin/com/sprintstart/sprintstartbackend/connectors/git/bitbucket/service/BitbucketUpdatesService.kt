@@ -129,7 +129,7 @@ internal class BitbucketUpdatesService(
     suspend fun updateRepository(authId: String, repositoryId: UUID): UUID {
         val connection = withContext(Dispatchers.IO) {
             connectionRepository.findWithProjectIdsById(repositoryId)
-        } ?: throw BitbucketRepositoryNotConnectedException(repositoryId)
+        } ?: throw BitbucketRepositoryConnectionNotFoundException(repositoryId)
 
         if (!userApi.canAccessConnection(authId, connection.projectIds)) {
             throw BitbucketRepositoryConnectionNotFoundException(repositoryId)

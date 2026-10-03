@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
@@ -62,5 +63,12 @@ internal class GithubFileListener(
         event: GithubFileDeletedEvent,
     ) {
         githubArtifactProviderService.deleteFileArtifact(event)
+    }
+
+    @EventListener
+    fun on(
+        event: GithubFilesResyncedEvent,
+    ) {
+        githubArtifactProviderService.reconcileDeletedFiles(event)
     }
 }

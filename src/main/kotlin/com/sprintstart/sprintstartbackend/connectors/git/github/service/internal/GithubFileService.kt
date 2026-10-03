@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotInitializedException
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubFileSnapshotRepository
@@ -155,6 +156,12 @@ class GithubFileService(
      * and re-attempted on the next change, whereas holding the cursor back would re-ingest the whole
      * diff every night.
      *
+     * When the engine fell back to a full ingest because the stored cursor was missing, the
+     * visited paths are published for deletion reconciliation before the cursor is stored and the
+     * run is marked complete: stored files absent from that set were removed while the cursor
+     * could not see them. Reconciling first means a failed reconciliation leaves the cursor
+     * untouched, so the next run retries the same fallback instead of losing the deletion.
+     *
      * @param githubRepository The connection whose stored revision is the lower bound of the diff.
      * @param transactionId The id of the overall transaction this fetch is part of.
      */
@@ -199,6 +206,19 @@ class GithubFileService(
         }
 
         githubRepository.lastSha = outcome.revision
+
+        outcome.resyncedPaths?.let { visitedPaths ->
+            eventPublisher.publishEvent(
+                GithubFilesResyncedEvent(
+                    transactionId = transactionId,
+                    repositoryId = githubRepository.id,
+                    repositoryOwner = githubRepository.owner,
+                    repositoryName = githubRepository.name,
+                    visitedPaths = visitedPaths,
+                ),
+            )
+        }
+
         withContext(Dispatchers.IO) {
             repoConnectionRepository.save(githubRepository)
         }

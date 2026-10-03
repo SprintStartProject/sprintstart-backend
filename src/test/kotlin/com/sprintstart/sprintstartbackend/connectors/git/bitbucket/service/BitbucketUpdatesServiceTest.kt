@@ -237,11 +237,11 @@ class BitbucketUpdatesServiceTest {
     }
 
     @Test
-    fun `a scoped update fails when the repository is not connected`() = runTest {
+    fun `a scoped update answers an unknown repository as unknown`() = runTest {
         val missingId = UUID.randomUUID()
         every { connectionRepository.findWithProjectIdsById(missingId) } returns null
 
-        assertThrows<BitbucketRepositoryNotConnectedException> {
+        assertThrows<BitbucketRepositoryConnectionNotFoundException> {
             service.updateRepository(authId, missingId)
         }
 

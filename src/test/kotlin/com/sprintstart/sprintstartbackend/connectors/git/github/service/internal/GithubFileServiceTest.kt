@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchStartedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubFileSnapshot
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubUser
@@ -71,13 +72,14 @@ class GithubFileServiceTest {
     private fun givenIngestSucceeds(
         revision: String = NEW_REVISION,
         failures: List<GitIngestFailure> = emptyList(),
+        resyncedPaths: Set<String>? = null,
     ) {
         every { repoConnectionRepository.findById(connection.id) } returns Optional.of(connection)
         every { repoConnectionRepository.save(any()) } returns connection
         every { coordinatesFactory.of(connection) } returns coordinates
         coEvery {
             ingestionEngine.ingestFileChangesSince(coordinates, any(), capture(sink))
-        } returns GitIngestOutcome(revision, failures)
+        } returns GitIngestOutcome(revision, failures, resyncedPaths = resyncedPaths)
     }
 
     // ── full versus incremental ───────────────────────────────────────────────
@@ -185,6 +187,50 @@ class GithubFileServiceTest {
         coVerify(exactly = 0) { ingestionEngine.ingestFileChangesSince(any(), any(), any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchFailedEvent })
+        }
+    }
+
+    @Test
+    fun `publishes a resync event when the engine fell back to a full ingest`() = runTest {
+        givenIngestSucceeds(resyncedPaths = setOf("README.md"))
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        verify {
+            eventPublisher.publishEvent(
+                match<Any> {
+                    it is GithubFilesResyncedEvent &&
+                        it.transactionId == transactionId &&
+                        it.repositoryId == connection.id &&
+                        it.repositoryOwner == "owner" &&
+                        it.repositoryName == "repo" &&
+                        it.visitedPaths == setOf("README.md")
+                },
+            )
+        }
+    }
+
+    @Test
+    fun `reconciles deletions before storing the cursor and completing`() = runTest {
+        givenIngestSucceeds(resyncedPaths = setOf("README.md"))
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        io.mockk.verifyOrder {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesResyncedEvent })
+            repoConnectionRepository.save(connection)
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+    }
+
+    @Test
+    fun `publishes no resync event on an incremental ingest`() = runTest {
+        givenIngestSucceeds()
+
+        service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesResyncedEvent })
         }
     }
 
