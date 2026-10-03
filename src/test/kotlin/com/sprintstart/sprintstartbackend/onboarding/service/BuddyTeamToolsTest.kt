@@ -34,6 +34,7 @@ class BuddyTeamToolsTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val areaToolsProvider: ObjectProvider<TeamAreaTools> = mockk()
     private val buddyProposalService: BuddyProposalService = mockk()
+    private val buddyAppGuideTools: BuddyAppGuideTools = mockk()
 
     private val projectId = UUID.randomUUID()
     private val memberId = UUID.randomUUID()
@@ -57,6 +58,7 @@ class BuddyTeamToolsTest {
             projectMembershipApi,
             areaToolsProvider,
             buddyProposalService,
+            buddyAppGuideTools,
         )
     }
 
@@ -111,7 +113,22 @@ class BuddyTeamToolsTest {
             BuddyTeamTools.GET_TEAM_ATTENTION,
             BuddyTeamTools.FIND_MEMBER,
             BuddyTeamTools.GET_MEMBER_PROGRESS,
+            BuddyAppGuideTools.GET_APP_GUIDE,
         )
+    }
+
+    @Test
+    fun `answers the app guide for the manager and the page they are on`() {
+        every { buddyAppGuideTools.guideFor(context.userId, "/pm-dashboard") } returns "the guide"
+        val tools = tools()
+
+        val result = tools.execute(
+            call(BuddyAppGuideTools.GET_APP_GUIDE),
+            context.copy(currentPage = "/pm-dashboard"),
+            readNames(tools),
+        )
+
+        assertThat(result).isEqualTo("the guide")
     }
 
     @Test

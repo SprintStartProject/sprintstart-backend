@@ -233,6 +233,7 @@ class BuddyService(
         authId: String,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
         val session = getOrCreateSession(userId)
@@ -287,7 +288,7 @@ class BuddyService(
                         next.add(
                             BuddyAgentMessageDto(
                                 role = "tool",
-                                content = runToolCall(call, userId),
+                                content = runToolCall(call, userId, currentPage),
                                 toolCallId = call.id,
                             ),
                         )
@@ -375,6 +376,7 @@ class BuddyService(
     private suspend fun FlowCollector<BuddyStreamEvent>.runToolCall(
         call: BuddyToolCallDto,
         userId: UUID,
+        currentPage: String?,
     ): String =
         if (buddyActionService.isAction(call.name)) {
             val outcome = buddyActionService.propose(call, userId)
@@ -415,7 +417,7 @@ class BuddyService(
             outcome.toolResult
         } else {
             emit(BuddyStreamEvent(type = "tool_use", name = call.name, kind = "tool"))
-            buddyToolExecutor.execute(call, userId)
+            buddyToolExecutor.execute(call, userId, currentPage)
         }
 
     private fun resolveUserId(authId: String): UUID =

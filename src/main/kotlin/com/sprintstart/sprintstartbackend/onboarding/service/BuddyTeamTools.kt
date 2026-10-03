@@ -42,6 +42,7 @@ class BuddyTeamTools(
     private val projectMembershipApi: ProjectMembershipApi,
     private val areaToolsProvider: ObjectProvider<TeamAreaTools>,
     private val buddyProposalService: BuddyProposalService,
+    private val buddyAppGuideTools: BuddyAppGuideTools,
 ) {
     // Resolved lazily: an area's tools may themselves depend on services that depend on this one.
     private val areaTools: Map<TeamArea, TeamAreaTools> by lazy {
@@ -63,6 +64,9 @@ class BuddyTeamTools(
             add(GET_TEAM_ATTENTION_SPEC)
             add(FIND_MEMBER_SPEC)
             add(GET_MEMBER_PROGRESS_SPEC)
+            // A read about the app, not about the team, so outside the areas: "where do I set up
+            // roles?" has to be answerable before anything is opened.
+            add(BuddyAppGuideTools.GET_APP_GUIDE_SPEC)
             if (openableAreas().isNotEmpty()) {
                 add(openAreaSpec())
             }
@@ -124,6 +128,7 @@ class BuddyTeamTools(
             GET_TEAM_ATTENTION -> teamAttention(context.projectId)
             FIND_MEMBER -> findMember(context.projectId, call.stringArg("query"))
             GET_MEMBER_PROGRESS -> memberProgress(context.projectId, call.stringArg("member_id"))
+            BuddyAppGuideTools.GET_APP_GUIDE -> buddyAppGuideTools.guideFor(context.userId, context.currentPage)
             else -> areaTools.values.firstOrNull { it.handles(call.name) }?.execute(call, context)
                 ?: "Unknown tool: ${call.name}."
         }
