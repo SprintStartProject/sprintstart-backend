@@ -8,7 +8,9 @@ COPY gradle gradle
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY src src
 
-RUN --mount=type=cache,target=/root/.gradle ./gradlew bootJar --no-daemon
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew bootJar --no-daemon --max-workers=1 \
+    -Pkotlin.compiler.execution.strategy=in-process
 
 
 FROM eclipse-temurin:21-jre

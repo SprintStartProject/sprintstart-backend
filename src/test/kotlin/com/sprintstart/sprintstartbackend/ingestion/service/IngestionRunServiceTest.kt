@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -33,12 +34,14 @@ class IngestionRunServiceTest {
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
     private val jiraInstanceApi = mockk<JiraInstanceApi>()
     private val confluenceConnectionApi = mockk<ConfluenceConnectionApi>(relaxed = true)
+    private val notionConnectionApi = mockk<NotionConnectionApi>(relaxed = true)
     private val service =
         IngestionRunService(
             ingestionRunRepository,
             githubRepositoryApi,
             jiraInstanceApi,
             confluenceConnectionApi,
+            notionConnectionApi,
         )
 
     @Test
@@ -245,6 +248,36 @@ class IngestionRunServiceTest {
 
         verify(exactly = 1) { confluenceConnectionApi.getConnectionIdsByProject(projectId) }
         assertThat(response.items.single().sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
+        assertThat(response.items.single().sourceId).isEqualTo(sourceRef)
+        assertThat(response.items.single().repositoryId).isEqualTo(connectionId)
+    }
+
+    @Test
+    fun `getRuns resolves projectId to Notion connection ids`() {
+        val projectId = UUID.randomUUID()
+        val connectionId = UUID.randomUUID()
+        val sourceRef = "https://www.notion.so/engineering-runbook"
+        val notionRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.NOTION,
+            sourceInstanceId = connectionId,
+            sourceInstanceRef = sourceRef,
+            startedAt = Instant.parse("2026-09-30T12:00:00Z"),
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getRepositoryIdsByProject(projectId) } returns emptyList()
+        every { jiraInstanceApi.getInstanceRefsByProject(projectId) } returns emptyList()
+        every { confluenceConnectionApi.getConnectionIdsByProject(projectId) } returns emptyList()
+        every { notionConnectionApi.getConnectionIdsByProject(projectId) } returns listOf(connectionId)
+        every {
+            ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>())
+        } returns PageImpl(listOf(notionRun), PageRequest.of(0, 20), 1)
+
+        val response = service.getRuns(page = 1, size = 20, projectId = projectId)
+
+        verify(exactly = 1) { notionConnectionApi.getConnectionIdsByProject(projectId) }
+        assertThat(response.items.single().sourceSystem).isEqualTo(SourceSystem.NOTION)
         assertThat(response.items.single().sourceId).isEqualTo(sourceRef)
         assertThat(response.items.single().repositoryId).isEqualTo(connectionId)
     }

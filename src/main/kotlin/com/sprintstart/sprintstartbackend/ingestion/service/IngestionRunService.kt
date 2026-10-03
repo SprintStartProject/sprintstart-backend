@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunResponse
@@ -38,6 +39,7 @@ class IngestionRunService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
     private val confluenceConnectionApi: ConfluenceConnectionApi,
+    private val notionConnectionApi: NotionConnectionApi,
 ) {
     /**
      * Returns the newest ingestion runs first.
@@ -81,7 +83,7 @@ class IngestionRunService(
      * @param repositoryId Optional GitHub repository filter.
      * @param sourceRef Optional connector-neutral source reference filter (for Jira the instance URL).
      * @param projectId Optional project filter, resolved via the project's connected repositories,
-     * Jira instances, Confluence connections, and uploaded artifacts.
+     * Jira instances, Confluence connections, Notion connections, and uploaded artifacts.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -154,6 +156,9 @@ class IngestionRunService(
             if (sources.confluenceConnectionIds.isNotEmpty()) {
                 add(sourceInstanceIdPredicate(root, cb, SourceSystem.CONFLUENCE, sources.confluenceConnectionIds))
             }
+            if (sources.notionConnectionIds.isNotEmpty()) {
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.NOTION, sources.notionConnectionIds))
+            }
             add(
                 cb.and(
                     cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
@@ -173,6 +178,7 @@ class IngestionRunService(
             repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
             jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
             confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
+            notionConnectionIds = notionConnectionApi.getConnectionIdsByProject(projectId),
         )
 
     private fun sourceInstanceIdPredicate(
@@ -191,6 +197,7 @@ class IngestionRunService(
         val repositoryIds: List<UUID>,
         val jiraRefs: List<String>,
         val confluenceConnectionIds: List<UUID>,
+        val notionConnectionIds: List<UUID>,
     )
 }
 

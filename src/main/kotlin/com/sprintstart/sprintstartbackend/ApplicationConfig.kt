@@ -24,6 +24,7 @@ data class ApplicationConfig(
     val confluence: ConfluenceConfig = ConfluenceConfig(),
     val insights: InsightsConfig = InsightsConfig(),
     val onboarding: OnboardingConfig = OnboardingConfig(),
+    val notion: NotionConfig = NotionConfig(),
 )
 
 /**
@@ -72,6 +73,25 @@ data class ConfluenceRetryConfig(
     val initialDelay: Duration = Duration.ofMillis(500),
     val maxDelay: Duration = Duration.ofSeconds(30),
     val multiplier: Double = 2.0,
+)
+
+data class NotionConfig(
+    val apiVersion: String = "2026-03-11",
+    val retry: NotionRetryConfig = NotionRetryConfig(),
+    val throttle: NotionThrottleConfig = NotionThrottleConfig(),
+)
+
+data class NotionRetryConfig(
+    val maxAttempts: Int = 4,
+    val initialDelay: Duration = Duration.ofMillis(500),
+    val maxDelay: Duration = Duration.ofSeconds(30),
+    val multiplier: Double = 2.0,
+    val jitter: Duration = Duration.ofMillis(250),
+)
+
+data class NotionThrottleConfig(
+    val minInterval: Duration = Duration.ofMillis(334),
+    val maxWait: Duration = Duration.ofSeconds(30),
 )
 
 /**
