@@ -10,11 +10,15 @@ import com.sprintstart.sprintstartbackend.user.external.enums.Role
  * @property doers Who may do it, when that is narrower than who may open the page. A page HR can
  * open can still hold a button only an admin may press, and a guide that ignores the difference
  * sends HR to a button that refuses them.
+ * @property link A deep link that lands on the right tab already (`/team-management?tab=roles`),
+ * when the page keeps its tab in the URL. Only ever a parameter the frontend actually reads: a
+ * link that lands on the wrong tab is worse than a plain one.
  */
 data class AppGuideHowTo(
     val task: String,
     val steps: String,
     val doers: Set<Role>? = null,
+    val link: String? = null,
 )
 
 /**
@@ -49,17 +53,27 @@ private val ADMIN_HR = setOf(Role.HR, Role.ADMIN)
 private val PM_ADMIN = setOf(Role.PM, Role.ADMIN)
 private val ADMIN_ONLY = setOf(Role.ADMIN)
 
+// The PM area is one page with a tab bar (`PmWorkspace` in the frontend); six of the routes below
+// are its tabs. Named once so every entry says where the tab bar is the same way.
+private const val PM_TAB = "PM Dashboard (sidebar) → the"
+
 /**
  * The map of the app the buddy reads from, so "where do I…" is answered from the app rather than
  * from the project's documentation — which describes the *project*, and has never heard of a page
- * called Team Management.
+ * called PM Dashboard.
  *
  * ### Keeping it true
  *
  * This is a hand-written copy of what the frontend shows, and it goes stale the moment a page is
- * renamed there. Two things keep that visible rather than silent: the labels are the UI's own
- * (sidebar entries, tab names, button text — quoted, so a rename is a grep away), and
- * `AppGuideTest` pins the route list, so adding or removing a page here is a deliberate edit.
+ * renamed there. What keeps that visible rather than silent:
+ *
+ * - The labels are the UI's own (sidebar entries, tab names, button text — quoted, so a rename is
+ *   a grep away).
+ * - `AppGuideTest` pins the route list here, and the frontend's `appGuideRoutes.test.ts` fails
+ *   when `accessPolicy.ts` gains a route that neither this guide describes nor is excluded on
+ *   purpose — so a new page breaks CI in the repo it was added in.
+ * - Both repos' `AGENTS.md` say to update this file with any page, tab or label change.
+ *
  * The roles mirror `sprintstart-frontend/src/auth/accessPolicy.ts`; when that file changes, this
  * one has to follow.
  *
@@ -133,6 +147,10 @@ object AppGuide {
                     "open the step in the current phase → \"Start step\", and \"Mark as complete\" " +
                         "when finished",
                 ),
+                AppGuideHowTo(
+                    "get help with a step or a question",
+                    "\"Ask your buddy about this\" on it brings it into the buddy chat",
+                ),
             ),
             matches = listOf("/onboarding/"),
         ),
@@ -141,7 +159,7 @@ object AppGuide {
             path = "/settings",
             whereToFind = "the gear / account menu at the bottom of the sidebar, \"Settings\"",
             purpose = "Tabs \"User Profile\" (name, profile icon, GitHub username), \"Appearance\" " +
-                "(theme) and \"Access Tokens\".",
+                "(theme) and, for project managers, HR and admins, \"Access Tokens\".",
             howTos = listOf(
                 AppGuideHowTo(
                     "set a GitHub username so pull requests are found",
@@ -152,41 +170,41 @@ object AppGuide {
         AppGuidePage(
             name = "PM Dashboard",
             path = "/pm-dashboard",
-            whereToFind = "sidebar, \"PM Dashboard\" (the project manager section)",
-            purpose = "The selected project at a glance: ingestion status, \"Team overview\", and " +
-                "\"Insights\" (recurring questions, knowledge gaps, onboarding metrics).",
-            howTos = listOf(
-                AppGuideHowTo(
-                    "see how the team's onboarding is going",
-                    "the \"Team overview\" card; click it for Team Management",
-                ),
-            ),
+            whereToFind = "sidebar, \"PM Dashboard\" — one page with the tabs \"Overview\", \"Team\" " +
+                "(Members, Roles), \"Onboarding\", \"Questions\", \"Knowledge gaps\" and \"Escalations\"",
+            purpose = "The selected project at a glance (the \"Overview\" tab): who needs attention, " +
+                "ingestion status and the project analysis. The other tabs are listed separately.",
             roles = MANAGERS,
             managerScoped = true,
         ),
         AppGuidePage(
-            name = "Team Management",
+            name = "Team",
             path = "/team-management",
-            whereToFind = "PM Dashboard → the \"Team overview\" card (it has no sidebar entry)",
-            purpose = "Tabs \"User Management\" (every member and their onboarding progress) and " +
-                "\"Role Management\" (the project's roles and the skills each needs).",
+            whereToFind = "$PM_TAB \"Team\" tab, with the views \"Members\" and \"Roles\"",
+            purpose = "\"Members\": everybody on the project and their onboarding progress. \"Roles\": " +
+                "the project's roles and the skills each needs.",
             howTos = listOf(
                 AppGuideHowTo(
                     "create a project role",
-                    "\"Role Management\" tab → \"Create role\" (name and what it is responsible for)",
+                    "Team → \"Roles\" → \"Create role\" (name and what it is responsible for)",
+                    link = "/team-management?tab=roles",
                 ),
                 AppGuideHowTo(
                     "give a role its skills",
-                    "\"Role Management\" → pick the role → \"Skills\": add one, or \"Suggest skills\"",
+                    "Team → \"Roles\" → pick the role → \"Skills\": add one, or \"Suggest skills\"",
+                    link = "/team-management?tab=roles",
                 ),
                 AppGuideHowTo(
                     "assign members to a role",
-                    "\"Role Management\" → pick the role → \"Members\"; \"Without a role\" lists who " +
-                        "has none yet",
+                    "Team → \"Roles\" → pick the role → \"Members\"; \"Without a role\" lists who has " +
+                        "none yet",
+                    link = "/team-management?tab=roles",
                 ),
                 AppGuideHowTo(
-                    "open one member",
-                    "\"User Management\" tab → click the person",
+                    "look at one member",
+                    "Team → \"Members\" → click the person for a side panel, \"Full profile\" for " +
+                        "their page",
+                    link = "/team-management",
                 ),
             ),
             roles = MANAGERS,
@@ -195,24 +213,73 @@ object AppGuide {
         AppGuidePage(
             name = "Team member",
             path = "/team/{member_id}",
-            whereToFind = "Team Management → \"User Management\" → click a person",
-            purpose = "One member: their roles, current step, onboarding path, feedback and skip " +
-                "requests, and skill and knowledge gaps.",
+            whereToFind = "$PM_TAB \"Team\" tab → \"Members\" → a person → \"Full profile\"",
+            purpose = "One member's full profile: their roles, current step, onboarding path, " +
+                "feedback and skip requests, and skill and knowledge gaps.",
             howTos = listOf(
                 AppGuideHowTo(
                     "choose or change a member's role",
-                    "click their role chip (or \"Choose role\" when they have none) under their name " +
-                        "→ \"Manage Roles\"",
+                    "under their name: the \"Choose role\" / \"Add role\" picker adds one, the × on a " +
+                        "role removes it",
                 ),
                 AppGuideHowTo(
                     "rebuild a member's onboarding path with AI",
-                    "the rebuild button in the member's header",
+                    "\"Rebuild path\" in the member's header",
                     doers = PM_ADMIN,
                 ),
             ),
             roles = MANAGERS,
             managerScoped = true,
             matches = listOf("/team/"),
+        ),
+        AppGuidePage(
+            name = "Onboarding (PM)",
+            path = "/insights/onboarding",
+            whereToFind = "$PM_TAB \"Onboarding\" tab",
+            purpose = "Contribution metrics per hire: pull requests, review waits, stalls.",
+            roles = MANAGERS,
+            managerScoped = true,
+        ),
+        AppGuidePage(
+            name = "Questions",
+            path = "/insights/faq",
+            whereToFind = "$PM_TAB \"Questions\" tab",
+            purpose = "The questions the team asks most, grouped.",
+            roles = MANAGERS,
+            managerScoped = true,
+            matches = listOf("/insights/faq/"),
+        ),
+        AppGuidePage(
+            name = "Knowledge gaps",
+            path = "/insights/knowledge-gaps",
+            whereToFind = "$PM_TAB \"Knowledge gaps\" tab",
+            purpose = "Topics the documentation does not cover well enough, from what people asked.",
+            roles = MANAGERS,
+            managerScoped = true,
+            matches = listOf("/insights/knowledge-gaps/"),
+        ),
+        AppGuidePage(
+            name = "Escalations",
+            path = "/insights/knowledge-requests",
+            whereToFind = "$PM_TAB \"Escalations\" tab, with the views \"Open\" and \"Durable answers\"",
+            purpose = "Questions hires flagged because the buddy could not answer them, and the " +
+                "answers already written for them.",
+            howTos = listOf(
+                AppGuideHowTo(
+                    "answer a hire's escalated question",
+                    "Escalations → \"Open\" → open it and answer; the answer becomes team knowledge " +
+                        "the buddy uses from then on",
+                    doers = PM_ADMIN,
+                    link = "/insights/knowledge-requests",
+                ),
+                AppGuideHowTo(
+                    "see answers already written",
+                    "Escalations → \"Durable answers\"",
+                    link = "/insights/knowledge-requests?view=answered",
+                ),
+            ),
+            roles = MANAGERS,
+            managerScoped = true,
         ),
         AppGuidePage(
             name = "Data Ingestion",
@@ -233,8 +300,8 @@ object AppGuide {
             name = "Blueprints",
             path = "/blueprints",
             whereToFind = "sidebar, \"Blueprints\" (the project manager section)",
-            purpose = "Reusable onboarding path templates (\"Global blueprints\" and \"Project " +
-                "blueprints\"). Editing one never changes a hire's live path.",
+            purpose = "Reusable onboarding path templates (\"Project blueprints\", and for admins " +
+                "\"Global blueprints\"). Editing one never changes a hire's live path.",
             howTos = listOf(
                 AppGuideHowTo(
                     "create an onboarding blueprint",
@@ -253,87 +320,50 @@ object AppGuide {
         AppGuidePage(
             name = "Hire Setup",
             path = "/hire-setup",
-            whereToFind = "sidebar, \"Hire Setup\" (the project manager section)",
-            purpose = "What a new hire needs before they start and the first work waiting for them: " +
-                "tabs \"Arrival steps\" (/hire-setup?tab=arrival) and \"Starter work\" " +
-                "(/hire-setup?tab=starter).",
+            whereToFind = "sidebar, \"Hire Setup\" (the project manager section), tabs \"Arrival\" " +
+                "and \"Starter work\"",
+            purpose = "What a new hire needs before they start (accounts, access, setup) and the " +
+                "first work waiting for them.",
             howTos = listOf(
                 AppGuideHowTo(
                     "write the arrival checklist (accounts, access, setup)",
-                    "Hire Setup → \"Arrival steps\" tab",
+                    "Hire Setup → \"Arrival\" tab",
                     doers = PM_ADMIN,
+                    link = "/hire-setup?tab=arrival",
                 ),
                 AppGuideHowTo(
                     "review the first tasks offered to hires",
                     "Hire Setup → \"Starter work\" tab",
                     doers = PM_ADMIN,
+                    link = "/hire-setup?tab=starter",
                 ),
             ),
             roles = MANAGERS,
-        ),
-        AppGuidePage(
-            name = "Escalation Inbox",
-            path = "/insights/knowledge-requests",
-            whereToFind = "sidebar, \"Escalation Inbox\" (the project manager section)",
-            purpose = "Questions hires flagged because the buddy could not answer them.",
-            howTos = listOf(
-                AppGuideHowTo(
-                    "answer a hire's escalated question",
-                    "open it in the inbox and answer; the answer becomes team knowledge the buddy " +
-                        "uses from then on",
-                    doers = PM_ADMIN,
-                ),
-            ),
-            roles = MANAGERS,
-            managerScoped = true,
-        ),
-        AppGuidePage(
-            name = "FAQ",
-            path = "/insights/faq",
-            whereToFind = "PM Dashboard → \"Insights\" → the FAQ widget",
-            purpose = "The questions the team asks most, grouped.",
-            roles = MANAGERS,
-            managerScoped = true,
-            matches = listOf("/insights/faq/"),
-        ),
-        AppGuidePage(
-            name = "Knowledge gaps",
-            path = "/insights/knowledge-gaps",
-            whereToFind = "PM Dashboard → \"Insights\" → the knowledge gaps widget",
-            purpose = "Topics the documentation does not cover well enough, from what people asked.",
-            roles = MANAGERS,
-            managerScoped = true,
-            matches = listOf("/insights/knowledge-gaps/"),
-        ),
-        AppGuidePage(
-            name = "Onboarding metrics",
-            path = "/insights/onboarding",
-            whereToFind = "PM Dashboard → \"Insights\" → the onboarding metrics widget",
-            purpose = "Contribution metrics per hire: pull requests, review waits, stalls.",
-            roles = MANAGERS,
-            managerScoped = true,
         ),
         AppGuidePage(
             name = "Access Management",
             path = "/admin",
-            whereToFind = "sidebar, \"Access Management\"",
-            purpose = "Tabs \"Users\", \"Projects\" and \"Tokens\" for the whole organisation.",
+            whereToFind = "sidebar, \"Access Management\", tabs \"Users\", \"Projects\" and \"Tokens\"",
+            purpose = "Users, projects and access tokens for the whole organisation.",
             howTos = listOf(
                 AppGuideHowTo(
                     "create a project",
                     "\"Projects\" tab → \"New Project\": Details (name, description, industry, " +
                         "project manager) → Members → Sources → Review",
                     doers = ADMIN_ONLY,
+                    link = "/admin?tab=projects",
                 ),
                 AppGuideHowTo(
                     "make somebody a project's manager, or add people to a project",
                     "\"Projects\" tab → open the project",
                     doers = ADMIN_ONLY,
+                    link = "/admin?tab=projects",
                 ),
                 AppGuideHowTo(
                     "change somebody's permission group (member, PM, HR, admin)",
                     "\"Users\" tab → open the user",
                     doers = ADMIN_ONLY,
+                    link = "/admin?tab=users",
                 ),
             ),
             roles = ADMIN_HR,
@@ -342,7 +372,7 @@ object AppGuide {
 
     /** The page [pathname] belongs to, or null for a route this guide does not describe. */
     fun pageAt(pathname: String): AppGuidePage? =
-        // Detail routes first: `/team/…` must not be read as Team Management's own path.
+        // Detail routes first: `/team/…` must not be read as Team's own path.
         pages.firstOrNull { page -> page.matches.any { pathname.startsWith(it) } }
             ?: pages.firstOrNull { it.path == pathname }
 }

@@ -23,13 +23,13 @@ class AppGuideTest {
             "/pm-dashboard",
             "/team-management",
             "/team/{member_id}",
+            "/insights/onboarding",
+            "/insights/faq",
+            "/insights/knowledge-gaps",
+            "/insights/knowledge-requests",
             "/data-ingestion",
             "/blueprints",
             "/hire-setup",
-            "/insights/knowledge-requests",
-            "/insights/faq",
-            "/insights/knowledge-gaps",
-            "/insights/onboarding",
             "/admin",
         )
     }
@@ -39,6 +39,19 @@ class AppGuideTest {
     fun `every path is root-relative`() {
         AppGuide.pages.forEach { page ->
             assertThat(page.path).startsWith("/").doesNotStartWith("//")
+        }
+    }
+
+    /**
+     * A how-to's deep link must land on its own page — a link to another page's tab would send
+     * somebody to a page the guide never checked they can open.
+     */
+    @Test
+    fun `every deep link stays on its own page`() {
+        AppGuide.pages.forEach { page ->
+            page.howTos.mapNotNull { it.link }.forEach { link ->
+                assertThat(link.substringBefore('?')).isEqualTo(page.path)
+            }
         }
     }
 
@@ -60,7 +73,7 @@ class AppGuideTest {
     /** `/team-management` starts with `/team`, but not with the member page's `/team/`. */
     @Test
     fun `does not mistake team management for a member page`() {
-        assertThat(AppGuide.pageAt("/team-management")?.name).isEqualTo("Team Management")
+        assertThat(AppGuide.pageAt("/team-management")?.name).isEqualTo("Team")
     }
 
     @Test

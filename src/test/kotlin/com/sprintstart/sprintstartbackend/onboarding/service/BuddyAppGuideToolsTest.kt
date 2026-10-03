@@ -76,9 +76,19 @@ class BuddyAppGuideToolsTest {
         assertThat(guide).contains("They manage: Apollo.")
         assertThat(guide).doesNotContain("Gemini")
         assertThat(openable(guide))
-            .contains("Team Management (/team-management) — PM Dashboard")
-            .contains("to create a project role: \"Role Management\" tab")
+            .contains("Team (/team-management) — PM Dashboard (sidebar) → the \"Team\" tab")
+            .contains("to create a project role: Team → \"Roles\"")
             .contains("to choose or change a member's role")
+    }
+
+    /** The link opens the tab the steps talk about, not the page's default one. */
+    @Test
+    fun `hands over the deep link that opens the right tab`() {
+        every { userApi.canManageProject("auth|me", managedProject.projectId) } returns true
+
+        assertThat(openable(guideAs(Role.PM)))
+            .contains("\"Create role\" (name and what it is responsible for) (link: /team-management?tab=roles)")
+            .contains("Hire Setup → \"Arrival\" tab (link: /hire-setup?tab=arrival)")
     }
 
     /** The frontend hides every manager page from a PM who manages nothing; so must the guide. */

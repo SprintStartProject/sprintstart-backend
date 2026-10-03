@@ -57,7 +57,10 @@ class BuddyAppGuideTools(
             appendLine(whoIsAsking(role, managed))
             here(currentPage)?.let { appendLine(it) }
             appendLine()
-            appendLine("Pages they can open (link each as [Name](path)):")
+            appendLine(
+                "Pages they can open (link each as [Name](path); where a how-to has its own link, " +
+                    "use that one — it opens the right tab):",
+            )
             openable.forEach { page -> appendPage(page, role) }
             if (elsewhere.isNotEmpty()) {
                 appendLine()
@@ -70,8 +73,8 @@ class BuddyAppGuideTools(
             if (reader.blockedFromManagerPages()) {
                 appendLine()
                 appendLine(
-                    "They hold the PM role but manage no project, so the manager pages (PM Dashboard, " +
-                        "Team Management, Data Ingestion, Blueprints, the insights) stay hidden. An admin " +
+                    "They hold the PM role but manage no project, so the manager pages (PM Dashboard " +
+                        "and its tabs, Data Ingestion, Blueprints) stay hidden. An admin " +
                         "makes somebody a project's manager in Access Management → Projects.",
                 )
             }
@@ -88,7 +91,10 @@ class BuddyAppGuideTools(
         appendLine("    ${page.purpose}")
         page.howTos
             .filter { it.doers == null || role in it.doers }
-            .forEach { appendLine("    · to ${it.task}: ${it.steps}") }
+            .forEach { howTo ->
+                val link = howTo.link?.let { " (link: $it)" }.orEmpty()
+                appendLine("    · to ${howTo.task}: ${howTo.steps}$link")
+            }
     }
 
     /** The names of the caller's projects that they manage — the PM-only gate on manager pages. */
