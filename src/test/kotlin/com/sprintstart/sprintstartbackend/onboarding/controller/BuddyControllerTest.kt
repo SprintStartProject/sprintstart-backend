@@ -180,8 +180,7 @@ class BuddyControllerTest(
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""{"projectId":"$projectId"}""")
                     .with(userJwt),
-            )
-            .andExpect(status().isCreated)
+            ).andExpect(status().isCreated)
     }
 
     @Test
