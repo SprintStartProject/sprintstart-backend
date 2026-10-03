@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.client
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.models.exceptions.AiResponseException
+import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGenerateSessionTitleRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.AiGenerateSessionTitleResponse
 import com.sprintstart.sprintstartbackend.shared.web.WebClient

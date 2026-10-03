@@ -1481,5 +1481,44 @@ class BuddyServiceTest {
             // the AI returned, and re-sending would double-fold it.
             assertThat(requests[1].priorSummary).isNull()
         }
+
+        @Test
+        fun `strips quoted selection before publishing question event`() = runTest {
+            val projectId = UUID.randomUUID()
+            val session = BuddySession(
+                userId = userId,
+                projectId = projectId,
+                title = "session",
+            )
+            stageConversation(session)
+
+            every { eventPublisher.publishEvent(any<QuestionAskedEvent>()) } just runs
+
+            coEvery {
+                onboardingAiClient.buddyAgentTurn(any())
+            } returns finalReply("Here.")
+
+            service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    """
+                    > This is the selected text.
+                    > Please ignore this line.
+                    
+                    How do we deploy this?
+                    """.trimIndent(),
+                    true,
+                    null,
+                ).toList()
+
+            verify {
+                eventPublisher.publishEvent(
+                    match<QuestionAskedEvent> {
+                        it.question == "How do we deploy this?"
+                    },
+                )
+            }
+        }
     }
 }

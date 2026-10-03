@@ -17,6 +17,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
@@ -284,9 +285,13 @@ class BuddyService(
 
         // Check if title has to be generated
         if (session.title.isBlank()) {
-            val generatedTitle = buddyAiClient.getSessionTitle(AiGenerateSessionTitleRequest(content))
-            session.title = generatedTitle.title
-            buddySessionRepository.save(session)
+            try {
+                val generatedTitle = buddyAiClient.getSessionTitle(AiGenerateSessionTitleRequest(content))
+                session.title = generatedTitle.title
+                buddySessionRepository.save(session)
+            } catch (e: AiResponseException) {
+                logger.warn("Could not generate buddy session title", e)
+            }
         }
 
         // Read history before saving the new message so it isn't sent to the AI service twice.

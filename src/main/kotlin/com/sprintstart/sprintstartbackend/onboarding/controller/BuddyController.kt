@@ -146,7 +146,7 @@ class BuddyController(
     )
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/sessions")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('USER') and @projectAuth.canAccessProject(authentication, #request.projectId)")
     fun createSession(
         @Valid @RequestBody request: CreateSessionRequest,
         @Parameter(hidden = true)
@@ -210,7 +210,7 @@ class BuddyController(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = "The session to open")
-        @RequestParam(required = true) sessionId: UUID?,
+        @RequestParam sessionId: UUID?,
         @Parameter(description = "The managed project to open team mode for. Omit for the caller's own buddy.")
         @RequestParam(required = false) teamProjectId: UUID?,
     ): Flow<BuddyStreamEvent> =

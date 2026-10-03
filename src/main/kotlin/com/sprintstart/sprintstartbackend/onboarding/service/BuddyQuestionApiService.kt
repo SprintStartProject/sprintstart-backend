@@ -12,10 +12,10 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 /**
- * Service implementation of the chat API used by other modules.
+ * Service implementation of the buddy API used by other modules.
  *
- * Provides a small module-facing adapter over the chat message repository without exposing internal
- * chat entities or service workflows.
+ * Provides a small module-facing adapter over the buddy message repository without exposing internal
+ * buddy entities or service workflows.
  */
 @Service
 internal class BuddyQuestionApiService(
