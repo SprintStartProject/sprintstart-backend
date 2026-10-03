@@ -86,4 +86,5 @@ data class BuddyStreamEvent(
     val preview: String? = null,
     /** Team-mode `action_proposal`: `STANDARD`, `DESTRUCTIVE` or `BULK`, deciding how the card is drawn. */
     val risk: String? = null,
+    val reasoning: String? = null,
 )

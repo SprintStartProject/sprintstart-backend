@@ -208,7 +208,7 @@ class BuddyTeamService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: BuddyService.FALLBACK_REPLY
-            emitAgentReply(reply, citations)
+            emitAgentReply(reply, emptyList(), citations)
 
             buddyTeamMessageRepository.save(
                 BuddyTeamMessage(

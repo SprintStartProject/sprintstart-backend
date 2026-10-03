@@ -1,5 +1,6 @@
-package com.sprintstart.sprintstartbackend.chat.external
+package com.sprintstart.sprintstartbackend.onboarding.external
 
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyQuestion
 import java.time.Instant
 import java.util.UUID
 
@@ -9,7 +10,7 @@ import java.util.UUID
  * Other modules should depend on this interface instead of calling chat-module services or
  * repositories directly.
  */
-interface ChatQuestionApi {
+interface BuddyQuestionApi {
     /**
      * Returns every user-authored question asked in one project's chats.
      *
@@ -20,7 +21,7 @@ interface ChatQuestionApi {
      *
      * @param projectId The project whose chats to collect questions from.
      */
-    fun getUserQuestionsForProject(projectId: UUID): List<ChatQuestion>
+    fun getUserQuestionsForProject(projectId: UUID): List<BuddyQuestion>
 
     /**
      * Counts the questions [getUserQuestionsForProject] would return, optionally only recent ones.

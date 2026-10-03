@@ -64,8 +64,10 @@ class UserDeletedListenerTest {
     private fun hasConversationAndBoard(): Board {
         val session = BuddySession(userId = userId)
         val board = Board(userId = userId, projectId = UUID.randomUUID())
-        every { buddySessionRepository.findByUserId(userId) } returns session
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
         every { boardRepository.findAllByUserId(userId) } returns listOf(board)
+
         return board
     }
 
@@ -76,11 +78,15 @@ class UserDeletedListenerTest {
      */
     @Test
     fun `deleting a user erases their buddy conversation and the note about them`() {
-        hasConversationAndBoard()
+        val session = BuddySession(userId = userId)
+        val board = Board(userId = userId, projectId = UUID.randomUUID())
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
+        every { boardRepository.findAllByUserId(userId) } returns listOf(board)
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
-        verify { buddyMessageRepository.deleteAllBySessionId(any()) }
+        verify { buddyMessageRepository.deleteAllBySessionId(session.id) }
         verify { buddySessionRepository.deleteAllByUserId(userId) }
     }
 
@@ -121,12 +127,16 @@ class UserDeletedListenerTest {
     /** A row pointing at a parent that is already gone is not removable through its owner. */
     @Test
     fun `children go before the rows that own them`() {
-        val board = hasConversationAndBoard()
+        val session = BuddySession(userId = userId)
+        val board = Board(userId = userId, projectId = UUID.randomUUID())
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
+        every { boardRepository.findAllByUserId(userId) } returns listOf(board)
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verifyOrder {
-            buddyMessageRepository.deleteAllBySessionId(any())
+            buddyMessageRepository.deleteAllBySessionId(session.id)
             buddySessionRepository.deleteAllByUserId(userId)
         }
         verifyOrder {
@@ -169,8 +179,8 @@ class UserDeletedListenerTest {
 
     @Test
     fun `a user who never opened the buddy is erased without a session to erase`() {
-        every { buddySessionRepository.findByUserId(userId) } returns null
-        every { buddyTeamSessionRepository.findAllByUserId(userId) } returns emptyList()
+        every { buddySessionRepository.findByUserId(userId) } returns emptyList()
+        every { buddySessionRepository.findByUserId(userId) } returns emptyList()
         every { boardRepository.findAllByUserId(userId) } returns emptyList()
 
         listener.onUserDeleted(UserDeletedEvent(userId))
@@ -191,5 +201,23 @@ class UserDeletedListenerTest {
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verify { buddyActionProposalRepository.deleteAllByUserId(userId) }
+    }
+
+    @Test
+    fun `deleting a user erases messages from all their buddy sessions`() {
+        val first = BuddySession(userId = userId)
+        val second = BuddySession(userId = userId)
+
+        every {
+            buddySessionRepository.findByUserId(userId)
+        } returns listOf(first, second)
+
+        every { boardRepository.findAllByUserId(userId) } returns emptyList()
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verify { buddyMessageRepository.deleteAllBySessionId(first.id) }
+        verify { buddyMessageRepository.deleteAllBySessionId(second.id) }
+        verify { buddySessionRepository.deleteAllByUserId(userId) }
     }
 }

@@ -137,7 +137,7 @@ class BoardServiceTest {
         every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
         every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns emptyList()
         every { myCompetencyService.getCompetenciesForUser(hireId) } returns emptyList()
-        every { buddySessionRepository.findByUserId(hireId) } returns null
+        every { buddySessionRepository.findByUserId(hireId) } returns emptyList()
         every { boardDiagramRepository.findAllByCardIdIn(any()) } returns emptyList()
         every { onboardingPathRepository.findOnboardingPathByUserId(hireId) } returns Optional.empty()
     }
@@ -297,6 +297,9 @@ class BoardServiceTest {
             sourceId = "github:org/repo:ISSUE:7",
             title = "Fix the flaky login test",
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -321,6 +324,9 @@ class BoardServiceTest {
             card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 1),
             card(board, BoardCardKind.CURRENT_TASK, position = 2),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -395,6 +401,9 @@ class BoardServiceTest {
             sourceId = "github:org/repo:ISSUE:7",
             title = "Fix the flaky login test",
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -456,6 +465,9 @@ class BoardServiceTest {
                 position = 7,
             ),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val cards = service.getBoard(hireId, projectId)?.cards.orEmpty()
 
@@ -781,11 +793,16 @@ class BoardServiceTest {
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             card(board, BoardCardKind.MEMORY_RECAP),
         )
-        every { buddySessionRepository.findByUserId(hireId) } returns BuddySession(
+
+        val session = BuddySession(
             userId = hireId,
             summary = "Ada is working through the login refactor and asked about our test setup.",
             summarizedCount = 12,
         )
+
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns listOf(session)
 
         val content = service.memoryCard()
 
@@ -799,6 +816,7 @@ class BoardServiceTest {
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             card(board, BoardCardKind.MEMORY_RECAP),
         )
+        every { buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId) } returns emptyList()
 
         val content = service.memoryCard()
 
