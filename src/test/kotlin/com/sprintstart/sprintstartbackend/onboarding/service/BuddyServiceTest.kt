@@ -68,18 +68,37 @@ class BuddyServiceTest {
     private val userId = UUID.randomUUID()
     private val authId = "auth|test-user"
 
+    // The ordinary case: a hire on one project. Retrieval is scoped to their projects and an
+    // empty scope is refused, so a send test that cares about neither should still resolve to a
+    // project rather than to none.
+    private val defaultProjectId = UUID.randomUUID()
+
     @BeforeEach
     fun stubActionDefaults() {
         // Default: no action tools, and every tool the AI calls is a read-only one. Tests that
         // exercise an action override these.
         every { buddyActionService.actionSpecs(any()) } returns emptyList()
         every { buddyActionService.isAction(any()) } returns false
-        // Retrieval is scoped to the hire's projects, so every turn resolves them. Default: none,
-        // which means the AI narrows nothing -- the behaviour before scoping existed.
-        every { userApi.getUsersByIds(listOf(userId)) } returns emptyList()
+        // Retrieval is scoped to the hire's projects, so every turn resolves them. Tests about
+        // scope override this with their own set.
+        every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn(defaultProjectId))
     }
 
     private fun finalReply(text: String) = BuddyAgentResponse(final = true, text = text)
+
+    /** A resolvable hire who is on [projectIds], for stubbing the project lookup. */
+    private fun userOn(vararg projectIds: UUID) = UserDto(
+        id = userId,
+        username = "hire",
+        firstname = "Sam",
+        lastname = "Hire",
+        avatarUrl = null,
+        profileIcon = null,
+        projects = projectIds
+            .map { ProjectDto(projectId = it, name = it.toString(), description = "") }
+            .toSet(),
+        projectRoles = emptyList(),
+    )
 
     /** A resolvable hire with an existing, empty session — the starting point for a sent message. */
     private fun stageConversation(session: BuddySession) {
@@ -450,30 +469,12 @@ class BuddyServiceTest {
         fun `scopes retrieval to every project the hire is on`() = runTest {
             // A hire onboarding on two projects should find material from both, and from neither of
             // anybody else's. Narrowing to one of theirs would hide their own work; narrowing to
-            // none would show them everybody's -- which is what happened before this existed.
+            // none would show them everybody's.
             val alpha = UUID.randomUUID()
             val beta = UUID.randomUUID()
             val session = BuddySession(userId = userId)
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(
-                UserDto(
-                    id = userId,
-                    username = "hire",
-                    firstname = "Sam",
-                    lastname = "Hire",
-                    avatarUrl = null,
-                    profileIcon = null,
-                    projects = setOf(
-                        ProjectDto(projectId = alpha, name = "Alpha", description = ""),
-                        ProjectDto(projectId = beta, name = "Beta", description = ""),
-                    ),
-                    projectRoles = emptyList(),
-                ),
-            )
-            every { buddySessionRepository.findByUserId(userId) } returns session
-            every { buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns emptyList()
-            every { buddyMessageRepository.save(any()) } answers { firstArg() }
-            every { buddyToolExecutor.toolSpecs(any()) } returns emptyList()
+            stageConversation(session)
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn(alpha, beta))
             val requests = mutableListOf<BuddyAgentRequest>()
             coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
 
@@ -481,6 +482,43 @@ class BuddyServiceTest {
 
             assertThat(requests.first().projectIds)
                 .containsExactlyInAnyOrder(alpha.toString(), beta.toString())
+        }
+
+        @Test
+        fun `scopes retrieval to the one project the hire is on`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            val only = UUID.randomUUID()
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn(only))
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, "how do we deploy?").toList()
+
+            assertThat(requests.first().projectIds).containsExactly(only.toString())
+        }
+
+        /**
+         * The empty scope is the whole issue: the AI fails closed on it and admits nothing, so a
+         * turn would search nothing and answer as though the project simply had no material. That is
+         * the worst moment to sound confident and the hardest state for the hire to diagnose, so the
+         * turn is refused and the hire is told the state and what resolves it, rather than handed a
+         * confident empty answer. Asserting the consequence, not just the payload: no AI call at
+         * all, and a reply that names the missing project.
+         */
+        @Test
+        fun `a hire on no project is told the buddy cannot search their material yet`() = runTest {
+            val session = BuddySession(userId = userId)
+            stageConversation(session)
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
+
+            val events = service.sendMessageForMe(authId, "how do we deploy?").toList()
+
+            // Nothing was searched, because there was nothing to search.
+            coVerify(exactly = 0) { onboardingAiClient.buddyAgentTurn(any()) }
+            val streamed = events.filter { it.type == "token" }.joinToString("") { it.content ?: "" }
+            assertThat(streamed).contains("not on a project")
+            assertThat(events.last().type).isEqualTo("done")
         }
 
         /**
@@ -587,24 +625,6 @@ class BuddyServiceTest {
 
             assertThat(saved).allMatch { it.session.id == session.id }
             verify(exactly = 0) { buddySessionRepository.save(any()) }
-        }
-
-        @Test
-        fun `a hire on no project narrows nothing rather than hiding everything`() = runTest {
-            // An empty scope means "search it all", which is the honest answer for somebody not on
-            // a project yet -- there is nothing narrower that would be true.
-            val session = BuddySession(userId = userId)
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every { buddySessionRepository.findByUserId(userId) } returns session
-            every { buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns emptyList()
-            every { buddyMessageRepository.save(any()) } answers { firstArg() }
-            every { buddyToolExecutor.toolSpecs(any()) } returns emptyList()
-            val requests = mutableListOf<BuddyAgentRequest>()
-            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
-
-            service.sendMessageForMe(authId, "hello?").toList()
-
-            assertThat(requests.first().projectIds).isEmpty()
         }
 
         @Test
