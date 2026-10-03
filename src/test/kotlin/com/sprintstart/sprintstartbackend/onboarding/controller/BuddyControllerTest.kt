@@ -98,14 +98,17 @@ class BuddyControllerTest(
     @Test
     fun `getSuggestionsForMe should return 200 with the hire's chips`() {
         every { buddySuggestionService.forMe(authId) } returns listOf(
-            BuddySuggestionResponse(label = "What should I work on?", question = "What should I work on next?"),
+            BuddySuggestionResponse(
+                label = "Anything I can pick up?",
+                question = "Is there something in the work pool I could pick up?",
+            ),
         )
 
         mockMvc
             .perform(get("/api/v1/onboarding/me/buddy/suggestions").with(userJwt))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].label").value("What should I work on?"))
-            .andExpect(jsonPath("$[0].question").value("What should I work on next?"))
+            .andExpect(jsonPath("$[0].label").value("Anything I can pick up?"))
+            .andExpect(jsonPath("$[0].question").value("Is there something in the work pool I could pick up?"))
     }
 
     /**
@@ -277,14 +280,14 @@ class BuddyControllerTest(
     @Test
     fun `performAction should return 200 with the outcome`() {
         coEvery { buddyActionService.perform(any(), any()) } returns
-            BuddyActionResponse(ok = true, message = "Task 0 is yours.")
+            BuddyActionResponse(ok = true, message = "You are now working toward it.")
 
         val asyncResult = mockMvc
             .perform(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -292,7 +295,7 @@ class BuddyControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.message").value("Task 0 is yours."))
+            .andExpect(jsonPath("$.message").value("You are now working toward it."))
     }
 
     @Test
@@ -302,7 +305,7 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 

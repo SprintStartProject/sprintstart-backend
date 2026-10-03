@@ -21,9 +21,9 @@ import java.util.UUID
  * Runs the backend-owned tools the buddy agent may call, and describes them to the AI reasoner.
  *
  * The buddy answers corpus questions AI-side (``search_docs``); tools here answer questions about
- * the hire's *own* onboarding, which only the backend can see. Each tool is executed strictly on
- * behalf of the resolved caller — the agent never supplies whose data to read, so one hire can
- * never read another's metrics through the buddy.
+ * the hire's *own* state -- their onboarding path, their setup, their work -- which only the backend
+ * can see. Each tool is executed strictly on behalf of the resolved caller — the agent never
+ * supplies whose data to read, so one hire can never read another's metrics through the buddy.
  *
  * One function per buddy tool (plus the shared state snapshot the opener grounds itself in); the
  * count tracks how much the buddy can read about the hire, not a class doing unrelated things,
@@ -42,6 +42,7 @@ class BuddyToolExecutor(
     private val projectMembershipApi: ProjectMembershipApi,
     private val arrivalStepService: ArrivalStepService,
     private val competencyPlacementService: CompetencyPlacementService,
+    private val buddyPathTools: BuddyPathTools,
 ) {
     /**
      * The backend tools the AI reasoner is told it may call, for this hire.
@@ -61,9 +62,13 @@ class BuddyToolExecutor(
      * mounted here.
      */
     fun toolSpecs(userId: UUID): List<BuddyToolSpecDto> = buildList {
-        // First: what has to be true before somebody can work comes before how their work is
-        // going. Mounted only when a step applies -- "absent, never empty", read from the same
-        // service the board card uses so the two cannot disagree.
+        // First: the path *is* the onboarding, and the buddy is the tutor along it. A mentor that has
+        // not read it answers "what should I do next" out of the work pool while the hire is looking
+        // at a page that says something else. Mounted only when a path exists.
+        addAll(buddyPathTools.toolSpecs(userId))
+        // Setup is not part of the onboarding -- an account or an access grant is something to
+        // chase whatever phase somebody is in. Mounted only when a step applies -- "absent, never
+        // empty", read from the same service the board card uses so the two cannot disagree.
         if (arrivalStepService.forHire(userId).isNotEmpty()) {
             add(GET_ARRIVAL_STEPS_SPEC)
         }
@@ -90,17 +95,21 @@ class BuddyToolExecutor(
     }
 
     /**
-     * A plain-text snapshot of the hire's own onboarding, for the buddy's opening greeting to
-     * ground itself in. Reuses the exact reads the caller-scoped tools expose, so the opener and
-     * the tools can never describe different states.
+     * A plain-text snapshot of the hire's own state, for the buddy's opening greeting to ground
+     * itself in. Reuses the exact reads the caller-scoped tools expose, so the opener and the tools
+     * can never describe different states.
      *
-     * Arrival comes first, and the order is the feature — a greeting grounded in progress
-     * before setup greets a hire who cannot clone the repository with a good first issue. Omitted
-     * entirely when no step applies: a greeting grounded in "arrival: nothing" will find something
-     * to say about it.
+     * The path comes first, and the order is the feature: the onboarding is what a greeting opens
+     * on. Setup comes next, ahead of how their work is going -- a greeting grounded in progress
+     * before setup greets a hire who cannot get in with a good first issue. Each part is omitted
+     * entirely when it has nothing: a greeting grounded in "arrival: nothing" will find something to
+     * say about it.
      */
     fun stateSnapshot(userId: UUID): String =
         listOfNotNull(
+            // Absent entirely for a hire with no path, so a greeting can never open by discussing
+            // one they have not got.
+            buddyPathTools.snapshotFor(userId),
             ("Before they can work:\n" + getArrivalSteps(userId))
                 .takeIf { arrivalStepService.forHire(userId).isNotEmpty() },
             "Progress:\n" + getMyMetrics(userId),
@@ -133,6 +142,7 @@ class BuddyToolExecutor(
     fun execute(call: BuddyToolCallDto, userId: UUID): String =
         when {
             buddyBoardTools.handles(call.name) -> buddyBoardTools.execute(call, userId)
+            buddyPathTools.handles(call.name) -> buddyPathTools.execute(userId)
             else -> when (call.name) {
                 GET_ARRIVAL_STEPS -> getArrivalSteps(userId)
                 GET_MY_METRICS -> getMyMetrics(userId)
@@ -246,7 +256,7 @@ class BuddyToolExecutor(
             ?.projects
             .orEmpty()
         if (projects.isEmpty()) {
-            return "You are not a member of any project yet, so there are no onboarding metrics."
+            return "You are not a member of any project yet, so there are no work metrics."
         }
         val described = projects.mapNotNull { project ->
             onboardingMetricsService
@@ -254,7 +264,7 @@ class BuddyToolExecutor(
                 ?.let { describe(project.name, it) }
         }
         return described
-            .ifEmpty { listOf("No onboarding metrics are available for you yet.") }
+            .ifEmpty { listOf("No work metrics are available for you yet.") }
             .joinToString("\n\n")
     }
 
@@ -275,7 +285,6 @@ class BuddyToolExecutor(
         }
         appendLine("- Stalled: $stall")
         appendLine("- Pull requests sent back for changes: ${timeline.returnedContributionCount}")
-        timeline.autonomyReachedAt?.let { appendLine("- Reached autonomy at: $it") }
     }.trim()
 
     /**
@@ -472,11 +481,11 @@ class BuddyToolExecutor(
 
         val GET_MY_METRICS_SPEC = BuddyToolSpecDto(
             name = GET_MY_METRICS,
-            description = "The hire's own onboarding metrics on the project(s) they are onboarding " +
-                "on: open and merged pull requests, how long a pull request has been waiting on a " +
-                "review, whether they are stalled, review rework, and whether they have reached " +
-                "autonomy. Use this for questions about the hire's own progress, e.g. 'is my PR " +
-                "stuck?' or 'am I on track?'. Takes no arguments — it always reads the caller.",
+            description = "How the hire's own work is going on their project(s): open and merged pull " +
+                "requests, how long a pull request has been waiting on a review, whether their work " +
+                "is stalled, and review rework. Use this for 'is my PR stuck?' or 'how is my work " +
+                "going?'. It says nothing about their onboarding -- that is their path. Takes no " +
+                "arguments — it always reads the caller.",
             parameters = noArgs(),
         )
 
@@ -518,9 +527,12 @@ class BuddyToolExecutor(
             name = GET_SUGGESTED_TASKS,
             description = "Good next starter-work tasks for the hire, ranked by fit, each with the " +
                 "plain reasons it was suggested and the task_id to claim it by. Use this for " +
-                "questions like 'what should I work on?' or 'what's a good first task for me?'. " +
-                "Present the reasons, never a score. When the hire picks one, offer to claim it " +
-                "as their goal with claim_goal. Takes no arguments — it always ranks for the caller.",
+                "questions like 'what should I work on?', 'what's a good first task for me?' and " +
+                "'is there anything I could pick up?'. The pool is open to them however far along " +
+                "their onboarding path they are, so never hold it back until they have got " +
+                "further. Present the reasons, never a score. When the hire picks one, offer to " +
+                "claim it as their goal with claim_goal. Takes no arguments -- it always ranks " +
+                "for the caller.",
             parameters = noArgs(),
         )
 
