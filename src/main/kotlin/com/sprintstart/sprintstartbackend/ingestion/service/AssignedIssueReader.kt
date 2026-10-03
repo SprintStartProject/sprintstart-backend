@@ -138,8 +138,8 @@ class AssignedIssueReader(
      *
      * The tracker's version of a review asking for changes: the assignee said it was ready, and
      * somebody who was not them moved it back. Counting every status change instead would count the
-     * normal flow of work as rework, and reporting a flat zero would hand every tracked issue the
-     * clean-run half of the autonomy signal without it having been earned.
+     * normal flow of work as rework, and reporting a flat zero would hand every tracked issue a
+     * clean run it never earned.
      */
     private fun returnedCount(statusChanges: List<JiraIssueHistoryItem>, assignee: String): Int {
         var returned = 0

@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -30,6 +31,9 @@ import java.util.UUID
  * the owning onboarding path. Admin-scoped operations address a user directly by UUID.
  */
 @Service
+// One function per way a path is read or replaced (hire, buddy, PM, team overview); splitting
+// them across classes would scatter the access rules they share.
+@Suppress("TooManyFunctions")
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
     private val questionAttemptRepository: QuestionAttemptRepository,
@@ -182,10 +186,22 @@ class OnboardingPathService(
     }
 
     /**
+     * Whether this user has an onboarding path at all.
+     *
+     * A row count rather than a read: the buddy asks this once per turn to decide whether to mount
+     * its path tool, and loading every phase and step to answer "is there one" would put the
+     * heaviest read in the module behind a question about its own existence.
+     */
+    fun hasPath(userId: UUID): Boolean = onboardingPathRepository.existsByUserId(userId)
+
+    /**
      * A user's path as they see it, by user id, or `null` when they have none.
      *
      * The same read as [getOnboardingPathForMe] -- question attempts included, so the statuses are
-     * the ones on their screen -- reached by user id, for a reviewer looking at somebody's path.
+     * the ones on their screen -- reached by user id and without the 404, for the buddy and for a
+     * reviewer looking at somebody's path. Having no path yet is an ordinary state for a caller that
+     * is deciding what to say about it, not an error to catch: the buddy needs "there is nothing
+     * here" as an answer, and a thrown 404 would make every reader wrap this in a try.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding path by user id")
@@ -197,6 +213,26 @@ class OnboardingPathService(
                     passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
                     attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
                 )
+            }.orElse(null)
+
+    /**
+     * One phase of the user's own path that generation left empty (or that failed), in the hire's
+     * form, or `null`.
+     *
+     * [findPathForUserId] leaves these out of `phases` -- a hire should not be walked through a phase
+     * with nothing in it -- and reports them only as `generationIssues`. They are exactly what the
+     * buddy's `add_path_step` exists to repair, though, so it needs them by id: resolved through the
+     * owner's own path like every other lookup, so an id from anywhere else is not found.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving a hidden onboarding phase by user id")
+    fun findHiddenPhaseForUserId(userId: UUID, phaseId: UUID): GetOnboardingPhaseForUserResponse? =
+        onboardingPathRepository
+            .findOnboardingPathByUserId(userId)
+            .map { path ->
+                path.phases
+                    .firstOrNull { it.id == phaseId && it.generationStatus.isHiddenFromUser() }
+                    ?.toGetForUserResponse()
             }.orElse(null)
 
 //  ========================== Methods for admins ==========================
