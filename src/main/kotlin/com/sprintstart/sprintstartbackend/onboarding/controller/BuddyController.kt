@@ -146,7 +146,10 @@ class BuddyController(
     )
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/sessions")
-    @PreAuthorize("hasRole('USER') and @projectAuth.canAccessProject(authentication, #request.projectId)")
+    @PreAuthorize(
+        "hasRole('USER') and (#request.projectId == null or " +
+            "@projectAuth.canAccessProject(authentication, #request.projectId))",
+    )
     fun createSession(
         @Valid @RequestBody request: CreateSessionRequest,
         @Parameter(hidden = true)

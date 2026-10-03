@@ -10,10 +10,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.SendBud
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddySuggestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyTeamService
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -34,6 +36,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -66,6 +69,9 @@ class BuddyControllerTest(
 
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
+
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
 
     private val objectMapper = jacksonObjectMapper()
     private val authId = "test-auth-id"
@@ -153,6 +159,71 @@ class BuddyControllerTest(
         mockMvc
             .perform(get("/api/v1/onboarding/me/buddy/suggestions").with(noUserRoleJwt))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `creates session for accessible project`() {
+        val projectId = UUID.randomUUID()
+        val sessionId = UUID.randomUUID()
+
+        every {
+            projectAuth.canAccessProject(any(), projectId)
+        } returns true
+
+        every {
+            buddyService.createSession(authId, projectId)
+        } returns CreateSessionResponse(sessionId)
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"projectId":"$projectId"}""")
+                    .with(userJwt),
+            )
+            .andExpect(status().isCreated)
+    }
+
+    @Test
+    fun `rejects session creation for inaccessible project`() {
+        val projectId = UUID.randomUUID()
+
+        every {
+            projectAuth.canAccessProject(any(), projectId)
+        } returns false
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"projectId":"$projectId"}""")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) {
+            buddyService.createSession(any(), any())
+        }
+    }
+
+    @Test
+    fun `creates unscoped session without checking project access`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.createSession(authId, null)
+        } returns CreateSessionResponse(sessionId)
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}")
+                    .with(userJwt),
+            ).andExpect(status().isCreated)
+
+        verify(exactly = 0) {
+            projectAuth.canAccessProject(any(), any())
+        }
     }
 
     @Test

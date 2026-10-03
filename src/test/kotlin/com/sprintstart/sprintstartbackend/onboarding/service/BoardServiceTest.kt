@@ -297,6 +297,9 @@ class BoardServiceTest {
             sourceId = "github:org/repo:ISSUE:7",
             title = "Fix the flaky login test",
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -321,6 +324,9 @@ class BoardServiceTest {
             card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 1),
             card(board, BoardCardKind.CURRENT_TASK, position = 2),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -459,6 +465,9 @@ class BoardServiceTest {
                 position = 7,
             ),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val cards = service.getBoard(hireId, projectId)?.cards.orEmpty()
 
