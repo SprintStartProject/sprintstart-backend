@@ -343,8 +343,9 @@ object AppGuide {
         AppGuidePage(
             name = "Access Management",
             path = "/admin",
-            whereToFind = "sidebar, \"Access Management\", tabs \"Users\", \"Projects\" and \"Tokens\"",
-            purpose = "Users, projects and access tokens for the whole organisation.",
+            whereToFind = "sidebar, \"Access Management\", tabs \"Users\", \"Projects\", \"Skills\" " +
+                "(admins only) and \"Tokens\"",
+            purpose = "Users, projects, the organisation-wide skill pool and access tokens.",
             howTos = listOf(
                 AppGuideHowTo(
                     "create a project",
@@ -364,6 +365,13 @@ object AppGuide {
                     "\"Users\" tab → open the user",
                     doers = ADMIN_ONLY,
                     link = "/admin?tab=users",
+                ),
+                AppGuideHowTo(
+                    "add, edit or retire a skill in the organisation-wide pool",
+                    "\"Skills\" tab → \"New skill\", or open a skill to edit it or \"Retire skill\"; " +
+                        "taking a skill off one role is done in Team → \"Roles\" instead",
+                    doers = ADMIN_ONLY,
+                    link = "/admin?tab=skills",
                 ),
             ),
             roles = ADMIN_HR,

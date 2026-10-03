@@ -119,6 +119,9 @@ class BuddyAppGuideToolsTest {
 
         assertThat(openable(guide)).contains("Access Management (/admin)").doesNotContain("New Project")
         assertThat(elsewhere(guide)).contains("create a project: an admin")
+        // The Skills tab is hidden from HR in the frontend, and every skill-pool write 403s for them.
+        assertThat(openable(guide)).doesNotContain("New skill")
+        assertThat(elsewhere(guide)).contains("retire a skill in the organisation-wide pool: an admin")
     }
 
     @Test
