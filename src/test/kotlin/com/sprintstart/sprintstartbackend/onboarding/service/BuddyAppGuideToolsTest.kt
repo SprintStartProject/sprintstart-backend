@@ -81,6 +81,17 @@ class BuddyAppGuideToolsTest {
             .contains("to choose or change a member's role")
     }
 
+    /** The frontend gates manager pages on the selected project, so "manages one" is not enough. */
+    @Test
+    fun `tells a managing PM that manager pages follow the selected project`() {
+        every { userApi.canManageProject("auth|me", managedProject.projectId) } returns true
+
+        assertThat(guideAs(Role.PM)).contains(
+            "They manage: Apollo. The manager pages (PM Dashboard and its tabs, Data Ingestion, " +
+                "Blueprints) show only while one of these is the selected project.",
+        )
+    }
+
     /** The link opens the tab the steps talk about, not the page's default one. */
     @Test
     fun `hands over the deep link that opens the right tab`() {

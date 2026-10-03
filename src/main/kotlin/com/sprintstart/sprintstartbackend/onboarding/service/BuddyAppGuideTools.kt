@@ -73,8 +73,7 @@ class BuddyAppGuideTools(
             if (reader.blockedFromManagerPages()) {
                 appendLine()
                 appendLine(
-                    "They hold the PM role but manage no project, so the manager pages (PM Dashboard " +
-                        "and its tabs, Data Ingestion, Blueprints) stay hidden. An admin " +
+                    "They hold the PM role but manage no project, so the $MANAGER_PAGES stay hidden. An admin " +
                         "makes somebody a project's manager in Access Management → Projects.",
                 )
             }
@@ -114,7 +113,11 @@ class BuddyAppGuideTools(
         return when {
             role != Role.PM -> base
             managed.isEmpty() -> "$base They manage no project yet."
-            else -> "$base They manage: ${managed.joinToString(", ")}."
+            // The frontend gates the manager pages on the *selected* project, not on managing any
+            // one; without this a PM looking at a project they only belong to is sent to a sidebar
+            // entry that is not there.
+            else -> "$base They manage: ${managed.joinToString(", ")}. The $MANAGER_PAGES show only " +
+                "while one of these is the selected project."
         }
     }
 
@@ -152,6 +155,9 @@ class BuddyAppGuideTools(
 
         // A path is a few segments and an id; anything longer is not a route of this app.
         private const val MAX_PATH_LENGTH = 200
+
+        // The pages `AppGuidePage.managerScoped` marks, as somebody would name them.
+        private const val MANAGER_PAGES = "manager pages (PM Dashboard and its tabs, Data Ingestion, Blueprints)"
 
         private val ROLE_NAMES = mapOf(
             Role.USER to "a team member",
