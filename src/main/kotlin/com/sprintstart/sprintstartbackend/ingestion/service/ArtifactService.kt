@@ -80,6 +80,7 @@ class ArtifactService(
             }
 
             SourceSystem.GITHUB,
+            SourceSystem.BITBUCKET,
             SourceSystem.JIRA,
             SourceSystem.CONFLUENCE,
             -> {

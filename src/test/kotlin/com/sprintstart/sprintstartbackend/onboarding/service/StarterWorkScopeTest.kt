@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
