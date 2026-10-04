@@ -111,7 +111,6 @@ class GithubFileServiceTest {
 
         service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
         verify { repoConnectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
         verify(exactly = 0) { repoConnectionRepository.save(any()) }
     }
@@ -153,7 +152,7 @@ class GithubFileServiceTest {
 
         service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
+        verify { repoConnectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
         }

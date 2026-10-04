@@ -227,8 +227,6 @@ class GithubFileService(
             )
         }
 
-        githubRepository.lastSha = outcome.revision
-
         eventPublisher.publishEvent(
             GithubFilesFetchCompletedEvent(transactionId, githubRepository.owner, githubRepository.name),
         )

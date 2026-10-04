@@ -56,7 +56,7 @@ class GithubCommitsService(
             GithubCommitsFetchStartedEvent(transactionId, githubRepository.owner, githubRepository.name),
         )
 
-        val outcome = try {
+        try {
             val ingested = ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(githubRepository),
                 sinceRevision = githubRepository.lastCommitsSyncedSha,
@@ -68,7 +68,6 @@ class GithubCommitsService(
             withContext(Dispatchers.IO) {
                 repoConnectionRepository.updateCommitsCursor(githubRepository.id, ingested.revision)
             }
-            ingested
         } catch (e: CancellationException) {
             // Never swallow cancellation: the run is abandoned, not failed, and publishing a
             // terminal failure here would report a fetch that did not happen.
@@ -84,8 +83,6 @@ class GithubCommitsService(
             )
             throw e
         }
-
-        githubRepository.lastCommitsSyncedSha = outcome.revision
 
         eventPublisher.publishEvent(
             GithubCommitsFetchCompletedEvent(transactionId, githubRepository.owner, githubRepository.name),

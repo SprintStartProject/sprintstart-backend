@@ -95,7 +95,6 @@ class GithubCommitsServiceTest {
 
         service.fetchAndIngestCommits(connection, transactionId)
 
-        assertThat(connection.lastCommitsSyncedSha).isEqualTo(NEW_REVISION)
         verify { repoConnectionRepository.updateCommitsCursor(connection.id, NEW_REVISION) }
         verify(exactly = 0) { repoConnectionRepository.save(any()) }
     }
