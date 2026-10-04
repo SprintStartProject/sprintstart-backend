@@ -5,6 +5,8 @@ import com.sprintstart.sprintstartbackend.connectors.atlassian.external.Atlassia
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.atlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingCompleteEvent
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.jiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
@@ -63,6 +65,29 @@ class JiraIssueServiceTest {
 
             coVerify(exactly = 2) { jiraClient.searchIssues(instance.instanceUrl, credential, any()) }
         }
+
+        @Test
+        fun `should publish a failure and no completion when storing an issue throws`() = runTest {
+            val instance = jiraInstance(jiraProjectKeys = mutableSetOf("TEST"))
+            val credential = atlassianCredentialSecret()
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
+            coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns
+                listOf(mockk<JiraIssueResponse>(relaxed = true))
+            every { issueRepository.save(any()) } throws RuntimeException("persist rejected")
+
+            assertFailsWith<RuntimeException> {
+                service.searchAndIngestAllIssuesOfProjects(instance, "user@example.com", "token", UUID.randomUUID())
+            }
+
+            verify(exactly = 1) {
+                eventPublisher.publishEvent(
+                    match<Any> { it is JiraResourceFetchingFailedEvent && it.reason.contains("persist rejected") },
+                )
+            }
+            verify(exactly = 0) {
+                eventPublisher.publishEvent(match<Any> { it is JiraResourceFetchingCompleteEvent })
+            }
+        }
     }
 
     @Nested
@@ -112,6 +137,32 @@ class JiraIssueServiceTest {
             service.updateInstance(instance, UUID.randomUUID())
 
             assertThat(instance.status).isEqualTo(ConnectionState.UP_TO_DATE)
+        }
+
+        @Test
+        fun `should settle on FAILED and publish no completion when storing an update throws`() = runTest {
+            val instance = jiraInstance()
+            val credential = atlassianCredentialSecret()
+            every { instanceRepository.findByInstanceUrlWithCollections(instance.instanceUrl) } returns instance
+            every { atlassianCredentialApi.findSecret(any(), any()) } returns credential
+            coEvery { jiraClient.searchIssues(instance.instanceUrl, credential, any()) } returns
+                listOf(mockk<JiraIssueResponse>(relaxed = true))
+            every { instanceRepository.save(any()) } answers { firstArg() }
+            every { issueRepository.save(any()) } throws RuntimeException("persist rejected")
+
+            assertFailsWith<RuntimeException> {
+                service.updateInstance(instance, UUID.randomUUID())
+            }
+
+            assertThat(instance.status).isEqualTo(ConnectionState.FAILED)
+            verify(exactly = 1) {
+                eventPublisher.publishEvent(
+                    match<Any> { it is JiraResourceFetchingFailedEvent && it.reason.contains("persist rejected") },
+                )
+            }
+            verify(exactly = 0) {
+                eventPublisher.publishEvent(match<Any> { it is JiraResourceFetchingCompleteEvent })
+            }
         }
     }
 

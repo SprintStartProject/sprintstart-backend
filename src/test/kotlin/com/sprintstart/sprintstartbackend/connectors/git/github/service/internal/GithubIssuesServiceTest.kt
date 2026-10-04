@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -141,6 +142,27 @@ class GithubIssuesServiceTest {
             }
 
             verify { eventPublisher.publishEvent(any<GithubIssuesFetchFailedEvent>()) }
+        }
+
+        @Test
+        fun `publishes a failure instead of hanging the run when storing an issue throws`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchIssues(repo, null) } returns listOf(issue(number = 1))
+            every { eventPublisher.publishEvent(match<Any> { it is GithubIssueFetchedEvent }) } throws
+                RuntimeException("persist rejected")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllIssues(repo.id, repo.owner, repo.name, transactionId)
+            }
+
+            verify(exactly = 1) {
+                eventPublisher.publishEvent(
+                    match<Any> { it is GithubIssuesFetchFailedEvent && it.reason.contains("persist rejected") },
+                )
+            }
+            verify(exactly = 0) {
+                eventPublisher.publishEvent(match<Any> { it is GithubIssuesFetchCompletedEvent })
+            }
         }
     }
 

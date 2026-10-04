@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Issue
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -35,6 +36,7 @@ class GithubIssuesService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Suppress("ThrowsCount")
     @Tracked("Fetching all issues from repository")
     internal suspend fun fetchAndIngestAllIssues(
         githubRepositoryId: UUID,
@@ -70,20 +72,39 @@ class GithubIssuesService(
             throw it
         }.getOrNull() ?: return
 
-        if (performUpdate) {
-            issues.forEach { issue ->
-                eventPublisher.publishEvent(
-                    issue.toFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
-                )
-            }
-        } else {
-            if (githubRepository != null && issues.isNotEmpty()) {
-                githubRepository.connectionState = ConnectionState.OUT_OF_DATE
+        // Publishing a fetched issue runs the persistence listener synchronously, so a failure while
+        // storing one issue surfaces here. It has to end the phase with a terminal event: the
+        // ingestion run is only finalized once every phase has closed.
+        try {
+            if (performUpdate) {
+                issues.forEach { issue ->
+                    eventPublisher.publishEvent(
+                        issue.toFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
+                    )
+                }
+            } else {
+                if (githubRepository != null && issues.isNotEmpty()) {
+                    githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-                withContext(Dispatchers.IO) {
-                    repoConnectionRepository.save(githubRepository)
+                    withContext(Dispatchers.IO) {
+                        repoConnectionRepository.save(githubRepository)
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
+            // terminal failure here would report a fetch that did not happen.
+            throw e
+        } catch (e: Exception) {
+            eventPublisher.publishEvent(
+                GithubIssuesFetchFailedEvent(
+                    transactionId,
+                    repositoryOwner,
+                    repositoryName,
+                    e.message ?: "Unknown error",
+                ),
+            )
+            throw e
         }
 
         eventPublisher.publishEvent(GithubIssuesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))

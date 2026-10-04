@@ -25,6 +25,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ThreadCommentsConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -148,6 +149,27 @@ class GithubPullRequestsServiceTest {
             }
 
             verify { eventPublisher.publishEvent(any<GithubPullRequestsFetchFailedEvent>()) }
+        }
+
+        @Test
+        fun `publishes a failure instead of hanging the run when storing a pull request throws`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo) } returns listOf(pullRequest(number = 1))
+            every { eventPublisher.publishEvent(match<Any> { it is GithubPullRequestFetchedEvent }) } throws
+                RuntimeException("persist rejected")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            }
+
+            verify(exactly = 1) {
+                eventPublisher.publishEvent(
+                    match<Any> { it is GithubPullRequestsFetchFailedEvent && it.reason.contains("persist rejected") },
+                )
+            }
+            verify(exactly = 0) {
+                eventPublisher.publishEvent(match<Any> { it is GithubPullRequestsFetchCompletedEvent })
+            }
         }
     }
 
