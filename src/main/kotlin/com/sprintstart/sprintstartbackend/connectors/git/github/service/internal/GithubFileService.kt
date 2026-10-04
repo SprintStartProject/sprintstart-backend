@@ -219,8 +219,11 @@ class GithubFileService(
             )
         }
 
+        // Only the cursor column is written: this copy of the connection was read when the run
+        // started, and saving all of it would reset the commit cursor the parallel commit fetch
+        // has advanced since.
         withContext(Dispatchers.IO) {
-            repoConnectionRepository.save(githubRepository)
+            repoConnectionRepository.updateFileCursor(githubRepository.id, outcome.revision)
         }
 
         eventPublisher.publishEvent(

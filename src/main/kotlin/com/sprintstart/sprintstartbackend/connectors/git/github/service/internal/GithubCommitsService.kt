@@ -57,11 +57,18 @@ class GithubCommitsService(
         )
 
         val outcome = try {
-            ingestionEngine.ingestCommitsSince(
+            val ingested = ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(githubRepository),
                 sinceRevision = githubRepository.lastCommitsSyncedSha,
                 sink = GithubCommitSink(eventPublisher, githubRepository, transactionId),
             )
+            // Inside the try so that a failed cursor write still ends the run with a terminal
+            // event. Only the cursor column is written: saving the whole connection would carry
+            // this copy's stale file cursor and snapshot into the row.
+            withContext(Dispatchers.IO) {
+                repoConnectionRepository.updateCommitsCursor(githubRepository.id, ingested.revision)
+            }
+            ingested
         } catch (e: CancellationException) {
             // Never swallow cancellation: the run is abandoned, not failed, and publishing a
             // terminal failure here would report a fetch that did not happen.
@@ -79,9 +86,6 @@ class GithubCommitsService(
         }
 
         githubRepository.lastCommitsSyncedSha = outcome.revision
-        withContext(Dispatchers.IO) {
-            repoConnectionRepository.save(githubRepository)
-        }
 
         eventPublisher.publishEvent(
             GithubCommitsFetchCompletedEvent(transactionId, githubRepository.owner, githubRepository.name),
