@@ -59,8 +59,14 @@ class ProjectAnalysisRunServiceTest {
 
         val read = service.list(projectId, 10).single()
 
-        assertEquals(findings, read.findings)
-        assertEquals(tasks(), read.tasks)
+        assertEquals(
+            findings.map { listOf(it.id, it.severity, it.area, it.title, it.detail, it.to) },
+            read.findings.map { listOf(it.id, it.severity, it.area, it.title, it.detail, it.to) },
+        )
+        assertEquals(
+            tasks().map { listOf(it.id, it.label, it.status, it.note) },
+            read.tasks.map { listOf(it.id, it.label, it.status, it.note) },
+        )
         assertEquals(72, read.score)
     }
 
@@ -113,5 +119,12 @@ class ProjectAnalysisRunServiceTest {
         every { repository.findByProjectIdOrderByCreatedAtDesc(projectId, any()) } returns listOf(broken)
 
         assertEquals(emptyList<Any>(), service.list(projectId, 10))
+    }
+
+    @Test
+    fun `deleting a project's runs goes through the repository and reports how many`() {
+        every { repository.deleteByProjectId(projectId) } returns 3
+
+        assertEquals(3, service.deleteForProject(projectId))
     }
 }

@@ -4,6 +4,8 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.request.AnalysisFin
 import com.sprintstart.sprintstartbackend.insights.model.dto.request.AnalysisTaskPayload
 import com.sprintstart.sprintstartbackend.insights.model.dto.request.ProjectAnalysisLimits
 import com.sprintstart.sprintstartbackend.insights.model.dto.request.SaveProjectAnalysisRunRequest
+import com.sprintstart.sprintstartbackend.insights.model.dto.response.AnalysisFindingResponse
+import com.sprintstart.sprintstartbackend.insights.model.dto.response.AnalysisTaskResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.ProjectAnalysisRunResponse
 import com.sprintstart.sprintstartbackend.insights.model.entity.ProjectAnalysisRun
 import com.sprintstart.sprintstartbackend.insights.repository.ProjectAnalysisRunRepository
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
@@ -83,6 +86,17 @@ class ProjectAnalysisRunService(
             }
     }
 
+    /**
+     * Deletes every run of [projectId] once the project itself is gone — nothing references the
+     * project table, so the history would otherwise outlive it.
+     *
+     * In a transaction of its own: it runs after the project's deletion has committed.
+     *
+     * @return How many runs were deleted.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun deleteForProject(projectId: UUID): Int = projectAnalysisRunRepository.deleteByProjectId(projectId)
+
     private fun decode(run: ProjectAnalysisRun): StoredPayload? =
         try {
             json.decodeFromString(StoredPayload.serializer(), run.payload)
@@ -103,8 +117,19 @@ class ProjectAnalysisRunService(
             score = run.score,
             counts = counts,
             failedChecks = run.failedChecks,
-            findings = findings,
-            tasks = tasks,
+            findings = findings.map { finding ->
+                AnalysisFindingResponse(
+                    id = finding.id,
+                    severity = finding.severity,
+                    area = finding.area,
+                    title = finding.title,
+                    detail = finding.detail,
+                    to = finding.to,
+                )
+            },
+            tasks = tasks.map { task ->
+                AnalysisTaskResponse(id = task.id, label = task.label, status = task.status, note = task.note)
+            },
         )
     }
 

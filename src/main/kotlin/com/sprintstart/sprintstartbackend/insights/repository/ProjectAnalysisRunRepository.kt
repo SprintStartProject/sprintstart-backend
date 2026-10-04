@@ -39,4 +39,11 @@ interface ProjectAnalysisRunRepository : JpaRepository<ProjectAnalysisRun, UUID>
         @Param("projectId") projectId: UUID,
         @Param("keep") keep: Int,
     )
+
+    /** Deletes every run of a project, for when the project itself is deleted. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM ProjectAnalysisRun r WHERE r.projectId = :projectId")
+    fun deleteByProjectId(
+        @Param("projectId") projectId: UUID,
+    ): Int
 }
