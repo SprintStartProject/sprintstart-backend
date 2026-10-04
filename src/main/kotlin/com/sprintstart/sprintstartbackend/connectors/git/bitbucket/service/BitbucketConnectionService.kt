@@ -102,14 +102,21 @@ internal class BitbucketConnectionService(
     }
 
     /**
-     * Connects several Bitbucket repositories, skipping none on single failures.
+     * Connects several Bitbucket repositories in order, aborting on the first failure.
      *
-     * Each repository is connected independently through [connectRepositoryIfExists], so one
-     * repository the credential cannot read is rejected without discarding the others.
+     * Repositories are connected one after another through [connectRepositoryIfExists], so when one
+     * repository fails — an unreadable credential, a missing repository, a denied project — the
+     * entries after it are not attempted. Connections stored before the failure stay stored, but
+     * their transaction ids are not part of the response: the batch answers with the failure
+     * instead of a per-repository result, so a caller cannot tell from the response which of the
+     * submitted repositories were connected.
      *
      * @param authId The authenticated caller subject the credentials are resolved for.
      * @param request The repositories to connect, each with its own credential and project.
-     * @return One transaction id per `workspace/slug`.
+     * @return One transaction id per `workspace/slug`, only when every repository was accepted.
+     * @throws BitbucketProjectAccessDeniedException when the caller has no access to a project.
+     * @throws AtlassianCredentialNotFoundException when a named credential does not exist.
+     * @throws BitbucketRepositoryDoesNotExistException when Bitbucket has no such repository.
      */
     @Tracked("Connecting a list of Bitbucket repositories")
     suspend fun connectRepositoriesIfExist(
@@ -231,7 +238,7 @@ internal class BitbucketConnectionService(
                 DiscoveredBitbucketRepository(
                     request.workspace,
                     repo.slug,
-                    repo.fullName,
+                    repo.name,
                     repo.isPrivate,
                     repo.url,
                     alreadyConnected.any { request.workspace == it.workspace && repo.slug == it.slug },
@@ -247,7 +254,7 @@ internal class BitbucketConnectionService(
         transactionId: UUID,
     ): UUID {
         val alreadyConnected = withContext(Dispatchers.IO) {
-            connectionRepository.findByWorkspaceAndSlug(request.workspace, request.slug)
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug(request.workspace, request.slug)
         }
         if (alreadyConnected != null) {
             linkProject(alreadyConnected, request.projectId)

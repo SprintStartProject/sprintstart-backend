@@ -55,7 +55,8 @@ internal class BitbucketConnectionController(
      * The connection is stored and the repository is cloned asynchronously, so the response carries
      * the transaction id the connector's events correlate on rather than the repository state.
      * A credential that does not exist surfaces as 404 through the shared Atlassian credential
-     * exception handler.
+     * exception handler, and a repository Bitbucket cannot find or show to that credential as 404
+     * through the Bitbucket exception handler.
      *
      * @param jwt The authentication principal the repository's credential is resolved for.
      * @param request The repository to connect, with its own credential and project.
@@ -74,7 +75,11 @@ internal class BitbucketConnectionController(
             ),
             ApiResponse(responseCode = "400", description = "Request body is invalid"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
-            ApiResponse(responseCode = "404", description = "The named credential does not exist"),
+            ApiResponse(
+                responseCode = "404",
+                description = "The named credential does not exist, or the repository does not exist or is " +
+                    "not readable with it",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.ACCEPTED)
@@ -91,10 +96,11 @@ internal class BitbucketConnectionController(
     /**
      * Connects several Bitbucket repositories in one request.
      *
-     * Each repository is connected on its own, so a repository the caller's credential cannot read
-     * is rejected without discarding the ones that were accepted. Connecting a repository that is
-     * already connected reuses its connection and only links the submitted project, exactly like the
-     * single-repository endpoint.
+     * Repositories are connected in order and the batch aborts on the first failure, so a
+     * repository the caller's credential cannot read stops the entries after it. Connections
+     * stored before the failure stay stored, but the batch answers with the failure instead of a
+     * per-repository result. Connecting a repository that is already connected reuses its
+     * connection and only links the submitted project, exactly like the single-repository endpoint.
      *
      * @param jwt The authentication principal the repository's credential is resolved for.
      * @param request The repositories to connect, each with its own credential and project.
@@ -103,8 +109,9 @@ internal class BitbucketConnectionController(
     @Operation(
         summary = "Connect several Bitbucket repositories",
         description =
-            "Connects each submitted repository independently and starts cloning the ones that are " +
-                "new. Already-connected repositories are reused and only linked to the submitted project.",
+            "Connects each submitted repository in order, aborting on the first failure, and starts " +
+                "cloning the ones that are new. Already-connected repositories are reused and only " +
+                "linked to the submitted project.",
     )
     @ApiResponses(
         value = [
@@ -116,7 +123,11 @@ internal class BitbucketConnectionController(
             ApiResponse(responseCode = "400", description = "Request body is invalid"),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Caller has no access to a target project"),
-            ApiResponse(responseCode = "404", description = "A named credential does not exist"),
+            ApiResponse(
+                responseCode = "404",
+                description = "A named credential does not exist, or a repository does not exist or is not " +
+                    "readable with it",
+            ),
         ],
     )
     @PostMapping("/connect/all")
@@ -291,10 +302,14 @@ internal class BitbucketConnectionController(
             ),
             ApiResponse(
                 responseCode = "400",
-                description = "Repository connection not found, or its source is disabled",
+                description = "The repository's source is disabled",
             ),
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
+            ApiResponse(
+                responseCode = "404",
+                description = "Repository connection not found or invisible to the caller",
+            ),
         ],
     )
     @PostMapping("/connections/{repositoryId}/update")

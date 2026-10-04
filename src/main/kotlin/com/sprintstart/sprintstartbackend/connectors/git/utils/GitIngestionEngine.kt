@@ -70,12 +70,13 @@ class GitIngestionEngine(
      * Ingests the complete working tree of a repository.
      *
      * Used for a repository's first ingest, when there is no cursor to diff against. The clone is
-     * reused if the cache already holds it, so a re-ingest reads the same revision from disk.
+     * brought up to date before anything is read, so a retry after a failed first ingest cannot
+     * serve the stale revision a previous attempt left behind.
      *
      * @param coordinates The repository to ingest.
      * @param sink Receives the files of the current revision.
      * @return The revision that was ingested, with any files that could not be read.
-     * @throws RuntimeException if the repository cannot be cloned or its revision cannot be read.
+     * @throws RuntimeException if the repository cannot be cloned, fetched or read.
      */
     suspend fun ingestWorkingTree(
         coordinates: GitRepositoryCoordinates,
@@ -170,13 +171,13 @@ class GitIngestionEngine(
     suspend fun isUpToDate(coordinates: GitRepositoryCoordinates): Boolean =
         revisionState.isUpToDate(repositoryCache.getLocalRepositoryPath(coordinates))
 
-    /** Ingests every tracked file of the current revision. */
+    /** Fetches, then ingests every tracked file of the fetched revision. */
     private suspend fun ingestAllFiles(
         coordinates: GitRepositoryCoordinates,
         sink: GitFileSink,
     ): GitIngestOutcome {
         val repositoryPath = repositoryCache.getLocalRepositoryPath(coordinates)
-        val revision = revisionState.currentRevision(repositoryPath)
+        val revision = revisionState.updateLocal(repositoryPath)
         val failures = ingestFiles(repositoryPath, revision, workingTree.trackedFiles(repositoryPath), sink)
 
         return GitIngestOutcome(revision, failures)

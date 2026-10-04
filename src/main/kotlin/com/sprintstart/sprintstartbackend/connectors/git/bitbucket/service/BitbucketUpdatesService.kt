@@ -76,7 +76,7 @@ internal class BitbucketUpdatesService(
         val transactionIdsByRepository = mutableMapOf<String, UUID>()
 
         connectionRepository
-            .findAll()
+            .findAllWithProjectIds()
             .filter { connection -> connection.sourceEnabled }
             .filter { connection -> userApi.canAccessConnection(authId, connection.projectIds) }
             .forEach { connection ->
@@ -128,8 +128,8 @@ internal class BitbucketUpdatesService(
      */
     suspend fun updateRepository(authId: String, repositoryId: UUID): UUID {
         val connection = withContext(Dispatchers.IO) {
-            connectionRepository.findById(repositoryId)
-        }.orElseThrow { BitbucketRepositoryNotConnectedException(repositoryId) }
+            connectionRepository.findWithProjectIdsById(repositoryId)
+        } ?: throw BitbucketRepositoryConnectionNotFoundException(repositoryId)
 
         if (!userApi.canAccessConnection(authId, connection.projectIds)) {
             throw BitbucketRepositoryConnectionNotFoundException(repositoryId)

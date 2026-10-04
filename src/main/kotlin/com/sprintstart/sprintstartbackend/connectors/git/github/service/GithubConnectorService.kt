@@ -60,10 +60,15 @@ class GithubRepositoryConnectionOrchestrator(
      * Attempts to connect a list of GitHub repositories if they exist. For each repository,
      * a connection transaction is initiated and its transaction ID is recorded.
      *
+     * Repositories are connected in order and the batch aborts on the first failure, so the
+     * entries after a failing repository are not attempted. Connections stored before the failure
+     * stay stored, but their transaction ids are not part of the response: the batch answers with
+     * the failure instead of a per-repository result.
+     *
      * @param authId The authentication identifier for the operation.
      * @param request The request containing the list of repositories to connect.
      * @return A response containing a mapping of repository identifiers in the format "owner/name"
-     * to their corresponding transaction IDs.
+     * to their corresponding transaction IDs, only when every repository was accepted.
      */
     @Tracked("Attempting to connect a list of GitHub repositories")
     suspend fun connectRepositoriesIfExist(

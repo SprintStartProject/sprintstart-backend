@@ -128,6 +128,10 @@ internal class BitbucketFileService(
             )
         }
 
+        withContext(Dispatchers.IO) {
+            connectionRepository.updateFileCursor(connection.id, outcome.revision)
+        }
+
         eventPublisher.publishEvent(
             BitbucketFilesFetchingCompletedEvent(
                 transactionId = transactionId,
