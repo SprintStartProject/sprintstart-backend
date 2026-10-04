@@ -138,42 +138,6 @@ class OnDiskOperations {
     fun gitResetHard() = ProcessBuilder("git", "reset", "--hard", "FETCH_HEAD")
 
     /**
-     * Lists every tracked file of the working tree, each terminated by NUL.
-     *
-     * This reads the index instead of the filesystem, which is both cheaper and more precise than
-     * walking the directory: untracked files, ignored build output and the contents of `.git` are
-     * excluded without any filtering, and `.git` is never descended into at all. `-z` terminates
-     * each path with NUL rather than a newline, so file names containing newlines stay readable.
-     */
-    fun gitListFiles() = ProcessBuilder("git", "ls-files", "-z")
-
-    /**
-     * Constructs a `git log` command that reads commit metadata in [GIT_LOG_FORMAT].
-     *
-     * @param sinceRevision When set, commits reachable from it are excluded by using the
-     *        `sinceRevision..HEAD` range. When `null`, the entire history is read.
-     */
-    fun gitLog(sinceRevision: String?) =
-        ProcessBuilder(
-            buildList {
-                add("git")
-                add("log")
-                if (sinceRevision != null) add("$sinceRevision..HEAD")
-                add("--pretty=format:$GIT_LOG_FORMAT")
-            },
-        )
-
-    /**
-     * Discards local changes and moves the checked out branch onto `FETCH_HEAD`.
-     *
-     * Used after [gitFetch] to advance a clone that is only ever read. Unlike a merge this cannot
-     * stop halfway on a rewritten history or leave conflict markers in the working tree — which
-     * matters, because a conflicted checkout still passes a validity check while serving file
-     * contents that are not the revision's.
-     */
-    fun gitResetHard() = ProcessBuilder("git", "reset", "--hard", "FETCH_HEAD")
-
-    /**
      * Constructs a `git log` command that retrieves all commits with a custom format.
      */
     fun gitCommits() = ProcessBuilder("git", "log", "--pretty=format:%cI - %H - %an - %s")
