@@ -358,6 +358,8 @@ class ProjectRoleServiceTest {
         every { projectRoleRepository.deleteById(id) } just runs
         every { assignmentRepository.findAllHoldingRole(id) } returns emptyList()
         every { assignmentRepository.saveAll(any<List<ProjectUserAssignment>>()) } returns mutableListOf()
+        every { skillRepository.findAllByProjectRolesId(id) } returns emptyList()
+        every { skillRepository.saveAll(any<List<Skill>>()) } returns mutableListOf()
 
         service.deleteRole(id)
 
@@ -382,11 +384,41 @@ class ProjectRoleServiceTest {
         every { projectRoleRepository.deleteById(id) } just runs
         every { assignmentRepository.findAllHoldingRole(id) } returns listOf(holder)
         every { assignmentRepository.saveAll(any<List<ProjectUserAssignment>>()) } returns mutableListOf()
+        every { skillRepository.findAllByProjectRolesId(id) } returns emptyList()
+        every { skillRepository.saveAll(any<List<Skill>>()) } returns mutableListOf()
 
         service.deleteRole(id)
 
         assertTrue(holder.projectRoles.isEmpty())
         verify(exactly = 1) { assignmentRepository.saveAll(listOf(holder)) }
+    }
+
+    /**
+     * Deleting a role unlinks it from its skills first, which stay in the catalog.
+     *
+     * `sprintstart_skill_project_roles` references the role, so a role carrying any skill used to
+     * fail the delete on the constraint.
+     */
+    @Test
+    fun `deleteRole unlinks the role from its skills and keeps the skills`() {
+        val id = UUID.randomUUID()
+        val role = ProjectRole(id = id, name = "Dev", description = "Test")
+        val other = ProjectRole(id = UUID.randomUUID(), name = "Ops", description = "Test")
+        val skill = Skill(name = "Kotlin", category = null, projectRoles = mutableSetOf(role, other))
+
+        every { projectRoleRepository.existsById(id) } returns true
+        every { projectRoleRepository.deleteById(id) } just runs
+        every { assignmentRepository.findAllHoldingRole(id) } returns emptyList()
+        every { assignmentRepository.saveAll(any<List<ProjectUserAssignment>>()) } returns mutableListOf()
+        every { skillRepository.findAllByProjectRolesId(id) } returns listOf(skill)
+        every { skillRepository.saveAll(any<List<Skill>>()) } returns mutableListOf()
+
+        service.deleteRole(id)
+
+        assertEquals(setOf(other), skill.projectRoles)
+        verify(exactly = 1) { skillRepository.saveAll(listOf(skill)) }
+        verify(exactly = 0) { skillRepository.delete(any()) }
+        verify(exactly = 1) { projectRoleRepository.deleteById(id) }
     }
 
     @Test
