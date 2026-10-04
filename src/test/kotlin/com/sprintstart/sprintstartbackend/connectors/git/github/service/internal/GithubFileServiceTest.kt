@@ -180,6 +180,47 @@ class GithubFileServiceTest {
     }
 
     @Test
+    fun `publishes a failure instead of hanging the run when the cursor write fails`() = runTest {
+        givenIngestSucceeds()
+        every { repoConnectionRepository.updateFileCursor(any(), any()) } throws
+            RuntimeException("cursor write rejected")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+        }
+
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("cursor write rejected") },
+            )
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+    }
+
+    @Test
+    fun `publishes a failure instead of hanging the run when reconciling deletions fails`() = runTest {
+        givenIngestSucceeds(resyncedPaths = setOf("README.md"))
+        every { eventPublisher.publishEvent(match<Any> { it is GithubFilesResyncedEvent }) } throws
+            RuntimeException("reconciliation rejected")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+        }
+
+        verify(exactly = 0) { repoConnectionRepository.updateFileCursor(any(), any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("reconciliation rejected") },
+            )
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+    }
+
+    @Test
     fun `reports an unknown repository without calling the engine`() = runTest {
         every { repoConnectionRepository.findById(any()) } returns Optional.empty()
 
