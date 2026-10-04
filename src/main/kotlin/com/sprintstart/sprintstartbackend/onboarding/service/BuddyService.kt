@@ -273,6 +273,7 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
+    @Suppress("CyclomaticComplexMethod")
     suspend fun sendMessageForMe(
         authId: String,
         sessionId: UUID?,
@@ -352,7 +353,7 @@ class BuddyService(
         // user's message is already persisted above, so the transcript still shows what they asked.
         if (projectIds.isEmpty()) {
             return flow {
-                emitAgentReply(NO_PROJECT_REPLY, emptyList())
+                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList())
                 buddyMessageRepository.save(
                     BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = NO_PROJECT_REPLY),
                 )

@@ -609,14 +609,14 @@ class BuddyServiceTest {
 
         @Test
         fun `scopes retrieval to the one project the hire is on`() = runTest {
-            val session = BuddySession(userId = userId)
+            val session = BuddySession(userId = userId, title = "session")
             stageConversation(session)
             val only = UUID.randomUUID()
             every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn(only))
             val requests = mutableListOf<BuddyAgentRequest>()
             coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
 
-            service.sendMessageForMe(authId, "how do we deploy?").toList()
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
 
             assertThat(requests.first().projectIds).containsExactly(only.toString())
         }
@@ -631,11 +631,11 @@ class BuddyServiceTest {
          */
         @Test
         fun `a hire on no project is told the buddy cannot search their material yet`() = runTest {
-            val session = BuddySession(userId = userId)
+            val session = BuddySession(userId = userId, title = "session")
             stageConversation(session)
             every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
 
-            val events = service.sendMessageForMe(authId, "how do we deploy?").toList()
+            val events = service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
 
             // Nothing was searched, because there was nothing to search.
             coVerify(exactly = 0) { onboardingAiClient.buddyAgentTurn(any()) }
