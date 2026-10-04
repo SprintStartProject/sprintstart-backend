@@ -159,7 +159,7 @@ class AssignedIssueReaderTest {
     }
 
     /**
-     * Rework is half the operational definition of autonomy — "done, with nothing sent back" —
+     * Rework is what tells clean work from work sent back -- "done, with nothing sent back" --
      * so a flat zero here would hand every tracked issue a clean run it had not earned. Somebody
      * else moving the issue out of a status the hire put it in is the tracker's version of a review
      * asking for changes.

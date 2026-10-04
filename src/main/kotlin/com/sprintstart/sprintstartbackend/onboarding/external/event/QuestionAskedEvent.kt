@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.external.events
+package com.sprintstart.sprintstartbackend.onboarding.external.event
 
 import java.time.Instant
 import java.util.UUID
@@ -16,7 +16,7 @@ import java.util.UUID
  * @property question the raw question text, unredacted
  * @property askedAt when the question was asked
  */
-data class ChatQuestionAskedEvent(
+data class QuestionAskedEvent(
     val messageId: UUID,
     val chatId: UUID,
     val projectId: UUID,

@@ -195,6 +195,31 @@ class StarterWorkControllerTest(
     }
 
     @Test
+    fun `setTaskZeroEligibility should return 200 and the flagged task for a PM`() {
+        val id = UUID.randomUUID()
+        every { starterWorkTaskProposalService.setTaskZeroEligibility(id, true) } returns taskResponse()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/$id/task-zero")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("eligible" to true))),
+            ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `setTaskZeroEligibility should return 403 for a plain USER`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/${UUID.randomUUID()}/task-zero")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("eligible" to true))),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
     fun `listCandidates should return 200 with the pool marking, for a PM`() {
         val projectId = UUID.randomUUID()
         every { starterWorkTaskProposalService.listCandidates(projectId) } returns

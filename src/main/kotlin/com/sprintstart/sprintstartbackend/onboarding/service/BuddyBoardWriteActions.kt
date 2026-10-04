@@ -493,7 +493,8 @@ class BuddyBoardWriteActions(
             description = "Offer to keep a list you have just written as a checklist card on the " +
                 "hire's board. Use it right after you have answered 'how do I start' or 'what do " +
                 "I do next' with steps — the conversation is not replayed, so a list they only " +
-                "read here is a list they will have to ask for again tomorrow. " +
+                "read here is a list they will have to ask for again tomorrow — and whenever they ask " +
+                "you to put a list on their board. " +
                 "ONE ITEM PER THING THEY DO, not one per line you wrote. A card is a flat list of " +
                 "things to tick off, so an answer with headed sections and bullets under them " +
                 "becomes one item per section, with the detail folded into that item's own words " +
@@ -648,7 +649,8 @@ class BuddyBoardWriteActions(
             description = "Offer to keep an explanation you have just given as a note on the " +
                 "hire's board. Use it sparingly and only for something that will still be true " +
                 "and still be needed next week — how a part of this system works, a convention " +
-                "the team holds to. Not for an answer about right now, and not for steps: those " +
+                "the team holds to — or whenever the hire asks you to keep something as a note; their " +
+                "asking outweighs your sense of what is worth keeping. Not for steps: those " +
                 "are place_checklist. Pass the explanation in your own words from the reply, " +
                 "shortened to what is worth keeping. Every reply already carries a button that " +
                 "keeps the whole answer, so only offer this when a card is better than that. This " +

@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.external
+package com.sprintstart.sprintstartbackend.onboarding.external.model
 
 import java.time.Instant
 import java.util.UUID
@@ -12,7 +12,7 @@ import java.util.UUID
  * to tell a topic that is picking up from one that has gone quiet, since the grouping itself
  * carries no time.
  */
-data class ChatQuestion(
+data class BuddyQuestion(
     val id: UUID,
     val text: String,
     val askedAt: Instant,

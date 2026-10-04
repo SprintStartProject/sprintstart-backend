@@ -283,7 +283,6 @@ internal class BitbucketConnectionController(
      *
      * A repository whose source is disabled is refused: disabling is how a caller pauses ingestion,
      * and an explicit update of a paused repository is answered rather than quietly performed.
-     * A connection the caller cannot see answers the same 404 as an unknown id.
      *
      * @param repositoryId The connected repository to update.
      * @return 202 with the transaction id the connector's progress events report under.

@@ -217,6 +217,7 @@ internal class BitbucketConnectionService(
     suspend fun discoverRepositoriesOfWorkspace(
         request: DiscoverBitbucketRepositoriesRequest,
     ): DiscoverBitbucketRepositoriesResponse {
+        println("TESTSET")
         val token = credentialApi.findSecret(request.authId, request.credentialName)
             ?: throw AtlassianCredentialNotFoundException(request.authId, request.credentialName)
 
