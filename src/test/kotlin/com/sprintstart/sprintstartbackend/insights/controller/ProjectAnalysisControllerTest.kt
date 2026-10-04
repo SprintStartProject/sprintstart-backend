@@ -69,7 +69,8 @@ class ProjectAnalysisControllerTest(
         tasks = emptyList(),
     )
 
-    private val validBody = """
+    private val validBody =
+        """
         {
           "score": 72,
           "findings": [
@@ -77,7 +78,7 @@ class ProjectAnalysisControllerTest(
           ],
           "tasks": [{"id": "team", "label": "Team", "status": "done"}]
         }
-    """.trimIndent()
+        """.trimIndent()
 
     @Test
     fun `getRuns should return 200 and the runs for a PM`() {
