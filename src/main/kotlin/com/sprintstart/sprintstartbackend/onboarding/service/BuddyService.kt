@@ -250,6 +250,12 @@ class BuddyService(
      * the model was given rather than by what the prompt asked of it. Retrieval is unaffected —
      * `search_docs` runs AI-side — so this costs the hire nothing in what they can find.
      *
+     * A hire on no project is refused rather than answered. Retrieval is scoped to their projects
+     * and the AI admits nothing from an empty scope, so the turn would search nothing and reply as
+     * though the project had no material — the worst moment to sound confident and the hardest
+     * state for the hire to diagnose. They are told that instead, and what resolves it. See
+     * [projectIdsFor].
+     *
      * Per message rather than per session. A hire who looked something up and then wants the mentor
      * back should not have to remember which state a switch was left in, and the transcript stays
      * one conversation across the change.
@@ -267,6 +273,7 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
+    @Suppress("CyclomaticComplexMethod")
     suspend fun sendMessageForMe(
         authId: String,
         sessionId: UUID?,
@@ -340,6 +347,19 @@ class BuddyService(
         // re-reading would cost a membership lookup on every step of the agent loop.
         val vocabulary = vocabulary()
         val projectIds = session.projectId?.let { listOf(it.toString()) } ?: projectIdsFor(userId)
+
+        // A hire on no project has no scope the AI may retrieve from — it fails closed on an empty
+        // list — so a turn would search nothing and answer as though the project had no material on
+        // the subject. Refuse the turn here instead, and say the one thing that resolves it. The
+        // user's message is already persisted above, so the transcript still shows what they asked.
+        if (projectIds.isEmpty()) {
+            return flow {
+                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList())
+                buddyMessageRepository.save(
+                    BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = NO_PROJECT_REPLY),
+                )
+            }
+        }
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
@@ -444,9 +464,16 @@ class BuddyService(
      * The projects whose material this hire may be shown, as ids.
      *
      * Every project they are on rather than one of them: the buddy is not a per-project surface,
-     * and a hire onboarding on two projects asking "how do we deploy" means either. An empty list
-     * means the AI searches everything, which is the honest answer for somebody on no project yet
-     * — there is nothing narrower that would be true.
+     * and a hire onboarding on two projects asking "how do we deploy" means either.
+     *
+     * An empty list is not "search everything": the AI service fails closed on an empty scope and
+     * admits nothing. That is the intended reading, not a limitation. The same empty list comes
+     * back from a user record that has not synced, a membership lookup that returned nothing, and
+     * an account mid-provisioning, so it is not evidence the hire may see everything — and reading
+     * it as intent would turn a missing value into an authorization decision. The failure modes are
+     * not symmetric: fail-open shows one project's material to somebody on another, while
+     * fail-closed returns an empty answer. [sendMessageForMe] refuses the turn and tells the hire
+     * rather than letting an empty scope pass silently.
      */
     private fun projectIdsFor(userId: UUID): List<String> =
         userApi
@@ -530,6 +557,17 @@ class BuddyService(
 
         const val FALLBACK_REPLY =
             "I wasn't able to finish answering that one — could you rephrase or add a little detail?"
+
+        // Shown when the hire is on no project. Retrieval fails closed on an empty scope, so a
+        // turn would search nothing and answer as though the project had no material — the worst
+        // possible moment to sound confident. The turn is refused instead, and the hire is told the
+        // state and the one thing that resolves it, the same way `BuddyBoardTools` tells them there
+        // is no board to put a card on.
+        const val NO_PROJECT_REPLY =
+            "I can't look through your project's material yet — you're not on a project, so " +
+                "there's nothing for me to search. Once you're added to one, I'll be able to find " +
+                "its docs, code and conventions for you. If you expected to be on a project " +
+                "already, ask your project manager to add you."
 
         // Shown when opening a visit can't reach the AI: a plain, warm welcome so the page still
         // works and the hire can start talking.
