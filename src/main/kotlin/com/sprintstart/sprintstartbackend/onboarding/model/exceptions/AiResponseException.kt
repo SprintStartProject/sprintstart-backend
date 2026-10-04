@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.models.exceptions
+package com.sprintstart.sprintstartbackend.onboarding.model.exceptions
 
 /**
  * Thrown if the AI repo returns an error to us.

@@ -127,7 +127,14 @@ object AppGuide {
             name = "Buddy",
             path = "/buddy",
             whereToFind = "the Buddy tab next to Chat, or the floating buddy on any page",
-            purpose = "The onboarding buddy as a full page.",
+            purpose = "The onboarding buddy as a full page, with the list of their earlier conversations.",
+            howTos = listOf(
+                AppGuideHowTo(
+                    "start a fresh conversation with the buddy",
+                    "\"Start a new conversation\" (also on the floating buddy); the buddy keeps what " +
+                        "it has learned about them",
+                ),
+            ),
         ),
         AppGuidePage(
             name = "Knowledge Base",
@@ -290,7 +297,7 @@ object AppGuide {
             howTos = listOf(
                 AppGuideHowTo(
                     "connect GitHub, Jira, Confluence or upload documents",
-                    "\"Add sources\" → pick the kind → \"Connect\"",
+                    "\"Add sources\" → pick the kind, fill it in → \"Connect now\"",
                 ),
             ),
             roles = MANAGERS,

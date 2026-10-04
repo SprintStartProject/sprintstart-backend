@@ -84,7 +84,7 @@ class BuddyControllerTeamModeTest(
             ).andExpect(status().isOk)
             .andExpect(jsonPath("$[0].content").value("who is stuck?"))
 
-        verify(exactly = 0) { buddyService.getMessagesForMe(any()) }
+        verify(exactly = 0) { buddyService.getMessagesForMe(any(), null) }
     }
 
     @Test
@@ -116,7 +116,7 @@ class BuddyControllerTeamModeTest(
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
         coVerify { buddyTeamService.streamOpenForMe(authId, projectId) }
-        coVerify(exactly = 0) { buddyService.streamOpenForMe(any()) }
+        coVerify(exactly = 0) { buddyService.streamOpenForMe(any(), null) }
     }
 
     @Test
@@ -144,13 +144,29 @@ class BuddyControllerTeamModeTest(
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
         coVerify { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", false) }
-        coVerify(exactly = 0) { buddyService.sendMessageForMe(any(), any(), any()) }
+        coVerify(exactly = 0) {
+            buddyService.sendMessageForMe(
+                any(),
+                null,
+                any(),
+                any(),
+                null,
+            )
+        }
     }
 
     /** A client that never names a project stays in the caller's own buddy, exactly as before. */
     @Test
     fun `sendMessageForMe without a teamProjectId never reaches team mode`() {
-        coEvery { buddyService.sendMessageForMe(authId, "hi", true) } returns flowOf(BuddyStreamEvent(type = "done"))
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                null,
+                "hi",
+                true,
+                null,
+            )
+        } returns flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
             .perform(

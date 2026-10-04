@@ -620,7 +620,7 @@ class BuddyTeamServiceTest {
         service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
 
         coVerify { buddyCompactionService.compactTeamIfNeeded(userId, projectId) }
-        coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any()) }
+        coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any(), UUID.randomUUID()) }
     }
 
     @Test

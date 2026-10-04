@@ -4,7 +4,6 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import java.time.Instant
 import java.util.UUID
@@ -17,13 +16,13 @@ import java.util.UUID
 @Entity
 @Table(
     name = "buddy_sessions",
-    uniqueConstraints = [UniqueConstraint(name = "uq_buddy_sessions_user", columnNames = ["user_id"])],
 )
 class BuddySession(
     @Id
     override val id: UUID = UUID.randomUUID(),
     @Column(name = "user_id", nullable = false)
     val userId: UUID,
+    var title: String = "",
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
     /**
@@ -57,4 +56,6 @@ class BuddySession(
     @Version
     @Column(nullable = false)
     var version: Long = 0,
+    @Column("project_id")
+    var projectId: UUID? = null,
 ) : BuddyMemory

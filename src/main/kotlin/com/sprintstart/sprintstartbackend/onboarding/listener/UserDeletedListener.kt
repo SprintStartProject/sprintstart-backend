@@ -82,7 +82,7 @@ class UserDeletedListener(
     }
 
     private fun eraseConversations(userId: UUID) {
-        buddySessionRepository.findByUserId(userId)?.let {
+        buddySessionRepository.findByUserId(userId).forEach {
             buddyMessageRepository.deleteAllBySessionId(it.id)
         }
         buddySessionRepository.deleteAllByUserId(userId)
