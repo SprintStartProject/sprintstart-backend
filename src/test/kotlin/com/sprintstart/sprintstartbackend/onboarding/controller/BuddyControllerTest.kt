@@ -397,6 +397,47 @@ class BuddyControllerTest(
         }
     }
 
+    /** The page the hire was on reaches the buddy, so "where is this here?" has a "here". */
+    @Test
+    fun `sendMessageForMe passes the current page through`() {
+        val sessionId = UUID.randomUUID()
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are roles?",
+                true,
+                null,
+                "/team-management",
+            )
+        } returns
+            flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """{"sessionId":"$sessionId","content":"where are roles?","currentPage":"/team-management"}""",
+                    ),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are roles?",
+                true,
+                null,
+                "/team-management",
+            )
+        }
+    }
+
     @Test
     fun `sendMessageForMe should stream tokens and done`() {
         val events = listOf(

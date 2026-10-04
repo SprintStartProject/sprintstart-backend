@@ -30,4 +30,11 @@ data class SendBuddyMessageRequest(
      */
     val teamProjectId: UUID? = null,
     val filters: BuddySessionFilters? = null,
+    /**
+     * The app path the sender was on (`/team-management`, `/team/…`), so "where is this on the page
+     * I'm on?" can be answered. Only ever matched against the app guide, never echoed; absent from
+     * older clients. Not validated: an odd value must cost the guide a line, never the hire their
+     * message.
+     */
+    val currentPage: String? = null,
 )

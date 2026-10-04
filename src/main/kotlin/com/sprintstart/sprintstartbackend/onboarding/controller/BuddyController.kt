@@ -281,6 +281,7 @@ class BuddyController(
                 request.content,
                 request.capabilitiesEnabled,
                 request.filters,
+                request.currentPage,
             )
         } else {
             buddyTeamService.sendMessageForMe(
@@ -288,6 +289,7 @@ class BuddyController(
                 teamProjectId,
                 request.content,
                 request.capabilitiesEnabled,
+                request.currentPage,
             )
         }
     }
