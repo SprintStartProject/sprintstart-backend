@@ -236,6 +236,12 @@ class ProjectRoleService(
         val holders = projectUserAssignmentRepository.findAllHoldingRole(roleId)
         holders.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
         projectUserAssignmentRepository.saveAll(holders)
+        // The same for the skills linked to it: `sprintstart_skill_project_roles` references the
+        // role too, and without this a role that carries any skill could not be deleted at all —
+        // the constraint failed the delete. The skills themselves stay in the catalog.
+        val linkedSkills = skillRepository.findAllByProjectRolesId(roleId)
+        linkedSkills.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
+        skillRepository.saveAll(linkedSkills)
         projectRoleRepository.deleteById(roleId)
     }
 

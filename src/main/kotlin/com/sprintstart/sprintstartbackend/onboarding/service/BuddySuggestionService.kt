@@ -106,6 +106,12 @@ class BuddySuggestionService(
                 label = "Who's on my team?",
                 question = "Who else is on my project?",
             ),
+            // Last, because it is about the app rather than the hire's onboarding. "This page" is
+            // the one the chip was pressed on: the client sends it with the message.
+            BuddyAppGuideTools.GET_APP_GUIDE to BuddySuggestionResponse(
+                label = "What can I do here?",
+                question = "What can I do on this page?",
+            ),
         )
     }
 }

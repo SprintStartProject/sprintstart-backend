@@ -730,7 +730,10 @@ class BoardService(
      * Not [BuddyService.getOrCreateSession] — hydrating a card must not create a session.
      */
     private fun memoryRecapContent(userId: UUID): MemoryRecapContent {
-        val session = buddySessionRepository.findByUserId(userId)
+        val session = buddySessionRepository
+            .findByUserIdOrderByCreatedAtDesc(userId)
+            .firstOrNull()
+
         return MemoryRecapContent(
             memory = session?.summary,
             messagesRemembered = session?.summarizedCount ?: 0,

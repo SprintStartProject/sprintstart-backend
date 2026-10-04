@@ -43,6 +43,7 @@ class BuddyToolExecutor(
     private val arrivalStepService: ArrivalStepService,
     private val competencyPlacementService: CompetencyPlacementService,
     private val buddyPathTools: BuddyPathTools,
+    private val buddyAppGuideTools: BuddyAppGuideTools,
 ) {
     /**
      * The backend tools the AI reasoner is told it may call, for this hire.
@@ -91,6 +92,8 @@ class BuddyToolExecutor(
         add(GET_SUGGESTED_TASKS_SPEC)
         add(SEARCH_CANONICAL_ANSWERS_SPEC)
         add(GET_TEAMMATES_SPEC)
+        // Always mounted: everybody uses the app, and the guide says what this caller can open.
+        add(BuddyAppGuideTools.GET_APP_GUIDE_SPEC)
         addAll(buddyBoardTools.toolSpecs())
     }
 
@@ -138,8 +141,12 @@ class BuddyToolExecutor(
         return "Never placed on (a short chat would settle these, and you may offer one): $named"
     }
 
-    /** Executes [call] on behalf of [userId], returning a plain-text result for the model. */
-    fun execute(call: BuddyToolCallDto, userId: UUID): String =
+    /**
+     * Executes [call] on behalf of [userId], returning a plain-text result for the model.
+     *
+     * @param currentPage The app path the caller was on when they spoke, for the app guide.
+     */
+    fun execute(call: BuddyToolCallDto, userId: UUID, currentPage: String? = null): String =
         when {
             buddyBoardTools.handles(call.name) -> buddyBoardTools.execute(call, userId)
             buddyPathTools.handles(call.name) -> buddyPathTools.execute(userId)
@@ -152,6 +159,7 @@ class BuddyToolExecutor(
                 GET_SUGGESTED_TASKS -> getSuggestedTasks(userId)
                 SEARCH_CANONICAL_ANSWERS -> searchCanonicalAnswers(userId, call.stringArg("query"))
                 GET_TEAMMATES -> getTeammates(userId)
+                BuddyAppGuideTools.GET_APP_GUIDE -> buddyAppGuideTools.guideFor(userId, currentPage)
                 else -> "Unknown tool: ${call.name}."
             }
         }

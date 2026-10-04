@@ -1,7 +1,9 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCitationDto
@@ -14,10 +16,15 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabul
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGenerateSessionTitleRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -28,6 +35,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -57,13 +65,17 @@ class BuddyService(
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
     private val applicationScope: CoroutineScope,
+    private val buddyAiClient: BuddyAiClient,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    /** Finds or creates a user's one ongoing buddy session. */
-    fun getOrCreateSession(userId: UUID): BuddySession =
-        buddySessionRepository.findByUserId(userId)
-            ?: buddySessionRepository.save(BuddySession(userId = userId))
+    /** Finds a user's ongoing buddy sessions. */
+    fun getSessions(authId: String): GetSessionsResponse {
+        val userId = resolveUserId(authId)
+        val sessions = buddySessionRepository.findByUserIdOrderByCreatedAtDesc(userId).map { it.toResponse() }.toList()
+        return GetSessionsResponse(sessions)
+    }
 
     /**
      * Returns the current visit's buddy messages, oldest first.
@@ -74,14 +86,34 @@ class BuddyService(
      * The boundary is the last opening marker, never [BuddySession.summarizedCount].
      * Keying it to the compaction cursor makes a hire's own scrollback shrink as the model folds.
      */
-    fun getMessagesForMe(authId: String): List<BuddyMessageResponse> {
+    fun getMessagesForMe(authId: String, sessionId: UUID?): List<BuddyMessageResponse> {
         val userId = resolveUserId(authId)
-        val session = buddySessionRepository.findByUserId(userId) ?: return emptyList()
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Buddy session not found for current user")
         val messages = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
         // No marker anywhere falls back to showing *everything*, never nothing.
         return messages
             .drop(messages.indexOfLast { it.opening }.takeIf { it >= 0 } ?: 0)
             .map { it.toResponse() }
+    }
+
+    /**
+     * Creates a new session for the current user.
+     *
+     * @param authId The ID of the currently authenticated user.
+     * @param projectId The (optional) ID of the project the chat is linked to.
+     */
+    fun createSession(authId: String, projectId: UUID?): CreateSessionResponse {
+        val userId = resolveUserId(authId)
+        val session = BuddySession(
+            userId = userId,
+            projectId = projectId,
+        )
+        buddySessionRepository.save(session)
+        return CreateSessionResponse(session.id)
     }
 
     /**
@@ -97,9 +129,15 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun streamOpenForMe(authId: String): Flow<BuddyStreamEvent> {
+    suspend fun streamOpenForMe(authId: String, sessionId: UUID?): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
-        val session = getOrCreateSession(userId)
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
 
         val all = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
 
@@ -147,7 +185,7 @@ class BuddyService(
             finishOpen(session, streamed.toString(), opening)
             // Whatever the previous visit left unfolded gets folded now, while the hire is reading
             // the greeting rather than waiting on it.
-            compactInBackground(userId)
+            compactInBackground(userId, session.id)
         }
     }
 
@@ -159,9 +197,9 @@ class BuddyService(
      * else. The point of the whole change is that no hire is ever blocked on this, so it must
      * not be awaited here, and [BuddyCompactionService.compactIfNeeded] never throws.
      */
-    private fun compactInBackground(userId: UUID) {
+    private fun compactInBackground(userId: UUID, sessionId: UUID) {
         applicationScope.launch {
-            buddyCompactionService.compactIfNeeded(userId)
+            buddyCompactionService.compactIfNeeded(userId, sessionId)
         }
     }
 
@@ -225,17 +263,37 @@ class BuddyService(
      * This turn must never ask the AI to fold. A fold runs before the reply is composed, and
      * since the cursor advances by exactly what it folds, the window would then sit at [WINDOW]
      * permanently — an extra serialized model call on every turn. [BuddyCompactionService] folds
-     * afterwards instead; a fold that has not happened yet just means a longer window this turn.
+     * afterward instead; a fold that has not happened yet just means a longer window this turn.
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
     suspend fun sendMessageForMe(
         authId: String,
+        sessionId: UUID?,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        filters: BuddySessionFilters?,
+        currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
-        val session = getOrCreateSession(userId)
+        if (sessionId == null) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
+        }
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
+
+        // Check if title has to be generated
+        if (session.title.isBlank()) {
+            try {
+                val generatedTitle = buddyAiClient.getSessionTitle(AiGenerateSessionTitleRequest(content))
+                session.title = generatedTitle.title
+                buddySessionRepository.save(session)
+            } catch (e: AiResponseException) {
+                logger.warn("Could not generate buddy session title", e)
+            }
+        }
 
         // Read history before saving the new message so it isn't sent to the AI service twice.
         // Everything the summary already covers stays out of the prompt.
@@ -244,9 +302,27 @@ class BuddyService(
             .drop(session.summarizedCount)
             .map { it.toAgentMessage() }
 
-        buddyMessageRepository.save(
-            BuddyMessage(session = session, role = BuddyMessageRole.USER, content = content),
+        val message = BuddyMessage(
+            session = session,
+            role = BuddyMessageRole.USER,
+            content = content,
         )
+
+        buddyMessageRepository.save(message)
+
+        val questionForFaq = stripQuotedSelection(message.content)
+
+        session.projectId?.let { projectId ->
+            eventPublisher.publishEvent(
+                QuestionAskedEvent(
+                    messageId = message.id,
+                    chatId = session.id,
+                    projectId = projectId,
+                    question = questionForFaq,
+                    askedAt = message.createdAt,
+                ),
+            )
+        }
 
         // The AI reasoner sees the read-only tools *and* the action tools it may propose. An action
         // tool call never mutates here — it produces a proposal the hire must confirm out-of-band.
@@ -263,10 +339,11 @@ class BuddyService(
         // Both resolved once per turn, not per hop: neither can change mid-conversation, and
         // re-reading would cost a membership lookup on every step of the agent loop.
         val vocabulary = vocabulary()
-        val projectIds = projectIdsFor(userId)
+        val projectIds = session.projectId?.let { listOf(it.toString()) } ?: projectIdsFor(userId)
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
+            val reasoning = mutableListOf<String>()
             var citations: List<BuddyCitationDto> = emptyList()
             var answer: String? = null
             var step = 0
@@ -274,8 +351,18 @@ class BuddyService(
             while (answer == null && step < MAX_AGENT_STEPS) {
                 step++
                 val response = onboardingAiClient.buddyAgentTurn(
-                    agentRequest(messages, tools, step, session, vocabulary, projectIds, capabilitiesEnabled),
+                    agentRequest(
+                        messages,
+                        tools,
+                        step,
+                        session,
+                        vocabulary,
+                        projectIds,
+                        capabilitiesEnabled,
+                        filters,
+                    ),
                 )
+                reasoning += response.reasoning
                 citations = response.citations
                 if (response.final) {
                     answer = response.text
@@ -287,7 +374,7 @@ class BuddyService(
                         next.add(
                             BuddyAgentMessageDto(
                                 role = "tool",
-                                content = runToolCall(call, userId),
+                                content = runToolCall(call, userId, currentPage),
                                 toolCallId = call.id,
                             ),
                         )
@@ -297,14 +384,14 @@ class BuddyService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            emitAgentReply(reply, citations)
+            emitAgentReply(reply, reasoning, citations)
 
             buddyMessageRepository.save(
                 BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
             )
             // Only now, with the reply persisted and the hire reading it. Folding before this point
             // is what the whole change exists to stop.
-            compactInBackground(userId)
+            compactInBackground(userId, session.id)
         }
     }
 
@@ -333,6 +420,7 @@ class BuddyService(
         vocabulary: BuddyVocabularyDto,
         projectIds: List<String>,
         capabilitiesEnabled: Boolean,
+        filters: BuddySessionFilters?,
     ): BuddyAgentRequest =
         BuddyAgentRequest(
             messages = messages,
@@ -349,6 +437,7 @@ class BuddyService(
             // mode would rebuild a mentor offering to act, mid-conversation with a hire who asked
             // it not to.
             capabilitiesEnabled = capabilitiesEnabled,
+            filters = filters,
         )
 
     /**
@@ -375,6 +464,7 @@ class BuddyService(
     private suspend fun FlowCollector<BuddyStreamEvent>.runToolCall(
         call: BuddyToolCallDto,
         userId: UUID,
+        currentPage: String?,
     ): String =
         if (buddyActionService.isAction(call.name)) {
             val outcome = buddyActionService.propose(call, userId)
@@ -415,7 +505,7 @@ class BuddyService(
             outcome.toolResult
         } else {
             emit(BuddyStreamEvent(type = "tool_use", name = call.name, kind = "tool"))
-            buddyToolExecutor.execute(call, userId)
+            buddyToolExecutor.execute(call, userId, currentPage)
         }
 
     private fun resolveUserId(authId: String): UUID =
@@ -457,4 +547,11 @@ class BuddyService(
         // emitted token reproduces the answer exactly (newlines and punctuation preserved).
         val TOKEN_CHUNK = Regex("(?<= )")
     }
+
+    private fun stripQuotedSelection(content: String): String =
+        content
+            .lineSequence()
+            .filterNot { it.trimStart().startsWith(">") }
+            .joinToString("\n")
+            .trim()
 }

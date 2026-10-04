@@ -5,7 +5,11 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface BuddySessionRepository : JpaRepository<BuddySession, UUID> {
-    fun findByUserId(userId: UUID): BuddySession?
+    fun findByUserId(userId: UUID): List<BuddySession>
+
+    fun findByUserIdOrderByCreatedAtDesc(userId: UUID): List<BuddySession>
+
+    fun findByIdAndUserId(sessionId: UUID, userId: UUID): BuddySession?
 
     fun deleteAllByUserId(userId: UUID)
 }
