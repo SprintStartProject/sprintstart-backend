@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.entity
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -8,6 +9,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
+import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
 import java.time.Instant
 import java.util.UUID
@@ -50,4 +52,10 @@ class BuddyMessage(
      */
     @Column(nullable = false)
     val opening: Boolean = false,
+    @OneToMany(
+        mappedBy = "message",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val citations: List<BuddyCitation> = emptyList(),
 )

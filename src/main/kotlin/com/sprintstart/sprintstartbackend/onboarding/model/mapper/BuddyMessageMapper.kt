@@ -2,8 +2,10 @@ package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyCitationResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 
 fun BuddyMessage.toResponse(): BuddyMessageResponse =
@@ -12,6 +14,17 @@ fun BuddyMessage.toResponse(): BuddyMessageResponse =
         role = role,
         content = content,
         createdAt = createdAt,
+        citations = citations.map { it.toResponse() },
+    )
+
+fun BuddyCitation.toResponse(): BuddyCitationResponse =
+    BuddyCitationResponse(
+        id = id,
+        artifactId = artifactId,
+        filename = filename,
+        sourceUrl = sourceUrl,
+        startLine = startLine,
+        startPage = startPage,
     )
 
 /**

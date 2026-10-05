@@ -433,7 +433,11 @@ internal class BuddyService(
             emitAgentReply(reply, reasoning, resolvedCitations)
 
             val message = buddyMessageRepository.save(
-                BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
+                BuddyMessage(
+                    session = session,
+                    role = BuddyMessageRole.ASSISTANT,
+                    content = reply,
+                ),
             )
 
             val citationEntities = resolvedCitations.map { citation ->

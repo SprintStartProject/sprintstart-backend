@@ -9,4 +9,14 @@ data class BuddyMessageResponse(
     val role: BuddyMessageRole,
     val content: String,
     val createdAt: Instant,
+    val citations: List<BuddyCitationResponse> = emptyList(),
+)
+
+data class BuddyCitationResponse(
+    val id: UUID,
+    val artifactId: UUID,
+    val filename: String,
+    val sourceUrl: String?,
+    val startLine: Int?,
+    val startPage: Int?,
 )
