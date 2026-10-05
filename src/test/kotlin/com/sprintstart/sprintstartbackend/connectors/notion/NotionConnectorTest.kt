@@ -4,11 +4,12 @@ import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourc
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
 import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionConnectionRuntimeService
-import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionPageIngestionService
+import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionWorkspaceIngestionService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -20,11 +21,11 @@ import kotlin.test.assertFailsWith
 
 class NotionConnectorTest {
     private val connectionService = mockk<NotionConnectionRuntimeService>()
-    private val ingestionService = mockk<NotionPageIngestionService>()
+    private val ingestionService = mockk<NotionWorkspaceIngestionService>()
     private val connector = NotionConnector(connectionService, ingestionService)
 
     @Test
-    fun `identifies and maps Notion page sources`() {
+    fun `identifies and maps Notion workspace sources`() {
         val projectId = UUID.randomUUID()
         val source = sourceInstance()
         every { connectionService.getSourceInstances(projectId) } returns listOf(source)
@@ -79,9 +80,11 @@ class NotionConnectorTest {
         val projectId = UUID.randomUUID()
         val connectionId = UUID.randomUUID()
         val expected = NotionIngestionResult(UUID.randomUUID(), connectionId, NotionIngestionOutcome.CREATED)
-        coEvery { ingestionService.ingest(projectId, connectionId) } returns expected
+        coEvery { ingestionService.ingest(projectId, connectionId, true) } returns expected
 
         assertThat(connector.ingest(projectId, connectionId)).isEqualTo(expected)
+
+        coVerify(exactly = 1) { ingestionService.ingest(projectId, connectionId, true) }
     }
 
     private fun sourceInstance(
@@ -92,9 +95,9 @@ class NotionConnectorTest {
         return NotionSourceInstanceDto(
             connectionId = connectionId,
             sourceRef = "https://www.notion.so/page-1",
-            pageId = "page-1",
-            pageTitle = title,
-            pageUrl = "https://www.notion.so/page-1",
+            workspaceId = "page-1",
+            workspaceName = title,
+            workspaceUrl = "https://www.notion.so/page-1",
             status = if (enabled) "CONNECTED" else "DISABLED",
             enabled = enabled,
             lastSyncedAt = null,

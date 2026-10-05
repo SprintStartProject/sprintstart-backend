@@ -9,6 +9,13 @@ import java.net.URI
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 
+/**
+ * Reads token identity, searchable pages, page metadata, and nested blocks from Notion Cloud.
+ *
+ * Every request uses the configured Notion API version and passes through the shared retry and
+ * throttling policy. Cursor pagination is validated so malformed or cyclic responses fail instead
+ * of producing partial content.
+ */
 internal class NotionClient(
     private val webClient: WebClient,
     private val retryExecutor: NotionRetryExecutor,
@@ -32,7 +39,13 @@ internal class NotionClient(
         }
     }
 
-    suspend fun validateConnection(token: String) {
+    /**
+     * Validates a personal access token and returns its stable remote identity.
+     *
+     * Personal tokens identify their owning user. Workspace metadata is retained when Notion
+     * supplies bot-style identity fields, but it is optional because PAT responses may omit them.
+     */
+    suspend fun validateConnection(token: String): NotionTokenIdentity {
         val response = performGet<NotionUserResponse>(
             notionCurrentUserUri(baseUri),
             token,
@@ -41,6 +54,17 @@ internal class NotionClient(
         if (response.objectType != "user" || response.id.isBlank()) {
             throw NotionInvalidResponseException("validating the connection")
         }
+        return NotionTokenIdentity(
+            tokenOwnerId = response.id,
+            workspaceId = response.bot
+                ?.workspaceId
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() },
+            workspaceName = response.bot
+                ?.workspaceName
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() },
+        )
     }
 
     private suspend fun getBlockChildrenBatch(
@@ -57,6 +81,7 @@ internal class NotionClient(
         return response
     }
 
+    /** Retrieves every direct child of a block in server order across all cursor pages. */
     suspend fun getAllBlockChildren(token: String, blockId: String): List<NotionBlockResponse> {
         val blocks = mutableListOf<NotionBlockResponse>()
         val usedCursors = mutableSetOf<String>()
@@ -106,6 +131,7 @@ internal class NotionClient(
         return nodes
     }
 
+    /** Retrieves canonical metadata for one page by its stable Notion ID. */
     suspend fun getPage(token: String, pageId: String): NotionApiPageResponse {
         return performGet(notionPageUri(baseUri, pageId), token, "retrieving page")
     }
@@ -129,6 +155,12 @@ internal class NotionClient(
         return response
     }
 
+    /**
+     * Retrieves every ordinary page currently visible through Notion search for the token.
+     *
+     * Trashed pages and database/data-source rows are excluded because this connector ingests
+     * standalone pages only. Callers own reconciliation of pages absent from search.
+     */
     suspend fun discoverPages(token: String): List<NotionApiPageResponse> {
         val pages = mutableListOf<NotionApiPageResponse>()
         val usedCursors = mutableSetOf<String>()

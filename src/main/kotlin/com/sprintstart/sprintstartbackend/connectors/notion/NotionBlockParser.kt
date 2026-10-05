@@ -3,8 +3,16 @@ package com.sprintstart.sprintstartbackend.connectors.notion
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionBlockNode
 import org.springframework.stereotype.Component
 
+/**
+ * Converts a complete Notion block tree into canonical Markdown and structural metadata.
+ *
+ * Nested blocks preserve list indentation, while headings, tables, and code blocks are also
+ * collected into dedicated metadata fields. Child pages and databases remain separate ingestion
+ * units and are therefore not rendered into the selected page body.
+ */
 @Component
 class NotionBlockParser {
+    /** Parses one already-paginated block tree without performing network access. */
     fun parse(nodes: List<NotionBlockNode>): ParsedNotionBody {
         val bodyBlocks = mutableListOf<String>()
         val sections = mutableListOf<ParsedNotionSection>()

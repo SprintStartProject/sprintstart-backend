@@ -54,9 +54,10 @@ internal class NotionCredentialController(
         value = [
             ApiResponse(responseCode = "201", description = "Credential validated and created"),
             ApiResponse(responseCode = "400", description = "Invalid request"),
-            ApiResponse(responseCode = "401", description = "Authentication required or invalid Notion token"),
+            ApiResponse(responseCode = "401", description = "Backend authentication required"),
             ApiResponse(responseCode = "403", description = "PM or Admin role required"),
             ApiResponse(responseCode = "409", description = "Credential name already exists"),
+            ApiResponse(responseCode = "422", description = "Notion rejected the supplied token"),
             ApiResponse(responseCode = "502", description = "Notion validation failed"),
         ],
     )
@@ -74,9 +75,10 @@ internal class NotionCredentialController(
         value = [
             ApiResponse(responseCode = "200", description = "Token validated and replaced"),
             ApiResponse(responseCode = "400", description = "Invalid request"),
-            ApiResponse(responseCode = "401", description = "Authentication required or invalid Notion token"),
+            ApiResponse(responseCode = "401", description = "Backend authentication required"),
             ApiResponse(responseCode = "403", description = "PM or Admin role required"),
             ApiResponse(responseCode = "404", description = "Credential not found"),
+            ApiResponse(responseCode = "422", description = "Notion rejected the supplied token"),
             ApiResponse(responseCode = "502", description = "Notion validation failed"),
         ],
     )
@@ -120,7 +122,7 @@ internal class NotionCredentialController(
             ApiResponse(responseCode = "401", description = "Authentication required"),
             ApiResponse(responseCode = "403", description = "PM or Admin role required"),
             ApiResponse(responseCode = "404", description = "Credential not found"),
-            ApiResponse(responseCode = "409", description = "Credential is still used by a page connection"),
+            ApiResponse(responseCode = "409", description = "Credential is still used by a workspace connection"),
         ],
     )
     @DeleteMapping

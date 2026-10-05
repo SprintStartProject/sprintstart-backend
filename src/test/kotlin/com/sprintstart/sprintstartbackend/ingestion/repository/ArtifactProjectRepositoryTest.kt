@@ -117,6 +117,21 @@ class ArtifactProjectRepositoryTest {
     }
 
     @Test
+    fun `a Notion connection matches its own pages only`() {
+        val wanted = UUID.randomUUID()
+        val other = UUID.randomUUID()
+        val page = storeNotionPage(wanted, "page-1")
+        val secondPage = storeNotionPage(wanted, "page-2")
+        val elsewhere = storeNotionPage(other, "page-1")
+        entityManager.flush()
+
+        val found = repository.findAllNotionPagesByConnectionId(wanted).map { it.id }
+
+        assertThat(found).containsExactlyInAnyOrder(page.id, secondPage.id)
+        assertThat(found).doesNotContain(elsewhere.id)
+    }
+
+    @Test
     fun `deleting a project drops its links and leaves the others alone`() {
         val deleted = UUID.randomUUID()
         val kept = UUID.randomUUID()
@@ -149,6 +164,13 @@ class ArtifactProjectRepositoryTest {
         sourceSystem = SourceSystem.CONFLUENCE,
         sourceId = "confluence:$connectionId:page:$pageId",
         sourceUrl = "https://acme.atlassian.net/wiki/spaces/ENG/pages/$pageId",
+        type = ArtifactType.PAGE,
+    )
+
+    private fun storeNotionPage(connectionId: UUID, pageId: String): Artifact = store(
+        sourceSystem = SourceSystem.NOTION,
+        sourceId = "notion:$connectionId:page:$pageId",
+        sourceUrl = "https://www.notion.so/$pageId",
         type = ArtifactType.PAGE,
     )
 

@@ -2,6 +2,12 @@ package com.sprintstart.sprintstartbackend.connectors.notion.client
 
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 
+/**
+ * Represents a sanitized Notion client failure safe to propagate beyond the HTTP client.
+ *
+ * The exception retains only classification and retry metadata; tokens and raw upstream response
+ * bodies are deliberately excluded.
+ */
 internal sealed class NotionClientException(
     message: String,
     val requestContext: String,
@@ -36,17 +42,20 @@ internal class NotionExternalServiceException(
         attempts,
     )
 
+/** Represents an exhausted or non-retryable transport failure without retaining the cause. */
 internal class NotionTransportException(
     requestContext: String,
     attempts: Int,
     val retryExhausted: Boolean,
 ) : NotionClientException("Notion transport failed while $requestContext", requestContext, null, attempts)
 
+/** Represents malformed or internally inconsistent Notion response data. */
 internal class NotionInvalidResponseException(
     requestContext: String,
     attempts: Int = 1,
 ) : NotionClientException("Notion returned an invalid response while $requestContext", requestContext, null, attempts)
 
+/** Indicates that the shared throttle could not grant a permit within its wait budget. */
 internal class NotionRequestDeferredException(
     requestContext: String,
 ) : NotionClientException("Notion request wait budget exceeded while $requestContext", requestContext, null, 0)

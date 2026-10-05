@@ -13,9 +13,12 @@ import java.time.Duration
 internal class NotionClientTest : NotionClientTestSupport() {
     @Test
     fun `validates PAT using bearer headers and current user endpoint`() = runTest {
-        enqueueJson("""{"object":"user","id":"user-id","type":"person","person":{"email":"ignored"}}""")
+        enqueueJson(
+            """{"object":"user","id":"user-id","type":"person","name":"Vlad"}""",
+        )
 
-        client.validateConnection(NOTION_TEST_TOKEN)
+        val identity = client.validateConnection(NOTION_TEST_TOKEN)
+        assertThat(identity).isEqualTo(NotionTokenIdentity("user-id"))
 
         val request = takeRequest()
         assertThat(request.method).isEqualTo("GET")
@@ -25,6 +28,24 @@ internal class NotionClientTest : NotionClientTestSupport() {
         assertThat(request.getHeader("Accept")).isEqualTo("application/json")
         assertThat(request.body.size).isZero()
         assertThat(waits).isEmpty()
+    }
+
+    @Test
+    fun `keeps optional workspace metadata when current user is a bot`() = runTest {
+        enqueueJson(
+            """
+            {
+              "object":"user",
+              "id":"bot-id",
+              "type":"bot",
+              "bot":{"workspace_id":"workspace-id","workspace_name":"Team"}
+            }
+            """.trimIndent(),
+        )
+
+        val identity = client.validateConnection(NOTION_TEST_TOKEN)
+
+        assertThat(identity).isEqualTo(NotionTokenIdentity("bot-id", "workspace-id", "Team"))
     }
 
     @Test

@@ -12,6 +12,13 @@ import jakarta.persistence.Table
 import java.io.Serializable
 import java.time.Instant
 
+/**
+ * Persists one user-named Notion PAT together with its validated remote identity.
+ *
+ * The token is encrypted through [SymmetricEncryptedStringConverter] and must never be exposed by
+ * API mappers or logs. Workspace metadata is nullable because personal-token identity responses do
+ * not always provide bot workspace fields.
+ */
 @Entity
 @Table(name = "notion_credentials")
 internal class NotionCredential(
@@ -20,6 +27,12 @@ internal class NotionCredential(
     @Convert(converter = SymmetricEncryptedStringConverter::class)
     @Column(name = "token", nullable = false, columnDefinition = "TEXT")
     var token: String,
+    @Column(name = "workspace_id")
+    var workspaceId: String? = null,
+    @Column(name = "workspace_name", length = 2000)
+    var workspaceName: String? = null,
+    @Column(name = "token_owner_id")
+    var tokenOwnerId: String? = null,
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: Instant = Instant.now(),
     @Column(name = "updated_at", nullable = false)
@@ -40,6 +53,7 @@ internal class NotionCredential(
     }
 }
 
+/** Identifies a credential by its owning backend user and user-chosen name. */
 @Embeddable
 internal data class NotionCredentialId(
     @Column(name = "auth_id", nullable = false)

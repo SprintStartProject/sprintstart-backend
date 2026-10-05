@@ -3,33 +3,33 @@ package com.sprintstart.sprintstartbackend.connectors.notion.model.mapper
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionCredentialResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionWorkspaceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionCredential
-import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 
 internal fun NotionCredential.toResponse(): NotionCredentialResponse {
     return NotionCredentialResponse(
         name = id.name,
         createdAt = createdAt,
         updatedAt = updatedAt,
+        workspaceId = workspaceId,
+        workspaceName = workspaceName,
     )
 }
 
-internal fun NotionPageConnection.toResponse(): NotionPageConnectionResponse {
-    return NotionPageConnectionResponse(
+internal fun NotionWorkspaceConnection.toResponse(): NotionWorkspaceConnectionResponse {
+    return NotionWorkspaceConnectionResponse(
         id = id,
         projectId = projectId,
-        pageId = pageId,
-        pageTitle = pageTitle,
-        pageUrl = pageUrl,
+        workspaceId = workspaceId,
+        workspaceName = workspaceName,
+        workspaceUrl = workspaceUrl,
         credentialName = credentialName,
         sourceEnabled = sourceEnabled,
         autoUpdate = autoUpdate,
         schedule = schedule,
         scheduleSpec = scheduleSpec,
         nextSyncAt = nextSyncAt,
-        lastEditedTime = lastEditedTime,
-        contentHash = contentHash,
         lastSyncedAt = lastSyncedAt,
         createdAt = createdAt,
         updatedAt = updatedAt,

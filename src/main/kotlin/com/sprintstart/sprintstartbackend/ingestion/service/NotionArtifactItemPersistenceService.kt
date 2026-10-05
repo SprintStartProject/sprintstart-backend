@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSection
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.NotionArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
@@ -47,14 +48,28 @@ internal class NotionArtifactItemPersistenceService(
             run.ingestedCount++
             return NotionArtifactWriteResult(NotionArtifactWriteOutcome.CREATED, contentHash)
         }
-        if (existing.hash == contentHash) {
+        if (existing.hash == contentHash && projectId in existing.projectIds) {
             return NotionArtifactWriteResult(NotionArtifactWriteOutcome.UNCHANGED, contentHash)
         }
 
         updateExisting(existing, command, projectId, run, metadataJson, contentHash)
         artifactRepository.flush()
         run.updatedCount++
+        run.artifactIdsToReingest.add(existing.id)
         return NotionArtifactWriteResult(NotionArtifactWriteOutcome.UPDATED, contentHash)
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordFailure(runId: UUID, sourceId: String, sourceUrl: String?, reason: String) {
+        val run = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow { IngestionRunNotFoundException(runId) }
+        run.failedCount++
+        run.failedItems.add(FailedArtifact(sourceId, ArtifactType.PAGE, sourceUrl, reason))
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun recordUnlinked(runId: UUID) {
+        val run = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow { IngestionRunNotFoundException(runId) }
+        run.deletedCount++
     }
 
     private fun metadataJson(command: NotionPageArtifactCommand): String {

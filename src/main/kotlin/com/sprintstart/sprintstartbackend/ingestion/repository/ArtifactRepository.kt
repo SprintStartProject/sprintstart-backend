@@ -258,7 +258,7 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
         @Param("connectionId") connectionId: String,
     ): Long
 
-    /** Counts Notion page artifacts belonging to one stored page connection. */
+    /** Counts linked page artifacts belonging to one stored Notion workspace connection. */
     @Query(NOTION_ARTIFACT_COUNT_QUERY)
     fun countNotionArtifactsByConnectionId(
         @Param("connectionId") connectionId: String,
@@ -275,4 +275,5 @@ private const val NOTION_ARTIFACT_COUNT_QUERY =
     "SELECT COUNT(a) FROM Artifact a " +
         "WHERE a.sourceSystem = " +
         "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.NOTION " +
-        "AND a.sourceId LIKE CONCAT('notion:', :connectionId, ':page:%')"
+        "AND a.sourceId LIKE CONCAT('notion:', :connectionId, ':page:%') " +
+        "AND a.projectIdsInternal IS NOT EMPTY"

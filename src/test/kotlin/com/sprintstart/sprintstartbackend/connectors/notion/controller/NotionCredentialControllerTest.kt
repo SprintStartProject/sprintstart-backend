@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.notion.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.AddNotionCredentialRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ChangeNotionCredentialNameRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ChangeNotionCredentialTokenRequest
@@ -87,6 +88,27 @@ internal class NotionCredentialControllerTest {
             .andExpect(jsonPath("$.token").doesNotExist())
 
         coVerify(exactly = 1) { credentialService.addCredential("admin-id", request) }
+    }
+
+    @Test
+    fun `rejected Notion token returns 422 without looking like an expired session`() {
+        val request = AddNotionCredentialRequest("team-token", "rejected-token")
+        coEvery { credentialService.addCredential("admin-id", request) } throws
+            NotionAuthenticationException("validating the connection")
+
+        val asyncResult = mockMvc
+            .perform(
+                post(BASE_PATH)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request))
+                    .with(adminJwt),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().`is`(422))
+            .andExpect(jsonPath("$.code").value("NOTION_AUTHENTICATION_FAILED"))
     }
 
     @Test

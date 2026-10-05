@@ -7,7 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionSection
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPagePropertyResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiParentResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -51,23 +51,22 @@ class NotionPageArtifactMapperTest {
     }
 
     @Test
-    fun `falls back to stored title when Notion title is blank`() {
+    fun `blank page title does not fall back to the workspace name`() {
         val result = mapper.toCommand(
             connection(),
             page(title = listOf(NotionRichText("   "))),
             ParsedNotionBody("body"),
         )
 
-        assertThat(result.title).isEqualTo("Stored title")
+        assertThat(result.title).isEqualTo("Untitled")
     }
 
-    private fun connection(): NotionPageConnection {
-        return NotionPageConnection(
+    private fun connection(): NotionWorkspaceConnection {
+        return NotionWorkspaceConnection(
             id = UUID.randomUUID(),
             projectId = UUID.randomUUID(),
-            pageId = "page-1",
-            pageTitle = "Stored title",
-            pageUrl = "https://www.notion.so/page-1",
+            workspaceId = "page-1",
+            workspaceName = "Stored title",
             credentialAuthId = "auth-id",
             credentialName = "team-token",
         )

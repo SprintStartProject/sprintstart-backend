@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.service
 
-import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
-import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionPageConnectionNotFoundException
-import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionPageConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionWorkspaceConnectionNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionWorkspaceConnectionRepository
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
@@ -11,7 +11,7 @@ import java.util.UUID
 import kotlin.test.assertFailsWith
 
 class NotionConnectionRuntimeServiceTest {
-    private val repository = mockk<NotionPageConnectionRepository>()
+    private val repository = mockk<NotionWorkspaceConnectionRepository>()
     private val service = NotionConnectionRuntimeService(repository)
 
     @Test
@@ -23,8 +23,8 @@ class NotionConnectionRuntimeServiceTest {
         val result = service.getSourceInstances(projectId).single()
 
         assertThat(result.connectionId).isEqualTo(connection.id)
-        assertThat(result.pageTitle).isEqualTo("Engineering Runbook")
-        assertThat(result.sourceRef).isEqualTo(connection.pageUrl)
+        assertThat(result.workspaceName).isEqualTo("Engineering Runbook")
+        assertThat(result.sourceRef).isEqualTo(connection.workspaceId)
         assertThat(result.enabled).isTrue()
     }
 
@@ -38,18 +38,17 @@ class NotionConnectionRuntimeServiceTest {
             repository.findAllByIdInAndProjectId(requested.keys, projectId)
         } returns listOf(existing)
 
-        assertFailsWith<NotionPageConnectionNotFoundException> {
+        assertFailsWith<NotionWorkspaceConnectionNotFoundException> {
             service.patchSources(projectId, requested)
         }
         assertThat(existing.sourceEnabled).isTrue()
     }
 
-    private fun connection(projectId: UUID): NotionPageConnection {
-        return NotionPageConnection(
+    private fun connection(projectId: UUID): NotionWorkspaceConnection {
+        return NotionWorkspaceConnection(
             projectId = projectId,
-            pageId = "page-1",
-            pageTitle = "Engineering Runbook",
-            pageUrl = "https://www.notion.so/page-1",
+            workspaceId = "page-1",
+            workspaceName = "Engineering Runbook",
             credentialAuthId = "auth-id",
             credentialName = "team-token",
         )

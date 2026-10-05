@@ -5,12 +5,12 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.connectors.notion.NotionConnector
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ConfigureNotionScheduleRequest
-import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionPageConnectionRequest
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionWorkspaceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionWorkspaceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
-import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionPageConnectionService
+import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionWorkspaceConnectionService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
@@ -47,7 +47,7 @@ internal class NotionPageControllerTest {
     private lateinit var mockMvc: MockMvc
 
     @MockkBean
-    private lateinit var pageConnectionService: NotionPageConnectionService
+    private lateinit var pageConnectionService: NotionWorkspaceConnectionService
 
     @MockkBean
     private lateinit var connector: NotionConnector
@@ -119,8 +119,8 @@ internal class NotionPageControllerTest {
 
     @Test
     fun `ADMIN connects a page and receives created response`() {
-        val request = CreateNotionPageConnectionRequest("team-token", "page-1")
-        coEvery { pageConnectionService.connectPage("admin-id", projectId, request) } returns connectionResponse()
+        val request = CreateNotionWorkspaceConnectionRequest("team-token")
+        coEvery { pageConnectionService.connectWorkspace("admin-id", projectId, request) } returns connectionResponse()
 
         val asyncResult = mockMvc
             .perform(
@@ -135,9 +135,9 @@ internal class NotionPageControllerTest {
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").value(connectionId.toString()))
-            .andExpect(jsonPath("$.pageId").value("page-1"))
+            .andExpect(jsonPath("$.workspaceId").value("page-1"))
 
-        coVerify(exactly = 1) { pageConnectionService.connectPage("admin-id", projectId, request) }
+        coVerify(exactly = 1) { pageConnectionService.connectWorkspace("admin-id", projectId, request) }
     }
 
     @Test
@@ -211,22 +211,49 @@ internal class NotionPageControllerTest {
         return "/api/v1/notion/projects/$projectId/connections"
     }
 
-    private fun connectionResponse(): NotionPageConnectionResponse {
+    @Test
+    fun `blank credential name is rejected before connecting`() {
+        mockMvc
+            .perform(
+                post(connectionsPath())
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"credentialName":" "}"""),
+            ).andExpect(status().isBadRequest)
+        coVerify(exactly = 0) { pageConnectionService.connectWorkspace(any(), any(), any()) }
+    }
+
+    @Test
+    fun `unknown credential returns not found`() {
+        coEvery { pageConnectionService.connectWorkspace(any(), any(), any()) } throws
+            com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionCredentialNotFoundException(
+                "missing",
+            )
+        val result = mockMvc
+            .perform(
+                post(connectionsPath())
+                    .with(adminJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"credentialName":"missing"}"""),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+        mockMvc.perform(asyncDispatch(result)).andExpect(status().isNotFound)
+    }
+
+    private fun connectionResponse(): NotionWorkspaceConnectionResponse {
         val timestamp = Instant.parse("2026-09-27T10:00:00Z")
-        return NotionPageConnectionResponse(
+        return NotionWorkspaceConnectionResponse(
             id = connectionId,
             projectId = projectId,
-            pageId = "page-1",
-            pageTitle = "Engineering",
-            pageUrl = "https://www.notion.so/page-1",
+            workspaceId = "page-1",
+            workspaceName = "Engineering",
+            workspaceUrl = "https://www.notion.so/page-1",
             credentialName = "team-token",
             sourceEnabled = true,
             autoUpdate = false,
             schedule = "0 0 2 * * *",
             scheduleSpec = ScheduleSpec.Daily(LocalTime.of(2, 0)),
             nextSyncAt = null,
-            lastEditedTime = null,
-            contentHash = null,
             lastSyncedAt = null,
             createdAt = timestamp,
             updatedAt = timestamp,

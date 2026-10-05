@@ -289,9 +289,9 @@ class IngestionSourceStatusServiceTest {
         val instance = NotionSourceInstanceDto(
             connectionId = connectionId,
             sourceRef = sourceUrl,
-            pageId = "page-1",
-            pageTitle = "Engineering Runbook",
-            pageUrl = sourceUrl,
+            workspaceId = "page-1",
+            workspaceName = "Engineering Runbook",
+            workspaceUrl = sourceUrl,
             status = "CONNECTED",
             enabled = true,
             lastSyncedAt = Instant.parse("2026-09-30T11:00:00Z"),

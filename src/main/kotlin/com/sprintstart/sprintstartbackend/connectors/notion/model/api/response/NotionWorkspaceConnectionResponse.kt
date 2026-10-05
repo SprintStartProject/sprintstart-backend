@@ -4,20 +4,24 @@ import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduleSpec
 import java.time.Instant
 import java.util.UUID
 
-data class NotionPageConnectionResponse(
+/**
+ * Represents one project-scoped Notion permission-scope connection.
+ *
+ * Workspace fields are descriptive and may fall back to the credential name for personal tokens
+ * whose identity response omits bot workspace metadata.
+ */
+data class NotionWorkspaceConnectionResponse(
     val id: UUID,
     val projectId: UUID,
-    val pageId: String,
-    val pageTitle: String,
-    val pageUrl: String,
+    val workspaceId: String?,
+    val workspaceName: String,
+    val workspaceUrl: String,
     val credentialName: String,
     val sourceEnabled: Boolean,
     val autoUpdate: Boolean,
     val schedule: String,
     val scheduleSpec: ScheduleSpec,
     val nextSyncAt: Instant?,
-    val lastEditedTime: Instant?,
-    val contentHash: String?,
     val lastSyncedAt: Instant?,
     val createdAt: Instant,
     val updatedAt: Instant,

@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.notion
 
 import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionConnectionScheduleService
-import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionPageIngestionService
 import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionScheduledConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionWorkspaceIngestionService
 import com.sprintstart.sprintstartbackend.shared.scheduler.ScheduledExecutor
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -19,7 +19,7 @@ import java.util.UUID
 @OptIn(ExperimentalCoroutinesApi::class)
 class NotionScheduledExecutorTest {
     private val scheduleService = mockk<NotionConnectionScheduleService>()
-    private val ingestionService = mockk<NotionPageIngestionService>()
+    private val ingestionService = mockk<NotionWorkspaceIngestionService>()
     private val applicationScope = TestScope(UnconfinedTestDispatcher())
     private val executor = NotionScheduledExecutor(
         ScheduledExecutor(applicationScope),
@@ -38,6 +38,7 @@ class NotionScheduledExecutorTest {
         every { scheduleService.claimDueConnections(any()) } returns listOf(connection)
         coEvery { ingestionService.ingest(connection.projectId, connection.connectionId) } returns mockk()
 
+        executor.enableScheduling()
         executor.tick()
 
         coVerify(exactly = 1) { ingestionService.ingest(connection.projectId, connection.connectionId) }
@@ -47,6 +48,7 @@ class NotionScheduledExecutorTest {
     fun `tick performs no ingestion when nothing is due`() {
         every { scheduleService.claimDueConnections(any()) } returns emptyList()
 
+        executor.enableScheduling()
         executor.tick()
 
         coVerify(exactly = 0) { ingestionService.ingest(any(), any()) }

@@ -2,7 +2,12 @@ package com.sprintstart.sprintstartbackend.connectors.notion.external
 
 import java.util.UUID
 
-/** Exposes credential-free Notion connection data needed by other application modules. */
+/**
+ * Exposes credential-free Notion connection data needed by other application modules.
+ *
+ * Implementations must not expose stored PAT values or internal JPA entities across the module
+ * boundary.
+ */
 interface NotionConnectionApi {
     /** Lists the Notion connection IDs owned by one project in stable creation order. */
     fun getConnectionIdsByProject(projectId: UUID): List<UUID>

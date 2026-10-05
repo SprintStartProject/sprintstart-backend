@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.service
 
-import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
-import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionPageConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionWorkspaceConnectionRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -11,7 +11,7 @@ import java.time.Instant
 import java.util.UUID
 
 class NotionConnectionScheduleServiceTest {
-    private val repository = mockk<NotionPageConnectionRepository>()
+    private val repository = mockk<NotionWorkspaceConnectionRepository>()
     private val calculator = mockk<NotionScheduleCalculator>()
     private val service = NotionConnectionScheduleService(repository, calculator)
 
@@ -57,12 +57,11 @@ class NotionConnectionScheduleServiceTest {
         verify(exactly = 1) { calculator.calculateNextSyncAt("invalid", now) }
     }
 
-    private fun connection(): NotionPageConnection {
-        return NotionPageConnection(
+    private fun connection(): NotionWorkspaceConnection {
+        return NotionWorkspaceConnection(
             projectId = UUID.randomUUID(),
-            pageId = "page-1",
-            pageTitle = "Engineering Runbook",
-            pageUrl = "https://www.notion.so/page-1",
+            workspaceId = "page-1",
+            workspaceName = "Engineering Runbook",
             credentialAuthId = "auth-id",
             credentialName = "team-token",
         )

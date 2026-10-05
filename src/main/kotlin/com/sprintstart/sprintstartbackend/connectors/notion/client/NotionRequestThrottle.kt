@@ -10,6 +10,12 @@ import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Serializes Notion request permits and enforces a shared cooldown after rate-limit responses.
+ *
+ * Waiting is cancellable and bounded by the configured maximum. A request that cannot obtain a
+ * permit within that budget is deferred rather than sent outside the configured rate.
+ */
 internal class NotionRequestThrottle(
     private val config: NotionThrottleConfig,
     private val sleeper: NotionRetrySleeper,
@@ -43,6 +49,7 @@ internal class NotionRequestThrottle(
         }
     }
 
+    /** Extends the shared cooldown without shortening a longer delay requested by another call. */
     fun deferFor(duration: Duration) {
         val until = try {
             clock.now().plus(duration)

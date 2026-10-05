@@ -7,6 +7,9 @@ internal data class NotionIngestionResult(
     val connectionId: UUID,
     val outcome: NotionIngestionOutcome,
     val failure: NotionIngestionFailure? = null,
+    val successfulPages: Int = 0,
+    val failedPages: Int = 0,
+    val removedPages: Int = 0,
 )
 
 internal data class NotionIngestionFailure(
@@ -15,6 +18,8 @@ internal data class NotionIngestionFailure(
 )
 
 internal enum class NotionIngestionOutcome {
+    COMPLETED,
+    PARTIAL,
     CREATED,
     UPDATED,
     UNCHANGED,

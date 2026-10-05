@@ -25,6 +25,13 @@ internal fun interface NotionRetryClock {
     fun now(): Instant
 }
 
+/**
+ * Executes one Notion request with bounded retries and the connector-wide request throttle.
+ *
+ * Retryable transport failures and HTTP 429/5xx responses use exponential backoff with jitter.
+ * Server-provided `Retry-After` values and Notion's 529 overload response also extend the shared
+ * cooldown so concurrent requests do not immediately retry into the same limit.
+ */
 internal class NotionRetryExecutor(
     private val config: NotionRetryConfig,
     private val sleeper: NotionRetrySleeper,

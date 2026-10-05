@@ -74,6 +74,13 @@ class NotionArtifactItemPersistenceServiceTest {
         assertThat(run.ingestedCount).isEqualTo(1)
         assertThat(run.updatedCount).isEqualTo(1)
         assertThat(metadataSlot.captured).isInstanceOf(NotionArtifactMetadata::class.java)
+        assertThat(run.artifactIdsToReingest).contains(artifact.id)
+
+        artifact.removeProjectId(projectId)
+        val reshared = service.persist(run.id, projectId, command.copy(bodyText = "changed body"))
+        assertThat(reshared.outcome).isEqualTo(NotionArtifactWriteOutcome.UPDATED)
+        assertThat(artifact.projectIds).containsExactly(projectId)
+        assertThat(artifact.id).isEqualTo(artifactSlot.captured.id)
     }
 
     private fun command(): NotionPageArtifactCommand {

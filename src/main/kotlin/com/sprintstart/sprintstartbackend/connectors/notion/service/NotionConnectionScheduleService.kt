@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.service
 
-import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionPageConnectionRepository
+import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionWorkspaceConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -11,13 +11,13 @@ import java.util.UUID
 /** Claims due Notion connections and advances their schedules before execution. */
 @Service
 internal class NotionConnectionScheduleService(
-    private val connectionRepository: NotionPageConnectionRepository,
+    private val connectionRepository: NotionWorkspaceConnectionRepository,
     private val scheduleCalculator: NotionScheduleCalculator,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     @Transactional
-    @Tracked("Retrieving all Notion pages due for sync now")
+    @Tracked("Retrieving all Notion connections due for sync now")
     fun claimDueConnections(now: Instant): List<NotionScheduledConnection> {
         return connectionRepository
             .findAllByAutoUpdateTrueAndSourceEnabledTrueAndNextSyncAtLessThanEqualOrderByNextSyncAtAsc(now)

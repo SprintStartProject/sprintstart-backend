@@ -2,11 +2,11 @@ package com.sprintstart.sprintstartbackend.connectors.notion.controller
 
 import com.sprintstart.sprintstartbackend.connectors.notion.NotionConnector
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ConfigureNotionScheduleRequest
-import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionPageConnectionRequest
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.CreateNotionWorkspaceConnectionRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionDiscoveredPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionPageConnectionResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionWorkspaceConnectionResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
-import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionPageConnectionService
+import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionWorkspaceConnectionService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse
@@ -36,24 +36,25 @@ private const val NOTION_ROLE = "hasAnyRole('PM', 'ADMIN')"
 private const val MANAGE_NOTION_PROJECT =
     "$NOTION_ROLE and @projectAuth.canManageProject(authentication, #projectId)"
 
-@Tag(name = "Notion Pages", description = "Discover and connect Notion pages.")
+@Tag(name = "Notion", description = "Discover Notion pages and manage workspace-scoped connections.")
 @Validated
 @RestController
 @RequestMapping("/api/v1/notion")
 internal class NotionPageController(
-    private val pageConnectionService: NotionPageConnectionService,
+    private val workspaceConnectionService: NotionWorkspaceConnectionService,
     private val connector: NotionConnector,
 ) {
     @Operation(
-        summary = "Discover shared Notion pages",
+        summary = "Discover accessible Notion pages",
         description = "Lists pages visible to the selected stored Notion credential.",
     )
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Pages discovered"),
-            ApiResponse(responseCode = "401", description = "Authentication required or invalid Notion token"),
+            ApiResponse(responseCode = "401", description = "Backend authentication required"),
             ApiResponse(responseCode = "403", description = "PM or Admin role required"),
             ApiResponse(responseCode = "404", description = "Credential not found"),
+            ApiResponse(responseCode = "422", description = "Notion rejected the stored credential"),
             ApiResponse(responseCode = "502", description = "Notion discovery failed"),
         ],
     )
@@ -63,33 +64,34 @@ internal class NotionPageController(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @RequestParam @NotBlank @Size(max = 255) credentialName: String,
     ): ResponseEntity<List<NotionDiscoveredPageResponse>> {
-        val response = pageConnectionService.discoverPages(
+        val response = workspaceConnectionService.discoverPages(
             authId = jwt.subject,
             credentialName = credentialName,
         )
         return ResponseEntity.ok(response)
     }
 
-    @Operation(summary = "Connect a Notion page to a project")
+    @Operation(summary = "Connect a Notion workspace to a project")
     @ApiResponses(
         value = [
-            ApiResponse(responseCode = "201", description = "Page connection created"),
-            ApiResponse(responseCode = "400", description = "Invalid page connection"),
-            ApiResponse(responseCode = "401", description = "Authentication required or invalid Notion token"),
+            ApiResponse(responseCode = "201", description = "Workspace connection created"),
+            ApiResponse(responseCode = "400", description = "Invalid workspace connection"),
+            ApiResponse(responseCode = "401", description = "Backend authentication required"),
             ApiResponse(responseCode = "403", description = "Project management permission required"),
-            ApiResponse(responseCode = "404", description = "Credential or Notion page not found"),
-            ApiResponse(responseCode = "409", description = "Page is already connected to this project"),
+            ApiResponse(responseCode = "404", description = "Credential not found"),
+            ApiResponse(responseCode = "409", description = "Integration is already connected to this project"),
+            ApiResponse(responseCode = "422", description = "Notion rejected the stored credential"),
             ApiResponse(responseCode = "502", description = "Notion validation failed"),
         ],
     )
     @PostMapping("/projects/{projectId}/connections")
     @PreAuthorize(MANAGE_NOTION_PROJECT)
-    suspend fun connectPage(
+    suspend fun connectWorkspace(
         @Parameter(hidden = true) @AuthenticationPrincipal jwt: Jwt,
         @PathVariable projectId: UUID,
-        @Valid @RequestBody request: CreateNotionPageConnectionRequest,
-    ): ResponseEntity<NotionPageConnectionResponse> {
-        val response = pageConnectionService.connectPage(
+        @Valid @RequestBody request: CreateNotionWorkspaceConnectionRequest,
+    ): ResponseEntity<NotionWorkspaceConnectionResponse> {
+        val response = workspaceConnectionService.connectWorkspace(
             authId = jwt.subject,
             projectId = projectId,
             request = request,
@@ -97,7 +99,7 @@ internal class NotionPageController(
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 
-    @Operation(summary = "List a project's Notion page connections")
+    @Operation(summary = "List a project's Notion workspace connections")
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "200", description = "Connections retrieved"),
@@ -109,12 +111,12 @@ internal class NotionPageController(
     @PreAuthorize(MANAGE_NOTION_PROJECT)
     fun getConnections(
         @PathVariable projectId: UUID,
-    ): ResponseEntity<List<NotionPageConnectionResponse>> {
-        val response = pageConnectionService.getConnections(projectId)
+    ): ResponseEntity<List<NotionWorkspaceConnectionResponse>> {
+        val response = workspaceConnectionService.getConnections(projectId)
         return ResponseEntity.ok(response)
     }
 
-    /** Configures automatic synchronization for one project-owned Notion page connection. */
+    /** Configures automatic synchronization for one project-owned Notion workspace connection. */
     @Operation(
         summary = "Configure Notion synchronization",
         description = "Stores a validated schedule and enables or disables automatic synchronization.",
@@ -134,14 +136,14 @@ internal class NotionPageController(
         @PathVariable projectId: UUID,
         @PathVariable connectionId: UUID,
         @Valid @RequestBody request: ConfigureNotionScheduleRequest,
-    ): ResponseEntity<NotionPageConnectionResponse> {
-        return ResponseEntity.ok(pageConnectionService.configureSchedule(projectId, connectionId, request))
+    ): ResponseEntity<NotionWorkspaceConnectionResponse> {
+        return ResponseEntity.ok(workspaceConnectionService.configureSchedule(projectId, connectionId, request))
     }
 
-    /** Runs synchronous ingestion for one project-owned Notion page connection. */
+    /** Runs synchronous ingestion for one project-owned Notion workspace connection. */
     @Operation(
-        summary = "Synchronize a Notion page",
-        description = "Fetches the selected page and stores it as one canonical PAGE artifact.",
+        summary = "Synchronize a Notion workspace",
+        description = "Ingests accessible pages as separate PAGE artifacts in one workspace run.",
     )
     @ApiResponses(
         value = [
@@ -161,7 +163,7 @@ internal class NotionPageController(
         return ResponseEntity.ok(connector.ingest(projectId, connectionId))
     }
 
-    @Operation(summary = "Delete a Notion page connection")
+    @Operation(summary = "Delete a Notion workspace connection")
     @ApiResponses(
         value = [
             ApiResponse(responseCode = "204", description = "Connection deleted"),
@@ -176,7 +178,7 @@ internal class NotionPageController(
         @PathVariable projectId: UUID,
         @PathVariable connectionId: UUID,
     ): ResponseEntity<Unit> {
-        pageConnectionService.deleteConnection(
+        workspaceConnectionService.deleteConnection(
             projectId = projectId,
             connectionId = connectionId,
         )

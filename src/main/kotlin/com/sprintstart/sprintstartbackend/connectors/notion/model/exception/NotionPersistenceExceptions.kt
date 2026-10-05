@@ -17,18 +17,21 @@ internal class NotionCredentialNotFoundException(
 
 internal class NotionCredentialStillInUseException(
     name: String,
-) : NotionPersistenceException("Notion credential '$name' is still used by a page connection", 409)
+) : NotionPersistenceException("Notion credential '$name' is still used by a workspace connection", 409)
 
-internal class NotionPageConnectionAlreadyExistsException(
+internal class NotionWorkspaceConnectionAlreadyExistsException(
     projectId: UUID,
-    pageId: String,
-) : NotionPersistenceException("Notion page $pageId is already connected to project $projectId", 409)
+    workspaceName: String,
+) : NotionPersistenceException(
+        "Notion source scope '$workspaceName' is already connected to project $projectId",
+        409,
+    )
 
-internal class NotionPageConnectionNotFoundException(
+internal class NotionWorkspaceConnectionNotFoundException(
     connectionId: UUID,
     projectId: UUID,
 ) : NotionPersistenceException("Notion connection $connectionId was not found in project $projectId", 404)
 
-internal class NotionPageConnectionConfigurationException(
+internal class NotionWorkspaceConnectionConfigurationException(
     message: String,
 ) : NotionPersistenceException(message, 400)

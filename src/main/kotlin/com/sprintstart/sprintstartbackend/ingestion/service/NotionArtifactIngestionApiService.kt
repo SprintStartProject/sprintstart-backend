@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.NotionArtifactInges
 import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteResult
 import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -13,6 +14,7 @@ import java.util.UUID
 internal class NotionArtifactIngestionApiService(
     private val runLifeCycleService: IngestionRunLifeCycleService,
     private val itemPersistenceService: NotionArtifactItemPersistenceService,
+    private val artifactProjectService: ArtifactProjectService,
 ) : NotionArtifactIngestionApi {
     override fun startRun(runId: UUID, connectionId: UUID, sourceRef: String) {
         runLifeCycleService.startOrUpdateRun(
@@ -34,6 +36,15 @@ internal class NotionArtifactIngestionApiService(
 
     override fun finishRun(runId: UUID, successfulItemCount: Int) {
         runLifeCycleService.finishRun(runId, successfulItemCount)
+    }
+
+    override fun recordPageFailure(runId: UUID, sourceId: String, sourceUrl: String?, reason: String) {
+        itemPersistenceService.recordFailure(runId, sourceId, sourceUrl, reason)
+    }
+
+    override suspend fun unlinkPage(runId: UUID, projectId: UUID, connectionId: UUID, pageId: String) {
+        artifactProjectService.applyProjectLink(ArtifactSourceRef.NotionPage(connectionId, pageId), projectId, false)
+        itemPersistenceService.recordUnlinked(runId)
     }
 
     override fun failRun(runId: UUID, failureReason: String) {

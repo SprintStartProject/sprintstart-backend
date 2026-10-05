@@ -2,7 +2,7 @@ package com.sprintstart.sprintstartbackend.connectors.notion.service
 
 import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionBody
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
-import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionPageConnection
+import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionCodeBlockCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageMetadataCommand
@@ -15,12 +15,12 @@ import java.util.UUID
 @Component
 internal class NotionPageArtifactMapper {
     fun toCommand(
-        connection: NotionPageConnection,
+        connection: NotionWorkspaceConnection,
         page: NotionApiPageResponse,
         parsedBody: ParsedNotionBody,
     ): NotionPageArtifactCommand {
         val lastEditedTime = Instant.parse(page.lastEditedTime)
-        val title = page.titleOr(connection.pageTitle)
+        val title = page.titleOr("Untitled")
 
         return NotionPageArtifactCommand(
             sourceId = notionPageSourceId(connection.id, page.id),

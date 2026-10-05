@@ -39,4 +39,15 @@ sealed interface ArtifactSourceRef {
     data class ConfluenceConnection(
         val connectionId: UUID,
     ) : ArtifactSourceRef
+
+    /** A Notion workspace connection whose artifacts use `notion:{connectionId}:page:{pageId}`. */
+    data class NotionConnection(
+        val connectionId: UUID,
+    ) : ArtifactSourceRef
+
+    /** One page removed from a workspace connection's accessible scope. */
+    data class NotionPage(
+        val connectionId: UUID,
+        val pageId: String,
+    ) : ArtifactSourceRef
 }

@@ -174,11 +174,11 @@ class IngestionSourceStatusService(
         return SourceInstanceIngestionStatusResponse(
             sourceSystem = SourceSystem.NOTION,
             sourceId = sourceRef,
-            displayName = pageTitle,
+            displayName = workspaceName,
             repositoryId = null,
             owner = null,
             name = null,
-            sourceUrl = pageUrl,
+            sourceUrl = workspaceUrl,
             connectionStatus = status,
             enabled = enabled,
             lastRunTime = lastRun?.startedAt,
