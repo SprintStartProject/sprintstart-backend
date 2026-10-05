@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionStatus
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyCitationRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
@@ -20,7 +20,7 @@ class BuddySessionCleanupService(
     @Transactional
     fun deleteBinnedChats() {
         val cutoff = clock.instant().minus(7, ChronoUnit.DAYS)
-        val sessions = sessionRepository.findBinnedBefore(cutoff)
+        val sessions = sessionRepository.findByStatusAndBinnedAtBefore(BuddySessionStatus.ACTIVE, cutoff)
         sessions.forEach { session: BuddySession ->
             citationRepository.deleteAllByMessageSessionId(session.id)
             messageRepository.deleteAllBySessionId(session.id)

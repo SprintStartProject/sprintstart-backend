@@ -73,7 +73,12 @@ class BuddyControllerTeamModeTest(
     @Test
     fun `getMessagesForMe with a teamProjectId returns the team conversation`() {
         every { buddyTeamService.getMessagesForMe(authId, projectId) } returns listOf(
-            BuddyMessageResponse(role = BuddyMessageRole.USER, content = "who is stuck?", createdAt = Instant.now()),
+            BuddyMessageResponse(
+                id = UUID.randomUUID(),
+                role = BuddyMessageRole.USER,
+                content = "who is stuck?",
+                createdAt = Instant.now(),
+            ),
         )
 
         mockMvc

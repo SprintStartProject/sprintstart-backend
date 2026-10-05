@@ -58,6 +58,7 @@ class BuddyTeamService(
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
     private val applicationScope: CoroutineScope,
+    private val artifactLookupService: ArtifactLookupService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -214,7 +215,29 @@ class BuddyTeamService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: BuddyService.FALLBACK_REPLY
-            emitAgentReply(reply, emptyList(), citations)
+
+            val resolvedCitations = citations.mapNotNull { citation ->
+                val artifactId = citation.artifactId?.let(::parseUuidOrNull)
+                val resolved = artifactId?.let(artifactLookupService::resolve)
+
+                if (artifactId == null || resolved == null) {
+                    logger.warn(
+                        "Could not resolve artifact {} for buddy citation",
+                        citation.artifactId,
+                    )
+                    null
+                } else {
+                    ResolvedBuddyCitation(
+                        artifactId = artifactId,
+                        filename = resolved.filename,
+                        sourceUrl = resolved.sourceUrl,
+                        startLine = citation.startLine,
+                        startPage = citation.startPage,
+                    )
+                }
+            }
+
+            emitAgentReply(reply, emptyList(), resolvedCitations, StringBuilder())
 
             buddyTeamMessageRepository.save(
                 BuddyTeamMessage(

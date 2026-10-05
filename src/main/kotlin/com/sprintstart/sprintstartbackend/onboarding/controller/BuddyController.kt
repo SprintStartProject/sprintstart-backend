@@ -334,7 +334,7 @@ class BuddyController(
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/messages")
+    @DeleteMapping("/messages/{id}")
     @PreAuthorize("hasRole('USER')")
     fun deleteMessage(
         @PathVariable id: UUID,
@@ -346,7 +346,7 @@ class BuddyController(
     @Operation(
         summary = "Bins an existing session",
         description = "Sets the status of an existing session to BINNED, given that the session was created by the " +
-                "current user.",
+            "current user.",
     )
     @ApiResponses(
         value = [
@@ -357,7 +357,7 @@ class BuddyController(
         ],
     )
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @DeleteMapping("/sessions")
+    @DeleteMapping("/sessions/{id}")
     @PreAuthorize("hasRole('USER')")
     fun binSession(
         @PathVariable id: UUID,

@@ -45,6 +45,7 @@ class BuddyTeamServiceTest {
     private val buddyProposalService: BuddyProposalService = mockk()
     private val userApi: UserApi = mockk()
     private val buddyCompactionService: BuddyCompactionService = mockk(relaxed = true)
+    private val artifactLookupService: ArtifactLookupService = mockk()
 
     private val service = BuddyTeamService(
         buddyTeamSessionRepository,
@@ -55,6 +56,7 @@ class BuddyTeamServiceTest {
         userApi,
         buddyCompactionService,
         CoroutineScope(Dispatchers.Unconfined),
+        artifactLookupService,
     )
 
     private val authId = "auth|pm"

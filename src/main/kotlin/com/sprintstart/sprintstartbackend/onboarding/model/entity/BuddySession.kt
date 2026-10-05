@@ -5,7 +5,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.Version
-import org.springframework.web.bind.support.SessionStatus
 import java.time.Instant
 import java.util.UUID
 

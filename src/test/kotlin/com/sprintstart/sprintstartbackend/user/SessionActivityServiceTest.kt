@@ -10,6 +10,7 @@ import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.context.ApplicationEventPublisher
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Optional
@@ -19,7 +20,8 @@ class SessionActivityServiceTest {
     private val userRepository: UserRepository = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val idleThreshold = Duration.ofHours(4)
-    private val service = SessionActivityService(userRepository, eventPublisher, idleThreshold)
+    private val clock = mockk<Clock>()
+    private val service = SessionActivityService(userRepository, eventPublisher, idleThreshold, clock)
 
     private val authId = "auth|test-user"
 

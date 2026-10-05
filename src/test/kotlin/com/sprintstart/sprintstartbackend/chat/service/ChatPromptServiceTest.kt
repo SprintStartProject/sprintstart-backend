@@ -392,9 +392,9 @@ class ChatPromptServiceTest {
             every { citationRepository.saveAll(capture(citationSlot)) } answers { firstArg() }
             every { connectorConfigurationService.findAllConnectors() } returns emptyList()
             every { artifactLookupService.resolve(artifactId1) } returns
-                    ResolvedArtifact(filename = "architecture.md", sourceUrl = null)
+                ResolvedArtifact(filename = "architecture.md", sourceUrl = null)
             every { artifactLookupService.resolve(artifactId2) } returns
-                    ResolvedArtifact(filename = "backend.md", sourceUrl = "https://github.com/example/backend.md")
+                ResolvedArtifact(filename = "backend.md", sourceUrl = "https://github.com/example/backend.md")
 
             coEvery { chatAiClient.streamPrompt(any()) } returns flowOf(*stream.toTypedArray())
             every { applicationConfig.ai.baseUrl } returns "http://localhost:8080"

@@ -181,22 +181,24 @@ class BuddyService(
          * the hire saying anything replays the existing opening instead of asking
          * the AI for another greeting.
          */
-        messages
-            .lastOrNull()
-            ?.takeIf { it.opening }
-            ?.let { opening ->
-                return flow {
-                    emit(
-                        BuddyStreamEvent(
-                            type = TOKEN,
-                            content = opening.content,
-                        ),
-                    )
-                    emit(BuddyStreamEvent(type = DONE))
+        if (!longAbsence) {
+            messages
+                .lastOrNull()
+                ?.takeIf { it.opening }
+                ?.let { opening ->
+                    return flow {
+                        emit(
+                            BuddyStreamEvent(
+                                type = TOKEN,
+                                content = opening.content,
+                            ),
+                        )
+                        emit(BuddyStreamEvent(type = DONE))
+                    }
                 }
-            }
+        }
 
-        if (!firstConversation && !longAbsence) {
+        if (!firstConversation && !longAbsence && messages.isEmpty()) {
             return flowOf(BuddyStreamEvent(type = DONE))
         }
 
@@ -338,7 +340,7 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod", "ThrowsCount")
     suspend fun sendMessageForMe(
         authId: String,
         sessionId: UUID?,

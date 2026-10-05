@@ -58,4 +58,5 @@ private fun BuddyMessageRole.toHistoryRole(): String =
     when (this) {
         BuddyMessageRole.USER -> "user"
         BuddyMessageRole.ASSISTANT -> "assistant"
+        BuddyMessageRole.SYSTEM -> "system"
     }
