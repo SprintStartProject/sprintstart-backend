@@ -167,7 +167,7 @@ class GithubFileService(
      */
     private suspend fun ingestFiles(githubRepository: GithubRepositoryConnection, transactionId: UUID) {
         val outcome = try {
-            ingestionEngine.ingestFileChangesSince(
+            val ingested = ingestionEngine.ingestFileChangesSince(
                 coordinates = coordinatesFactory.of(githubRepository),
                 fromRevision = githubRepository.lastSha,
                 sink = GithubFileSink(
@@ -178,6 +178,28 @@ class GithubFileService(
                     sourceUrls = provider.descriptor.sourceUrls,
                 ),
             )
+
+            // Inside the try so that a failed reconciliation or cursor write still ends the run
+            // with a terminal event.
+            ingested.resyncedPaths?.let { visitedPaths ->
+                eventPublisher.publishEvent(
+                    GithubFilesResyncedEvent(
+                        transactionId = transactionId,
+                        repositoryId = githubRepository.id,
+                        repositoryOwner = githubRepository.owner,
+                        repositoryName = githubRepository.name,
+                        visitedPaths = visitedPaths,
+                    ),
+                )
+            }
+
+            // Only the cursor column is written: this copy of the connection was read when the run
+            // started, and saving all of it would reset the commit cursor the parallel commit fetch
+            // has advanced since.
+            withContext(Dispatchers.IO) {
+                repoConnectionRepository.updateFileCursor(githubRepository.id, ingested.revision)
+            }
+            ingested
         } catch (e: CancellationException) {
             // Never swallow cancellation: the run is abandoned, not failed, and publishing a
             // terminal failure here would report a fetch that did not happen.
@@ -203,24 +225,6 @@ class GithubFileService(
                 githubRepository.name,
                 outcome.failures.size,
             )
-        }
-
-        githubRepository.lastSha = outcome.revision
-
-        outcome.resyncedPaths?.let { visitedPaths ->
-            eventPublisher.publishEvent(
-                GithubFilesResyncedEvent(
-                    transactionId = transactionId,
-                    repositoryId = githubRepository.id,
-                    repositoryOwner = githubRepository.owner,
-                    repositoryName = githubRepository.name,
-                    visitedPaths = visitedPaths,
-                ),
-            )
-        }
-
-        withContext(Dispatchers.IO) {
-            repoConnectionRepository.save(githubRepository)
         }
 
         eventPublisher.publishEvent(

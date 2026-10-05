@@ -14,9 +14,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -60,7 +62,7 @@ class GithubCommitsServiceTest {
 
     private fun givenIngestSucceeds(revision: String = NEW_REVISION) {
         every { coordinatesFactory.of(connection) } returns coordinates
-        every { repoConnectionRepository.save(any()) } returns connection
+        every { repoConnectionRepository.updateCommitsCursor(any(), any()) } just Runs
         coEvery {
             ingestionEngine.ingestCommitsSince(coordinates, any(), capture(sink))
         } returns GitIngestOutcome(revision, emptyList())
@@ -93,8 +95,8 @@ class GithubCommitsServiceTest {
 
         service.fetchAndIngestCommits(connection, transactionId)
 
-        assertThat(connection.lastCommitsSyncedSha).isEqualTo(NEW_REVISION)
-        verify { repoConnectionRepository.save(connection) }
+        verify { repoConnectionRepository.updateCommitsCursor(connection.id, NEW_REVISION) }
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
     }
 
     // ── terminal events ───────────────────────────────────────────────────────
@@ -127,11 +129,34 @@ class GithubCommitsServiceTest {
         }
 
         assertThat(connection.lastCommitsSyncedSha).isEmpty()
-        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify(exactly = 0) { repoConnectionRepository.updateCommitsCursor(any(), any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(
                 match<Any> { it is GithubCommitsFetchFailedEvent && it.reason.contains("exit 128") },
             )
+        }
+    }
+
+    @Test
+    fun `publishes a failure instead of hanging the run when the cursor write fails`() = runTest {
+        every { coordinatesFactory.of(connection) } returns coordinates
+        coEvery { ingestionEngine.ingestCommitsSince(coordinates, any(), any()) } returns
+            GitIngestOutcome(NEW_REVISION, emptyList())
+        every { repoConnectionRepository.updateCommitsCursor(any(), any()) } throws
+            RuntimeException("cursor write rejected")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestCommits(connection, transactionId)
+        }
+
+        assertThat(connection.lastCommitsSyncedSha).isEmpty()
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubCommitsFetchFailedEvent && it.reason.contains("cursor write rejected") },
+            )
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubCommitsFetchCompletedEvent })
         }
     }
 

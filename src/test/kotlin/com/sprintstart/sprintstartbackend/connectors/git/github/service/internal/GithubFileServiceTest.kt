@@ -22,9 +22,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestFailure
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestOutcome
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -75,7 +77,7 @@ class GithubFileServiceTest {
         resyncedPaths: Set<String>? = null,
     ) {
         every { repoConnectionRepository.findById(connection.id) } returns Optional.of(connection)
-        every { repoConnectionRepository.save(any()) } returns connection
+        every { repoConnectionRepository.updateFileCursor(any(), any()) } just Runs
         every { coordinatesFactory.of(connection) } returns coordinates
         coEvery {
             ingestionEngine.ingestFileChangesSince(coordinates, any(), capture(sink))
@@ -109,8 +111,8 @@ class GithubFileServiceTest {
 
         service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
-        verify { repoConnectionRepository.save(connection) }
+        verify { repoConnectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
+        verify(exactly = 0) { repoConnectionRepository.save(any()) }
     }
 
     @Test
@@ -150,7 +152,7 @@ class GithubFileServiceTest {
 
         service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
 
-        assertThat(connection.lastSha).isEqualTo(NEW_REVISION)
+        verify { repoConnectionRepository.updateFileCursor(connection.id, NEW_REVISION) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
         }
@@ -168,11 +170,52 @@ class GithubFileServiceTest {
         }
 
         assertThat(connection.lastSha).isEmpty()
-        verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        verify(exactly = 0) { repoConnectionRepository.updateFileCursor(any(), any()) }
         verify(exactly = 1) {
             eventPublisher.publishEvent(
                 match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("exit 128") },
             )
+        }
+    }
+
+    @Test
+    fun `publishes a failure instead of hanging the run when the cursor write fails`() = runTest {
+        givenIngestSucceeds()
+        every { repoConnectionRepository.updateFileCursor(any(), any()) } throws
+            RuntimeException("cursor write rejected")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+        }
+
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("cursor write rejected") },
+            )
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
+        }
+    }
+
+    @Test
+    fun `publishes a failure instead of hanging the run when reconciling deletions fails`() = runTest {
+        givenIngestSucceeds(resyncedPaths = setOf("README.md"))
+        every { eventPublisher.publishEvent(match<Any> { it is GithubFilesResyncedEvent }) } throws
+            RuntimeException("reconciliation rejected")
+
+        assertFailsWith<RuntimeException> {
+            service.fetchAndIngestAllFiles(connection.id, connection.owner, connection.name, transactionId)
+        }
+
+        verify(exactly = 0) { repoConnectionRepository.updateFileCursor(any(), any()) }
+        verify(exactly = 1) {
+            eventPublisher.publishEvent(
+                match<Any> { it is GithubFilesFetchFailedEvent && it.reason.contains("reconciliation rejected") },
+            )
+        }
+        verify(exactly = 0) {
+            eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
         }
     }
 
@@ -218,7 +261,7 @@ class GithubFileServiceTest {
 
         io.mockk.verifyOrder {
             eventPublisher.publishEvent(match<Any> { it is GithubFilesResyncedEvent })
-            repoConnectionRepository.save(connection)
+            repoConnectionRepository.updateFileCursor(connection.id, NEW_REVISION)
             eventPublisher.publishEvent(match<Any> { it is GithubFilesFetchCompletedEvent })
         }
     }

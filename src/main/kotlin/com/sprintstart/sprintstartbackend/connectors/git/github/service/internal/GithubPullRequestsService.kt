@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -39,6 +40,7 @@ class GithubPullRequestsService(
      * @param githubRepositoryId The GitHub repository id (as handled internally) this resource belongs to.
      * @param transactionId The UUID of the overall transaction, this fetch/ingest is a part of.
      */
+    @Suppress("ThrowsCount")
     @Tracked("Fetching all pull requests from repository")
     internal suspend fun fetchAndIngestAllPullRequests(
         githubRepositoryId: UUID,
@@ -82,20 +84,39 @@ class GithubPullRequestsService(
             throw it
         }.getOrNull() ?: return
 
-        if (performUpdate) {
-            pullRequests.forEach { pr ->
-                eventPublisher.publishEvent(
-                    pr.asFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
-                )
-            }
-        } else {
-            if (githubRepository != null && pullRequests.isNotEmpty()) {
-                githubRepository.connectionState = ConnectionState.OUT_OF_DATE
+        // Publishing a fetched pull request runs the persistence listener synchronously, so a failure
+        // while storing one surfaces here. It has to end the phase with a terminal event: the
+        // ingestion run is only finalized once every phase has closed.
+        try {
+            if (performUpdate) {
+                pullRequests.forEach { pr ->
+                    eventPublisher.publishEvent(
+                        pr.asFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
+                    )
+                }
+            } else {
+                if (githubRepository != null && pullRequests.isNotEmpty()) {
+                    githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-                withContext(Dispatchers.IO) {
-                    repoConnectionRepository.save(githubRepository)
+                    withContext(Dispatchers.IO) {
+                        repoConnectionRepository.save(githubRepository)
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
+            // terminal failure here would report a fetch that did not happen.
+            throw e
+        } catch (e: Exception) {
+            eventPublisher.publishEvent(
+                GithubPullRequestsFetchFailedEvent(
+                    transactionId,
+                    repositoryOwner,
+                    repositoryName,
+                    e.message ?: "Unknown error",
+                ),
+            )
+            throw e
         }
 
         eventPublisher.publishEvent(
