@@ -32,6 +32,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepo
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.service.SessionActivityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -72,10 +73,11 @@ class BuddyService(
     private val buddyActionService: BuddyActionService,
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
+    private val artifactLookupService: ArtifactLookupService,
+    private val sessionActivityService: SessionActivityService,
     private val applicationScope: CoroutineScope,
     private val buddyAiClient: BuddyAiClient,
     private val eventPublisher: ApplicationEventPublisher,
-    private val artifactLookupService: ArtifactLookupService,
     private val clock: Clock,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -144,62 +146,110 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun streamOpenForMe(authId: String, sessionId: UUID?): Flow<BuddyStreamEvent> {
+    suspend fun streamOpenForMe(
+        authId: String,
+        sessionId: UUID?,
+    ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
+
         if (sessionId == null) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
-        }
-        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
-            HttpStatus.NOT_FOUND,
-            "Session not found for current user",
-        )
-
-        val all = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
-
-        // Opening twice without the hire saying anything is the same visit: a visit ends when
-        // the hire speaks, so the greeting already there is replayed whole.
-        //
-        // The test is *the last message is an opening*, never *an opening exists* -- the hire
-        // speaking is exactly what puts something after it.
-        val greetingAlreadyThere = all.lastOrNull()?.takeIf { it.opening }
-        if (greetingAlreadyThere != null) {
-            return flowOf(
-                BuddyStreamEvent(type = TOKEN, content = greetingAlreadyThere.content),
-                BuddyStreamEvent(type = DONE),
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "sessionId required",
             )
         }
 
-        // Everything the memory note does not yet cover, so the greeting can be specific about a
-        // previous visit. Still the compaction cursor -- this is a prompt, which is the one
-        // question that cursor really answers.
-        val recent = all.drop(session.summarizedCount).map { it.toAgentMessage() }
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session not found for current user",
+            )
+
+        val messages = buddyMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+
+        /*
+         * The current request is counted as activity, but the decision whether
+         * this is a long absence is made from the previous lastSeenAt.
+         */
+        val longAbsence = sessionActivityService.recordActivityAndReturnLongAbsence(userId)
+
+        val firstConversation = buddySessionRepository.countByUserId(userId) == 1L
+
+        /*
+         * The last opening is special: opening the same conversation again without
+         * the hire saying anything replays the existing opening instead of asking
+         * the AI for another greeting.
+         */
+        messages
+            .lastOrNull()
+            ?.takeIf { it.opening }
+            ?.let { opening ->
+                return flow {
+                    emit(
+                        BuddyStreamEvent(
+                            type = TOKEN,
+                            content = opening.content,
+                        ),
+                    )
+                    emit(BuddyStreamEvent(type = DONE))
+                }
+            }
+
+        if (!firstConversation && !longAbsence) {
+            return flowOf(BuddyStreamEvent(type = DONE))
+        }
+
+        val recent = messages
+            .drop(session.summarizedCount)
+            .map { it.toAgentMessage() }
+
         val state = buddyToolExecutor.stateSnapshot(userId)
 
         return flow {
             val streamed = StringBuilder()
             var opening: BuddyOpenStreamEvent? = null
+
             try {
                 onboardingAiClient
                     .streamBuddyOpen(
-                        BuddyOpenRequest(memory = session.summary, recent = recent, state = state),
+                        BuddyOpenRequest(
+                            memory = session.summary,
+                            recent = recent,
+                            state = state,
+                        ),
                     ).collect { event ->
                         when (event.type) {
-                            BuddyOpenStreamEvent.TOKEN -> event.content?.let {
-                                streamed.append(it)
-                                emit(BuddyStreamEvent(type = TOKEN, content = it))
+                            TOKEN -> {
+                                streamed.append(event.content.orEmpty())
+
+                                emit(
+                                    BuddyStreamEvent(
+                                        type = TOKEN,
+                                        content = event.content,
+                                    ),
+                                )
                             }
 
-                            BuddyOpenStreamEvent.DONE -> opening = event
+                            DONE -> {
+                                opening = event
+                            }
                         }
                     }
-            } catch (@Suppress("SwallowedException") e: OnboardingAiException) {
-                // Opening the buddy must never fail the page.
-                logger.warn("Buddy open stream failed: {}", e.message)
+            } catch (e: OnboardingAiException) {
+                logger.warn(
+                    "Buddy opening failed for session {}",
+                    session.id,
+                    e,
+                )
             }
 
-            finishOpen(session, streamed.toString(), opening)
-            // Whatever the previous visit left unfolded gets folded now, while the hire is reading
-            // the greeting rather than waiting on it.
+            finishOpen(
+                session = session,
+                streamed = streamed.toString(),
+                opening = opening,
+            )
+
             compactInBackground(userId, session.id)
         }
     }
@@ -379,7 +429,7 @@ class BuddyService(
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
             val reasoning = mutableListOf<String>()
-            var citations = mutableListOf<BuddyCitationDto>()
+            val citations = mutableListOf<BuddyCitationDto>()
             var answer: String? = null
             var step = 0
 

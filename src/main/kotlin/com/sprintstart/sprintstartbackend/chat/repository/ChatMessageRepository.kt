@@ -53,6 +53,8 @@ internal interface ChatMessageRepository : JpaRepository<ChatMessage, UUID> {
      */
     fun findAllByRoleAndChatProjectId(role: ChatRole, projectId: UUID): List<ChatMessage>
 
+    fun findAllByChatIdOrderByCreatedAtAsc(chatId: UUID): List<ChatMessage>
+
     /**
      * Deletes all messages linked to a specific chat.
      *

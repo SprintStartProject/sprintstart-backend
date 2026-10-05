@@ -10,6 +10,8 @@ import java.util.UUID
 
 @Repository
 internal interface CitationRepository : JpaRepository<Citation, UUID> {
+    fun findAllByMessageId(messageId: UUID): List<Citation>
+
     @Modifying
     @Query(
         value = """

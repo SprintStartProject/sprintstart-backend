@@ -17,5 +17,7 @@ interface BuddySessionRepository : JpaRepository<BuddySession, UUID> {
 
     fun findBinnedBefore(cutoff: Instant): List<BuddySession>
 
+    fun countByUserId(userId: UUID): Long
+
     fun deleteAllByUserId(userId: UUID)
 }

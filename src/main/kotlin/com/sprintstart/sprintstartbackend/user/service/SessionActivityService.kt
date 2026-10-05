@@ -6,8 +6,10 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Detects session boundaries from authenticated request traffic.
@@ -26,6 +28,7 @@ class SessionActivityService(
     private val eventPublisher: ApplicationEventPublisher,
     @Value("\${sprintstart.session.idle-threshold}")
     private val idleThreshold: Duration,
+    private val clock: Clock,
 ) {
     /**
      * Records authenticated activity for the user identified by [authId], publishing
@@ -49,5 +52,22 @@ class SessionActivityService(
         if (previous != null && Duration.between(previous, now) > idleThreshold) {
             eventPublisher.publishEvent(UserSessionStartedEvent(user.id))
         }
+    }
+
+    fun recordActivityAndReturnLongAbsence(userId: UUID): Boolean {
+        val user = userRepository
+            .findById(userId)
+            .orElseThrow()
+
+        val now = clock.instant()
+
+        val longAbsence = user.lastSeenAt
+            ?.let { Duration.between(it, now) > idleThreshold }
+            ?: false
+
+        user.lastSeenAt = now
+        userRepository.save(user)
+
+        return longAbsence
     }
 }
