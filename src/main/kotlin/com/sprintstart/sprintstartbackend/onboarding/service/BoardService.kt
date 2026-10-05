@@ -30,7 +30,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Memory
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
