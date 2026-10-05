@@ -10,6 +10,7 @@ data class BuddyMessageResponse(
     val content: String,
     val createdAt: Instant,
     val citations: List<BuddyCitationResponse> = emptyList(),
+    val isIncomplete: Boolean = false,
 )
 
 data class BuddyCitationResponse(

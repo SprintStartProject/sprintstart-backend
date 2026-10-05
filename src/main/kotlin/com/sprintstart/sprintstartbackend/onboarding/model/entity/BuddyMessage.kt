@@ -58,4 +58,6 @@ class BuddyMessage(
         orphanRemoval = true,
     )
     val citations: List<BuddyCitation> = emptyList(),
+    @Column(name = "is_incomplete")
+    var isIncomplete: Boolean = false,
 )

@@ -27,7 +27,9 @@ import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -317,4 +319,27 @@ class BuddyController(
         @AuthenticationPrincipal jwt: Jwt,
         @Valid @RequestBody request: BuddyActionRequest,
     ): BuddyActionResponse = buddyActionService.perform(request, jwt)
+
+    @Operation(
+        summary = "Delete a user message",
+        description = "Deletes a user message from a session owned by the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Message not found for current user"),
+            ApiResponse(responseCode = "409", description = "Cannot delete a summarized message"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMessage(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.deleteMessage(jwt.subject, id)
+    }
 }

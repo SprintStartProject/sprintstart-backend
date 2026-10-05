@@ -16,6 +16,7 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
     reply: String,
     reasoning: List<String>,
     citations: List<ResolvedBuddyCitation>,
+    emittedContent: StringBuilder,
 ) {
     for (item in reasoning) {
         emit(
@@ -27,6 +28,7 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
     }
     for (chunk in BuddyService.TOKEN_CHUNK.split(reply).filter { it.isNotEmpty() }) {
         emit(BuddyStreamEvent(type = BuddyService.TOKEN, content = chunk))
+        emittedContent.append(chunk)
     }
     for (citation in citations) {
         emit(

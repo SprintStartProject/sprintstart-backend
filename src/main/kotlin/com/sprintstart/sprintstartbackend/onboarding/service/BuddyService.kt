@@ -29,6 +29,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSes
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyCitationRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -40,8 +41,10 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Manages a hire's ongoing onboarding buddy conversation: one continuous [BuddySession] per user,
@@ -58,7 +61,7 @@ import java.util.UUID
 // One method per thing a visit can do -- open it, stream it open, read it, speak into it -- plus the
 // agent loop's helpers. The count tracks the conversation's surface, not a class doing two jobs.
 @Suppress("TooManyFunctions")
-internal class BuddyService(
+class BuddyService(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
     private val buddyCitationRepository: BuddyCitationRepository,
@@ -235,7 +238,7 @@ internal class BuddyService(
                 session = session,
                 role = BuddyMessageRole.ASSISTANT,
                 content = greeting,
-                // Marks the visit boundary, for the replay check above and the hire's transcript.
+                // This is the first message of the conversation.
                 opening = true,
             ),
         )
@@ -358,7 +361,7 @@ internal class BuddyService(
         // user's message is already persisted above, so the transcript still shows what they asked.
         if (projectIds.isEmpty()) {
             return flow {
-                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList())
+                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList(), StringBuilder())
                 buddyMessageRepository.save(
                     BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = NO_PROJECT_REPLY),
                 )
@@ -430,32 +433,57 @@ internal class BuddyService(
                 }
             }
 
-            emitAgentReply(reply, reasoning, resolvedCitations)
+            val emittedContent = StringBuilder()
 
-            val message = buddyMessageRepository.save(
-                BuddyMessage(
-                    session = session,
-                    role = BuddyMessageRole.ASSISTANT,
-                    content = reply,
-                ),
-            )
+            try {
+                emitAgentReply(reply, reasoning, resolvedCitations, emittedContent)
 
-            val citationEntities = resolvedCitations.map { citation ->
-                BuddyCitation(
-                    artifactId = citation.artifactId,
-                    filename = citation.filename,
-                    sourceUrl = citation.sourceUrl,
-                    startLine = citation.startLine,
-                    startPage = citation.startPage,
-                    message = message,
+                val message = buddyMessageRepository.save(
+                    BuddyMessage(
+                        session = session,
+                        role = BuddyMessageRole.ASSISTANT,
+                        content = reply,
+                    ),
                 )
-            }
 
-            buddyCitationRepository.saveAll(citationEntities)
-            // Only now, with the reply persisted and the hire reading it. Folding before this point
-            // is what the whole change exists to stop.
-            compactInBackground(userId, session.id)
+                val citationEntities = resolvedCitations.map { citation ->
+                    BuddyCitation(
+                        artifactId = citation.artifactId,
+                        filename = citation.filename,
+                        sourceUrl = citation.sourceUrl,
+                        startLine = citation.startLine,
+                        startPage = citation.startPage,
+                        message = message,
+                    )
+                }
+
+                buddyCitationRepository.saveAll(citationEntities)
+                // Only now, with the reply persisted and the hire reading it. Folding before this point
+                // is what the whole change exists to stop.
+                compactInBackground(userId, session.id)
+            } catch (e: CancellationException) {
+                saveIncompleteReply(session, emittedContent.toString())
+                throw e
+            } catch (e: Exception) {
+                saveIncompleteReply(session, emittedContent.toString())
+                throw e
+            }
         }
+    }
+
+    private fun saveIncompleteReply(session: BuddySession, content: String) {
+        if (content.isBlank()) {
+            return
+        }
+
+        buddyMessageRepository.save(
+            BuddyMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = content,
+                isIncomplete = true,
+            ),
+        )
     }
 
     /** The contribution vocabulary, in the shape the AI service's persona skeleton expects. */
@@ -635,6 +663,36 @@ internal class BuddyService(
             .filterNot { it.trimStart().startsWith(">") }
             .joinToString("\n")
             .trim()
+
+    @Transactional
+    @Tracked("Deleting message from session")
+    fun deleteMessage(authId: String, messageId: UUID) {
+        val userId = resolveUserId(authId)
+        val message = buddyMessageRepository.findById(messageId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Message with id $messageId not found")
+        }
+        val session = message.session
+
+        if (session.userId !== userId) {
+            throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session containing message with id $messageId is not owned by the current user.",
+            )
+        }
+
+        val messages = buddyMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+
+        val index = messages.indexOfFirst { it.id == message.id }
+
+        if (index < session.summarizedCount) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Cannot delete a summarized message",
+            )
+        }
+        buddyMessageRepository.delete(message)
+    }
 }
 
 internal fun parseUuidOrNull(value: String): UUID? =

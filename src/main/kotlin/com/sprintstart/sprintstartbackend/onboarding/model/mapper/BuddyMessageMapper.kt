@@ -15,6 +15,7 @@ fun BuddyMessage.toResponse(): BuddyMessageResponse =
         content = content,
         createdAt = createdAt,
         citations = citations.map { it.toResponse() },
+        isIncomplete = isIncomplete,
     )
 
 fun BuddyCitation.toResponse(): BuddyCitationResponse =
