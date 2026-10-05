@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabularyDto
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
@@ -25,6 +26,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGener
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyCitationRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -56,9 +58,10 @@ import java.util.UUID
 // One method per thing a visit can do -- open it, stream it open, read it, speak into it -- plus the
 // agent loop's helpers. The count tracks the conversation's surface, not a class doing two jobs.
 @Suppress("TooManyFunctions")
-class BuddyService(
+internal class BuddyService(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
+    private val buddyCitationRepository: BuddyCitationRepository,
     private val onboardingAiClient: OnboardingAiClient,
     private val buddyToolExecutor: BuddyToolExecutor,
     private val buddyActionService: BuddyActionService,
@@ -67,6 +70,7 @@ class BuddyService(
     private val applicationScope: CoroutineScope,
     private val buddyAiClient: BuddyAiClient,
     private val eventPublisher: ApplicationEventPublisher,
+    private val artifactLookupService: ArtifactLookupService,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -364,7 +368,7 @@ class BuddyService(
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
             val reasoning = mutableListOf<String>()
-            var citations: List<BuddyCitationDto> = emptyList()
+            var citations = mutableListOf<BuddyCitationDto>()
             var answer: String? = null
             var step = 0
 
@@ -383,7 +387,7 @@ class BuddyService(
                     ),
                 )
                 reasoning += response.reasoning
-                citations = response.citations
+                citations += response.citations
                 if (response.final) {
                     answer = response.text
                 } else {
@@ -404,11 +408,46 @@ class BuddyService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            emitAgentReply(reply, reasoning, citations)
 
-            buddyMessageRepository.save(
+            val resolvedCitations = citations.mapNotNull { citation ->
+                val artifactId = citation.artifactId?.let(::parseUuidOrNull)
+                val resolved = artifactId?.let(artifactLookupService::resolve)
+
+                if (artifactId == null || resolved == null) {
+                    logger.warn(
+                        "Could not resolve artifact {} for buddy citation",
+                        citation.artifactId,
+                    )
+                    null
+                } else {
+                    ResolvedBuddyCitation(
+                        artifactId = artifactId,
+                        filename = resolved.filename,
+                        sourceUrl = resolved.sourceUrl,
+                        startLine = citation.startLine,
+                        startPage = citation.startPage,
+                    )
+                }
+            }
+
+            emitAgentReply(reply, reasoning, resolvedCitations)
+
+            val message = buddyMessageRepository.save(
                 BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
             )
+
+            val citationEntities = resolvedCitations.map { citation ->
+                BuddyCitation(
+                    artifactId = citation.artifactId,
+                    filename = citation.filename,
+                    sourceUrl = citation.sourceUrl,
+                    startLine = citation.startLine,
+                    startPage = citation.startPage,
+                    message = message,
+                )
+            }
+
+            buddyCitationRepository.saveAll(citationEntities)
             // Only now, with the reply persisted and the hire reading it. Folding before this point
             // is what the whole change exists to stop.
             compactInBackground(userId, session.id)
@@ -593,3 +632,10 @@ class BuddyService(
             .joinToString("\n")
             .trim()
 }
+
+internal fun parseUuidOrNull(value: String): UUID? =
+    try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        null
+    }

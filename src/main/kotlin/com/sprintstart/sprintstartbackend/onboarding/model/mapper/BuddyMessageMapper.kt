@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyM
 
 fun BuddyMessage.toResponse(): BuddyMessageResponse =
     BuddyMessageResponse(
+        id = id,
         role = role,
         content = content,
         createdAt = createdAt,
@@ -29,6 +30,7 @@ fun BuddyMessage.toAgentMessage(): BuddyAgentMessageDto =
 /** A team-mode message in the same client shape as the hire's, so one transcript view renders both. */
 fun BuddyTeamMessage.toResponse(): BuddyMessageResponse =
     BuddyMessageResponse(
+        id = id,
         role = role,
         content = content,
         createdAt = createdAt,

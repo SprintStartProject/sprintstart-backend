@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCitationDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import kotlinx.coroutines.flow.FlowCollector
+import java.util.UUID
 
 /**
  * Emits a finished agent answer on the buddy stream: its words, its citations, then `done`.
@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.FlowCollector
 internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
     reply: String,
     reasoning: List<String>,
-    citations: List<BuddyCitationDto>,
+    citations: List<ResolvedBuddyCitation>,
 ) {
     for (item in reasoning) {
         emit(
@@ -32,7 +32,9 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
         emit(
             BuddyStreamEvent(
                 type = "citation",
-                artifactId = citation.artifactId,
+                artifactId = citation.artifactId.toString(),
+                filename = citation.filename,
+                sourceUrl = citation.sourceUrl,
                 startLine = citation.startLine,
                 startPage = citation.startPage,
             ),
@@ -40,3 +42,11 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
     }
     emit(BuddyStreamEvent(type = BuddyService.DONE))
 }
+
+internal data class ResolvedBuddyCitation(
+    val artifactId: UUID,
+    val filename: String,
+    val sourceUrl: String?,
+    val startLine: Int?,
+    val startPage: Int?,
+)

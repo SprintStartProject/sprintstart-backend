@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.service
+package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
