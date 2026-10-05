@@ -49,7 +49,10 @@ class LiveCardContentReader(
      * Not [BuddyService.getOrCreateSession] — hydrating a card must not create a session.
      */
     fun memoryRecap(userId: UUID): MemoryRecapContent {
-        val session = buddySessionRepository.findByUserId(userId)
+        val session = buddySessionRepository
+            .findByUserIdOrderByCreatedAtDesc(userId)
+            .firstOrNull()
+
         return MemoryRecapContent(
             memory = session?.summary,
             messagesRemembered = session?.summarizedCount ?: 0,
@@ -59,8 +62,8 @@ class LiveCardContentReader(
     /**
      * The task the hire is on, read — never assigned.
      *
-     * Read through [CurrentTaskReader], not `TaskZeroService.getForHire`, which assigns on
-     * read. Hydration runs on every page load, so it must not be able to hand out a task.
+     * Read through [CurrentTaskReader], the same read the task packet uses, so the card and the
+     * packet cannot be about different tasks.
      *
      * A card with no task on it is a real state and says so.
      */
@@ -71,8 +74,6 @@ class LiveCardContentReader(
             title = task?.title,
             summary = task?.summary,
             url = task?.sourceUrl,
-            // True for a goal the hire claimed, false for a Task 0 they were handed.
-            chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
             // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
             // card can say so without a lookup of its own.
             closedAtSource = task?.status == ProposalStatus.STALE,

@@ -139,33 +139,41 @@ class BuddyTeamService(
         projectId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
         val session = getOrCreateSession(userId, projectId)
 
         // Read before saving the new message so it is not sent to the AI twice.
-        val history = buddyTeamMessageRepository
-            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
-            .drop(session.summarizedCount)
-            .map { it.toAgentMessage() }
+        val transcript = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
+        val history = transcript.drop(session.summarizedCount).map { it.toAgentMessage() }
+        // What the latest replies opened or used, from the whole transcript rather than the unfolded part: a
+        // fold must not close an area the manager is still working in.
+        val carriedOver = transcript.areasStillOpen()
 
         buddyTeamMessageRepository.save(
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
         )
 
-        val context = TeamToolContext(userId = userId, authId = authId, projectId = projectId)
+        val context = TeamToolContext(
+            userId = userId,
+            authId = authId,
+            projectId = projectId,
+            currentPage = currentPage,
+        )
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
             var citations: List<BuddyCitationDto> = emptyList()
             var answer: String? = null
             var step = 0
-            val openedAreas = mutableSetOf<TeamArea>()
+            val areas = OpenAreas(carriedOver)
 
             while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
                 step++
-                // Per hop, not per turn: an area opened on the previous hop is mounted from this one.
-                val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(openedAreas) else emptyList()
+                // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
+                // one the latest replies opened or used is mounted from the first.
+                val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
                 val response = onboardingAiClient.buddyAgentTurn(
                     BuddyAgentRequest(
                         messages = messages,
@@ -179,7 +187,15 @@ class BuddyTeamService(
                     ),
                 )
                 citations = response.citations
-                if (response.final) {
+                if (response.final && response.text.writesOutAToolCall()) {
+                    // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
+                    // and if the budget runs out the reply is the fallback, never the raw call.
+                    logger.warn("Team buddy wrote a tool call out as its reply; asking again")
+                    val retry = openAreasWrittenOut(response.text, tools.map { it.name }.toSet(), areas)
+                    messages = response.messages.ifEmpty {
+                        messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
+                    } + BuddyAgentMessageDto(role = "user", content = retry)
+                } else if (response.final) {
                     answer = response.text
                 } else {
                     val mounted = tools.map { it.name }.toSet()
@@ -188,7 +204,7 @@ class BuddyTeamService(
                         next.add(
                             BuddyAgentMessageDto(
                                 role = "tool",
-                                content = runToolCall(call, context, mounted, openedAreas),
+                                content = runToolCall(call, context, mounted, areas),
                                 toolCallId = call.id,
                             ),
                         )
@@ -198,10 +214,16 @@ class BuddyTeamService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: BuddyService.FALLBACK_REPLY
-            emitAgentReply(reply, citations)
+            emitAgentReply(reply, emptyList(), citations)
 
             buddyTeamMessageRepository.save(
-                BuddyTeamMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
+                BuddyTeamMessage(
+                    session = session,
+                    role = BuddyMessageRole.ASSISTANT,
+                    content = reply,
+                    // What this reply opened or used; the next message reads the latest replies' back.
+                    openedAreas = areas.activeThisTurn.encoded(),
+                ),
             )
             compactInBackground(userId, projectId)
         }
@@ -219,8 +241,12 @@ class BuddyTeamService(
         call: BuddyToolCallDto,
         context: TeamToolContext,
         mountedToolNames: Set<String>,
-        openedAreas: MutableSet<TeamArea>,
+        areas: OpenAreas,
     ): String {
+        openAreaOf(call, mountedToolNames, areas)?.let { return it }
+        if (call.name in mountedToolNames) {
+            buddyTeamTools.areaOf(call.name)?.let { areas.use(it) }
+        }
         if (call.name in mountedToolNames && buddyProposalService.isAction(call.name)) {
             val outcome = buddyProposalService.propose(call, context)
             outcome.proposal?.let { proposal ->
@@ -240,10 +266,68 @@ class BuddyTeamService(
         emit(BuddyStreamEvent(type = "tool_use", name = call.name, kind = "tool"))
         if (call.name == BuddyTeamTools.OPEN_AREA && call.name in mountedToolNames) {
             val outcome = buddyTeamTools.openArea(call)
-            outcome.area?.let { openedAreas.add(it) }
+            outcome.area?.let { areas.open(it) }
             return outcome.toolResult
         }
         return buddyTeamTools.execute(call, context, mountedToolNames)
+    }
+
+    /**
+     * Opens the area of a tool the model called before it was mounted, and asks it to call again.
+     *
+     * The model is told to open an area first, but that is an instruction, not a guarantee: a draft written
+     * without opening the knowledge area leaves "yes, send it" with nothing to call. The backend knows which
+     * area every tool belongs to, so it opens it itself. The call is not run on this hop: its arguments
+     * were written without the tool's description, and nothing runs that was not mounted for the hop it was
+     * called on. Only when `open_area` is mounted, so never with capabilities off.
+     *
+     * @return What to tell the model, or `null` when the call is not for an unopened area.
+     */
+    private suspend fun FlowCollector<BuddyStreamEvent>.openAreaOf(
+        call: BuddyToolCallDto,
+        mountedToolNames: Set<String>,
+        areas: OpenAreas,
+    ): String? {
+        if (call.name in mountedToolNames || BuddyTeamTools.OPEN_AREA !in mountedToolNames) {
+            return null
+        }
+        val area = buddyTeamTools.areaOf(call.name) ?: return null
+        logger.info("Team buddy called {} before opening its area; opening {}", call.name, area)
+        emit(BuddyStreamEvent(type = "tool_use", name = BuddyTeamTools.OPEN_AREA, kind = "tool"))
+        areas.open(area)
+        return "${call.name} belongs to the ${area.name.lowercase()} area, which was not open. It is open now: " +
+            "call ${call.name} again on your next step. Nothing has been done or offered yet."
+    }
+
+    /**
+     * Opens the areas of tools the model wrote out as text instead of calling, and says what to do instead.
+     *
+     * Writing a call out is the small model's usual way of failing to make one, and the tool it names is often
+     * in an area that is not open, the same case [openAreaOf] handles for a call that was made. Without this,
+     * the model is only told to open the area itself, which costs a step of a short budget.
+     *
+     * @return What to tell the model in place of the reply it wrote.
+     */
+    private suspend fun FlowCollector<BuddyStreamEvent>.openAreasWrittenOut(
+        text: String,
+        mountedToolNames: Set<String>,
+        areas: OpenAreas,
+    ): String {
+        if (BuddyTeamTools.OPEN_AREA !in mountedToolNames) {
+            return TOOL_CALL_WRITTEN_OUT
+        }
+        val opened = text
+            .writtenOutToolNames()
+            .filter { it !in mountedToolNames }
+            .mapNotNull { name -> buddyTeamTools.areaOf(name)?.let { name to it } }
+        if (opened.isEmpty()) {
+            return TOOL_CALL_WRITTEN_OUT
+        }
+        emit(BuddyStreamEvent(type = "tool_use", name = BuddyTeamTools.OPEN_AREA, kind = "tool"))
+        opened.forEach { (_, area) -> areas.open(area) }
+        val names = opened.joinToString(", ") { it.first }
+        return "That reply was a tool call written out as text, so nothing ran and the manager has not seen an " +
+            "answer. The area of $names is open now: call it properly on your next step, not as text."
     }
 
     private suspend fun FlowCollector<BuddyStreamEvent>.finishOpen(

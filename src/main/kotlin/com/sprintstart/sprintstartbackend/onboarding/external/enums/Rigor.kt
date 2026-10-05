@@ -10,7 +10,7 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  *
  * This is the same discipline [CompetencySource] already applies to the ledger
  * ([CompetencySource.VERIFIED] outranks [CompetencySource.ASSESSED]), extended to the evidence
- * stream the ramp and the metrics read.
+ * stream the metrics read.
  *
  * Ordered weakest-last so callers can compare: [OBSERVED] is the strongest.
  */
@@ -21,6 +21,6 @@ enum class Rigor {
     /** A named accountable person, never the hire, confirmed the work happened and met the bar. */
     ATTESTED,
 
-    /** The hire said so, with nothing behind it. Never counts toward autonomy. */
+    /** The hire said so, with nothing behind it. Never counts as evidence of the work. */
     DECLARED,
 }

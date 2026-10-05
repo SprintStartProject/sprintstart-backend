@@ -262,22 +262,23 @@ class PromoteCandidateAction(
 /**
  * Offers to flag a task as a Task 0 candidate, or to take the flag off.
  *
- * A flagged task can become the Task 0 of a hire on any project its repository is linked to, not only
- * this one — the preview says so.
+ * Since #311 the flag is a label and nothing more: the PM vouching that a task is small and safe
+ * enough to start on. Nothing assigns a flagged task to anybody. The pool is shared by every project
+ * its repository is linked to, so the label shows there too — the preview says so.
  */
 @Component
 class SetTaskZeroEligibleAction(
     private val starterWorkTaskProposalRepository: StarterWorkTaskProposalRepository,
-    private val taskZeroService: TaskZeroService,
+    private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
     private val starterWorkScope: StarterWorkScope,
 ) : TeamActionHandler {
     override val area = TeamArea.STARTER_WORK
     override val risk = BuddyProposalRisk.STANDARD
     override val spec = BuddyToolSpecDto(
         name = "set_task_zero_eligible",
-        description = "Offer to flag a starter-work task as a Task 0 candidate — the small first task a new hire " +
-            "is given automatically to walk branch, pull request, review and merge once — or to take the flag " +
-            "off. Only something trivial suits Task 0. This does NOT change anything by itself; the manager confirms.",
+        description = "Offer to flag a starter-work task as a Task 0 candidate — a label saying it is small and " +
+            "safe enough for somebody's first piece of work; nobody is assigned it — or to take the flag off. " +
+            "Only something trivial suits Task 0. This does NOT change anything by itself; the manager confirms.",
         parameters = buildJsonObject {
             put("type", "object")
             putJsonObject("properties") {
@@ -318,12 +319,12 @@ class SetTaskZeroEligibleAction(
             },
             label = (if (eligible) "Flag for Task 0: " else "Unflag Task 0: ") + task.title.forLabel(),
             preview = if (eligible) {
-                "Flag ${task.named()} as a Task 0 candidate.\n\nA new hire without a Task 0 can be assigned it " +
-                    "automatically as their first task. That hire may be on any project linked to " +
+                "Flag ${task.named()} as a Task 0 candidate.\n\nIt is a label on the pool, not an assignment: " +
+                    "hires still pick their own work. The label shows on every project linked to " +
                     "${githubRepositoryOf(task.sourceId)}, not only this one."
             } else {
-                "Take the Task 0 flag off ${task.named()}.\n\nNo new hire is assigned it from now on; a hire who " +
-                    "already has it as their Task 0 keeps it."
+                "Take the Task 0 flag off ${task.named()}.\n\nOnly the label goes; a hire who already " +
+                    "claimed it keeps it."
             },
         )
     }
@@ -333,7 +334,7 @@ class SetTaskZeroEligibleAction(
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val eligible = requireNotNull(params.boolean("eligible"))
-        taskZeroService.setEligibility(requireNotNull(params.uuid("task_id")), eligible)
+        starterWorkTaskProposalService.setTaskZeroEligibility(requireNotNull(params.uuid("task_id")), eligible)
         return if (eligible) "Flagged as a Task 0 candidate." else "The Task 0 flag is off."
     }
 }

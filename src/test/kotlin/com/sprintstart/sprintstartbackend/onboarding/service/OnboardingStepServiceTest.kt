@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
@@ -130,6 +131,24 @@ class OnboardingStepServiceTest {
             val result = service.createOnboardingStepForMe(authId, phaseId, makeCreateRequest())
 
             assertEquals(stepId, result.id)
+        }
+
+        @Test
+        fun `a step added to a phase generation left empty brings the phase back into view`() {
+            // Hidden phases are filtered out of the hire's path; a step that landed in one while it
+            // stayed hidden would be a step nobody can see.
+            val phase = makePhase().apply { generationStatus = GenerationStatus.EMPTY }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPhaseRepository.findByIdAndPathUserId(phaseId, userId) } returns Optional.of(phase)
+            every { onboardingStepRepository.countByPhaseId(phase.id) } returns 0
+            every {
+                onboardingStepRepository.findByPhaseIdAndPositionGreaterThanEqualOrderByPositionDesc(phase.id, 0)
+            } returns mutableListOf()
+            every { onboardingStepRepository.save(any()) } returns makeStep()
+
+            service.createOnboardingStepForMe(authId, phaseId, makeCreateRequest())
+
+            assertEquals(GenerationStatus.GENERATED, phase.generationStatus)
         }
 
         @Test

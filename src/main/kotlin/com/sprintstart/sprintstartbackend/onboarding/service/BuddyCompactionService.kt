@@ -55,13 +55,14 @@ class BuddyCompactionService(
      * Safe to call after every turn: a conversation whose active window still fits does nothing and
      * costs one query. Never throws — the caller is a fire-and-forget launch.
      *
-     * @param userId The hire whose session to compact.
+     * @param userId The hire who owns the session.
+     * @param sessionId The session to compact.
      */
-    suspend fun compactIfNeeded(userId: UUID) {
+    suspend fun compactIfNeeded(userId: UUID, sessionId: UUID) {
         compact(
             Store(
                 label = "user $userId",
-                find = { buddySessionRepository.findByUserId(userId) },
+                find = { buddySessionRepository.findByIdAndUserId(sessionId, userId) },
                 findById = { buddySessionRepository.findById(it).orElse(null) },
                 transcript = { sessionId ->
                     buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId).map { it.toAgentMessage() }

@@ -38,6 +38,9 @@ private enum class FacetKind {
 
 private val SOURCES_EXCLUDED_FACETS = setOf(FacetKind.SOURCES, FacetKind.FORMATS, FacetKind.REPOSITORIES)
 
+/** The source systems whose artifacts belong to a repository and therefore feed the repository facet. */
+private val REPOSITORY_SOURCE_SYSTEMS = listOf(SourceSystem.GITHUB, SourceSystem.BITBUCKET)
+
 /** Lower-cased language names the facet never offers: the format facet covers documents. */
 private val DOCUMENT_LANGUAGES = setOf("markdown", "plain text")
 
@@ -301,44 +304,61 @@ class ArtifactFacetRepositoryImpl(
             .map { (fmt, count) -> FacetCountResponse(fmt.name, count) }
     }
 
+    /**
+     * Counts artifacts per repository, over GitHub and Bitbucket alike.
+     *
+     * A repository is offered as `owner/repo` (GitHub) or `workspace/slug` (Bitbucket). The owner's
+     * profile artifact (the GitHub org, the Bitbucket workspace) names no repository but belongs to
+     * every chosen repository of its owner, so its count is added to each repository of the same
+     * system; owners of different systems are kept apart even when they share a name. When both
+     * systems have a repository under the same `a/b` name, the two are one option and their counts add
+     * up, which is exactly what the repository filter returns for that value.
+     */
     private fun computeRepositoryFacets(
         cb: CriteriaBuilder,
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
     ): List<FacetCountResponse> {
-        val repoCountsMap = mutableMapOf<String, Long>()
-        val orgCountsMap = mutableMapOf<String, Long>()
+        val repoCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
+        val orgCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
         val query = cb.createQuery(Array<Any>::class.java)
         val root = query.from(Artifact::class.java)
         val join = root.join<Artifact, UUID>("projectIdsInternal")
         query.multiselect(
+            root.get<SourceSystem>("sourceSystem"),
             root.get<String>("sourceId"),
             root.get<ArtifactType>("artifactType"),
         )
         val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.REPOSITORIES).toMutableList()
-        preds.add(cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.GITHUB))
+        preds.add(root.get<SourceSystem>("sourceSystem").`in`(REPOSITORY_SOURCE_SYSTEMS))
         query.where(*preds.toTypedArray())
 
         for (row in entityManager.createQuery(query).resultList) {
-            val sourceId = row[0] as String
-            val artifactType = row[1] as ArtifactType
+            val system = row[0] as SourceSystem
+            val sourceId = row[1] as String
+            val artifactType = row[2] as ArtifactType
 
             if (artifactType == ArtifactType.ORG_METADATA) {
-                val orgLogin = sourceId.trim().lowercase()
-                orgCountsMap[orgLogin] = (orgCountsMap[orgLogin] ?: 0L) + 1L
+                val owner = extractOwnerFromOrgSourceId(system, sourceId)
+                if (owner != null) {
+                    val key = system to owner
+                    orgCountsBySystem[key] = (orgCountsBySystem[key] ?: 0L) + 1L
+                }
             } else {
-                val repo = extractRepositoryFromSourceId(sourceId)
+                val repo = extractRepositoryFromSourceId(system, sourceId)
                 if (repo != null) {
-                    repoCountsMap[repo] = (repoCountsMap[repo] ?: 0L) + 1L
+                    val key = system to repo
+                    repoCountsBySystem[key] = (repoCountsBySystem[key] ?: 0L) + 1L
                 }
             }
         }
-        for (repo in repoCountsMap.keys.toList()) {
+
+        val repoCountsMap = mutableMapOf<String, Long>()
+        for ((key, count) in repoCountsBySystem) {
+            val (system, repo) = key
             val owner = repo.substringBefore('/').trim().lowercase()
-            val orgCount = orgCountsMap[owner] ?: 0L
-            if (orgCount > 0L) {
-                repoCountsMap[repo] = (repoCountsMap[repo] ?: 0L) + orgCount
-            }
+            val orgCount = orgCountsBySystem[system to owner] ?: 0L
+            repoCountsMap[repo] = (repoCountsMap[repo] ?: 0L) + count + orgCount
         }
         criteria.repositories?.forEach { repo ->
             repoCountsMap.putIfAbsent(repo, 0L)
@@ -410,9 +430,19 @@ class ArtifactFacetRepositoryImpl(
         }
 
         if (exclude != FacetKind.REPOSITORIES && !criteria.repositories.isNullOrEmpty()) {
-            val notGithub = cb.notEqual(root.get<SourceSystem>("sourceSystem"), SourceSystem.GITHUB)
-            val githubMatchesRepo = buildGithubRepoPredicate(cb, root, criteria.repositories)
-            predicates.add(cb.or(notGithub, githubMatchesRepo))
+            val sourceSystem = root.get<SourceSystem>("sourceSystem")
+            // Artifacts of other systems are outside the repository facet's reach and always pass;
+            // within GitHub and Bitbucket the selection narrows strictly, each by its own source ids.
+            val outsideFacet = cb.not(sourceSystem.`in`(REPOSITORY_SOURCE_SYSTEMS))
+            val githubMatchesRepo = cb.and(
+                cb.equal(sourceSystem, SourceSystem.GITHUB),
+                buildGithubRepoPredicate(cb, root, criteria.repositories),
+            )
+            val bitbucketMatchesRepo = cb.and(
+                cb.equal(sourceSystem, SourceSystem.BITBUCKET),
+                buildBitbucketRepoPredicate(cb, root, criteria.repositories),
+            )
+            predicates.add(cb.or(outsideFacet, githubMatchesRepo, bitbucketMatchesRepo))
         }
 
         val languages = criteria.selectedLanguages()
@@ -529,6 +559,43 @@ class ArtifactFacetRepositoryImpl(
         return cb.or(isNonOrgRepoMatch, isOrgMatch)
     }
 
+    /**
+     * Matches the Bitbucket artifacts of the chosen `workspace/slug` repositories, plus the profile of
+     * each workspace that owns one of them.
+     *
+     * The repository half is a literal prefix match on `bitbucket:workspace/slug:`, escaped the same
+     * way as the GitHub one so an underscore in a slug is not a wildcard. The workspace profile's
+     * source id is `bitbucket:<workspace>:ORG_METADATA`, which that prefix cannot match, so it is
+     * compared by its whole lower-cased value instead.
+     */
+    private fun buildBitbucketRepoPredicate(
+        cb: CriteriaBuilder,
+        root: Root<Artifact>,
+        repositories: Set<String>,
+    ): Predicate {
+        val sourceId = root.get<String>("sourceId")
+        val artifactType = root.get<ArtifactType>("artifactType")
+
+        val repoPrefixPredicates = repositories.map { repo ->
+            val escapedPrefix = escapeLikeLiteral("bitbucket:$repo:")
+            cb.like(sourceId, "$escapedPrefix%", LIKE_ESCAPE.single())
+        }
+        val isNonOrgRepoMatch = cb.and(
+            cb.notEqual(artifactType, ArtifactType.ORG_METADATA),
+            cb.or(*repoPrefixPredicates.toTypedArray()),
+        )
+
+        val workspaceSourceIds = repositories
+            .map { "bitbucket:${it.substringBefore('/').trim().lowercase()}:${ArtifactType.ORG_METADATA}".lowercase() }
+            .toSet()
+        val isWorkspaceMatch = cb.and(
+            cb.equal(artifactType, ArtifactType.ORG_METADATA),
+            cb.lower(sourceId).`in`(workspaceSourceIds),
+        )
+
+        return cb.or(isNonOrgRepoMatch, isWorkspaceMatch)
+    }
+
     companion object {
         private val IMAGE_EXTENSIONS = listOf(
             ".png",
@@ -545,6 +612,49 @@ class ArtifactFacetRepositoryImpl(
             if (!sourceId.startsWith("github:")) return null
             val parts = sourceId.split(':')
             return if (parts.size >= 3) parts[1] else null
+        }
+
+        /**
+         * Reads the `workspace/slug` out of a Bitbucket artifact's source id,
+         * `bitbucket:workspace/slug:TYPE:unique`.
+         *
+         * Returns null for any other prefix and for a middle segment without a slash, which is how a
+         * workspace profile (`bitbucket:workspace:ORG_METADATA`) is told apart from a repository
+         * artifact.
+         */
+        fun extractBitbucketRepositoryFromSourceId(sourceId: String): String? {
+            if (!sourceId.startsWith("bitbucket:")) return null
+            val parts = sourceId.split(':')
+            return parts.getOrNull(1)?.takeIf { parts.size >= 3 && it.contains('/') }
+        }
+
+        /** Reads the repository out of the source id of a [system] artifact, or null when it has none. */
+        internal fun extractRepositoryFromSourceId(
+            system: SourceSystem,
+            sourceId: String,
+        ): String? = when (system) {
+            SourceSystem.GITHUB -> extractRepositoryFromSourceId(sourceId)
+            SourceSystem.BITBUCKET -> extractBitbucketRepositoryFromSourceId(sourceId)
+            else -> null
+        }
+
+        /**
+         * Reads the lower-cased owner out of the source id of an owner-profile artifact: the GitHub
+         * org's source id is its bare login, a Bitbucket workspace's is `bitbucket:workspace:ORG_METADATA`.
+         */
+        internal fun extractOwnerFromOrgSourceId(
+            system: SourceSystem,
+            sourceId: String,
+        ): String? = when (system) {
+            SourceSystem.GITHUB -> sourceId.trim().lowercase()
+            SourceSystem.BITBUCKET ->
+                sourceId
+                    .takeIf { it.startsWith("bitbucket:") }
+                    ?.split(':')
+                    ?.getOrNull(1)
+                    ?.trim()
+                    ?.lowercase()
+            else -> null
         }
 
         private fun isPdf(title: String, url: String, id: String, mime: String): Boolean =

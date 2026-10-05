@@ -4,10 +4,10 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * One hire's onboarding, as a sequence of moments and the gaps between them.
+ * One hire's way to their first accepted work, as a sequence of moments and the gaps between them.
  *
  * Every timestamp is nullable and every gap is nullable, because "has not happened yet" is the
- * normal state of a hire mid-onboarding and is a different thing from zero. A dashboard that
+ * normal state of a hire early on and is a different thing from zero. A dashboard that
  * renders an unreached milestone as `0 days` reports success where there is none.
  *
  * The fields say "contribution", never "pull request". They are composed from
@@ -23,12 +23,6 @@ data class HireTimelineResponse(
     val githubLogin: String?,
     /** Null for assignments made before joining was recorded — "clock unknown", not "joined now". */
     val joinedAt: Instant?,
-    /**
-     * When the hire was auto-assigned their Task 0 — the trivial first task that proves the loop.
-     * Distinct from [firstTaskClaimedAt], which is a goal the hire chose; this one is handed to them
-     * on their first read. Null when none has been assigned.
-     */
-    val taskZeroAssignedAt: Instant?,
     val firstTaskClaimedAt: Instant?,
     /** When they first put work up for somebody else to look at, whatever kind of work it is. */
     val firstContributionOpenedAt: Instant?,
@@ -53,14 +47,6 @@ data class HireTimelineResponse(
     /** What the stall is attributed to, in plain words; null when not stalled. */
     val stalledReason: String?,
     /**
-     * When this hire reached autonomy — a task completed with no buddy intervention and no review
-     * rework. Null while onboarding is still going.
-     *
-     * The end of onboarding is a dated event rather than a threshold crossed, so a PM sees *when*
-     * somebody became independent rather than a percentage that happened to reach 100.
-     */
-    val autonomyReachedAt: Instant?,
-    /**
      * How much of this hire's work was sent back for changes.
      *
      * The counterpart to the accepted count: shipping five things that each needed three rounds is
@@ -71,7 +57,7 @@ data class HireTimelineResponse(
 )
 
 /**
- * A project's onboarding health.
+ * How a project's people are getting their work in.
  *
  * Medians rather than means throughout: one hire who took four months to their first accepted piece
  * of work should not be able to make the cohort look slow, and one who finished on day one should

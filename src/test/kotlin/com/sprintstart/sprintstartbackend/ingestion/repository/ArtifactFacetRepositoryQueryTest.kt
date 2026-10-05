@@ -229,6 +229,152 @@ class ArtifactFacetRepositoryQueryTest {
         assertThat(found).doesNotContain(wildcardLookalike.id)
     }
 
+    // ========================== Bitbucket repositories ==========================
+
+    @Test
+    fun `the repository facet lists GitHub and Bitbucket repositories with their own counts`() {
+        store(sourceId = "github:acme/api:FILE:1")
+        store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        store(sourceId = "bitbucket:acme/widgets:PULL_REQUEST:2", sourceSystem = SourceSystem.BITBUCKET)
+        store(sourceId = "bitbucket:acme/gadgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+
+        val repositories = repository.findFacets(projectId, ArtifactFilterCriteria()).repositories
+
+        assertThat(repositories).containsExactly(
+            FacetCountResponse("acme/api", 1),
+            FacetCountResponse("acme/gadgets", 1),
+            FacetCountResponse("acme/widgets", 2),
+        )
+    }
+
+    @Test
+    fun `a workspace profile adds to the repositories of its own workspace only`() {
+        store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        store(
+            sourceId = "bitbucket:acme:ORG_METADATA",
+            sourceSystem = SourceSystem.BITBUCKET,
+            type = ArtifactType.ORG_METADATA,
+        )
+        store(sourceId = "bitbucket:other/tool:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+
+        val repositories = repository.findFacets(projectId, ArtifactFilterCriteria()).repositories
+
+        assertThat(repositories).containsExactly(
+            FacetCountResponse("acme/widgets", 2),
+            FacetCountResponse("other/tool", 1),
+        )
+    }
+
+    @Test
+    fun `a GitHub org and a Bitbucket workspace of the same name do not share a profile count`() {
+        store(sourceId = "github:acme/api:FILE:1")
+        store(sourceId = "acme", type = ArtifactType.ORG_METADATA)
+        store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+
+        val repositories = repository.findFacets(projectId, ArtifactFilterCriteria()).repositories
+
+        // Only the GitHub repository gets the GitHub org's profile; the Bitbucket one has none.
+        assertThat(repositories).containsExactly(
+            FacetCountResponse("acme/api", 2),
+            FacetCountResponse("acme/widgets", 1),
+        )
+    }
+
+    @Test
+    fun `a repository filter on a Bitbucket repository keeps its artifacts, its workspace profile and other sources`() {
+        val widgetsFile = store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        val widgetsPullRequest = store(
+            sourceId = "bitbucket:acme/widgets:PULL_REQUEST:2",
+            sourceSystem = SourceSystem.BITBUCKET,
+            type = ArtifactType.PULL_REQUEST,
+        )
+        val workspaceProfile = store(
+            sourceId = "bitbucket:acme:ORG_METADATA",
+            sourceSystem = SourceSystem.BITBUCKET,
+            type = ArtifactType.ORG_METADATA,
+        )
+        val otherWorkspaceProfile = store(
+            sourceId = "bitbucket:other:ORG_METADATA",
+            sourceSystem = SourceSystem.BITBUCKET,
+            type = ArtifactType.ORG_METADATA,
+        )
+        val gadgetsFile = store(sourceId = "bitbucket:acme/gadgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        val githubFile = store(sourceId = "github:acme/widgets-mirror:FILE:1")
+        val upload = store(sourceId = "upload-1", sourceSystem = SourceSystem.UPLOAD)
+        flush()
+
+        val found = listIds(ArtifactFilterCriteria(repositories = setOf("acme/widgets")))
+
+        assertThat(found).containsExactlyInAnyOrder(
+            widgetsFile.id,
+            widgetsPullRequest.id,
+            workspaceProfile.id,
+            upload.id,
+        )
+        assertThat(found).doesNotContain(otherWorkspaceProfile.id, gadgetsFile.id, githubFile.id)
+    }
+
+    @Test
+    fun `a repository filter on a GitHub repository hides Bitbucket repositories of another name`() {
+        val githubFile = store(sourceId = "github:acme/api:FILE:1")
+        val bitbucketFile = store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+
+        val found = listIds(ArtifactFilterCriteria(repositories = setOf("acme/api")))
+
+        assertThat(found).containsExactly(githubFile.id)
+        assertThat(found).doesNotContain(bitbucketFile.id)
+    }
+
+    @Test
+    fun `a repository name shared by both systems selects both and counts both`() {
+        val githubFile = store(sourceId = "github:acme/shared:FILE:1")
+        val bitbucketFile = store(sourceId = "bitbucket:acme/shared:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+        val criteria = ArtifactFilterCriteria(repositories = setOf("acme/shared"))
+
+        assertThat(listIds(criteria)).containsExactlyInAnyOrder(githubFile.id, bitbucketFile.id)
+        assertThat(repository.findFacets(projectId, criteria).repositories)
+            .containsExactly(FacetCountResponse("acme/shared", 2))
+    }
+
+    @Test
+    fun `the Bitbucket repository filter treats underscores as literal characters`() {
+        val selected = store(sourceId = "bitbucket:acme/data_service:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        val wildcardLookalike = store(
+            sourceId = "bitbucket:acme/data-service:FILE:2",
+            sourceSystem = SourceSystem.BITBUCKET,
+        )
+        flush()
+
+        val found = listIds(ArtifactFilterCriteria(repositories = setOf("acme/data_service")))
+
+        assertThat(found).containsExactly(selected.id)
+        assertThat(found).doesNotContain(wildcardLookalike.id)
+    }
+
+    @Test
+    fun `facet counts under a Bitbucket repository filter equal the list total`() {
+        store(sourceId = "bitbucket:acme/widgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        store(
+            sourceId = "bitbucket:acme:ORG_METADATA",
+            sourceSystem = SourceSystem.BITBUCKET,
+            type = ArtifactType.ORG_METADATA,
+        )
+        store(sourceId = "bitbucket:acme/gadgets:FILE:1", sourceSystem = SourceSystem.BITBUCKET)
+        flush()
+        val criteria = ArtifactFilterCriteria(repositories = setOf("acme/widgets"))
+
+        val facets = repository.findFacets(projectId, criteria)
+
+        assertThat(facets.types.sumOf { it.count }).isEqualTo(list(criteria).totalElements).isEqualTo(2)
+        // The workspace profile counts for every repository of its workspace, the filter included.
+        assertThat(facets.repositories).contains(FacetCountResponse("acme/widgets", 2))
+    }
+
     // ========================== languages ==========================
 
     @Test

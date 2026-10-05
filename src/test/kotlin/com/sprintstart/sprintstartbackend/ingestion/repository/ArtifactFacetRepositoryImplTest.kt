@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import org.assertj.core.api.Assertions.assertThat
@@ -21,6 +22,56 @@ class ArtifactFacetRepositoryImplTest {
 
         val empty = ""
         assertThat(ArtifactFacetRepositoryImpl.extractRepositoryFromSourceId(empty)).isNull()
+    }
+
+    @Test
+    fun `extractBitbucketRepositoryFromSourceId extracts workspace and slug`() {
+        val file = "bitbucket:sprintstart/backend:FILE:README.md"
+        val pullRequest = "bitbucket:acme/widgets:PULL_REQUEST:12"
+
+        assertThat(ArtifactFacetRepositoryImpl.extractBitbucketRepositoryFromSourceId(file))
+            .isEqualTo("sprintstart/backend")
+        assertThat(ArtifactFacetRepositoryImpl.extractBitbucketRepositoryFromSourceId(pullRequest))
+            .isEqualTo("acme/widgets")
+    }
+
+    @Test
+    fun `extractBitbucketRepositoryFromSourceId rejects other systems and the workspace profile`() {
+        // A GitHub id is not a Bitbucket one even when the repository part looks alike.
+        val github = "github:acme/widgets:FILE:1"
+        // The workspace profile has a workspace but no slug, so it names no repository.
+        val workspaceProfile = "bitbucket:acme:ORG_METADATA"
+
+        assertThat(ArtifactFacetRepositoryImpl.extractBitbucketRepositoryFromSourceId(github)).isNull()
+        assertThat(ArtifactFacetRepositoryImpl.extractBitbucketRepositoryFromSourceId(workspaceProfile)).isNull()
+        assertThat(ArtifactFacetRepositoryImpl.extractBitbucketRepositoryFromSourceId("")).isNull()
+    }
+
+    @Test
+    fun `extractRepositoryFromSourceId by system only reads the matching prefix`() {
+        val github = "github:acme/widgets:FILE:1"
+        val bitbucket = "bitbucket:acme/widgets:FILE:1"
+
+        assertThat(ArtifactFacetRepositoryImpl.extractRepositoryFromSourceId(SourceSystem.GITHUB, github))
+            .isEqualTo("acme/widgets")
+        assertThat(ArtifactFacetRepositoryImpl.extractRepositoryFromSourceId(SourceSystem.BITBUCKET, bitbucket))
+            .isEqualTo("acme/widgets")
+        assertThat(ArtifactFacetRepositoryImpl.extractRepositoryFromSourceId(SourceSystem.BITBUCKET, github))
+            .isNull()
+        assertThat(ArtifactFacetRepositoryImpl.extractRepositoryFromSourceId(SourceSystem.JIRA, github)).isNull()
+    }
+
+    @Test
+    fun `extractOwnerFromOrgSourceId reads the GitHub login and the Bitbucket workspace lower-cased`() {
+        val workspaceProfile = "bitbucket:SprintStart:ORG_METADATA"
+
+        assertThat(ArtifactFacetRepositoryImpl.extractOwnerFromOrgSourceId(SourceSystem.GITHUB, " SprintStart "))
+            .isEqualTo("sprintstart")
+        assertThat(ArtifactFacetRepositoryImpl.extractOwnerFromOrgSourceId(SourceSystem.BITBUCKET, workspaceProfile))
+            .isEqualTo("sprintstart")
+        assertThat(ArtifactFacetRepositoryImpl.extractOwnerFromOrgSourceId(SourceSystem.BITBUCKET, "sprintstart"))
+            .isNull()
+        assertThat(ArtifactFacetRepositoryImpl.extractOwnerFromOrgSourceId(SourceSystem.UPLOAD, "x")).isNull()
     }
 
     @Test

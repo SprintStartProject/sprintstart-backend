@@ -76,6 +76,7 @@ class BuddyTeamServiceTest {
         every { buddyTeamMessageRepository.save(any()) } answers { firstArg() }
         every { buddyTeamTools.toolSpecs(any()) } returns listOf(spec(BuddyTeamTools.GET_TEAM_ATTENTION))
         every { buddyProposalService.isAction(any()) } returns false
+        every { buddyTeamTools.areaOf(any()) } returns null
     }
 
     /**
@@ -195,6 +196,387 @@ class BuddyTeamServiceTest {
         assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
     }
 
+    /**
+     * The failure this guards against, seen live: the buddy drafts an answer (opening the knowledge area),
+     * the manager says "yes, send it" in the next message, and the tool that makes the change is gone, so the
+     * model invents a confirm button. The transcript is text only; what a reply opened is stored with it.
+     */
+    private fun asTranscript(vararg messages: BuddyTeamMessage) {
+        every { buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns
+            messages.toList()
+    }
+
+    private fun reply(content: String = "Here is a draft.", opened: String? = null, opening: Boolean = false) =
+        BuddyTeamMessage(
+            session = session,
+            role = BuddyMessageRole.ASSISTANT,
+            content = content,
+            opening = opening,
+            openedAreas = opened,
+        )
+
+    private fun mountedOnEachHop(): MutableList<Set<TeamArea>> {
+        val mountedSets = mutableListOf<Set<TeamArea>>()
+        every { buddyTeamTools.toolSpecs(any()) } answers {
+            mountedSets.add(firstArg<Set<TeamArea>>().toSet())
+            listOf(spec(BuddyTeamTools.OPEN_AREA))
+        }
+        return mountedSets
+    }
+
+    private fun savedReplies(): List<BuddyTeamMessage> {
+        val saved = mutableListOf<BuddyTeamMessage>()
+        every { buddyTeamMessageRepository.save(any()) } answers {
+            firstArg<BuddyTeamMessage>().also { saved.add(it) }
+        }
+        return saved
+    }
+
+    @Test
+    fun `an area the last reply opened is still mounted when the manager approves what it drafted`() = runTest {
+        asTranscript(
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "can you answer Ada?"),
+            reply(opened = "KNOWLEDGE"),
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
+    @Test
+    fun `stores the areas a reply opened with the reply`() = runTest {
+        val saved = savedReplies()
+        val mountedSets = mountedOnEachHop()
+        every { buddyTeamTools.openArea(any()) } returns
+            BuddyTeamTools.OpenAreaOutcome(area = TeamArea.KNOWLEDGE, toolResult = "Opened knowledge.")
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = false,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                pendingToolCalls = listOf(
+                    BuddyToolCallDto(
+                        id = "c1",
+                        name = BuddyTeamTools.OPEN_AREA,
+                        arguments = JsonObject(mapOf("area" to JsonPrimitive("knowledge"))),
+                    ),
+                ),
+            ),
+            finalReply("Here is a draft."),
+        )
+
+        service.sendMessageForMe(authId, projectId, "can you answer Ada?").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+    }
+
+    @Test
+    fun `an area that was only carried over, and not used, is not stored again`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"))
+        val saved = savedReplies()
+        mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Sent.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isNull()
+    }
+
+    @Test
+    fun `an area opened again is stored again with the reply that opened it`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"))
+        val saved = savedReplies()
+        mountedOnEachHop()
+        every { buddyTeamTools.openArea(any()) } returns
+            BuddyTeamTools.OpenAreaOutcome(area = TeamArea.KNOWLEDGE, toolResult = "Opened knowledge.")
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = false,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                pendingToolCalls = listOf(
+                    BuddyToolCallDto(
+                        id = "c1",
+                        name = BuddyTeamTools.OPEN_AREA,
+                        arguments = JsonObject(mapOf("area" to JsonPrimitive("knowledge"))),
+                    ),
+                ),
+            ),
+            finalReply("Anything else in there?"),
+        )
+
+        service.sendMessageForMe(authId, projectId, "and the other one?").toList()
+
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+    }
+
+    @Test
+    fun `an area stays mounted through a discussion, however many messages come before the approval`() = runTest {
+        asTranscript(
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "can you answer Ada?"),
+            reply(opened = "KNOWLEDGE"),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "make it shorter"),
+            reply(content = "Shorter draft."),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "friendlier please"),
+            reply(content = "Friendlier draft."),
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
+    @Test
+    fun `every area the latest replies opened stays mounted`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"), reply(opened = "TEAM,ARRIVAL"))
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "go ahead").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE, TeamArea.TEAM, TeamArea.ARRIVAL))
+    }
+
+    /** The bound on the reviewer's concern: a conversation moving on must not keep every area's tools. */
+    @Test
+    fun `an area left alone for the whole window closes`() = runTest {
+        asTranscript(
+            reply(opened = "KNOWLEDGE"),
+            *Array(AREA_OPEN_FOR_REPLIES) { reply(content = "Something else.") },
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
+
+        service.sendMessageForMe(authId, projectId, "and now?").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet())
+    }
+
+    private fun toolCall(name: String) =
+        BuddyAgentResponse(
+            final = false,
+            messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+            pendingToolCalls = listOf(BuddyToolCallDto(id = "c1", name = name)),
+        )
+
+    @Test
+    fun `a carried-over area whose tool runs is stored again, so it stays open while it is in use`() = runTest {
+        asTranscript(reply(opened = "KNOWLEDGE"))
+        val saved = savedReplies()
+        every { buddyTeamTools.toolSpecs(any()) } returns
+            listOf(spec(BuddyTeamTools.OPEN_AREA), spec("list_open_escalations"))
+        every { buddyTeamTools.areaOf("list_open_escalations") } returns TeamArea.KNOWLEDGE
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "One open question."
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+            listOf(toolCall("list_open_escalations"), finalReply("There is one."))
+
+        service.sendMessageForMe(authId, projectId, "anything else open?").toList()
+
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+    }
+
+    /**
+     * The reviewer's blocker: the draft was written without opening the knowledge area, so "send it" had
+     * no action mounted. The backend knows which area the action is in and opens it itself; the action is
+     * not run on the hop it was not mounted for, and the model is asked to call it again.
+     */
+    @Test
+    fun `calling an action of an area that is not open opens the area instead of running it`() = runTest {
+        val saved = savedReplies()
+        val mountedSets = mountedOnEachHop()
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany
+            listOf(toolCall("answer_escalation"), finalReply("Confirm below."))
+
+        val events = service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
+        assertThat(
+            requests
+                .last()
+                .messages
+                .last()
+                .content,
+        ).contains("knowledge area")
+            .contains("call answer_escalation again")
+        assertThat(events.single { it.type == "tool_use" }.name).isEqualTo(BuddyTeamTools.OPEN_AREA)
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.openedAreas).isEqualTo("KNOWLEDGE")
+        verify(exactly = 0) { buddyProposalService.propose(any(), any()) }
+        verify(exactly = 0) { buddyTeamTools.execute(any(), any(), any()) }
+    }
+
+    /**
+     * The whole flow the review asked for: "send it" after a draft written without opening the knowledge
+     * area. The first call opens the area, the second, now mounted, becomes a proposal card.
+     */
+    @Test
+    fun `after the area is opened for it, calling the action again puts a proposal in front of the manager`() =
+        runTest {
+            every { buddyTeamTools.toolSpecs(any()) } answers {
+                val opened = firstArg<Set<TeamArea>>()
+                listOf(spec(BuddyTeamTools.OPEN_AREA)) +
+                    if (TeamArea.KNOWLEDGE in opened) listOf(spec("answer_escalation")) else emptyList()
+            }
+            every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+            every { buddyProposalService.isAction("answer_escalation") } returns true
+            val proposal = BuddyActionProposal(
+                userId = userId,
+                projectId = projectId,
+                action = "answer_escalation",
+                params = "{}",
+                label = "Answer: how do we deploy?",
+                preview = "The answer is published.",
+                risk = BuddyProposalRisk.STANDARD,
+                createdAt = Instant.now(),
+                expiresAt = Instant.now().plusSeconds(60),
+            )
+            every { buddyProposalService.propose(any(), any()) } returns
+                BuddyProposalService.ProposeOutcome(toolResult = "Offered to the manager.", proposal = proposal)
+            coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+                toolCall("answer_escalation"),
+                toolCall("answer_escalation"),
+                finalReply("It is in front of you to confirm."),
+            )
+
+            val events = service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+            assertThat(events.single { it.type == "action_proposal" }.proposalId).isEqualTo(proposal.id.toString())
+            verify(exactly = 1) { buddyProposalService.propose(any(), any()) }
+        }
+
+    @Test
+    fun `a tool call written out as text opens the area of the tool it names`() = runTest {
+        val mountedSets = mountedOnEachHop()
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        val requests = mutableListOf<BuddyAgentRequest>()
+        val written = """{"name":"answer_escalation","parameters":{"request_id":"r1"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = true,
+                text = written,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant", content = written)),
+            ),
+            finalReply("Confirm below."),
+        )
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), setOf(TeamArea.KNOWLEDGE))
+        assertThat(
+            requests
+                .last()
+                .messages
+                .last()
+                .content,
+        ).contains("The area of answer_escalation is open now")
+            .isNotEqualTo(TOOL_CALL_WRITTEN_OUT)
+    }
+
+    @Test
+    fun `nothing is opened for a call when open_area itself is not mounted`() = runTest {
+        val mountedSets = mutableListOf<Set<TeamArea>>()
+        every { buddyTeamTools.toolSpecs(any()) } answers {
+            mountedSets.add(firstArg<Set<TeamArea>>().toSet())
+            listOf(spec(BuddyTeamTools.GET_TEAM_ATTENTION))
+        }
+        every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "The tool answer_escalation is not available."
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+            listOf(toolCall("answer_escalation"), finalReply("I cannot do that here."))
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), emptySet())
+    }
+
+    @Test
+    fun `a new visit starts with nothing mounted`() = runTest {
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
+
+        // What an earlier visit opened is closed by the greeting that begins the next one.
+        asTranscript(reply(opened = "KNOWLEDGE"), reply(content = "Hi again.", opening = true))
+        service.sendMessageForMe(authId, projectId, "hello").toList()
+
+        // No reply yet in this visit, only the manager's own message.
+        asTranscript(BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "hello?"))
+        service.sendMessageForMe(authId, projectId, "anyone there?").toList()
+
+        assertThat(mountedSets).containsExactly(emptySet(), emptySet())
+    }
+
+    @Test
+    fun `an area opened in this visit survives a greeting that came before it`() = runTest {
+        asTranscript(reply(opened = "TEAM"), reply(content = "Hi again.", opening = true), reply(opened = "KNOWLEDGE"))
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
+    /**
+     * Seen live: the model answered with `{"name":"find_member","parameters":{...}}` as its reply. Nothing
+     * ran, and the manager was shown a broken request as if it were an answer.
+     */
+    @Test
+    fun `a tool call written out as the reply is sent back rather than shown`() = runTest {
+        val requests = mutableListOf<BuddyAgentRequest>()
+        val written = """I'll look them up. {"name":"find_member","parameters":{"query":"Ada"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = true,
+                text = written,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant", content = written)),
+            ),
+            finalReply("Ada is on the project."),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
+
+        assertThat(requests).hasSize(2)
+        assertThat(requests[1].messages.map { it.role }.takeLast(2)).containsExactly("assistant", "user")
+        assertThat(requests[1].messages.last().content).isEqualTo(TOOL_CALL_WRITTEN_OUT)
+        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo("Ada is on the project.")
+    }
+
+    @Test
+    fun `a model that keeps writing the call out ends in the fallback reply, never the raw call`() = runTest {
+        val saved = savedReplies()
+        val written = """{"name":"find_member","parameters":{"query":"Ada"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply(written)
+
+        val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
+
+        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo(BuddyService.FALLBACK_REPLY)
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.content)
+            .isEqualTo(BuddyService.FALLBACK_REPLY)
+        coVerify(exactly = BuddyService.MAX_AGENT_STEPS) { onboardingAiClient.buddyAgentTurn(any()) }
+    }
+
+    @Test
+    fun `folding old messages into the memory note does not close what the last reply opened`() = runTest {
+        session.summarizedCount = 2
+        asTranscript(
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "old question"),
+            reply(content = "old answer"),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "can you answer Ada?"),
+            reply(opened = "KNOWLEDGE"),
+        )
+        val mountedSets = mountedOnEachHop()
+        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+
+        service.sendMessageForMe(authId, projectId, "You can send it").toList()
+
+        assertThat(mountedSets).containsExactly(setOf(TeamArea.KNOWLEDGE))
+    }
+
     @Test
     fun `capabilities off mounts no tools in team mode either`() = runTest {
         val requests = mutableListOf<BuddyAgentRequest>()
@@ -238,7 +620,7 @@ class BuddyTeamServiceTest {
         service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
 
         coVerify { buddyCompactionService.compactTeamIfNeeded(userId, projectId) }
-        coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any()) }
+        coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any(), UUID.randomUUID()) }
     }
 
     @Test

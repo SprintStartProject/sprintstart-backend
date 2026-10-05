@@ -19,7 +19,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardC
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
@@ -49,7 +48,6 @@ class BoardService(
     private val boardRepository: BoardRepository,
     private val boardCardRepository: BoardCardRepository,
     private val projectMembershipApi: ProjectMembershipApi,
-    private val onboardingMetricsService: OnboardingMetricsService,
     private val liveContent: LiveCardContentReader,
     private val currentTaskReader: CurrentTaskReader,
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
@@ -96,7 +94,6 @@ class BoardService(
         // Whether the hire is on a task at all, for the pin. Read through the same
         // [CurrentTaskReader] the card's content comes from, so the pin and the card agree.
         val onATask = currentTaskReader.currentTaskFor(userId, projectId) != null
-        val timeline = onboardingMetricsService.getHireTimeline(userId, projectId)
         // One query for every diagram on the board, and the stored picture rather than a fresh one:
         // assembling costs a model call. The client revalidates afterwards.
         val diagrams = boardDiagramRepository
@@ -122,7 +119,7 @@ class BoardService(
                 .filter { it.state == BoardCardState.ACTIVE }
                 .sortedWith(attentionOrder(arrivalSteps, onATask))
                 .map {
-                    it.toResponse(member, projectId, timeline, diagrams[it.id], arrivalSteps, pathSteps) { matches }
+                    it.toResponse(member, projectId, diagrams[it.id], arrivalSteps, pathSteps) { matches }
                 },
         )
     }
@@ -423,7 +420,7 @@ class BoardService(
             ).apply { recordChange(BoardCardChange.CREATED, by, now) },
         )
         val arrivalSteps = arrivalStepService.forHire(member.userId)
-        return card.toResponse(member, projectId, timeline = null, arrivalSteps = arrivalSteps)
+        return card.toResponse(member, projectId, arrivalSteps = arrivalSteps)
     }
 
     /**
@@ -447,7 +444,7 @@ class BoardService(
         val member = memberOrNull(userId, board.projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
         val arrivalSteps = arrivalStepService.forHire(member.userId)
-        return card.toResponse(member, board.projectId, timeline = null, arrivalSteps = arrivalSteps)
+        return card.toResponse(member, board.projectId, arrivalSteps = arrivalSteps)
     }
 
     /**
@@ -495,7 +492,6 @@ class BoardService(
         return card.toResponse(
             member,
             board.projectId,
-            timeline = null,
             arrivalSteps = arrivalStepService.forHire(userId),
         )
     }
@@ -545,7 +541,6 @@ class BoardService(
         return card.toResponse(
             member,
             projectId,
-            timeline = null,
             arrivalSteps = arrivalStepService.forHire(member.userId),
         )
     }
@@ -688,7 +683,6 @@ class BoardService(
         return card.toResponse(
             member,
             projectId,
-            timeline = null,
             arrivalSteps = arrivalStepService.forHire(member.userId),
         )
     }
@@ -805,13 +799,11 @@ class BoardService(
         card: BoardCard,
         member: ProjectMember,
         projectId: UUID,
-        timeline: HireTimelineResponse?,
         diagram: BoardDiagram?,
         arrivalSteps: List<ResolvedArrivalStep>,
         pathSteps: Map<UUID, ResolvedPathStep>,
         matches: () -> List<RankedStarterWorkTaskResponse>,
     ): BoardCardContent = when (card.kind) {
-        BoardCardKind.PATH_TO_FIRST_CONTRIBUTION -> pathContent(member, timeline)
         BoardCardKind.ARRIVAL_STEPS -> arrivalStepsContent(arrivalSteps)
         BoardCardKind.OPEN_PULL_REQUESTS -> liveContent.openPullRequests(member, projectId)
         BoardCardKind.CURRENT_TASK -> liveContent.currentTask(member.userId, projectId)
@@ -832,7 +824,6 @@ class BoardService(
     private fun BoardCard.toResponse(
         member: ProjectMember,
         projectId: UUID,
-        timeline: HireTimelineResponse?,
         diagram: BoardDiagram? = null,
         arrivalSteps: List<ResolvedArrivalStep> = emptyList(),
         pathSteps: Map<UUID, ResolvedPathStep> = emptyMap(),
@@ -846,7 +837,7 @@ class BoardService(
         owner = owner,
         position = position,
         placedAt = placedAt,
-        content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps, matches),
+        content = hydrate(this, member, projectId, diagram, arrivalSteps, pathSteps, matches),
         lastChange = toLastChangeResponse(),
         previous = toPreviousResponse(),
     )
