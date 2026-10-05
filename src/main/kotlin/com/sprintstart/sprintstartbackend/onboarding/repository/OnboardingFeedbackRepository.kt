@@ -6,6 +6,8 @@ import java.util.Optional
 import java.util.UUID
 
 interface OnboardingFeedbackRepository : JpaRepository<OnboardingFeedback, UUID> {
+    fun countByUserIdInAndReadFalse(userIds: Set<UUID>): Long
+
     fun findAllByOrderByCreatedAtAsc(): MutableList<OnboardingFeedback>
 
     fun findAllByUserIdOrderByCreatedAtAsc(userId: UUID): MutableList<OnboardingFeedback>

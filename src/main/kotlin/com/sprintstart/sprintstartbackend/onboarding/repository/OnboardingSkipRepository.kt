@@ -1,11 +1,14 @@
 package com.sprintstart.sprintstartbackend.onboarding.repository
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingSkip
 import org.springframework.data.jpa.repository.JpaRepository
 import java.util.Optional
 import java.util.UUID
 
 interface OnboardingSkipRepository : JpaRepository<OnboardingSkip, UUID> {
+    fun countByStepPhasePathUserIdInAndStatus(userIds: Set<UUID>, status: SkipStatus): Long
+
     fun findAllByOrderByCreatedAtAsc(): MutableList<OnboardingSkip>
 
     fun findAllByStepPhasePathUserIdOrderByCreatedAtAsc(stepPhasePathUserId: UUID): MutableList<OnboardingSkip>

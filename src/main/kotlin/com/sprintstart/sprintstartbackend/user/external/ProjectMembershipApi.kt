@@ -13,6 +13,9 @@ import java.util.UUID
  * mechanical reason the split happened when it did — but the seam is a real one.)
  */
 interface ProjectMembershipApi {
+    /** Distinguishes a project with no members from a project that does not exist. */
+    fun projectExists(projectId: UUID): Boolean
+
     /**
      * Everyone assigned to a project, with the two facts onboarding measurement needs: when they
      * joined, and which GitHub account their work is attributable to.

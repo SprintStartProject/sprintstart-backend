@@ -32,6 +32,17 @@ class ProjectMembershipApiServiceTest {
     )
 
     @Test
+    fun `project existence distinguishes an empty project from a missing one`() {
+        val emptyProjectId = UUID.randomUUID()
+        val missingProjectId = UUID.randomUUID()
+        every { projectRepository.existsById(emptyProjectId) } returns true
+        every { projectRepository.existsById(missingProjectId) } returns false
+
+        assertThat(service.projectExists(emptyProjectId)).isTrue()
+        assertThat(service.projectExists(missingProjectId)).isFalse()
+    }
+
+    @Test
     fun `a project nobody manages has no manager id`() {
         val project = project()
         every { projectRepository.findById(project.id) } returns Optional.of(project)

@@ -25,6 +25,11 @@ internal class ProjectMembershipApiService(
     private val adminProjectService: AdminProjectService,
 ) : ProjectMembershipApi {
     @Transactional(readOnly = true)
+    override fun projectExists(projectId: UUID): Boolean {
+        return projectRepository.existsById(projectId)
+    }
+
+    @Transactional(readOnly = true)
     override fun getProjectMembers(projectId: UUID): List<ProjectMember> {
         return projectUserAssignmentRepository.findAllByProjectId(projectId).map { assignment ->
             val user = assignment.user
