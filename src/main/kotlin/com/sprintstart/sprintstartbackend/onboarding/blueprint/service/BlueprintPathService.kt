@@ -194,12 +194,14 @@ class BlueprintPathService(
     /**
      * Publishes path draft by id.
      *
-     * Requires a draft, archives the current active version, and promotes the draft in the same transaction.
+     * Requires a draft, archives the current active version when one exists, and promotes the draft in the same
+     * transaction. A draft authored from scratch has no active version yet -- its first publish simply promotes
+     * it, with nothing to archive.
      *
      * @param scope Ownership boundary used for repository selection and authorization.
      * @param pathId Identifier of the blueprint path.
      * @return The mapped result of the operation.
-     * @throws ResponseStatusException With 404 when the draft or active version is missing, or 409 when the supplied
+     * @throws ResponseStatusException With 404 when the draft is missing, or 409 when the supplied
      *   path is not a draft.
      */
     @Transactional
@@ -212,9 +214,9 @@ class BlueprintPathService(
         val activePath = blueprintAccessService.findActiveForAuthorizedBlueprintKey(
             scope,
             draft.blueprintKey,
-        ) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No active path found")
+        )
 
-        activePath.status = BlueprintStatus.ARCHIVED
+        activePath?.status = BlueprintStatus.ARCHIVED
         draft.status = BlueprintStatus.ACTIVE
 
         return draft.toGetResponse()

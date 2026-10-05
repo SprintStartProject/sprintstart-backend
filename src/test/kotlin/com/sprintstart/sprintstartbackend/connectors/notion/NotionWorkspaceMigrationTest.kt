@@ -28,7 +28,7 @@ class NotionWorkspaceMigrationTest {
     @BeforeEach
     fun schema() {
         jdbc.execute("CREATE TABLE notion_credentials (auth_id VARCHAR, name VARCHAR)")
-        ResourceDatabasePopulator(ClassPathResource("db/migration/V24__add_notion_workspace_connections.sql"))
+        ResourceDatabasePopulator(ClassPathResource("db/migration/V27__add_notion_workspace_connections.sql"))
             .execute(dataSource)
         jdbc.execute(
             """CREATE TABLE notion_page_connections (

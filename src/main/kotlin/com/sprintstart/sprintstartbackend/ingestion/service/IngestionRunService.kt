@@ -1,7 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -37,6 +38,7 @@ import java.util.UUID
 class IngestionRunService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val bitbucketRepositoryApi: BitbucketRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
     private val confluenceConnectionApi: ConfluenceConnectionApi,
     private val notionConnectionApi: NotionConnectionApi,
@@ -79,11 +81,11 @@ class IngestionRunService(
      *
      * @param page 1-based page index.
      * @param size Page size.
-     * @param sourceSystem Optional source-system filter (e.g. GITHUB, JIRA).
-     * @param repositoryId Optional GitHub repository filter.
+     * @param sourceSystem Optional source-system filter (e.g. GITHUB, BITBUCKET, JIRA, NOTION).
+     * @param repositoryId Optional GitHub or Bitbucket repository filter.
      * @param sourceRef Optional connector-neutral source reference filter (for Jira the instance URL).
-     * @param projectId Optional project filter, resolved via the project's connected repositories,
-     * Jira instances, Confluence connections, Notion connections, and uploaded artifacts.
+     * @param projectId Optional project filter, resolved via the project's connected GitHub and
+     * Bitbucket repositories, Jira instances, Confluence and Notion connections, and uploaded artifacts.
      * @param status Optional run-status filter.
      * @param since Optional lower bound (inclusive) on the run start time.
      * @return One page of runs together with pagination metadata.
@@ -145,6 +147,9 @@ class IngestionRunService(
             if (sources.repositoryIds.isNotEmpty()) {
                 add(sourceInstanceIdPredicate(root, cb, SourceSystem.GITHUB, sources.repositoryIds))
             }
+            if (sources.bitbucketRepositoryIds.isNotEmpty()) {
+                add(sourceInstanceIdPredicate(root, cb, SourceSystem.BITBUCKET, sources.bitbucketRepositoryIds))
+            }
             if (sources.jiraRefs.isNotEmpty()) {
                 add(
                     cb.and(
@@ -176,6 +181,7 @@ class IngestionRunService(
     private fun resolveProjectSources(projectId: UUID): ProjectSources =
         ProjectSources(
             repositoryIds = githubRepositoryApi.getRepositoryIdsByProject(projectId),
+            bitbucketRepositoryIds = bitbucketRepositoryApi.getRepositoryIdsByProject(projectId),
             jiraRefs = jiraInstanceApi.getInstanceRefsByProject(projectId),
             confluenceConnectionIds = confluenceConnectionApi.getConnectionIdsByProject(projectId),
             notionConnectionIds = notionConnectionApi.getConnectionIdsByProject(projectId),
@@ -195,6 +201,7 @@ class IngestionRunService(
 
     private data class ProjectSources(
         val repositoryIds: List<UUID>,
+        val bitbucketRepositoryIds: List<UUID>,
         val jiraRefs: List<String>,
         val confluenceConnectionIds: List<UUID>,
         val notionConnectionIds: List<UUID>,

@@ -25,6 +25,7 @@ data class ApplicationConfig(
     val insights: InsightsConfig = InsightsConfig(),
     val onboarding: OnboardingConfig = OnboardingConfig(),
     val notion: NotionConfig = NotionConfig(),
+    val bitbucket: BitbucketConfig,
 )
 
 /**
@@ -200,6 +201,23 @@ data class AiConfig(
  * ´´´
  */
 data class GithubConfig(
+    @get:JsonProperty("base-url")
+    val baseUrl: String,
+)
+
+/**
+ * Contains the following application.yml config parameters
+ *
+ * ```yaml
+ * sprintstart:
+ *     bitbucket:
+ *         base-url: ...
+ * ```
+ *
+ * The base URL points at the Bitbucket Cloud REST API root, normally
+ * `https://api.bitbucket.org/2.0`; a test configuration points it at a mock server instead.
+ */
+data class BitbucketConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
 )

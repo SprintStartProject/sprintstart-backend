@@ -42,6 +42,8 @@ interface BlueprintPathRepository : JpaRepository<BlueprintPath, UUID> {
 
     fun findAllByProjectIdAndStatus(projectId: UUID, status: BlueprintStatus): List<BlueprintPath>
 
+    fun countByProjectIdAndStatus(projectId: UUID, status: BlueprintStatus): Long
+
     fun findByProjectIdAndId(projectId: UUID, id: UUID): BlueprintPath?
 
     fun findByProjectIdIsNullAndId(id: UUID): BlueprintPath?

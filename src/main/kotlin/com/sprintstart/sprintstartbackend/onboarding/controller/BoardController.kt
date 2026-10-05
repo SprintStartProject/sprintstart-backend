@@ -2,9 +2,11 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ReorderBoardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.TickPathStepTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.DiagramContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardDiagramService
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardService
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -151,6 +153,36 @@ class BoardController(
         @PathVariable cardId: UUID,
         @RequestBody request: AuthoredCardRequest,
     ): BoardCardResponse = boardService.editAuthoredCard(resolveUserId(jwt), cardId, request)
+
+    @Operation(
+        summary = "Tick a task on a path-step card",
+        description = "The one live card you can change: everywhere else a card is a read of your " +
+            "onboarding and nothing you do to it writes anywhere, but a task ticked here writes " +
+            "back to the path itself, so the card and your path page can never disagree about it. " +
+            "What changes is the path, not the card — the step's own status is left exactly as it " +
+            "was.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "The card, re-read with the task as you left it"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(
+                responseCode = "404",
+                description = "No such card of yours, it is not a path-step card, the step it named is " +
+                    "no longer on your path, or that task is not one of the step's",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PatchMapping("/me/board/cards/{cardId}/tasks/{taskId}")
+    @PreAuthorize("hasAnyRole('USER', 'PM', 'HR', 'ADMIN')")
+    fun tickPathStepTask(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable cardId: UUID,
+        @PathVariable taskId: UUID,
+        @RequestBody request: TickPathStepTaskRequest,
+    ): PathStepContent = boardService.tickPathStepTask(resolveUserId(jwt), cardId, taskId, request.done)
 
     @Operation(
         summary = "Arrange my board",

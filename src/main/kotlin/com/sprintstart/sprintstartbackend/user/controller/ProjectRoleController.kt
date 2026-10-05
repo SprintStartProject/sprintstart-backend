@@ -1,10 +1,13 @@
 package com.sprintstart.sprintstartbackend.user.controller
 
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
+import com.sprintstart.sprintstartbackend.user.model.request.AcceptSkillSuggestionRequest
 import com.sprintstart.sprintstartbackend.user.model.request.AssignProjectRoleRequest
 import com.sprintstart.sprintstartbackend.user.model.request.CreateProjectRoleRequest
+import com.sprintstart.sprintstartbackend.user.model.request.SuggestSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.request.UpdateRoleSkillsRequest
 import com.sprintstart.sprintstartbackend.user.model.response.skill.GetSkillResponse
+import com.sprintstart.sprintstartbackend.user.model.response.skill.SkillSuggestionsResponse
 import com.sprintstart.sprintstartbackend.user.model.response.skill.UpdateRoleSkillsResponse
 import com.sprintstart.sprintstartbackend.user.model.response.user.ProjectRoleSummary
 import com.sprintstart.sprintstartbackend.user.service.ProjectRoleService
@@ -32,6 +35,7 @@ import java.util.UUID
 @RestController
 @RequestMapping("/api/v1")
 @Tag(name = "Project Roles", description = "Endpoints for managing project roles")
+@Suppress("TooManyFunctions")
 class ProjectRoleController(
     private val projectRoleService: ProjectRoleService,
 ) {
@@ -312,5 +316,72 @@ class ProjectRoleController(
         @RequestBody request: UpdateRoleSkillsRequest,
     ): List<UpdateRoleSkillsResponse> {
         return projectRoleService.setSkillsForRole(roleId, request)
+    }
+
+    /**
+     * Requests AI-suggested skills for a project role without persisting them.
+     *
+     * @param roleId The UUID of the project role.
+     * @param request Optional project and industry context.
+     * @return List of reviewable skill suggestions.
+     */
+    @Operation(
+        summary = "Suggest skills for project role",
+        description = "Requests AI-suggested skills for a project role without persisting them.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Skills suggested successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role not found"),
+            ApiResponse(responseCode = "502", description = "The AI service failed to suggest skills"),
+        ],
+    )
+    @PostMapping("/projectRoles/{roleId}/skills/suggest")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize(
+        "hasAnyRole('ADMIN', 'PM') and " +
+            "(#request == null or #request.projectId == null or " +
+            "@projectAuth.canAccessProject(authentication, #request.projectId))",
+    )
+    suspend fun suggestSkillsForRole(
+        @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
+        @RequestBody(required = false) request: SuggestSkillsRequest? = null,
+    ): SkillSuggestionsResponse {
+        return SkillSuggestionsResponse(
+            suggestions = projectRoleService.suggestSkillsForRole(roleId, request),
+        )
+    }
+
+    /**
+     * Accepts a skill suggestion for a project role: links an existing active skill or creates
+     * a new non-universal skill and links it.
+     *
+     * @param roleId The UUID of the project role.
+     * @param request The request specifying the skill to accept.
+     * @return The updated list of skills linked to the role.
+     */
+    @Operation(
+        summary = "Accept skill suggestion for project role",
+        description = "Links an existing skill or creates and links a new non-universal skill for a project role.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Skill suggestion accepted and linked successfully"),
+            ApiResponse(responseCode = "400", description = "Invalid request or skill is retired"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Project role or skill not found"),
+        ],
+    )
+    @PostMapping("/projectRoles/{roleId}/skills/suggestions/accept")
+    @ResponseStatus(HttpStatus.OK)
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    fun acceptSkillSuggestion(
+        @Parameter(description = "UUID of the project role") @PathVariable roleId: UUID,
+        @RequestBody request: AcceptSkillSuggestionRequest,
+    ): List<UpdateRoleSkillsResponse> {
+        return projectRoleService.acceptSkillSuggestion(roleId, request)
     }
 }

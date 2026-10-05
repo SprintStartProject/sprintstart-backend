@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStat
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.CanonicalAnswer
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
@@ -39,6 +40,7 @@ class BuddyToolExecutorTest {
         every { getGithubLoginByUserId(any()) } returns "sam"
     }
     private val buddyBoardTools: BuddyBoardTools = mockk(relaxed = true)
+    private val buddyAppGuideTools: BuddyAppGuideTools = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
 
@@ -54,6 +56,14 @@ class BuddyToolExecutorTest {
         every { topicsFor(any()) } returns emptyList()
     }
 
+    // Pathless, and explicitly rather than relaxed: a relaxed mock would put an empty greeting
+    // section into the snapshot these cases assert on.
+    private val buddyPathTools: BuddyPathTools = mockk {
+        every { toolSpecs(any()) } returns emptyList()
+        every { snapshotFor(any()) } returns null
+        every { handles(any()) } returns false
+    }
+
     private val executor = BuddyToolExecutor(
         onboardingMetricsService,
         myCompetencyService,
@@ -67,6 +77,10 @@ class BuddyToolExecutorTest {
         projectMembershipApi,
         arrivalStepService,
         competencyPlacementService,
+        // Pathless by default: every case here is about a tool that reads something other than the
+        // onboarding path, and "no path" is what keeps the path tool out of their expectations.
+        buddyPathTools,
+        buddyAppGuideTools,
     )
 
     private val userId = UUID.randomUUID()
@@ -155,7 +169,6 @@ class BuddyToolExecutorTest {
         displayName = "Sam Hire",
         githubLogin = "sam",
         joinedAt = null,
-        taskZeroAssignedAt = null,
         firstTaskClaimedAt = null,
         firstContributionOpenedAt = null,
         firstResponseAt = null,
@@ -167,7 +180,6 @@ class BuddyToolExecutorTest {
         longestOpenWaitHours = longestOpenWaitHours,
         stalled = stalled,
         stalledReason = stalledReason,
-        autonomyReachedAt = null,
         returnedContributionCount = 0,
     )
 
@@ -200,6 +212,9 @@ class BuddyToolExecutorTest {
             competencyKeys = emptyList(),
             status = ProposalStatus.LIVE,
             taskZeroEligible = false,
+            reviewed = true,
+            sourceHasAssignee = null,
+            sourceCheckedAt = null,
         ),
         score = 1.0,
         matchedCompetencyKeys = emptyList(),
@@ -218,7 +233,21 @@ class BuddyToolExecutorTest {
             "get_suggested_tasks",
             "search_canonical_answers",
             "get_teammates",
+            "get_app_guide",
         )
+    }
+
+    @Test
+    fun `answers the app guide for the caller and the page they are on`() {
+        every { buddyAppGuideTools.guideFor(userId, "/team-management") } returns "the guide"
+
+        val result = executor.execute(
+            BuddyToolCallDto(id = "c1", name = "get_app_guide"),
+            userId,
+            currentPage = "/team-management",
+        )
+
+        assertThat(result).isEqualTo("the guide")
     }
 
     /**
@@ -272,14 +301,19 @@ class BuddyToolExecutorTest {
     }
 
     /**
-     * First in the list, and that is the point of the slice. The failure this initiative exists
-     * to fix is somebody who cannot clone the repository being handed a good first issue.
+     * The path is the onboarding, so it is read first; setup comes right after it and before
+     * anything about how their work is going -- somebody who cannot get in should not be handed a
+     * good first issue.
      */
     @Test
-    fun `arrival comes before every other hire-state tool`() {
+    fun `the path comes first, and arrival before every other hire-state tool`() {
+        every { buddyPathTools.toolSpecs(userId) } returns listOf(
+            BuddyToolSpecDto(name = "get_my_onboarding_path", description = "", parameters = buildJsonObject { }),
+        )
         every { arrivalStepService.forHire(userId) } returns listOf(resolvedStep())
 
-        assertThat(executor.toolSpecs(userId).map { it.name }).startsWith("get_arrival_steps")
+        assertThat(executor.toolSpecs(userId).map { it.name })
+            .startsWith("get_my_onboarding_path", "get_arrival_steps")
     }
 
     @Test
@@ -343,12 +377,13 @@ class BuddyToolExecutorTest {
     }
 
     /**
-     * Order is the feature. A greeting grounded in progress before setup is exactly the failure
-     * this initiative exists to fix — and it reads as calm, because the stall detector watches
-     * contributions rather than access.
+     * Order is the feature. The greeting opens on the path, because that is the onboarding; and a
+     * greeting grounded in progress before setup is the failure the arrival list exists to fix —
+     * it reads as calm, because the stall detector watches contributions rather than access.
      */
     @Test
-    fun `the opening greeting is grounded in what is missing before anything else`() {
+    fun `the opening greeting is grounded in the path, then what is missing, then progress`() {
+        every { buddyPathTools.snapshotFor(userId) } returns "Onboarding path: phase 1 of 3"
         every { arrivalStepService.forHire(userId) } returns listOf(resolvedStep())
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
         // No projects, so metrics and suggestions short-circuit; only the ledger is reached.
@@ -357,8 +392,9 @@ class BuddyToolExecutorTest {
 
         val snapshot = executor.stateSnapshot(userId)
 
-        assertThat(snapshot).startsWith("Before they can work:")
+        assertThat(snapshot).startsWith("Onboarding path:")
         assertThat(snapshot.indexOf("Before they can work:"))
+            .isGreaterThan(0)
             .isLessThan(snapshot.indexOf("Progress:"))
     }
 

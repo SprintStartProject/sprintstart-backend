@@ -8,37 +8,51 @@ import java.util.UUID
 
 @Schema(
     description =
-        "Ingestion health for a single connected source instance (for GitHub one connected " +
-            "repository, for Jira one connected instance, or for Confluence one space). " +
+        "Ingestion health for a single connected source instance (for GitHub or Bitbucket one " +
+            "connected repository, for Jira one connected instance, for Confluence one space, " +
+            "or for Notion one PAT-visible page scope). " +
             "Combines the connection's current status " +
             "with the counters of its latest run and the total number of stored artifacts for the " +
             "instance.",
 )
 data class SourceInstanceIngestionStatusResponse(
     @field:Schema(
-        description = "Source system the connected instance belongs to: GITHUB, JIRA, CONFLUENCE, or NOTION.",
+        description =
+            "Source system the connected instance belongs to: GITHUB, BITBUCKET, JIRA, CONFLUENCE, or NOTION.",
     )
     val sourceSystem: SourceSystem,
     @field:Schema(
         description =
             "Stable, connector-neutral identifier of the source instance. For GitHub \"owner/name\", " +
-                "for Jira the instance URL, and for Confluence the tenant and numeric space identity.",
+                "for Bitbucket \"workspace/slug\", for Jira the instance URL, and for Confluence the " +
+                "tenant and numeric space identity; for Notion the workspace or connection identity.",
     )
     val sourceId: String,
     @field:Schema(
         description =
-            "Human-readable label of the source instance. For GitHub \"owner/name\", for Jira the " +
-                "instance display name, and for Confluence the space key.",
+            "Human-readable label of the source instance. For GitHub \"owner/name\", for Bitbucket " +
+                "\"workspace/slug\", for Jira the instance display name, for Confluence the space key, " +
+                "and for Notion the workspace or credential label.",
     )
     val displayName: String,
-    @field:Schema(description = "Id of the connected repository (GitHub only); null for other source systems.")
+    @field:Schema(
+        description = "Id of the connected repository (GitHub and Bitbucket); null for other source systems.",
+    )
     val repositoryId: UUID? = null,
-    @field:Schema(description = "Owner of the connected repository (GitHub only); null for other source systems.")
+    @field:Schema(
+        description =
+            "Owner or workspace of the connected repository (GitHub and Bitbucket); null for other " +
+                "source systems.",
+    )
     val owner: String? = null,
-    @field:Schema(description = "Name of the connected repository (GitHub only); null for other source systems.")
+    @field:Schema(
+        description = "Name or slug of the connected repository (GitHub and Bitbucket); null for other source systems.",
+    )
     val name: String? = null,
     @field:Schema(
-        description = "Web URL of the source instance: GitHub repository, Jira instance, or Confluence space.",
+        description =
+            "Web URL of the source instance: GitHub or Bitbucket repository, Jira instance, or " +
+                "Confluence or Notion workspace.",
     )
     val sourceUrl: String,
     @field:Schema(

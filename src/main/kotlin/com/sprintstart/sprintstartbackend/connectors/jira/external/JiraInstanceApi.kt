@@ -5,7 +5,7 @@ import java.util.UUID
 /**
  * Module-facing API for reading Jira instance connection metadata needed outside the Jira module.
  *
- * Mirrors [com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi] so the
+ * Mirrors [com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi] so the
  * ingestion module can build per-source-instance status rows and resolve project filters for Jira
  * exactly the way it already does for GitHub, without depending on the Jira persistence model.
  *

@@ -1,10 +1,11 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchCompletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.listener.github.GithubFileListener
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
@@ -137,6 +138,22 @@ class GithubFileListenerTest {
         listener.on(event)
 
         verify(exactly = 1) { githubArtifactProviderService.deleteFileArtifact(event) }
+    }
+
+    @Test
+    fun `resynced event reconciles files the fallback full ingest did not see`() {
+        val event = GithubFilesResyncedEvent(
+            transactionId = UUID.randomUUID(),
+            repositoryId = repositoryId,
+            repositoryOwner = "owner",
+            repositoryName = "repo",
+            visitedPaths = setOf("README.md"),
+        )
+        every { githubArtifactProviderService.reconcileDeletedFiles(event) } just runs
+
+        listener.on(event)
+
+        verify(exactly = 1) { githubArtifactProviderService.reconcileDeletedFiles(event) }
     }
 
     private fun fileFetchedEvent() = GithubFileFetchedEvent(

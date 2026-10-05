@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.OnboardingConfig
@@ -25,9 +26,12 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseResourc
 import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseStepDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.PhaseTaskDto
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -56,6 +60,7 @@ class OnboardingPersonalizationServiceTest {
     private val blueprintPathRepository: BlueprintPathRepository = mockk()
     private val onboardingAiClient: OnboardingAiClient = mockk()
     private val userApi: UserApi = mockk()
+    private val projectIndustryApi: ProjectIndustryApi = mockk(relaxed = true)
     private val entityManager: EntityManager = mockk(relaxed = true)
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val json = Json {
@@ -355,7 +360,7 @@ class OnboardingPersonalizationServiceTest {
     }
 
     @Test
-    fun `hides a failed AI phase and reports its generation issue`() = runTest {
+    fun `saves nothing when every phase failed, and says the AI service was the cause`() = runTest {
         val blueprint = aiEnhancedBlueprint()
         every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
         every {
@@ -368,13 +373,11 @@ class OnboardingPersonalizationServiceTest {
 
         val events = service.personalize(authId, projectId).toList()
 
-        val pathEvent = events.firstOrNull { it.type == "path" }
-        assertEquals(blueprint.id, pathEvent?.path?.blueprintId)
-        val phases = pathEvent?.path?.phases.orEmpty()
-        assertTrue(phases.isEmpty())
-        val issue = pathEvent?.path?.generationIssues?.single()
-        assertEquals("Project Overview", issue?.title)
-        assertEquals(GenerationStatus.FAILED, issue?.status)
+        assertTrue(events.none { it.type == "path" })
+        val error = events.single { it.type == "error" }
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.reason)
+        // The path the hire already had is left alone.
+        verify(exactly = 0) { onboardingPathRepository.deleteByUserId(userId) }
     }
 
     @Test
@@ -442,19 +445,10 @@ class OnboardingPersonalizationServiceTest {
 
         val events = service.personalize(authId, projectId).toList()
 
-        val pathEvent = events.firstOrNull { it.type == "path" }
-        assertTrue(
-            pathEvent
-                ?.path
-                ?.phases
-                .orEmpty()
-                .isEmpty(),
-        )
-        val issues = pathEvent?.path?.generationIssues.orEmpty()
-        assertEquals(setOf("P0", "P1", "P2", "P3", "P4"), issues.map { it.title }.toSet())
-        assertTrue(issues.all { it.status == GenerationStatus.TIMED_OUT })
-        assertEquals(1, events.filter { it.type == "path" }.size)
-        assertEquals(1, events.filter { it.type == "done" }.size)
+        // Every phase timed out, so nothing is saved and the run ends on one error, not a path.
+        assertTrue(events.none { it.type == "path" || it.type == "done" })
+        val error = events.single { it.type == "error" }
+        assertEquals(EmptyOnboardingPathException.AI_UNAVAILABLE, error.reason)
     }
 
     @Test
@@ -509,6 +503,38 @@ class OnboardingPersonalizationServiceTest {
         )
     }
 
+    @Test
+    fun `personalize queries project industry once and forwards it to AI phase requests`() = runTest {
+        val blueprint = aiEnhancedBlueprint(listOf("Phase1", "Phase2"))
+        expectBlueprint(blueprint)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns "Fintech / Banking"
+        every { onboardingAiClient.streamPhase(any()) } returns flowOf(doneEvent())
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertTrue(events.any { it.type == "path" })
+        coVerify(exactly = 1) { projectIndustryApi.getOrEvaluateIndustry(projectId) }
+        coVerify(exactly = 2) {
+            onboardingAiClient.streamPhase(match { it.industry == "Fintech / Banking" })
+        }
+    }
+
+    @Test
+    fun `personalize passes null industry when getOrEvaluateIndustry returns null`() = runTest {
+        val blueprint = aiEnhancedBlueprint(listOf("Overview"))
+        expectBlueprint(blueprint)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns null
+        every { onboardingAiClient.streamPhase(any()) } returns flowOf(doneEvent())
+
+        val events = service.personalize(authId, projectId).toList()
+
+        assertTrue(events.any { it.type == "path" })
+        coVerify(exactly = 1) { projectIndustryApi.getOrEvaluateIndustry(projectId) }
+        coVerify(exactly = 1) {
+            onboardingAiClient.streamPhase(match { it.industry == null })
+        }
+    }
+
     private fun serviceWith(onboarding: OnboardingConfig): OnboardingPersonalizationService =
         OnboardingPersonalizationService(
             onboardingPathRepository = onboardingPathRepository,
@@ -516,12 +542,14 @@ class OnboardingPersonalizationServiceTest {
             onboardingPathFactory = OnboardingPathFromBlueprintFactory(),
             onboardingAiClient = onboardingAiClient,
             userApi = userApi,
+            projectIndustryApi = projectIndustryApi,
             json = json,
             entityManager = entityManager,
             transactionManager = transactionManager,
             applicationConfig = ApplicationConfig(
                 ai = AiConfig(baseUrl = "http://ai.test"),
                 github = GithubConfig(baseUrl = "https://api.github.com"),
+                bitbucket = BitbucketConfig(baseUrl = "https://api.bitbucket.org/2.0"),
                 crypto = CryptoConfig(masterKey = "test-master-key", salt = "test-salt"),
                 upload = UploadConfig(directory = "uploads", maxFileSizeBytes = 10_485_760L),
                 onboarding = onboarding,
@@ -530,6 +558,7 @@ class OnboardingPersonalizationServiceTest {
 
     private fun expectBlueprint(blueprint: BlueprintPath) {
         every { userApi.getOnboardingProfileByAuthId(authId) } returns Optional.of(profile)
+        coEvery { projectIndustryApi.getOrEvaluateIndustry(projectId) } returns "Fintech / Banking"
         every {
             blueprintPathRepository.findAllByProjectIdAndStatus(projectId, BlueprintStatus.ACTIVE)
         } returns listOf(blueprint)

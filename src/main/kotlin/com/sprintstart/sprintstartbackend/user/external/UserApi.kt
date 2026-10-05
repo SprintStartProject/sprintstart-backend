@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.external
 
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import java.time.Instant
@@ -35,6 +36,16 @@ interface UserApi {
      */
     fun getUserIdByAuthId(authId: String): Optional<UUID>
 
+    /**
+     * Resolves the Keycloak authentication subject for an internal SprintStart user ID -- the
+     * reverse of [getUserIdByAuthId], for acting on somebody else's behalf (a PM rebuilding a
+     * member's onboarding path).
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @return The matching auth ID when present.
+     */
+    fun getAuthIdByUserId(userId: UUID): Optional<String>
+
     fun getUserByAuthId(authId: String): UserDto
 
     fun searchUsers(
@@ -47,6 +58,22 @@ interface UserApi {
     fun getUsersByIds(ids: List<UUID>): List<UserDto>
 
     /**
+     * The one person whose email or GitHub login is exactly [query], if there is exactly one.
+     *
+     * For callers that need to name somebody they are not already looking at — adding a person to a
+     * project, say — without being handed the ability to browse everybody. Three rules hold it to
+     * that:
+     *
+     * - **Exact, case-insensitively.** A partial identifier matches nobody, so the caller cannot
+     *   walk the directory by trying prefixes.
+     * - **At most one.** Two people matching is answered as nobody, because picking one of them
+     *   would be a guess about which person the caller meant.
+     * - **Two fields only.** Enough to act on, and nothing that was not already known to whoever
+     *   typed the identifier.
+     */
+    fun findByExactEmailOrGithubLogin(query: String): Optional<DirectoryMatch>
+
+    /**
      * Returns the onboarding-relevant profile for a user identified by auth ID.
      *
      * @param authId External authentication identifier.
@@ -55,6 +82,44 @@ interface UserApi {
     fun getOnboardingProfileByAuthId(authId: String): Optional<UserOnboardingProfile>
 
     fun userHasAccessToProject(authId: String, projectId: UUID): Boolean
+
+    /**
+     * Checks whether a user may manage a project: an admin, or the project's assigned manager.
+     *
+     * The manager foreign key on the project is the authority, not the global PM role — the rule
+     * `ProjectAuthorization.canManageProject` applies to routes, offered here to modules that hold an
+     * auth ID rather than an `Authentication`. Membership alone never qualifies, unlike
+     * [userHasAccessToProject].
+     *
+     * @param authId External authentication identifier.
+     * @param projectId Project identifier.
+     * @return `true` when the user is an admin or the project's manager; `false` otherwise, including
+     * when the user or the project does not exist.
+     */
+    fun canManageProject(authId: String, projectId: UUID): Boolean
+
+    /**
+     * Checks whether a user holds the global admin role.
+     *
+     * For rules that must fall back to "admin only" when no project can vouch for an action -- an
+     * auth ID rather than an `Authentication`, like [canManageProject].
+     *
+     * @param authId External authentication identifier.
+     * @return `true` when the user exists and is an admin.
+     */
+    fun isAdmin(authId: String): Boolean
+
+    /**
+     * Returns the one permission group a user's pages are gated by: the highest of their roles.
+     *
+     * The same collapse the user response's `permissionGroup` makes, and the value the frontend's
+     * access policy decides every route on — so a module describing the app to somebody can describe
+     * exactly the pages they can open.
+     *
+     * @param userId Internal SprintStart user identifier.
+     * @return The highest role the user holds, or `null` when the user does not exist.
+     */
+    fun getPermissionGroup(userId: UUID): Role?
 
     /**
      * Returns the GitHub account a user contributes as, if they have declared one.
@@ -121,6 +186,17 @@ interface UserApi {
      */
     fun recordGithubLoginVerification(userId: UUID, verification: GithubLoginVerification)
 }
+
+/**
+ * The little that a lookup by identifier gives back: enough to name somebody and act on them.
+ *
+ * Deliberately not a [UserDto]. A caller looking somebody up by an identifier they already hold has
+ * no claim on that person's projects, roles or skills.
+ */
+data class DirectoryMatch(
+    val userId: UUID,
+    val displayName: String,
+)
 
 /**
  * The user-module facts a consent-gated history prior is built from.

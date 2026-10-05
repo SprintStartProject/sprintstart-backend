@@ -14,4 +14,7 @@ fun StarterWorkTaskProposal.toResponse(): StarterWorkTaskProposalResponse =
         competencyKeys = competencyKeys.toList(),
         status = status,
         taskZeroEligible = taskZeroEligible,
+        reviewed = reviewed,
+        sourceHasAssignee = sourceHasAssignee,
+        sourceCheckedAt = sourceCheckedAt,
     )

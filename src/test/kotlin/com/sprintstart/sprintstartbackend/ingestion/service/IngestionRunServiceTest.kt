@@ -1,7 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
@@ -32,6 +33,7 @@ import java.util.UUID
 class IngestionRunServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
+    private val bitbucketRepositoryApi = mockk<BitbucketRepositoryApi>(relaxed = true)
     private val jiraInstanceApi = mockk<JiraInstanceApi>()
     private val confluenceConnectionApi = mockk<ConfluenceConnectionApi>(relaxed = true)
     private val notionConnectionApi = mockk<NotionConnectionApi>(relaxed = true)
@@ -39,6 +41,7 @@ class IngestionRunServiceTest {
         IngestionRunService(
             ingestionRunRepository,
             githubRepositoryApi,
+            bitbucketRepositoryApi,
             jiraInstanceApi,
             confluenceConnectionApi,
             notionConnectionApi,
@@ -283,6 +286,36 @@ class IngestionRunServiceTest {
     }
 
     @Test
+    fun `getRuns resolves projectId to connected Bitbucket repository ids`() {
+        val projectId = UUID.randomUUID()
+        val repositoryId = UUID.randomUUID()
+        val sourceRef = "acme/widgets"
+        val bitbucketRun = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceInstanceId = repositoryId,
+            sourceInstanceRef = sourceRef,
+            startedAt = Instant.parse("2026-10-01T12:00:00Z"),
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getRepositoryIdsByProject(projectId) } returns emptyList()
+        every { jiraInstanceApi.getInstanceRefsByProject(projectId) } returns emptyList()
+        every { bitbucketRepositoryApi.getRepositoryIdsByProject(projectId) } returns listOf(repositoryId)
+        every {
+            ingestionRunRepository.findAll(any<Specification<IngestionRun>>(), any<Pageable>())
+        } returns PageImpl(listOf(bitbucketRun), PageRequest.of(0, 20), 1)
+
+        val response = service.getRuns(page = 1, size = 20, projectId = projectId)
+
+        verify(exactly = 1) { bitbucketRepositoryApi.getRepositoryIdsByProject(projectId) }
+        assertThat(response.items.single().sourceSystem).isEqualTo(SourceSystem.BITBUCKET)
+        assertThat(response.items.single().sourceId).isEqualTo(sourceRef)
+        assertThat(response.items.single().repositoryId).isEqualTo(repositoryId)
+        assertThat(response.items.single().owner).isNull()
+    }
+
+    @Test
     fun `getRuns filters by sourceRef without resolving project sources`() {
         val jiraRef = "https://acme.atlassian.net"
         val jiraRun = IngestionRun(
@@ -302,6 +335,8 @@ class IngestionRunServiceTest {
         verify(exactly = 0) { githubRepositoryApi.getRepositoryIdsByProject(any()) }
         verify(exactly = 0) { jiraInstanceApi.getInstanceRefsByProject(any()) }
         verify(exactly = 0) { confluenceConnectionApi.getConnectionIdsByProject(any()) }
+        verify(exactly = 0) { bitbucketRepositoryApi.getRepositoryIdsByProject(any()) }
+        verify(exactly = 0) { notionConnectionApi.getConnectionIdsByProject(any()) }
         assertThat(response.items.single().sourceId).isEqualTo(jiraRef)
     }
 

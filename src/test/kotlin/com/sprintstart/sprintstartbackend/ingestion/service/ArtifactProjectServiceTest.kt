@@ -143,6 +143,23 @@ class ArtifactProjectServiceTest {
     }
 
     @Test
+    fun `a workspace source resolves its single metadata artifact`() = runTest {
+        val artifact = artifact(existingProject)
+        every {
+            artifactProjectRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA")
+        } returns artifact
+        coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns succeeded(artifact.id)
+
+        service.applyProjectLink(
+            ArtifactSourceRef.BitbucketWorkspace("sprintstart"),
+            newProject,
+            linked = true,
+        )
+
+        assertThat(artifact.projectIds).containsExactlyInAnyOrder(existingProject, newProject)
+    }
+
+    @Test
     fun `an artifact the AI service could not re-scope fails the operation`() {
         val artifact = artifact(existingProject)
         every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(artifact)

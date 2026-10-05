@@ -58,7 +58,16 @@ class SkillControllerTest(
         id: UUID = UUID.randomUUID(),
         name: String = "Kotlin",
         status: SkillStatus = SkillStatus.ACTIVE,
-    ) = GetSkillResponse(id = id, name = name, roleIds = listOf(UUID.randomUUID()), status = status)
+        category: String = "Languages & Paradigms",
+        universal: Boolean = false,
+    ) = GetSkillResponse(
+        id = id,
+        name = name,
+        roleIds = listOf(UUID.randomUUID()),
+        status = status,
+        category = category,
+        universal = universal,
+    )
 
     @Test
     fun `getAllSkills returns 200 with skill list including status`() {
@@ -194,32 +203,52 @@ class SkillAdminControllerTest(
         SimpleGrantedAuthority("ROLE_USER"),
         SimpleGrantedAuthority("ROLE_ADMIN"),
     )
+    private val pmJwt = jwt().authorities(
+        SimpleGrantedAuthority("ROLE_USER"),
+        SimpleGrantedAuthority("ROLE_PM"),
+    )
+    private val hrJwt = jwt().authorities(
+        SimpleGrantedAuthority("ROLE_USER"),
+        SimpleGrantedAuthority("ROLE_HR"),
+    )
 
     private fun createSkillResponse(
         id: UUID = UUID.randomUUID(),
         name: String = "Kotlin",
         status: SkillStatus = SkillStatus.ACTIVE,
+        category: String = "Languages & Paradigms",
+        universal: Boolean = false,
     ) = CreateSkillResponse(
         id = id,
         name = name,
         roleIds = listOf(UUID.randomUUID()),
         status = status,
+        category = category,
+        universal = universal,
     )
 
     private fun updateSkillResponse(
         id: UUID = UUID.randomUUID(),
         name: String = "Kotlin",
         status: SkillStatus = SkillStatus.ACTIVE,
+        category: String = "Languages & Paradigms",
+        universal: Boolean = false,
     ) = UpdateSkillResponse(
         id = id,
         name = name,
         roleIds = listOf(UUID.randomUUID()),
         status = status,
+        category = category,
+        universal = universal,
     )
 
     @Test
     fun `createSkill returns 201 for admins`() {
-        val request = CreateSkillRequest("Kotlin", listOf(UUID.randomUUID()))
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            category = "Languages & Paradigms",
+        )
         val dto = createSkillResponse(name = "Kotlin")
         every { skillService.createSkill(request) } returns dto
 
@@ -237,7 +266,11 @@ class SkillAdminControllerTest(
 
     @Test
     fun `createSkill returns 403 for normal users`() {
-        val request = CreateSkillRequest("Kotlin", listOf(UUID.randomUUID()))
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            "Languages & Paradigms",
+        )
 
         mockMvc
             .perform(
@@ -252,7 +285,11 @@ class SkillAdminControllerTest(
 
     @Test
     fun `createSkill returns 404 when project role not found`() {
-        val request = CreateSkillRequest("Kotlin", listOf(UUID.randomUUID()))
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            category = "Languages & Paradigms",
+        )
         every { skillService.createSkill(request) } throws ResponseStatusException(HttpStatus.NOT_FOUND)
 
         mockMvc
@@ -266,7 +303,11 @@ class SkillAdminControllerTest(
 
     @Test
     fun `createSkill returns 409 when skill name already exists`() {
-        val request = CreateSkillRequest("Kotlin", listOf(UUID.randomUUID()))
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            "Languages & Paradigms",
+        )
         every { skillService.createSkill(request) } throws ResponseStatusException(HttpStatus.CONFLICT)
 
         mockMvc
@@ -281,7 +322,7 @@ class SkillAdminControllerTest(
     @Test
     fun `updateSkill returns 200 for admins`() {
         val id = UUID.randomUUID()
-        val request = UpdateSkillRequest(name = "Go", roleIds = null)
+        val request = UpdateSkillRequest(name = "Go", roleIds = null, category = "Languages & Paradigms")
         val dto = updateSkillResponse(id = id, name = "Go")
         every { skillService.updateSkill(id, request) } returns dto
 
@@ -300,7 +341,7 @@ class SkillAdminControllerTest(
     @Test
     fun `updateSkill returns 404 when skill not found`() {
         val id = UUID.randomUUID()
-        val request = UpdateSkillRequest(name = "Go", roleIds = null)
+        val request = UpdateSkillRequest(name = "Go", roleIds = null, category = "Languages & Paradigms")
         every { skillService.updateSkill(id, request) } throws ResponseStatusException(HttpStatus.NOT_FOUND)
 
         mockMvc
@@ -315,7 +356,7 @@ class SkillAdminControllerTest(
     @Test
     fun `updateSkill returns 409 when new name conflicts with another skill`() {
         val id = UUID.randomUUID()
-        val request = UpdateSkillRequest(name = "Go", roleIds = null)
+        val request = UpdateSkillRequest(name = "Go", roleIds = null, category = "Languages & Paradigms")
         every { skillService.updateSkill(id, request) } throws ResponseStatusException(HttpStatus.CONFLICT)
 
         mockMvc
@@ -377,6 +418,110 @@ class SkillAdminControllerTest(
             .andExpect(status().isForbidden)
 
         verify(exactly = 0) { skillService.getUserSkillAssessments(any()) }
+    }
+
+    @Test
+    fun `createSkill returns 403 for PM`() {
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            category = "Languages & Paradigms",
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/skills")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.createSkill(any()) }
+    }
+
+    @Test
+    fun `createSkill returns 403 for HR`() {
+        val request = CreateSkillRequest(
+            "Kotlin",
+            listOf(UUID.randomUUID()),
+            category = "Languages & Paradigms",
+        )
+
+        mockMvc
+            .perform(
+                post("/api/v1/admin/skills")
+                    .with(hrJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.createSkill(any()) }
+    }
+
+    @Test
+    fun `updateSkill returns 403 for PM`() {
+        val skillId = UUID.randomUUID()
+        val request = UpdateSkillRequest(
+            name = "Kotlin",
+            roleIds = null,
+            category = "Languages & Paradigms",
+        )
+
+        mockMvc
+            .perform(
+                patch("/api/v1/admin/skills/$skillId")
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.updateSkill(any(), any()) }
+    }
+
+    @Test
+    fun `updateSkill returns 403 for HR`() {
+        val skillId = UUID.randomUUID()
+        val request = UpdateSkillRequest(
+            name = "Kotlin",
+            roleIds = null,
+            category = "Languages & Paradigms",
+        )
+
+        mockMvc
+            .perform(
+                patch("/api/v1/admin/skills/$skillId")
+                    .with(hrJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(request)),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.updateSkill(any(), any()) }
+    }
+
+    @Test
+    fun `retireSkill returns 403 for PM`() {
+        val skillId = UUID.randomUUID()
+
+        mockMvc
+            .perform(
+                delete("/api/v1/admin/skills/$skillId")
+                    .with(pmJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.retireSkill(any()) }
+    }
+
+    @Test
+    fun `retireSkill returns 403 for HR`() {
+        val skillId = UUID.randomUUID()
+
+        mockMvc
+            .perform(
+                delete("/api/v1/admin/skills/$skillId")
+                    .with(hrJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) { skillService.retireSkill(any()) }
     }
 
     @Test

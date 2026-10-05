@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.RepositoryResponsiveness
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -45,6 +47,7 @@ import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -60,6 +63,11 @@ class StarterWorkTaskProposalServiceTest {
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val projectId = UUID.randomUUID()
+
+    // Only hire-facing ranking scopes by project; every other path here leaves repositories alone.
+    private val githubRepositoryApi: GithubRepositoryApi = mockk {
+        every { getRepositoryIdByOwnerAndName(any(), any()) } returns null
+    }
     private val service = StarterWorkTaskProposalService(
         onboardingAiClient,
         competencyRepository,
@@ -69,6 +77,7 @@ class StarterWorkTaskProposalServiceTest {
         artifactIngestionApi,
         userApi,
         projectMembershipApi,
+        StarterWorkScope(githubRepositoryApi),
         json,
         transactionManager,
     )
@@ -261,6 +270,41 @@ class StarterWorkTaskProposalServiceTest {
     }
 
     @Nested
+    inner class ListPool {
+        @Test
+        fun `defaults to the live pool, sorted by title`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s2", title = "Zebra"),
+                StarterWorkTaskProposal(sourceId = "s1", title = "Apple"),
+            )
+
+            val result = service.listPool(ProposalStatus.LIVE)
+
+            assertEquals(listOf("Apple", "Zebra"), result.map { it.title })
+        }
+
+        @Test
+        fun `lists the stale pool when asked`() {
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.STALE) } returns listOf(
+                StarterWorkTaskProposal(sourceId = "s1", title = "Closed upstream", status = ProposalStatus.STALE),
+            )
+
+            val result = service.listPool(ProposalStatus.STALE)
+
+            assertEquals(1, result.size)
+            assertEquals(ProposalStatus.STALE, result.single().status)
+        }
+
+        @Test
+        fun `refuses REJECTED with 400`() {
+            val ex = assertThrows<ResponseStatusException> { service.listPool(ProposalStatus.REJECTED) }
+
+            assertEquals(HttpStatus.BAD_REQUEST, ex.statusCode)
+            verify(exactly = 0) { starterWorkTaskProposalRepository.findAllByStatus(any()) }
+        }
+    }
+
+    @Nested
     inner class Approve {
         @Test
         fun `throws 404 when no proposal matches`() {
@@ -278,6 +322,41 @@ class StarterWorkTaskProposalServiceTest {
             every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
 
             val ex = assertThrows<ResponseStatusException> { service.markReviewed(proposal.id) }
+
+            assertEquals(HttpStatus.CONFLICT, ex.statusCode)
+        }
+    }
+
+    @Nested
+    inner class TaskZeroFlag {
+        @Test
+        fun `flags a live task and clears the flag again`() {
+            val proposal = StarterWorkTaskProposal(sourceId = "s1", title = "Fix the typo")
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+
+            assertTrue(service.setTaskZeroEligibility(proposal.id, eligible = true).taskZeroEligible)
+            assertFalse(service.setTaskZeroEligibility(proposal.id, eligible = false).taskZeroEligible)
+        }
+
+        @Test
+        fun `throws 404 when no proposal matches`() {
+            val id = UUID.randomUUID()
+            every { starterWorkTaskProposalRepository.findById(id) } returns Optional.empty()
+
+            val ex = assertThrows<ResponseStatusException> { service.setTaskZeroEligibility(id, eligible = true) }
+
+            assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+        }
+
+        @Test
+        fun `refuses a task that left the pool`() {
+            // Vouching for a task nobody can claim is a judgement about nothing.
+            val proposal = StarterWorkTaskProposal(sourceId = "s1", title = "t1", status = ProposalStatus.STALE)
+            every { starterWorkTaskProposalRepository.findById(proposal.id) } returns Optional.of(proposal)
+
+            val ex = assertThrows<ResponseStatusException> {
+                service.setTaskZeroEligibility(proposal.id, eligible = true)
+            }
 
             assertEquals(HttpStatus.CONFLICT, ex.statusCode)
         }
@@ -660,6 +739,14 @@ class StarterWorkTaskProposalServiceTest {
     inner class MatchForUser {
         private val userId = UUID.randomUUID()
         private val projectId = UUID.randomUUID()
+        private val hereId = UUID.randomUUID()
+
+        /** Unless a test links one elsewhere, a task's repository is linked to this hire's project. */
+        @BeforeEach
+        fun linkRepositoriesHere() {
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName(any(), any()) } returns hereId
+            every { githubRepositoryApi.getRepositoryProjectIdsById(hereId) } returns setOf(projectId)
+        }
 
         private fun heldCompetency(key: String, level: Int = 3) =
             UserCompetencyState(
@@ -796,6 +883,48 @@ class StarterWorkTaskProposalServiceTest {
             // Still present -- a stale owner is a signal to a PM, not a reason to bury real work.
             assertEquals(1, result.size)
             assertContains(result[0].reasons.joinToString(), "reviews here take")
+        }
+
+        /** A task a manager of another project added must not reach this project's hires. */
+        @Test
+        fun `leaves out work that belongs only to other projects`() {
+            val repositoryId = UUID.randomUUID()
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "other") } returns repositoryId
+            every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(UUID.randomUUID())
+            every { userApi.getUserIdByAuthId("auth-1") } returns Optional.of(userId)
+            every { userCompetencyStateRepository.findAllByUserId(userId) } returns emptyList()
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
+                listOf(
+                    pooledTask("github:acme/other:ISSUE:1", "Another project's task"),
+                    pooledTask("github:acme/api:ISSUE:2", "This project's task"),
+                    pooledTask("authored:${UUID.randomUUID()}", "Hand-authored"),
+                )
+            noHistory()
+
+            val result = service.matchForUser("auth-1", projectId)
+
+            assertEquals(setOf("This project's task", "Hand-authored"), result.map { it.task.title }.toSet())
+        }
+
+        /**
+         * A repository can lose its projects after one of its issues was promoted. That issue then
+         * belongs to no project, and must not drop back into the pool every hire is ranked against.
+         */
+        @Test
+        fun `leaves out a GitHub task whose repository is linked to no project`() {
+            every { githubRepositoryApi.getRepositoryIdByOwnerAndName("acme", "unlinked") } returns null
+            every { userApi.getUserIdByAuthId("auth-1") } returns Optional.of(userId)
+            every { userCompetencyStateRepository.findAllByUserId(userId) } returns emptyList()
+            every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
+                listOf(
+                    pooledTask("github:acme/unlinked:ISSUE:1", "Unlinked repository"),
+                    pooledTask("jira:SHOP-2", "A Jira issue"),
+                )
+            noHistory()
+
+            val result = service.matchForUser("auth-1", projectId)
+
+            assertEquals(listOf("A Jira issue"), result.map { it.task.title })
         }
 
         @Test

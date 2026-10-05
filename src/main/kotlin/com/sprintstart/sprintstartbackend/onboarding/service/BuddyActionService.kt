@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.MyOrientationResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -36,30 +36,41 @@ import java.util.UUID
  * Every action is executed strictly on behalf of the resolved caller and scoped to the caller's own
  * project, re-resolved server-side at confirm time — a client can never confirm an action against a
  * project the buddy did not scope it to, nor act as another hire.
+ *
+ * Six wrapped actions live here, each with a propose and a perform half — hence the suppressed
+ * function count. The five that put the mentor's *own words* on a board are in
+ * [BuddyBoardWriteActions], and the ones that walk the hire's path are in [BuddyPathActions]: what
+ * the actions here do is wrap an existing `/me/...` operation one for one, and those do something
+ * different enough to be worth reading on their own.
  */
 @Service
-@Suppress("TooManyFunctions") // Six wrapped actions, each with a propose + a perform helper.
+@Suppress("TooManyFunctions")
 class BuddyActionService(
-    private val taskZeroService: TaskZeroService,
     private val taskOrientationService: TaskOrientationService,
     private val knowledgeBaseService: KnowledgeBaseService,
     private val userGoalService: UserGoalService,
     private val userApi: UserApi,
     private val attestationService: AttestationService,
-    private val boardService: BoardService,
     private val competencyPlacementService: CompetencyPlacementService,
+    private val buddyPathActions: BuddyPathActions,
+    private val boardWrites: BuddyBoardWriteActions,
 ) {
-    /** The action tools the AI reasoner is told it may propose, alongside the read-only tools. */
-    fun actionSpecs(): List<BuddyToolSpecDto> =
+    /**
+     * The action tools the AI reasoner is told it may propose, alongside the read-only tools.
+     *
+     * Per hire rather than globally, for the same reason [BuddyToolExecutor.toolSpecs] is: the
+     * path actions have a subject that may not exist. A mentor handed `complete_step` for somebody
+     * with no onboarding path will offer to tick a step off a plan they have not got.
+     */
+    fun actionSpecs(userId: UUID): List<BuddyToolSpecDto> =
         listOf(
             FLAG_TO_PM_SPEC,
-            CLAIM_TASK_ZERO_SPEC,
             OPEN_ORIENTATION_SPEC,
             CLAIM_GOAL_SPEC,
             REQUEST_ATTESTATION_SPEC,
             SET_GITHUB_LOGIN_SPEC,
             RECORD_ASSESSMENT_SPEC,
-        )
+        ) + buddyPathActions.specs(userId) + boardWrites.specs()
 
     /** Whether [toolName] is an action tool (handled by [propose]) rather than a read-only tool. */
     fun isAction(toolName: String): Boolean = BuddyActionType.fromToolName(toolName) != null
@@ -72,6 +83,7 @@ class BuddyActionService(
      * action can be offered. When it can't (no project, or a missing question), there is no proposal
      * and the tool result is the legible reason.
      */
+    @Suppress("CyclomaticComplexMethod") // The person-scoped gates first, then one branch per action.
     fun propose(call: BuddyToolCallDto, userId: UUID): ProposeOutcome {
         val type = BuddyActionType.fromToolName(call.name)
             ?: return ProposeOutcome("Unknown action: ${call.name}.", null)
@@ -89,6 +101,14 @@ class BuddyActionService(
         // somebody on day one, who is exactly the hire it exists for.
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return proposeAssessment(call, type)
+        }
+
+        // Also before the project gate, and for a reason worth stating: an onboarding path belongs
+        // to a *person*. It is generated from one project's blueprint, but the path itself is not
+        // project-scoped, so gating these would refuse a hire onboarding on two projects — and they
+        // still have exactly one path, sitting on the page they are looking at.
+        if (buddyPathActions.handles(type)) {
+            return buddyPathActions.propose(call, type, userId)
         }
 
         val project = when (val resolution = resolveProject(userId)) {
@@ -131,7 +151,12 @@ class BuddyActionService(
                 }
             }
             BuddyActionType.REQUEST_ATTESTATION -> proposeAttestation(call, type, project.name)
-            else -> proposed(type, project.name, question = null)
+            else ->
+                if (boardWrites.handles(type)) {
+                    boardWrites.propose(call, type, project.name)
+                } else {
+                    proposed(type, project.name, question = null)
+                }
         }
     }
 
@@ -287,7 +312,7 @@ class BuddyActionService(
     /**
      * Runs a confirmed action on behalf of [jwt]'s user, scoped to their re-resolved project.
      *
-     * Never throws for a handled outcome: an expected precondition failure ("no eligible Task 0",
+     * Never throws for a handled outcome: an expected precondition failure ("no current task",
      * "not a member") comes back as `ok = false` with a legible message, so the buddy always has a
      * line to relay. Only a genuinely unexpected failure propagates. Blocking work runs on the IO
      * dispatcher; opening orientation is itself suspend and manages its own transactions.
@@ -314,6 +339,17 @@ class BuddyActionService(
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return withContext(Dispatchers.IO) {
                 recordAssessment(authId, request.competencyKey, request.level)
+            }
+        }
+
+        // And again: a path belongs to a person, not to a project. See the note in `propose`.
+        if (buddyPathActions.handles(type)) {
+            return try {
+                withContext(Dispatchers.IO) { buddyPathActions.perform(type, authId, request) }
+            } catch (ex: ResponseStatusException) {
+                // A precondition the underlying route owns (a step that is already finished, a
+                // question that is not theirs). Relay its sentence rather than failing the confirm.
+                BuddyActionResponse(ok = false, message = ex.reason ?: "That didn't go through.")
             }
         }
 
@@ -349,37 +385,43 @@ class BuddyActionService(
             BuddyActionType.OPEN_ORIENTATION -> openOrientation(resolved.userId, resolved.projectId)
             else -> withContext(Dispatchers.IO) {
                 when (type) {
-                    BuddyActionType.CLAIM_TASK_ZERO -> claimTaskZero(resolved.userId, resolved.projectId)
                     BuddyActionType.FLAG_TO_PM -> flagToPm(authId, resolved.projectId, request.question)
                     BuddyActionType.CLAIM_GOAL ->
-                        claimGoal(resolved.userId, authId, resolved.projectId, request.taskId)
+                        claimGoal(authId, resolved.projectId, request.taskId)
                     BuddyActionType.REQUEST_ATTESTATION ->
                         requestAttestation(resolved, request.title, request.attesterId)
+                    BuddyActionType.PLACE_CHECKLIST,
+                    BuddyActionType.AMEND_CHECKLIST,
+                    BuddyActionType.PLACE_NOTE,
+                    BuddyActionType.TICK_CHECKLIST_ITEMS,
+                    BuddyActionType.REWORD_CHECKLIST_ITEM,
+                    -> boardWrites.perform(
+                        type,
+                        resolved.userId,
+                        resolved.projectId,
+                        BuddyBoardWriteActions.BoardWritePayload(
+                            checklistTitle = request.checklistTitle,
+                            checklistItems = request.checklistItems,
+                            cardId = request.cardId,
+                            noteText = request.noteText,
+                            lineBefore = request.lineBefore,
+                            lineAfter = request.lineAfter,
+                        ),
+                    )
                     BuddyActionType.OPEN_ORIENTATION,
                     // Not project-scoped, so these return before the project gate this dispatch
                     // sits behind.
                     BuddyActionType.SET_GITHUB_LOGIN,
                     BuddyActionType.RECORD_ASSESSMENT,
+                    BuddyActionType.COMPLETE_STEP,
+                    BuddyActionType.COMPLETE_TASK,
+                    BuddyActionType.ANSWER_QUESTION,
+                    BuddyActionType.ADD_PATH_STEP,
+                    BuddyActionType.REQUEST_SKIP,
                     -> error("handled above")
                 }
             }
         }
-
-    private fun claimTaskZero(userId: UUID, projectId: UUID): BuddyActionResponse {
-        val result = taskZeroService.getForHire(userId, projectId)
-        val task = result.task
-        return if (task != null) {
-            BuddyActionResponse(
-                ok = true,
-                message = "Task 0 is yours: “${task.title}”. Open the task packet when you're ready to start.",
-            )
-        } else {
-            BuddyActionResponse(
-                ok = false,
-                message = "There's no eligible Task 0 to start yet — your PM marks a starter task as Task 0.",
-            )
-        }
-    }
 
     private suspend fun openOrientation(userId: UUID, projectId: UUID): BuddyActionResponse {
         val orientation = taskOrientationService.getForHire(userId, projectId)
@@ -390,15 +432,33 @@ class BuddyActionService(
                     "the step-by-step, cited guide is right here in our conversation.",
             )
         } else {
-            BuddyActionResponse(
-                ok = false,
-                message = orientation.reason ?: "There's no current task to open a packet for yet.",
-            )
+            BuddyActionResponse(ok = false, message = noPacketReason(orientation))
         }
     }
 
+    /**
+     * Why there is no packet, said only as far as this knows.
+     *
+     * Three states used to collapse into one sentence, and the sentence was a claim about the
+     * hire's work rather than about this call: a hire whose packet had failed to assemble was told
+     * they had no current task, which they could see on their own board was untrue. Being told a
+     * false thing about your own state is worse than being told nothing — it is the hire's word
+     * against the system's, and the hire stops trusting the surface rather than the sentence.
+     *
+     * So the no-task line is now only used where [MyOrientationResponse.taskId] really is null.
+     * With a task and no packet, the honest answer names the task and says the packet is what is
+     * missing, which is also the difference between "claim something" and "try again".
+     */
+    private fun noPacketReason(orientation: MyOrientationResponse): String = when {
+        orientation.reason != null -> orientation.reason
+        orientation.taskId == null ->
+            "There's no current task to open a packet for yet — claim one and I'll put it together."
+        else ->
+            "I couldn't put a packet together for “${orientation.taskTitle}” just now. " +
+                "Nothing is wrong with the task — ask me again in a moment."
+    }
+
     private fun claimGoal(
-        userId: UUID,
         authId: String,
         projectId: UUID,
         taskId: UUID?,
@@ -406,11 +466,9 @@ class BuddyActionService(
         if (taskId == null) {
             return BuddyActionResponse(ok = false, message = "No task was proposed to claim.")
         }
+        // Claiming also pins the current-task card (see `UserGoalService.claimForMe`), so the
+        // message below can promise it is on the board.
         val goal = userGoalService.claimForMe(authId, projectId, taskId)
-        // Pin the task the moment it becomes theirs, rather than hoping the mentor thinks to. This
-        // conversation is gone by the next visit; the board is what carries "this is what you are
-        // working on" across the gap, and the one instant we know for certain it is true is now.
-        boardService.place(userId, projectId, BoardCardKind.CURRENT_TASK)
         return BuddyActionResponse(
             ok = true,
             message = "You're now working toward “${goal.title}” — I'll shape your next steps around it. " +
@@ -444,7 +502,7 @@ class BuddyActionService(
             BuddyActionResponse(
                 ok = true,
                 message = "Asked them to confirm “${attestation.title}”. " +
-                    "It counts once they do — you will see it on your ramp.",
+                    "It counts once they do — you will see it in what you have shown.",
             )
         } catch (e: ResponseStatusException) {
             // A handled precondition ("not on this project", "that is you") is a sentence the buddy
@@ -465,6 +523,22 @@ class BuddyActionService(
         )
     }
 
+    /**
+     * What the model is told when it offers an action, and what it must not do afterwards.
+     *
+     * The second half of this text is not decoration. **The model never finds out what happened to
+     * a proposal**: the hire confirms out-of-band, the outcome lands in the client's own message
+     * state, and nothing about it comes back into the conversation. So the model is blind here, and
+     * a blind model that believes a button is still on screen starts pointing at it — a hire once
+     * spent a whole exchange being told to click a button that had been spent on a failed confirm
+     * several turns earlier, ending with the mentor guessing aloud where on their screen it might
+     * be hiding. Telling somebody they must be missing something they can see is not there is the
+     * worst thing this surface can do: it makes them distrust the app rather than the sentence.
+     *
+     * Hence the rule the text carries — never describe the button, and when the hire says it did
+     * not work, call the tool again instead of insisting. A fresh proposal costs one click and puts
+     * a real control back on screen; describing the old one cannot.
+     */
     private fun proposed(
         type: BuddyActionType,
         projectName: String,
@@ -473,10 +547,18 @@ class BuddyActionService(
         title: String? = null,
         attesterId: UUID? = null,
         githubLogin: String? = null,
+        checklistTitle: String? = null,
+        checklistItems: List<String>? = null,
+        cardId: UUID? = null,
+        noteText: String? = null,
     ): ProposeOutcome =
         ProposeOutcome(
             toolResult = "Proposed to the hire on $projectName: “${type.label}”. They will see a confirm " +
-                "button; the action runs only if they click it. Offer it — do not claim it is done.",
+                "button; the action runs only if they click it. Offer it — do not claim it is done. " +
+                "You will never be told whether they confirmed it or what came of it, and a confirmed " +
+                "proposal leaves the screen. So do not describe the button, tell them where to find " +
+                "it, or ask them to click it again. If they say nothing happened or they cannot see " +
+                "it, believe them and call this tool again to offer it afresh.",
             proposal = BuddyActionProposal(
                 action = type.toolName,
                 label = type.label,
@@ -485,6 +567,10 @@ class BuddyActionService(
                 title = title,
                 attesterId = attesterId?.toString(),
                 githubLogin = githubLogin,
+                checklistTitle = checklistTitle,
+                checklistItems = checklistItems,
+                cardId = cardId,
+                noteText = noteText,
             ),
         )
 
@@ -524,11 +610,11 @@ class BuddyActionService(
     private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
         runCatching { UUID.fromString(stringArg(name)) }.getOrNull()
 
-    /** A verb phrase for the reason lines, e.g. "start Task 0", "flag this to a PM". */
+    /** A verb phrase for the reason lines, e.g. "claim a goal", "flag this to a PM". */
+    @Suppress("CyclomaticComplexMethod") // One flat branch per action type, and the enum is exhaustive.
     private fun BuddyActionType.gerund(): String =
         when (this) {
             BuddyActionType.FLAG_TO_PM -> "flag this to a PM"
-            BuddyActionType.CLAIM_TASK_ZERO -> "start Task 0"
             BuddyActionType.OPEN_ORIENTATION -> "open a task packet"
             BuddyActionType.CLAIM_GOAL -> "claim a goal"
             BuddyActionType.REQUEST_ATTESTATION -> "ask somebody to confirm your work"
@@ -539,6 +625,17 @@ class BuddyActionService(
             // Unused for the same reason: not project-scoped, so it never reaches the no-project
             // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
+            // Unused for the same reason again: a path is not project-scoped either.
+            BuddyActionType.COMPLETE_STEP -> "tick a step off your path"
+            BuddyActionType.COMPLETE_TASK -> "tick a line off your checklist"
+            BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
+            BuddyActionType.ADD_PATH_STEP -> "add a step to your path"
+            BuddyActionType.REQUEST_SKIP -> "ask your PM to skip a step"
+            BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
+            BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
+            BuddyActionType.PLACE_NOTE -> "keep a note on your board"
+            BuddyActionType.TICK_CHECKLIST_ITEMS -> "tick something off your board"
+            BuddyActionType.REWORD_CHECKLIST_ITEM -> "reword a line on your board"
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -562,6 +659,35 @@ class BuddyActionService(
         /** `record_assessment` confirm payload: which competency, and the level in words. */
         val competencyKey: String? = null,
         val level: String? = null,
+        /**
+         * Path-action confirm payloads: the node of the hire's own path the action names, the answer
+         * `answer_question` would send in the hire's own words, and the description of a step
+         * `add_path_step` would add.
+         */
+        val stepId: UUID? = null,
+        val questionId: UUID? = null,
+        val phaseId: UUID? = null,
+        /** The checklist line `complete_task` would tick off. See the request DTO for why not [taskId]. */
+        val onboardingTaskId: UUID? = null,
+        val answer: String? = null,
+        /** The options a multiple-choice `answer_question` [answer] stands for. See the request DTO. */
+        val optionIds: List<UUID> = emptyList(),
+        val description: String? = null,
+        /** The reason `request_skip` would send to the PM. */
+        val reason: String? = null,
+        /** Where `add_path_step` would put the step in its phase's graph. */
+        val waitsOnIds: List<UUID> = emptyList(),
+        val unlocksIds: List<UUID> = emptyList(),
+        /** `place_checklist` confirm payload: the list as the hire will read it before confirming. */
+        val checklistTitle: String? = null,
+        val checklistItems: List<String>? = null,
+        /** `amend_checklist`: the card being added to, and only the lines being added. */
+        val cardId: UUID? = null,
+        /** `place_note` confirm payload. */
+        val noteText: String? = null,
+        /** `reword_checklist_item`: the line as it reads now, and as it would read. */
+        val lineBefore: String? = null,
+        val lineAfter: String? = null,
     )
 
     private sealed interface ProjectResolution {
@@ -595,33 +721,33 @@ class BuddyActionService(
 
         val FLAG_TO_PM_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.FLAG_TO_PM.toolName,
-            description = "Offer to escalate the hire's question to their project's PM, when neither the docs " +
-                "nor the canonical answers cover it. This does NOT send anything — it shows the hire a confirm " +
-                "button, and only they can send it. Provide the question to ask, phrased clearly, in `question`. " +
-                "Use this as the last resort when you genuinely cannot ground an answer.",
+            description = "Offer to pass something from the hire to their project's PM. Two cases: " +
+                "(1) the hire ASKS you to flag, raise or pass something to their PM — a question, a problem, a " +
+                "blocker, feedback on their path. Their asking is the reason: offer it straight away, and never " +
+                "decide for them that it is not a PM matter or that the docs answer it first. " +
+                "(2) Neither the docs nor the canonical answers cover a question, as the last resort when you " +
+                "genuinely cannot ground an answer. " +
+                "This does NOT send anything — it shows the hire a confirm button, and only they can send it. " +
+                "Put what should reach the PM in `question`, phrased clearly and in the hire's sense.",
             parameters = buildJsonObject {
                 put("type", "object")
                 putJsonObject("properties") {
                     putJsonObject("question") {
                         put("type", "string")
-                        put("description", "The question to send to the PM, phrased clearly for a person to answer.")
+                        put(
+                            "description",
+                            "What to send to the PM — a question, or what the hire wants them to know — phrased " +
+                                "clearly for a person to answer.",
+                        )
                     }
                 }
                 putJsonArray("required") { add("question") }
             },
         )
 
-        val CLAIM_TASK_ZERO_SPEC = BuddyToolSpecDto(
-            name = BuddyActionType.CLAIM_TASK_ZERO.toolName,
-            description = "Offer to start the hire's Task 0 — their first assigned starter task. This does NOT " +
-                "assign anything by itself; it shows the hire a confirm button and runs only if they click. Use " +
-                "when the hire is ready to begin their first piece of real work. Takes no arguments.",
-            parameters = noArgs(),
-        )
-
         val OPEN_ORIENTATION_SPEC = BuddyToolSpecDto(
             name = BuddyActionType.OPEN_ORIENTATION.toolName,
-            description = "Offer to assemble the task orientation packet for the hire's current task — a " +
+            description = "Offer to assemble the task orientation packet for the task the hire claimed — a " +
                 "step-by-step, cited guide to setting up, finding the code, making the change, and opening the " +
                 "PR. Proposes only; the hire confirms. Use when they ask how to start the task they have. Takes " +
                 "no arguments.",

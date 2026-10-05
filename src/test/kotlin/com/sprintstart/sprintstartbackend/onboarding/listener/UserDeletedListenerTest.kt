@@ -2,17 +2,19 @@ package com.sprintstart.sprintstartbackend.onboarding.listener
 
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.Board
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.ArrivalStepStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.AttestationRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.AutonomyMilestoneRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyActionProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.GithubHistoryPriorRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
-import com.sprintstart.sprintstartbackend.onboarding.repository.TaskZeroAssignmentRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserCompetencyStateRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserGoalRepository
 import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
@@ -27,14 +29,15 @@ import java.util.UUID
 class UserDeletedListenerTest {
     private val buddySessionRepository: BuddySessionRepository = mockk(relaxed = true)
     private val buddyMessageRepository: BuddyMessageRepository = mockk(relaxed = true)
+    private val buddyTeamSessionRepository: BuddyTeamSessionRepository = mockk(relaxed = true)
+    private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk(relaxed = true)
+    private val buddyActionProposalRepository: BuddyActionProposalRepository = mockk(relaxed = true)
     private val userCompetencyStateRepository: UserCompetencyStateRepository = mockk(relaxed = true)
     private val arrivalStepStateRepository: ArrivalStepStateRepository = mockk(relaxed = true)
     private val boardRepository: BoardRepository = mockk(relaxed = true)
     private val boardCardRepository: BoardCardRepository = mockk(relaxed = true)
     private val boardStructureRepository: BoardStructureRepository = mockk(relaxed = true)
     private val userGoalRepository: UserGoalRepository = mockk(relaxed = true)
-    private val taskZeroAssignmentRepository: TaskZeroAssignmentRepository = mockk(relaxed = true)
-    private val autonomyMilestoneRepository: AutonomyMilestoneRepository = mockk(relaxed = true)
     private val attestationRepository: AttestationRepository = mockk(relaxed = true)
     private val knowledgeRequestRepository: KnowledgeRequestRepository = mockk(relaxed = true)
     private val githubHistoryPriorRepository: GithubHistoryPriorRepository = mockk(relaxed = true)
@@ -42,14 +45,15 @@ class UserDeletedListenerTest {
     private val listener = UserDeletedListener(
         buddySessionRepository,
         buddyMessageRepository,
+        buddyTeamSessionRepository,
+        buddyTeamMessageRepository,
+        buddyActionProposalRepository,
         userCompetencyStateRepository,
         arrivalStepStateRepository,
         boardRepository,
         boardCardRepository,
         boardStructureRepository,
         userGoalRepository,
-        taskZeroAssignmentRepository,
-        autonomyMilestoneRepository,
         attestationRepository,
         knowledgeRequestRepository,
         githubHistoryPriorRepository,
@@ -60,8 +64,10 @@ class UserDeletedListenerTest {
     private fun hasConversationAndBoard(): Board {
         val session = BuddySession(userId = userId)
         val board = Board(userId = userId, projectId = UUID.randomUUID())
-        every { buddySessionRepository.findByUserId(userId) } returns session
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
         every { boardRepository.findAllByUserId(userId) } returns listOf(board)
+
         return board
     }
 
@@ -72,12 +78,36 @@ class UserDeletedListenerTest {
      */
     @Test
     fun `deleting a user erases their buddy conversation and the note about them`() {
-        hasConversationAndBoard()
+        val session = BuddySession(userId = userId)
+        val board = Board(userId = userId, projectId = UUID.randomUUID())
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
+        every { boardRepository.findAllByUserId(userId) } returns listOf(board)
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
-        verify { buddyMessageRepository.deleteAllBySessionId(any()) }
+        verify { buddyMessageRepository.deleteAllBySessionId(session.id) }
         verify { buddySessionRepository.deleteAllByUserId(userId) }
+    }
+
+    /**
+     * A manager's team conversations are as much theirs as their own buddy: what they asked about
+     * their team on each project, and the note the model kept of it.
+     */
+    @Test
+    fun `deleting a user erases their team conversations on every project, messages first`() {
+        hasConversationAndBoard()
+        val alpha = BuddyTeamSession(userId = userId, projectId = UUID.randomUUID())
+        val beta = BuddyTeamSession(userId = userId, projectId = UUID.randomUUID())
+        every { buddyTeamSessionRepository.findAllByUserId(userId) } returns listOf(alpha, beta)
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verifyOrder {
+            buddyTeamMessageRepository.deleteAllBySessionId(alpha.id)
+            buddyTeamMessageRepository.deleteAllBySessionId(beta.id)
+            buddyTeamSessionRepository.deleteAllByUserId(userId)
+        }
     }
 
     @Test
@@ -89,8 +119,6 @@ class UserDeletedListenerTest {
         verify { userCompetencyStateRepository.deleteAllByUserId(userId) }
         verify { arrivalStepStateRepository.deleteAllByUserId(userId) }
         verify { userGoalRepository.deleteAllByUserId(userId) }
-        verify { taskZeroAssignmentRepository.deleteAllByHireId(userId) }
-        verify { autonomyMilestoneRepository.deleteAllByHireId(userId) }
         verify { attestationRepository.deleteAllByHireId(userId) }
         verify { knowledgeRequestRepository.deleteAllByHireId(userId) }
         verify { githubHistoryPriorRepository.deleteAllByUserId(userId) }
@@ -99,12 +127,16 @@ class UserDeletedListenerTest {
     /** A row pointing at a parent that is already gone is not removable through its owner. */
     @Test
     fun `children go before the rows that own them`() {
-        val board = hasConversationAndBoard()
+        val session = BuddySession(userId = userId)
+        val board = Board(userId = userId, projectId = UUID.randomUUID())
+
+        every { buddySessionRepository.findByUserId(userId) } returns listOf(session)
+        every { boardRepository.findAllByUserId(userId) } returns listOf(board)
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verifyOrder {
-            buddyMessageRepository.deleteAllBySessionId(any())
+            buddyMessageRepository.deleteAllBySessionId(session.id)
             buddySessionRepository.deleteAllByUserId(userId)
         }
         verifyOrder {
@@ -147,15 +179,45 @@ class UserDeletedListenerTest {
 
     @Test
     fun `a user who never opened the buddy is erased without a session to erase`() {
-        every { buddySessionRepository.findByUserId(userId) } returns null
+        every { buddySessionRepository.findByUserId(userId) } returns emptyList()
+        every { buddySessionRepository.findByUserId(userId) } returns emptyList()
         every { boardRepository.findAllByUserId(userId) } returns emptyList()
 
         listener.onUserDeleted(UserDeletedEvent(userId))
 
         verify(exactly = 0) { buddyMessageRepository.deleteAllBySessionId(any()) }
+        verify(exactly = 0) { buddyTeamMessageRepository.deleteAllBySessionId(any()) }
         // Nothing is asked to delete the arrangements of no boards: an empty `IN ()` is a query
         // some databases refuse outright and the rest run for nothing.
         verify(exactly = 0) { boardStructureRepository.deleteAllByBoardIdIn(any()) }
         verify { userCompetencyStateRepository.deleteAllByUserId(userId) }
+    }
+
+    /** What the buddy offered a manager, and what they decided, is theirs and goes with the account. */
+    @Test
+    fun `deleting a user erases the proposals the buddy made them`() {
+        hasConversationAndBoard()
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verify { buddyActionProposalRepository.deleteAllByUserId(userId) }
+    }
+
+    @Test
+    fun `deleting a user erases messages from all their buddy sessions`() {
+        val first = BuddySession(userId = userId)
+        val second = BuddySession(userId = userId)
+
+        every {
+            buddySessionRepository.findByUserId(userId)
+        } returns listOf(first, second)
+
+        every { boardRepository.findAllByUserId(userId) } returns emptyList()
+
+        listener.onUserDeleted(UserDeletedEvent(userId))
+
+        verify { buddyMessageRepository.deleteAllBySessionId(first.id) }
+        verify { buddyMessageRepository.deleteAllBySessionId(second.id) }
+        verify { buddySessionRepository.deleteAllByUserId(userId) }
     }
 }

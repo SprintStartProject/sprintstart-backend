@@ -1,5 +1,8 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.request.buddy
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
+import java.util.UUID
+
 /**
  * One thing a hire says to their buddy.
  *
@@ -14,7 +17,24 @@ package com.sprintstart.sprintstartbackend.onboarding.model.request.buddy
  * conversation either way.
  */
 data class SendBuddyMessageRequest(
+    val sessionId: UUID? = null,
     val content: String,
     /** Defaults to the full mentor, so a client that has never heard of the switch is unaffected. */
     val capabilitiesEnabled: Boolean = true,
+    /**
+     * Present to speak in team mode about this project; absent for the caller's own onboarding.
+     *
+     * A different conversation, not a flag on the same one: team talk has its own transcript and
+     * memory per project. The caller must manage the project, which is checked on every turn — this
+     * field names the project, it never authorizes anything.
+     */
+    val teamProjectId: UUID? = null,
+    val filters: BuddySessionFilters? = null,
+    /**
+     * The app path the sender was on (`/team-management`, `/team/…`), so "where is this on the page
+     * I'm on?" can be answered. Only ever matched against the app guide, never echoed; absent from
+     * older clients. Not validated: an odd value must cost the guide a line, never the hire their
+     * message.
+     */
+    val currentPage: String? = null,
 )

@@ -223,6 +223,54 @@ class UserApiServiceTest {
         assertThat(result).isFalse()
     }
 
+    @Test
+    fun `canManageProject should return true for the project's manager`() {
+        val projectId = UUID.randomUUID()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user(project = null))
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of("auth-1")
+
+        assertThat(userApi.canManageProject("auth-1", projectId)).isTrue()
+    }
+
+    @Test
+    fun `canManageProject should return true for an admin`() {
+        val user = user(project = null).apply { roles.add(Role.ADMIN) }
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user)
+
+        assertThat(userApi.canManageProject("auth-1", UUID.randomUUID())).isTrue()
+    }
+
+    /**
+     * The difference from [UserApi.userHasAccessToProject], and the reason this exists: being on a
+     * project lets somebody read it, never manage it. Team mode hands out tools that read other
+     * people, so membership passing here would let any hire read their teammates.
+     */
+    @Test
+    fun `canManageProject should return false for a member who does not manage the project`() {
+        val projectId = UUID.randomUUID()
+        val member = user(project = Project(id = projectId, name = "Project"))
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(member)
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.of("auth-2")
+
+        assertThat(userApi.canManageProject("auth-1", projectId)).isFalse()
+    }
+
+    @Test
+    fun `canManageProject should return false for a project with no manager`() {
+        val projectId = UUID.randomUUID()
+        every { userRepository.findByAuthId("auth-1") } returns Optional.of(user(project = null))
+        every { projectRepository.findManagerAuthId(projectId) } returns Optional.empty()
+
+        assertThat(userApi.canManageProject("auth-1", projectId)).isFalse()
+    }
+
+    @Test
+    fun `canManageProject should return false when user does not exist`() {
+        every { userRepository.findByAuthId("missing-auth") } returns Optional.empty()
+
+        assertThat(userApi.canManageProject("missing-auth", UUID.randomUUID())).isFalse()
+    }
+
     private fun user(project: Project?) = User(
         authId = "auth-1",
         username = "alice",

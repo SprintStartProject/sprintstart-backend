@@ -38,6 +38,33 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
         findAllJiraArtifactsBySourceUrlStartingWith(escapeLikeLiteral("$instanceUrl/browse/"))
 
     /**
+     * Returns every stored artifact of a Bitbucket repository.
+     *
+     * Artifact source ids have the form `bitbucket:workspace/slug:TYPE:unique`, so they are matched
+     * by prefix — the Bitbucket counterpart to [findAllByComponent].
+     *
+     * @param workspace The workspace owning the repository.
+     * @param slug The repository's slug within [workspace].
+     */
+    fun findAllBitbucketArtifactsByWorkspaceAndSlug(workspace: String, slug: String): List<Artifact> =
+        findAllBySourceIdStartingWith(escapeLikeLiteral("bitbucket:$workspace/$slug:"))
+
+    /**
+     * Returns the single workspace metadata artifact of a Bitbucket workspace, if stored.
+     *
+     * Matched by exact source id (`bitbucket:workspace:ORG_METADATA`) rather than by prefix: the
+     * id carries no slug segment, so no repository prefix query ever matches it.
+     *
+     * @param sourceId The workspace artifact's source id, as built by `SourceIdFactory`.
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId = :sourceId",
+    )
+    fun findBySourceId(
+        @Param("sourceId") sourceId: String,
+    ): Artifact?
+
+    /**
      * Returns every stored page of a Confluence space connection.
      *
      * Page artifacts carry source ids of the form `confluence:{connectionId}:page:{pageId}`, so
@@ -95,13 +122,16 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
 }
 
 /**
- * The `ESCAPE` character the prefix queries above declare.
+ * The `ESCAPE` character the prefix queries declare.
  *
  * A backslash would be the conventional choice, but it is also an escape character in Kotlin, in
  * JPQL and in some JDBC drivers, and has to survive all three unchanged. `!` cannot appear in a
  * GitHub repository name or a host name at all, so it never even has to be escaped in practice.
+ *
+ * Visible to the rest of the package so [ArtifactRepository]'s prefix counts declare the same
+ * escape character as these queries instead of repeating a literal that must stay in step.
  */
-private const val LIKE_ESCAPE = "!"
+internal const val LIKE_ESCAPE = "!"
 
 /**
  * Makes a literal string safe to use as the fixed part of a `LIKE` pattern.

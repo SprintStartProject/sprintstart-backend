@@ -6,7 +6,7 @@ import java.time.Instant
  * Module-facing view of a connected Jira instance, exposing only the fields other modules need to
  * build source-instance status rows without reaching into the Jira persistence model.
  *
- * Mirrors [com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto]
+ * Mirrors [com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubSourceInstanceDto]
  * for the Jira connector. Jira instances are identified by their URL (there is no numeric id), and
  * Jira ingests only issues, so there is a single sync timestamp ([lastUpdate]) instead of the
  * GitHub connector's per-resource-type snapshots.

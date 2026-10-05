@@ -15,9 +15,24 @@ data class StarterWorkTaskProposalResponse(
     val sourceUrl: String?,
     val competencyKeys: List<String>,
     val status: ProposalStatus,
-    /** True when a PM has flagged this approved task as suitable for Task 0. */
+    /**
+     * Whether a PM flagged this task as a good first one; see
+     * `StarterWorkTaskProposal.taskZeroEligible`. A hint the pool shows, never a gate.
+     */
     val taskZeroEligible: Boolean,
-    /** Which track this work is for, or null when it suits any role. */
+    /** Whether a person has actually looked at this task; see `StarterWorkTaskProposal.reviewed`. */
+    val reviewed: Boolean,
+    /**
+     * Whether the issue had somebody on it when reconciliation last looked. Three-valued: null
+     * means nobody has checked, or the tracker never said — see
+     * `StarterWorkTaskProposal.sourceHasAssignee`.
+     */
+    val sourceHasAssignee: Boolean?,
+    /**
+     * When reconciliation last compared this row against its source. Null until it first has;
+     * see `StarterWorkTaskProposal.sourceCheckedAt`.
+     */
+    val sourceCheckedAt: Instant?,
 )
 
 /**

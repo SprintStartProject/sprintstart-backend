@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubUserApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubUserApi
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ArrivalDerivation
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ArrivalStepState

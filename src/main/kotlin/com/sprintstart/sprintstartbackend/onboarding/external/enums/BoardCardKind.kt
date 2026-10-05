@@ -14,22 +14,14 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  */
 enum class BoardCardKind(
     val placement: Placement,
+    val takesSubject: Boolean = false,
 ) {
-    /**
-     * The moments between joining and a first accepted piece of work, and which have happened.
-     *
-     * Composed from contributions, not pull requests, so the wording the board carries is what
-     * names one unit of accepted work.
-     */
-    PATH_TO_FIRST_CONTRIBUTION(Placement.BASELINE),
-
     /**
      * What still has to be true before this hire can work: accounts, access, a machine that builds.
      *
-     * Baseline rather than mentor-placed for the same reason the path card is: nobody should depend
-     * on a model noticing that somebody has been unable to clone the repository for a week. It is
-     * ensured on every board read and is the one card that is *most* useful on day one, when the
-     * board is otherwise thin.
+     * Baseline rather than mentor-placed: nobody should depend on a model noticing that somebody has
+     * been unable to clone the repository for a week. It is ensured on every board read and is the
+     * one card that is *most* useful on day one, when the board is otherwise thin.
      *
      * It shows outstanding work; it does not withhold anything. An unsettled step never
      * stops a hire claiming a task, and nothing anywhere consults these rows before serving them.
@@ -58,8 +50,8 @@ enum class BoardCardKind(
      * The task the hire is on, and where it came from.
      *
      * Not part of the baseline, because it is only true some of the time — somebody with no claimed
-     * goal and no Task 0 is not "between tasks", they simply have no task, and a card about nothing
-     * is worse than no card. The mentor places it, and confirming `claim_goal` places it too.
+     * goal is not "between tasks", they simply have no task, and a card about nothing is worse than
+     * no card. The mentor places it, and confirming `claim_goal` places it too.
      */
     CURRENT_TASK(Placement.MENTOR),
 
@@ -71,6 +63,16 @@ enum class BoardCardKind(
      * from the conversation and the board does not.
      */
     SUGGESTED_TASKS(Placement.MENTOR),
+
+    /**
+     * The whole live starter-work pool, ranked for this hire, to browse and grab from by hand.
+     *
+     * Baseline, unlike [SUGGESTED_TASKS]: picking your own task is not something the mentor should
+     * have to decide to offer. The buddy stays the way to get help choosing; this is the way to
+     * choose without asking anybody. Same ranking and same reasons as `GET /me/matches`, so the card
+     * and the conversation cannot disagree about which task fits best.
+     */
+    TASK_POOL(Placement.BASELINE),
 
     /**
      * What the hire has shown they can do, and what they are still short of.
@@ -107,11 +109,30 @@ enum class BoardCardKind(
      * subject the model invented cannot become a claim the model invented. Live, not authored: the
      * row stores the question, never the picture, so a diagram cannot describe code that has moved.
      *
-     * The only non-authored kind a board may hold several of, because two subjects are two different
-     * diagrams — and re-placing an existing one would let the mentor repurpose a picture the hire
-     * chose to keep.
+     * One of two non-authored kinds a board may hold several of, because two subjects are two
+     * different diagrams — and re-placing an existing one would let the mentor repurpose a picture
+     * the hire chose to keep. [PATH_STEP] is the other, for the same reason.
      */
-    DIAGRAM(Placement.MENTOR),
+    DIAGRAM(Placement.MENTOR, takesSubject = true),
+
+    /**
+     * One step of the hire's onboarding path, with its tasks, expected outcome and resources.
+     *
+     * A projection, not prose: the path is already generated, already structured, and already the
+     * thing a hire reads when they want to know what a step asks of them. Re-narrating it as a card
+     * would only give the model a second chance to get it wrong, so this kind reads the step instead
+     * of describing it. The mentor's only decision is *which* step is worth pinning; the backend
+     * decides, as always, what it says.
+     *
+     * It bends the one rule this catalog otherwise holds absolute. Every other non-authored card is
+     * read-only for the hire — but a task ticked on this card has to write back to the path, because
+     * a task ticked here and the same task still open on the path page would be two different facts
+     * about the same piece of work, and nothing may disagree with the path about the path.
+     *
+     * One of two non-authored kinds a board may hold several of, for the same reason [DIAGRAM] may:
+     * one card per step, since a step pinned is not the same card as a different step pinned.
+     */
+    PATH_STEP(Placement.MENTOR, takesSubject = true),
 
     /** Something the hire wrote down. Markdown, theirs, and nothing reads it back as fact. */
     NOTE(Placement.AUTHORED),
@@ -144,8 +165,8 @@ enum class BoardCardKind(
          * Placed by the mentor, in conversation.
          *
          * The mentor chooses *that* the card belongs there; its content is still a live read, so it
-         * never chooses what the card says. [DIAGRAM] is the one kind that also takes a subject
-         * — the question, never the answer — for the reason given on it.
+         * never chooses what the card says. [DIAGRAM] and [PATH_STEP] are the kinds that also take a
+         * subject — the question, never the answer — for the reason given on each.
          */
         MENTOR,
 

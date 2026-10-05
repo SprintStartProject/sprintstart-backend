@@ -292,4 +292,91 @@ class KnowledgeBaseServiceTest {
 
         assertThat(service.listMine(authId).single().hire).isNull()
     }
+
+    // --- conditional variants for the team-mode buddy ---------------------------------------------
+
+    private val pmId = UUID.randomUUID()
+
+    private fun openRequestOn(onProject: UUID = projectId): KnowledgeRequest {
+        val request = KnowledgeRequest(projectId = onProject, hireId = userId, question = "How do we deploy?")
+        every { userApi.getUserIdByAuthId("auth|pm") } returns Optional.of(pmId)
+        every { knowledgeRequestRepository.findById(request.id) } returns Optional.of(request)
+        every { canonicalAnswerRepository.saveAndFlush(any()) } answers { firstArg() }
+        return request
+    }
+
+    @Test
+    fun `answering an open question mints the answer and closes the question in one conditional write`() {
+        val request = openRequestOn()
+        every {
+            knowledgeRequestRepository.answerIfOpen(
+                request.id,
+                projectId,
+                KnowledgeRequestStatus.OPEN,
+                KnowledgeRequestStatus.ANSWERED,
+                pmId,
+                any(),
+                any(),
+            )
+        } returns 1
+
+        val response = service.answerOpenOn("auth|pm", projectId, request.id, "Merge to dev.", null)
+
+        assertThat(response.answer).isEqualTo("Merge to dev.")
+        assertThat(response.question).isEqualTo("How do we deploy?")
+    }
+
+    @Test
+    fun `answering refuses a question on another project and writes nothing`() {
+        val request = openRequestOn(onProject = UUID.randomUUID())
+
+        assertThrows<ResponseStatusException> {
+            service.answerOpenOn("auth|pm", projectId, request.id, "Merge to dev.", null)
+        }.also { assertThat(it.statusCode.value()).isEqualTo(404) }
+        verify(exactly = 0) { canonicalAnswerRepository.saveAndFlush(any()) }
+    }
+
+    /** Closed between the check and the write: the conflict rolls the minted answer back with it. */
+    @Test
+    fun `answering refuses when the question closed before the write`() {
+        val request = openRequestOn()
+        every { knowledgeRequestRepository.answerIfOpen(any(), any(), any(), any(), any(), any(), any()) } returns 0
+
+        assertThrows<ResponseStatusException> {
+            service.answerOpenOn("auth|pm", projectId, request.id, "Merge to dev.", null)
+        }.also { assertThat(it.statusCode.value()).isEqualTo(409) }
+    }
+
+    @Test
+    fun `dismissing a question that is no longer open on the project is refused`() {
+        every { knowledgeRequestRepository.dismissIfOpen(any(), projectId, any(), any()) } returns 0
+
+        assertThrows<ResponseStatusException> { service.dismissOpenOn(projectId, UUID.randomUUID()) }
+            .also { assertThat(it.statusCode.value()).isEqualTo(409) }
+    }
+
+    @Test
+    fun `editing refuses when the answer changed since it was read`() {
+        every { userApi.getUserIdByAuthId("auth|pm") } returns Optional.of(pmId)
+        every { canonicalAnswerRepository.editIfUnchanged(any(), any(), any(), any(), any(), any(), any()) } returns 0
+
+        assertThrows<ResponseStatusException> {
+            service.editAnswerIfUnchanged("auth|pm", projectId, UUID.randomUUID(), "Q", "A", java.time.Instant.now())
+        }.also { assertThat(it.statusCode.value()).isEqualTo(409) }
+    }
+
+    @Test
+    fun `editing an unchanged answer returns its new wording`() {
+        val stored = CanonicalAnswer(projectId = projectId, question = "Q", answer = "New.", authorId = pmId)
+        every { userApi.getUserIdByAuthId("auth|pm") } returns Optional.of(pmId)
+        every {
+            canonicalAnswerRepository.editIfUnchanged(stored.id, projectId, "Q", "New.", pmId, any(), any())
+        } returns 1
+        every { canonicalAnswerRepository.findById(stored.id) } returns Optional.of(stored)
+
+        val response =
+            service.editAnswerIfUnchanged("auth|pm", projectId, stored.id, "Q", "New.", java.time.Instant.now())
+
+        assertThat(response.answer).isEqualTo("New.")
+    }
 }

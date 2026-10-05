@@ -24,6 +24,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.persistence.EntityManager
 import kotlinx.coroutines.CancellationException
@@ -56,6 +57,7 @@ class OnboardingPersonalizationService(
     private val onboardingPathFactory: OnboardingPathFromBlueprintFactory,
     private val onboardingAiClient: OnboardingAiClient,
     private val userApi: UserApi,
+    private val projectIndustryApi: ProjectIndustryApi,
     private val json: Json,
     private val entityManager: EntityManager,
     transactionManager: PlatformTransactionManager,
@@ -103,15 +105,7 @@ class OnboardingPersonalizationService(
      */
     @Tracked("Creating onboarding path from blueprint")
     fun personalize(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
-        val profile = userApi
-            .getOnboardingProfileByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User with authId: $authId not found") }
-        if (projectId !in profile.projectIds) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "User with authId: $authId is not assigned to project: $projectId",
-            )
-        }
+        val profile = userApi.onboardingProfileInProject(authId, projectId)
         val projectRoleIds = profile.projectRoles[projectId]
             .orEmpty()
             .map { it.roleId }
@@ -119,6 +113,7 @@ class OnboardingPersonalizationService(
         val skillIds = profile.skills.map { it.skillId }.toSet()
 
         return channelFlow {
+            val industry = projectIndustryApi.getOrEvaluateIndustry(projectId)
             val blueprint = loadBlueprintSelection(projectId, projectRoleIds, skillIds)
             logger.info(
                 "Starting onboarding personalization for user {} in project {} from blueprint {}",
@@ -154,6 +149,7 @@ class OnboardingPersonalizationService(
                             generatePhase(
                                 phase = phase,
                                 projectId = projectId.toString(),
+                                industry = industry,
                                 phaseTimeoutMillis = phaseTimeoutMillis,
                                 totalTimeoutMillis = totalTimeoutMillis,
                                 semaphore = semaphore,
@@ -205,13 +201,28 @@ class OnboardingPersonalizationService(
             sendEvent(OnboardingSseEvent(type = "path", path = response))
             sendEvent(OnboardingSseEvent(type = "done"))
         }.catch { error ->
-            logger.error(
-                "Onboarding personalization failed for authId {} in project {}",
-                authId,
-                projectId,
-                error,
+            if (error is EmptyOnboardingPathException) {
+                logger.warn(
+                    "Onboarding personalization for authId {} in project {} produced no phases ({})",
+                    authId,
+                    projectId,
+                    error.reason,
+                )
+            } else {
+                logger.error(
+                    "Onboarding personalization failed for authId {} in project {}",
+                    authId,
+                    projectId,
+                    error,
+                )
+            }
+            emit(
+                OnboardingSseEvent(
+                    type = "error",
+                    reason = (error as? EmptyOnboardingPathException)?.reason,
+                    message = error.message,
+                ),
             )
-            emit(OnboardingSseEvent(type = "error", message = error.message))
         }
     }
 
@@ -273,10 +284,13 @@ class OnboardingPersonalizationService(
                     generatedContentByBlueprintPhaseId = generated,
                     generationStatusByBlueprintPhaseId = generationStatuses,
                 )
+                val response = onboardingPath.toGetForUserResponse()
+                // A path nobody can work through is not saved: the one the hire had stays theirs.
+                if (response.phases.isEmpty()) throw EmptyOnboardingPathException.from(generationStatuses.values)
                 onboardingPathRepository.deleteByUserId(userId)
                 onboardingPathRepository.flush()
                 entityManager.persist(onboardingPath)
-                onboardingPath.toGetForUserResponse()
+                response
             }
         } ?: throw IllegalStateException("Onboarding path transaction returned no result")
 
@@ -293,6 +307,7 @@ class OnboardingPersonalizationService(
     private suspend fun generatePhase(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         phaseTimeoutMillis: Long,
         totalTimeoutMillis: Long,
         semaphore: Semaphore,
@@ -301,7 +316,7 @@ class OnboardingPersonalizationService(
         emitStage("Waiting")
         val result = withTimeoutOrNull(totalTimeoutMillis) {
             semaphore.withPermit {
-                runPhaseAssembly(phase, projectId, phaseTimeoutMillis, emitStage)
+                runPhaseAssembly(phase, projectId, industry, phaseTimeoutMillis, emitStage)
             }
         }
         return result ?: timedOut(phase, projectId, emitStage, totalTimeoutMillis)
@@ -314,11 +329,12 @@ class OnboardingPersonalizationService(
     private suspend fun runPhaseAssembly(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         phaseTimeoutMillis: Long,
         emitStage: suspend (detail: String) -> Unit,
     ): PhaseGenerationResult {
         val result = withTimeoutOrNull(phaseTimeoutMillis) {
-            streamPhaseContent(phase, projectId) { detail -> emitStage(detail) }
+            streamPhaseContent(phase, projectId, industry) { detail -> emitStage(detail) }
         }
         if (result == null) {
             return timedOut(phase, projectId, emitStage, phaseTimeoutMillis)
@@ -366,6 +382,7 @@ class OnboardingPersonalizationService(
     private suspend fun streamPhaseContent(
         phase: PhaseAssemblyTarget,
         projectId: String,
+        industry: String?,
         relay: suspend (detail: String) -> Unit,
     ): PhaseGenerationResult {
         val request = AssemblePhaseRequest(
@@ -373,6 +390,7 @@ class OnboardingPersonalizationService(
             phaseDescription = phase.description,
             phasePrompt = phase.prompt,
             projectId = projectId,
+            industry = industry,
         )
         var content: GeneratedPhaseContent? = null
         var generationStatus = GenerationStatus.FAILED

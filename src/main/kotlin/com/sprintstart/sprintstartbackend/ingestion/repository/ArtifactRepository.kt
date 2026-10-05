@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
@@ -18,7 +19,10 @@ import java.util.UUID
  * are asked of artifacts, not a repository doing too many things.
  */
 @Suppress("TooManyFunctions")
-interface ArtifactRepository : JpaRepository<Artifact, UUID> {
+interface ArtifactRepository :
+    JpaRepository<Artifact, UUID>,
+    JpaSpecificationExecutor<Artifact>,
+    ArtifactFacetRepository {
     fun findBySourceId(sourceId: String): Artifact?
 
     /**
@@ -32,6 +36,26 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findAllBySourceIdIn(sourceIds: Collection<String>): List<Artifact>
 
     fun findBySourceSystemAndSourceId(sourceSystem: SourceSystem, sourceId: String): Artifact?
+
+    /**
+     * Resolves the organization metadata artifact for a source system and organization login.
+     *
+     * Matches the source ID case-insensitively to accommodate casing differences between
+     * connector inputs and upstream API responses.
+     */
+    @Query(
+        """
+            SELECT a
+            FROM Artifact a
+            WHERE a.sourceSystem = :sourceSystem
+                AND LOWER(a.sourceId) = LOWER(:sourceId)
+                AND a.artifactType = 'ORG_METADATA'
+        """,
+    )
+    fun findOrgMetadataArtifact(
+        @Param("sourceSystem") sourceSystem: SourceSystem,
+        @Param("sourceId") sourceId: String,
+    ): Artifact?
 
     fun findAllBySourceSystemAndSourceIdIn(
         sourceSystem: SourceSystem,
@@ -144,6 +168,28 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun findProjectIdsByArtifactIdIn(@Param("artifactIds") artifactIds: Collection<UUID>): Set<UUID>
 
     /**
+     * Returns which of [artifactIds] belong to the project.
+     *
+     * Selects ids only, so a status lookup never loads artifact content. Callers use it to drop ids
+     * from other projects before asking the AI service about them.
+     *
+     * @param artifactIds The ids to check; callers must not pass an empty collection.
+     */
+    @Query(
+        """
+            SELECT DISTINCT a.id
+            FROM Artifact a
+            JOIN a.projectIdsInternal p
+            WHERE p = :projectId
+                AND a.id IN :artifactIds
+        """,
+    )
+    fun findIdsInProject(
+        @Param("projectId") projectId: UUID,
+        @Param("artifactIds") artifactIds: Collection<UUID>,
+    ): Set<UUID>
+
+    /**
      * Returns one artifact page limited to artifacts linked to the given project.
      */
     @Query(
@@ -222,6 +268,42 @@ interface ArtifactRepository : JpaRepository<Artifact, UUID> {
     fun countByComponent(
         @Param("component") component: String,
     ): Long
+
+    /**
+     * Counts stored artifacts whose source id starts with the given prefix.
+     *
+     * Escaping is the caller's job, exactly as in [ArtifactProjectRepository]: only the caller knows
+     * which part of its prefix is a literal, and `_` and `%` are wildcards that occur in the values
+     * these prefixes are built from — a Bitbucket slug takes `_`. Unescaped, counting
+     * `bitbucket:acme/data_service:` would also count `bitbucket:acme/data-service:`, a repository
+     * nobody named.
+     *
+     * A Bitbucket artifact source id has the form `bitbucket:workspace/slug:TYPE:unique`, so this is
+     * the Bitbucket counterpart of the GitHub-specific [countByComponent].
+     *
+     * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
+     */
+    @Query(
+        "SELECT COUNT(a) FROM Artifact a WHERE a.sourceId LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
+    )
+    fun countBySourceIdPrefix(
+        @Param("prefix") prefix: String,
+    ): Long
+
+    /**
+     * Lists stored artifacts whose source id starts with the given prefix.
+     *
+     * Same escaping contract as [countBySourceIdPrefix]: the prefix arrives already run through
+     * [escapeLikeLiteral].
+     *
+     * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
+    )
+    fun findAllBySourceIdPrefix(
+        @Param("prefix") prefix: String,
+    ): List<Artifact>
 
     /**
      * Counts stored artifacts belonging to a Jira instance.

@@ -27,6 +27,7 @@ import java.util.UUID
  * rather than chunked — the RAG-ingestion half of the "both" decision is a later addition.
  */
 @Service
+@Suppress("TooManyFunctions") // The inbox, the canonical answers, and the team-mode buddy's guarded writes to both.
 class KnowledgeBaseService(
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val canonicalAnswerRepository: CanonicalAnswerRepository,
@@ -191,6 +192,134 @@ class KnowledgeBaseService(
         knowledgeRequestRepository.save(request)
     }
 
+    /**
+     * Answers a request only while it is still open on [projectId], for the team-mode buddy.
+     *
+     * Unlike [answer], which the inbox calls, the open check is part of the write: the request is closed
+     * with one conditional update, and the canonical answer saved in the same transaction is rolled back
+     * if that update finds the request already closed. A manager confirming an answer while the same
+     * question is answered or dismissed elsewhere is refused, instead of publishing a second answer or an
+     * answer against a dismissed question.
+     *
+     * @throws ResponseStatusException 400 for a blank answer; 404 when the request is not on [projectId];
+     * 409 when it is no longer open.
+     */
+    @Transactional
+    fun answerOpenOn(
+        pmAuthId: String,
+        projectId: UUID,
+        requestId: UUID,
+        answerText: String,
+        questionOverride: String?,
+    ): CanonicalAnswerResponse {
+        val trimmedAnswer = answerText.trim().ifEmpty {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "An answer is required.")
+        }
+        val authorId = resolveUserId(pmAuthId)
+        val request = openRequestOn(projectId, requestId)
+
+        // Flushed now: the conditional update below clears the persistence context, which would
+        // otherwise discard an insert that had not been written yet.
+        val canonical = canonicalAnswerRepository.saveAndFlush(
+            CanonicalAnswer(
+                projectId = projectId,
+                question = questionOverride?.trim()?.ifEmpty { null } ?: request.question,
+                answer = trimmedAnswer,
+                authorId = authorId,
+            ),
+        )
+        val closed = knowledgeRequestRepository.answerIfOpen(
+            id = requestId,
+            projectId = projectId,
+            open = KnowledgeRequestStatus.OPEN,
+            answered = KnowledgeRequestStatus.ANSWERED,
+            answeredBy = authorId,
+            answeredAt = Instant.now(),
+            canonicalAnswerId = canonical.id,
+        )
+        if (closed == 0) {
+            // Rolls the canonical answer back with it: the question closed between the check and this write.
+            throw ResponseStatusException(HttpStatus.CONFLICT, NO_LONGER_OPEN)
+        }
+        return canonical.toResponse()
+    }
+
+    /**
+     * Dismisses a request only while it is still open on [projectId], for the team-mode buddy.
+     *
+     * @throws ResponseStatusException 409 when it is no longer open there.
+     */
+    @Transactional
+    fun dismissOpenOn(projectId: UUID, requestId: UUID) {
+        val dismissed = knowledgeRequestRepository.dismissIfOpen(
+            id = requestId,
+            projectId = projectId,
+            open = KnowledgeRequestStatus.OPEN,
+            dismissed = KnowledgeRequestStatus.DISMISSED,
+        )
+        if (dismissed == 0) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, NO_LONGER_OPEN)
+        }
+    }
+
+    /**
+     * Rewords an answer on [projectId] only while it is unchanged since [seenUpdatedAt], for the
+     * team-mode buddy, so an edit confirmed from a preview never overwrites wording written after it.
+     *
+     * @throws ResponseStatusException 400 for a blank question or answer; 409 when the answer changed since
+     * it was read, or is not on [projectId].
+     */
+    @Transactional
+    @Suppress("LongParameterList") // The edit, the caller, and the version of the answer it was made against.
+    fun editAnswerIfUnchanged(
+        pmAuthId: String,
+        projectId: UUID,
+        answerId: UUID,
+        question: String,
+        answer: String,
+        seenUpdatedAt: Instant,
+    ): CanonicalAnswerResponse {
+        if (question.isBlank() || answer.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Question and answer are required.")
+        }
+        val edited = canonicalAnswerRepository.editIfUnchanged(
+            id = answerId,
+            projectId = projectId,
+            question = question.trim(),
+            answer = answer.trim(),
+            authorId = resolveUserId(pmAuthId),
+            updatedAt = Instant.now(),
+            seenUpdatedAt = seenUpdatedAt,
+        )
+        if (edited == 0) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "That answer was changed after it was shown, so it was not overwritten.",
+            )
+        }
+        return canonicalAnswerRepository
+            .findById(answerId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No such canonical answer: $answerId") }
+            .toResponse()
+    }
+
+    /**
+     * The request [requestId] names on [projectId], if it is still open.
+     *
+     * @throws ResponseStatusException 404 when it is not on that project; 409 when it is no longer open.
+     */
+    private fun openRequestOn(projectId: UUID, requestId: UUID): KnowledgeRequest {
+        val request = knowledgeRequestRepository
+            .findById(requestId)
+            .orElse(null)
+            ?.takeIf { it.projectId == projectId }
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such knowledge request on this project.")
+        if (request.status != KnowledgeRequestStatus.OPEN) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, NO_LONGER_OPEN)
+        }
+        return request
+    }
+
     /** Every canonical answer on a project, for a PM to manage. */
     @Transactional(readOnly = true)
     fun listAnswers(projectId: UUID): List<CanonicalAnswerResponse> =
@@ -231,6 +360,7 @@ class KnowledgeBaseService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 3
+        const val NO_LONGER_OPEN = "That question is no longer open: it was answered or dismissed in the meantime."
     }
 }
 

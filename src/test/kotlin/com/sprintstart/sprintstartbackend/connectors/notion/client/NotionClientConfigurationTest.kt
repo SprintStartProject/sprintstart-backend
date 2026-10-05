@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.connectors.notion.client
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.NotionConfig
@@ -28,6 +29,7 @@ internal class NotionClientConfigurationTest {
                     ApplicationConfig(
                         ai = AiConfig("http://localhost"),
                         github = GithubConfig("http://localhost"),
+                        bitbucket = BitbucketConfig("http://localhost"),
                         crypto = CryptoConfig("unused-test-key", "unused-test-salt"),
                         upload = UploadConfig("unused", 1024),
                     )

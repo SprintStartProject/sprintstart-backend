@@ -19,7 +19,7 @@ import java.util.UUID
  * * This connector automatically being included in any summaries etc. invoked over the connector overview.
  * * Sources will automatically be patched on batch patches via the connector overview api.
  *
- * @see [com.sprintstart.sprintstartbackend.connectors.github.GithubConnector]
+ * @see [com.sprintstart.sprintstartbackend.connectors.git.github.GithubConnector]
  */
 interface IConnector {
     /**

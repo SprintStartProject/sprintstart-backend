@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.chat
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.models.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiGenerateChatTitleRequest
 import com.sprintstart.sprintstartbackend.chat.models.requests.AiPromptRequest
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiGenerateChatTitleResponse
 import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
+import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.flow.Flow

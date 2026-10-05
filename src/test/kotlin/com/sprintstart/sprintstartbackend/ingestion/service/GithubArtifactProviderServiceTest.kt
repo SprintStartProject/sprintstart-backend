@@ -1,7 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -46,6 +47,7 @@ class GithubArtifactProviderServiceTest {
     fun setUp() {
         every { artifactRepository.save(any()) } answers { firstArg() }
         every { githubRepositoryApi.getRepositoryProjectIdsById(repositoryId) } returns setOf(projectId)
+        every { githubRepositoryApi.getProjectIdsByOwner(any()) } returns setOf(projectId)
         every { artifactMetadataJsonMapper.toJson(any()) } returns """{"repositoryFullName":"owner/repo"}"""
     }
 
@@ -432,6 +434,60 @@ class GithubArtifactProviderServiceTest {
     }
 
     @Test
+    fun `reconcileDeletedFiles removes stored files the full ingest did not see`() {
+        val run = ingestionRun()
+        val kept = artifact(hash = "hash", sourceId = "github:owner/repo:FILE:README.md")
+        val stale = artifact(hash = "hash", sourceId = "github:owner/repo:FILE:deleted.md")
+        val issue = artifact(
+            artifactType = ArtifactType.ISSUE,
+            sourceId = "github:owner/repo:ISSUE:42",
+            hash = "hash",
+        )
+        every {
+            artifactRepository.findAllBySourceIdPrefix("github:owner/repo:FILE:")
+        } returns listOf(kept, stale, issue)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+        every { artifactRepository.deleteById(any()) } returns Unit
+
+        service.reconcileDeletedFiles(
+            GithubFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                repositoryOwner = "owner",
+                repositoryName = "repo",
+                visitedPaths = setOf("README.md"),
+            ),
+        )
+
+        verify { artifactRepository.deleteById(stale.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(kept.id) }
+        verify(exactly = 0) { artifactRepository.deleteById(issue.id) }
+        assertThat(run.deletedCount).isEqualTo(1)
+        assertThat(run.artifactIdsToDeindex).containsExactly(stale.id.toString())
+    }
+
+    @Test
+    fun `reconcileDeletedFiles leaves the run alone when nothing is stale`() {
+        val kept = artifact(sourceId = "github:owner/repo:FILE:README.md", hash = "hash")
+        every {
+            artifactRepository.findAllBySourceIdPrefix("github:owner/repo:FILE:")
+        } returns listOf(kept)
+
+        service.reconcileDeletedFiles(
+            GithubFilesResyncedEvent(
+                transactionId = runId,
+                repositoryId = repositoryId,
+                repositoryOwner = "owner",
+                repositoryName = "repo",
+                visitedPaths = setOf("README.md"),
+            ),
+        )
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { artifactRepository.deleteById(any()) }
+    }
+
+    @Test
     fun `deleteFileArtifact throws when run is missing`() {
         val event = GithubFileDeletedEvent(
             transactionId = runId,
@@ -448,29 +504,84 @@ class GithubArtifactProviderServiceTest {
     }
 
     @Test
-    fun `persistArtifact saves new org metadata artifact without project ids`() {
+    fun `persistArtifact saves new org metadata artifact with project ids from owner repositories`() {
         val run = ingestionRun()
         val savedArtifact = slot<Artifact>()
         every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
         every { artifactRepository.findBySourceId("octocat") } returns null
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
         every { artifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
 
         service.persistArtifact(orgMetadataCommand())
 
         assertThat(savedArtifact.captured.artifactType).isEqualTo(ArtifactType.ORG_METADATA)
         assertThat(savedArtifact.captured.sourceId).isEqualTo("octocat")
-        assertThat(savedArtifact.captured.projectIds).isEmpty()
+        assertThat(savedArtifact.captured.projectIds).containsExactly(projectId)
         assertThat(run.ingestedCount).isEqualTo(1)
     }
 
     @Test
     fun `persistArtifact ignores duplicate org metadata source id`() {
-        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null)
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
         every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
 
         service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
 
         verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `persistArtifact marks an unchanged org metadata that gained a project for re-ingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        val secondProject = UUID.randomUUID()
+        every { artifactRepository.findBySourceId(existing.sourceId) } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId, secondProject)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.persistArtifact(orgMetadataCommand(sourceId = existing.sourceId))
+
+        assertThat(existing.projectIds).containsExactlyInAnyOrder(projectId, secondProject)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+        assertThat(run.updatedCount).isZero()
+        verify(exactly = 0) { artifactRepository.save(any()) }
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects adds new project ids to existing org artifact and marks it for reingestion`() {
+        val run = ingestionRun()
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        val secondProject = UUID.randomUUID()
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId, secondProject)
+        every { ingestionRunRepository.findByIdForUpdate(runId) } returns Optional.of(run)
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        assertThat(existing.projectIds).containsExactlyInAnyOrder(projectId, secondProject)
+        assertThat(run.artifactIdsToReingest).containsExactly(existing.id)
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects does nothing when org artifact does not exist`() {
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns null
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify(exactly = 0) { githubRepositoryApi.getProjectIdsByOwner(any()) }
+    }
+
+    @Test
+    fun `syncOrgArtifactProjects does nothing when project ids are already linked`() {
+        val existing = artifact(artifactType = ArtifactType.ORG_METADATA, hash = null, projectIds = setOf(projectId))
+        every { artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, "octocat") } returns existing
+        every { githubRepositoryApi.getProjectIdsByOwner("octocat") } returns setOf(projectId)
+
+        service.syncOrgArtifactProjects(runId, "octocat")
+
+        verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
     }
 
     private fun orgMetadataCommand(
@@ -543,10 +654,11 @@ class GithubArtifactProviderServiceTest {
         artifactType: ArtifactType = ArtifactType.FILE,
         hash: String?,
         projectIds: Set<UUID> = emptySet(),
+        sourceId: String? = null,
     ) = Artifact(
         projectIdsInternal = projectIds.toMutableSet(),
         sourceSystem = SourceSystem.GITHUB,
-        sourceId = "github:owner/repo:${artifactType.name}:src/main/App.kt",
+        sourceId = sourceId ?: "github:owner/repo:${artifactType.name}:src/main/App.kt",
         sourceUrl = "https://github.com/owner/repo/blob/main/src/main/App.kt",
         artifactType = artifactType,
         title = "App.kt",

@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactPr
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_STATUS_FAILED
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
+import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildBitbucketWorkspaceSourceId
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
@@ -101,14 +102,27 @@ class ArtifactProjectService(
      * @return The source's stored artifacts, empty when it has never been ingested.
      */
     private fun findArtifactsOf(source: ArtifactSourceRef): List<Artifact> = when (source) {
-        is ArtifactSourceRef.GithubRepository ->
+        is ArtifactSourceRef.GithubRepository -> {
             artifactProjectRepository.findAllByComponent(source.component)
+        }
 
-        is ArtifactSourceRef.JiraInstance ->
+        is ArtifactSourceRef.BitbucketRepository -> {
+            artifactProjectRepository.findAllBitbucketArtifactsByWorkspaceAndSlug(source.workspace, source.slug)
+        }
+
+        is ArtifactSourceRef.BitbucketWorkspace -> {
+            artifactProjectRepository
+                .findBySourceId(buildBitbucketWorkspaceSourceId(source.workspace))
+                ?.let(::listOf) ?: emptyList()
+        }
+
+        is ArtifactSourceRef.JiraInstance -> {
             artifactProjectRepository.findAllJiraArtifactsByInstanceUrl(source.instanceUrl)
+        }
 
-        is ArtifactSourceRef.ConfluenceConnection ->
+        is ArtifactSourceRef.ConfluenceConnection -> {
             artifactProjectRepository.findAllConfluencePagesByConnectionId(source.connectionId)
+        }
 
         is ArtifactSourceRef.NotionConnection ->
             artifactProjectRepository.findAllNotionPagesByConnectionId(source.connectionId)

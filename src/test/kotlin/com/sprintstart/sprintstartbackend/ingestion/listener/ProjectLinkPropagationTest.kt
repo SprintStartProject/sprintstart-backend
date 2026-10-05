@@ -2,11 +2,12 @@ package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.notion.external.events.projects.NotionWorkspaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService
 import io.mockk.coJustRun
 import io.mockk.coVerify
 import org.junit.jupiter.api.BeforeEach
@@ -45,6 +46,9 @@ class ProjectLinkPropagationTest {
     @MockkBean
     private lateinit var artifactProjectService: ArtifactProjectService
 
+    @MockkBean
+    private lateinit var githubOrgArtifactSyncService: GithubOrgArtifactSyncService
+
     @Autowired
     private lateinit var eventPublisher: ApplicationEventPublisher
 
@@ -53,6 +57,7 @@ class ProjectLinkPropagationTest {
     @BeforeEach
     fun setUp() {
         coJustRun { artifactProjectService.applyProjectLink(any(), any(), any()) }
+        coJustRun { githubOrgArtifactSyncService.syncOrgArtifact(any()) }
     }
 
     @Test
@@ -72,6 +77,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 true,
             )
+            githubOrgArtifactSyncService.syncOrgArtifact("acme")
         }
     }
 
@@ -92,6 +98,7 @@ class ProjectLinkPropagationTest {
                 projectId,
                 false,
             )
+            githubOrgArtifactSyncService.syncOrgArtifact("acme")
         }
     }
 

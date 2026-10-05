@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepType
@@ -130,6 +131,24 @@ class OnboardingStepServiceTest {
             val result = service.createOnboardingStepForMe(authId, phaseId, makeCreateRequest())
 
             assertEquals(stepId, result.id)
+        }
+
+        @Test
+        fun `a step added to a phase generation left empty brings the phase back into view`() {
+            // Hidden phases are filtered out of the hire's path; a step that landed in one while it
+            // stayed hidden would be a step nobody can see.
+            val phase = makePhase().apply { generationStatus = GenerationStatus.EMPTY }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingPhaseRepository.findByIdAndPathUserId(phaseId, userId) } returns Optional.of(phase)
+            every { onboardingStepRepository.countByPhaseId(phase.id) } returns 0
+            every {
+                onboardingStepRepository.findByPhaseIdAndPositionGreaterThanEqualOrderByPositionDesc(phase.id, 0)
+            } returns mutableListOf()
+            every { onboardingStepRepository.save(any()) } returns makeStep()
+
+            service.createOnboardingStepForMe(authId, phaseId, makeCreateRequest())
+
+            assertEquals(GenerationStatus.GENERATED, phase.generationStatus)
         }
 
         @Test
@@ -354,6 +373,38 @@ class OnboardingStepServiceTest {
 
             assertEquals(1, laterStep.position)
             verify(exactly = 1) { onboardingStepRepository.delete(step) }
+        }
+
+        @Test
+        fun `joins up the graph around a deleted step`() {
+            // A -> X -> B. Without this the edge B -> X outlived X: the delete failed on the join
+            // table, or B stayed locked behind a step nobody could finish.
+            val phase = makePhase()
+
+            fun node(id: UUID, title: String) = OnboardingStep(
+                id = id,
+                phase = phase,
+                position = 0,
+                title = title,
+                description = "d",
+                type = StepType.DOCUMENT,
+                estimatedMinutes = 5,
+                expectedOutcome = "",
+                status = StepStatus.WAITING,
+            ).also { phase.steps += it }
+            val a = node(UUID.randomUUID(), "A")
+            val x = node(stepId, "X").also { it.blockedBy += a }
+            val b = node(UUID.randomUUID(), "B").also { it.blockedBy += x }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { onboardingStepRepository.findByIdAndPhasePathUserId(stepId, userId) } returns Optional.of(x)
+            every { onboardingStepRepository.findAllByPhaseIdAndPositionGreaterThan(phase.id, 0) } returns
+                mutableListOf()
+            every { onboardingStepRepository.delete(x) } just runs
+
+            service.deleteOnboardingStepForMe(authId, stepId)
+
+            assertEquals(setOf(a.id), b.blockedBy.map { it.id }.toSet())
+            assertEquals(emptySet<UUID>(), x.blockedBy.map { it.id }.toSet())
         }
 
         @Test

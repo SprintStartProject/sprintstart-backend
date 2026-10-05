@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.DeclaredSkill
+import com.sprintstart.sprintstartbackend.user.external.DirectoryMatch
 import com.sprintstart.sprintstartbackend.user.external.GithubSeedingContext
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.mapper.effectivePermissionGroup
 import com.sprintstart.sprintstartbackend.user.model.mapper.toUserApiDto
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
@@ -67,6 +69,18 @@ class UserApiService(
     @Tracked("Resolving user ID by auth ID")
     override fun getUserIdByAuthId(authId: String): Optional<UUID> {
         return userRepository.findIdByAuthId(authId)
+    }
+
+    /**
+     * Resolves the external authentication identifier for an internal user ID.
+     *
+     * @param userId Internal user identifier.
+     * @return The matching auth ID when present.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Resolving auth ID by user ID")
+    override fun getAuthIdByUserId(userId: UUID): Optional<String> {
+        return userRepository.findAuthIdById(userId)
     }
 
     /**
@@ -248,6 +262,69 @@ class UserApiService(
             return true
         }
         if (projectId in user.projects.map { it.id }) {
+            return true
+        }
+
+        return projectRepository
+            .findManagerAuthId(projectId)
+            .map { it == authId }
+            .orElse(false)
+    }
+
+    /**
+     * One person by an identifier somebody already has, or nobody.
+     *
+     * Blank input is nobody rather than everybody — the difference between a lookup and a listing,
+     * and the whole reason this exists next to [searchUsers]. More than one match is also nobody:
+     * an email and a GitHub login could belong to two different people, and answering with either
+     * would be this method guessing which one the caller meant.
+     */
+    @Transactional(readOnly = true)
+    override fun findByExactEmailOrGithubLogin(query: String): Optional<DirectoryMatch> {
+        val needle = query.trim()
+        if (needle.isBlank()) {
+            return Optional.empty()
+        }
+
+        // Equality, not `like`: a Specification rather than a finder keeps this off the repository
+        // interface, but the point is the predicate — an exact match on either identifier, so no
+        // prefix, suffix or wildcard a caller types can widen it into a search.
+        val exactly = Specification<User> { root, _, cb ->
+            cb.or(
+                cb.equal(cb.lower(root.get("email")), needle.lowercase()),
+                cb.equal(cb.lower(root.get("githubLogin")), needle.lowercase()),
+            )
+        }
+        val only = userRepository.findAll(exactly).singleOrNull() ?: return Optional.empty()
+
+        return Optional.of(
+            DirectoryMatch(
+                userId = only.id,
+                displayName = "${only.firstname} ${only.lastname}".trim().ifBlank { only.username },
+            ),
+        )
+    }
+
+    @Transactional(readOnly = true)
+    @Tracked("Checking if user manages project")
+    override fun isAdmin(authId: String): Boolean =
+        userRepository
+            .findByAuthId(authId)
+            .map { user -> Role.ADMIN in user.roles }
+            .orElse(false)
+
+    @Transactional(readOnly = true)
+    @Tracked("Reading user permission group")
+    override fun getPermissionGroup(userId: UUID): Role? =
+        userRepository
+            .findById(userId)
+            .map { it.effectivePermissionGroup() }
+            .orElse(null)
+
+    override fun canManageProject(authId: String, projectId: UUID): Boolean {
+        val user = userRepository.findByAuthId(authId).orElse(null)
+            ?: return false
+        if (Role.ADMIN in user.roles) {
             return true
         }
 

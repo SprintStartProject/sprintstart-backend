@@ -43,7 +43,7 @@ class NotionSourceSystemMigrationTest {
     private fun loadMigration(): String {
         return requireNotNull(
             javaClass.getResourceAsStream(
-                "/db/migration/V23__allow_notion_source_system_for_existing_schemas.sql",
+                "/db/migration/V26__allow_notion_source_system_for_existing_schemas.sql",
             ),
         ).bufferedReader().use { reader -> reader.readText() }
     }

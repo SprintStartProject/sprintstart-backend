@@ -223,6 +223,93 @@ class ArrivalStepServiceTest {
     }
 
     @Test
+    fun `the derivable catalog can be asked about one project's list`() {
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(step("environment-ready", projectId = projectId))
+        // The default list has the other one. Asking about the project must not answer from here.
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("github-account"))
+
+        val catalog = service.derivable(projectId).toMap()
+
+        assertEquals(true, catalog[ArrivalDerivation.ENVIRONMENT_READY])
+        assertEquals(
+            false,
+            catalog[ArrivalDerivation.GITHUB_ACCOUNT],
+            "The default list has this key, but the project does not -- and the project was the question",
+        )
+    }
+
+    @Test
+    fun `creating a batch appends it after what the scope already has`() {
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(step("laptop", projectId = projectId, position = 3))
+        every { arrivalStepRepository.existsByKeyAndProjectId(any(), projectId) } returns false
+        val saved = mutableListOf<ArrivalStep>()
+        every { arrivalStepRepository.save(capture(saved)) } answers { saved.last() }
+
+        service.createAll(
+            projectId,
+            listOf(
+                NewArrivalStep(key = "vpn", title = "VPN"),
+                NewArrivalStep(key = "badge", title = "Badge"),
+            ),
+        )
+
+        assertEquals(listOf("vpn", "badge"), saved.map { it.key })
+        assertEquals(listOf(4, 5), saved.map { it.position })
+    }
+
+    @Test
+    fun `a batch into an empty scope starts at the first place`() {
+        every { arrivalStepRepository.existsByKeyAndProjectId(any(), projectId) } returns false
+        val saved = mutableListOf<ArrivalStep>()
+        every { arrivalStepRepository.save(capture(saved)) } answers { saved.last() }
+
+        service.createAll(projectId, listOf(NewArrivalStep(key = "vpn", title = "VPN")))
+
+        assertEquals(listOf(0), saved.map { it.position })
+    }
+
+    @Test
+    fun `a taken key fails the whole batch rather than leaving half a list`() {
+        every { arrivalStepRepository.existsByKeyAndProjectId("vpn", projectId) } returns false
+        every { arrivalStepRepository.existsByKeyAndProjectId("laptop", projectId) } returns true
+        val saved = mutableListOf<ArrivalStep>()
+        every { arrivalStepRepository.save(capture(saved)) } answers { saved.last() }
+
+        val error = assertThrows(ResponseStatusException::class.java) {
+            service.createAll(
+                projectId,
+                listOf(
+                    NewArrivalStep(key = "vpn", title = "VPN"),
+                    NewArrivalStep(key = "laptop", title = "Laptop"),
+                ),
+            )
+        }
+
+        assertEquals(HttpStatus.CONFLICT, error.statusCode)
+        // The first save already happened in this transaction; the throw is what rolls it back, so
+        // the guarantee is the exception reaching the caller rather than nothing having been saved.
+        assertEquals(listOf("vpn"), saved.map { it.key })
+    }
+
+    @Test
+    fun `a batch keeps the derived-key rule each single create applies`() {
+        every { arrivalStepRepository.existsByKeyAndProjectId(any(), projectId) } returns false
+        val saved = mutableListOf<ArrivalStep>()
+        every { arrivalStepRepository.save(capture(saved)) } answers { saved.last() }
+
+        service.createAll(
+            projectId,
+            listOf(NewArrivalStep(key = "github-account", title = "GitHub", settledBy = Rigor.DECLARED)),
+        )
+
+        assertEquals(Rigor.OBSERVED, saved.single().settledBy)
+        assertFalse(saved.single().selfConfirmable)
+    }
+
+    @Test
     fun `confirming a step that does not apply is a 404`() {
         val error = assertThrows(ResponseStatusException::class.java) {
             service.confirm(hireId, "nonexistent")
@@ -280,6 +367,52 @@ class ArrivalStepServiceTest {
         // same key restores it.
         verify(exactly = 0) { arrivalStepStateRepository.delete(any()) }
         verify(exactly = 0) { arrivalStepStateRepository.deleteAll(any()) }
+    }
+
+    /**
+     * A reader of one project must see the company steps that apply there, even when another of
+     * the hire's projects overrides one of them. Filtering [ArrivalStepService.forHire] down to one
+     * project loses exactly this step, which is why the one-project list is resolved on its own.
+     */
+    @Test
+    fun `the list for one project keeps a company step another of the hire's projects overrides`() {
+        val otherProject = UUID.randomUUID()
+        onProjects(projectId, otherProject)
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("vpn", title = "Company VPN"))
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            emptyList()
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(otherProject)) } returns
+            listOf(step("vpn", projectId = otherProject, title = "Other team's VPN"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("Company VPN"), steps.map { it.step.title })
+    }
+
+    @Test
+    fun `the list for one project lets that project's own definition win the key`() {
+        onProjects(projectId, UUID.randomUUID())
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("vpn", title = "Company VPN"))
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(step("vpn", projectId = projectId, title = "Team VPN"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("Team VPN"), steps.map { it.step.title })
+    }
+
+    @Test
+    fun `the list for a project the hire is not on has only the company steps`() {
+        onProjects(UUID.randomUUID())
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns
+            listOf(step("github-account"))
+
+        val steps = service.forHireOn(hireId, projectId)
+
+        assertEquals(listOf("github-account"), steps.map { it.step.key })
+        verify(exactly = 0) { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(any()) }
     }
 
     private fun onProjects(vararg ids: UUID) = onNamedProjects(*ids.map { it to "P" }.toTypedArray())

@@ -2,8 +2,10 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
@@ -13,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceIns
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.escapeLikeLiteral
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -23,13 +26,18 @@ import java.util.UUID
  *
  * Where [IngestionStatusService] collapses everything into one aggregate row per source system,
  * this service returns one row per connected source instance across every connector (one GitHub
- * repository, one Jira instance, ...): it takes the instance's current connection status and sync
- * timestamps (via each connector's module API) and attaches the counters of that instance's latest
- * ingestion run.
+ * repository, one Bitbucket repository, one Jira instance, ...): it takes the instance's current
+ * connection status and sync timestamps (via each connector's module API) and attaches the
+ * counters of that instance's latest ingestion run.
+ *
+ * This service knows each connector by name; adding another means adding a dependency and a mapper
+ * here. That is deliberate for the current number of connectors -- the alternative, a provider
+ * interface each connector implements, buys nothing while the row shapes differ per source system.
  */
 @Service
 class IngestionSourceStatusService(
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val bitbucketRepositoryApi: BitbucketRepositoryApi,
     private val jiraInstanceApi: JiraInstanceApi,
     private val confluenceConnectionApi: ConfluenceConnectionApi,
     private val notionConnectionApi: NotionConnectionApi,
@@ -41,13 +49,14 @@ class IngestionSourceStatusService(
      *
      * @param projectId When provided, only instances connected to that project are returned;
      * otherwise all connected instances are returned.
-     * @return Per-source-instance status rows, GitHub instances first then Jira, each connector's
-     * rows ordered stably by its module API.
+     * @return Per-source-instance status rows ordered by connector, with each connector's rows
+     * ordered stably by its module API.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving ingestion status per source instance")
     fun getStatusPerSourceInstance(projectId: UUID? = null): List<SourceInstanceIngestionStatusResponse> {
         val githubStatuses = githubRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() }
+        val bitbucketStatuses = bitbucketRepositoryApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val confluenceStatuses = confluenceConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val notionStatuses = notionConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
@@ -90,7 +99,12 @@ class IngestionSourceStatusService(
             emptyList()
         }
 
-        return githubStatuses + jiraStatuses + confluenceStatuses + notionStatuses + uploadStatuses
+        return githubStatuses +
+            bitbucketStatuses +
+            jiraStatuses +
+            confluenceStatuses +
+            notionStatuses +
+            uploadStatuses
     }
 
     private fun GithubSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
@@ -115,6 +129,34 @@ class IngestionSourceStatusService(
             artifactCount = artifactRepository.countByComponent(component),
             lastCommitsSyncAt = lastCommitsSyncAt,
             lastIssuesSyncAt = lastIssuesSyncAt,
+            lastPullRequestsSyncAt = lastPullRequestsSyncAt,
+        )
+    }
+
+    private fun BitbucketSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {
+        val component = "$workspace/$slug"
+        val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId)
+        return SourceInstanceIngestionStatusResponse(
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceId = component,
+            displayName = component,
+            repositoryId = repositoryId,
+            owner = workspace,
+            name = slug,
+            sourceUrl = sourceUrl,
+            connectionStatus = status,
+            enabled = enabled,
+            lastRunTime = lastRun?.startedAt,
+            ingestedCount = lastRun?.ingestedCount ?: 0,
+            updatedCount = lastRun?.updatedCount ?: 0,
+            deletedCount = lastRun?.deletedCount ?: 0,
+            failedCount = lastRun?.failedCount ?: 0,
+            failedItems = lastRun?.failedItems.orEmpty(),
+            artifactCount = artifactRepository.countBySourceIdPrefix(escapeLikeLiteral("bitbucket:$component:")),
+            // Bitbucket tracks files and commits by revision, not by time, and has no issue
+            // tracker, so only the pull-request fetch has a timestamp to report.
+            lastCommitsSyncAt = null,
+            lastIssuesSyncAt = null,
             lastPullRequestsSyncAt = lastPullRequestsSyncAt,
         )
     }

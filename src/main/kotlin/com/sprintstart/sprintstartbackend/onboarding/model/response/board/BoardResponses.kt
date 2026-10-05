@@ -4,7 +4,11 @@ import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.onboarding.model.response.arrival.ArrivalStepResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import java.time.Instant
 import java.util.UUID
 
@@ -53,17 +57,15 @@ data class BoardCardResponse(
     visible = true,
 )
 @JsonSubTypes(
-    JsonSubTypes.Type(
-        value = PathToFirstContributionContent::class,
-        name = "PATH_TO_FIRST_CONTRIBUTION",
-    ),
     JsonSubTypes.Type(value = ArrivalStepsContent::class, name = "ARRIVAL_STEPS"),
     JsonSubTypes.Type(value = OpenPullRequestsContent::class, name = "OPEN_PULL_REQUESTS"),
     JsonSubTypes.Type(value = CurrentTaskContent::class, name = "CURRENT_TASK"),
     JsonSubTypes.Type(value = SuggestedTasksContent::class, name = "SUGGESTED_TASKS"),
+    JsonSubTypes.Type(value = TaskPoolContent::class, name = "TASK_POOL"),
     JsonSubTypes.Type(value = CompetencyProgressContent::class, name = "COMPETENCY_PROGRESS"),
     JsonSubTypes.Type(value = MemoryRecapContent::class, name = "MEMORY_RECAP"),
     JsonSubTypes.Type(value = DiagramContent::class, name = "DIAGRAM"),
+    JsonSubTypes.Type(value = PathStepContent::class, name = "PATH_STEP"),
     JsonSubTypes.Type(value = NoteContent::class, name = "NOTE"),
     JsonSubTypes.Type(value = LinkContent::class, name = "LINK"),
     JsonSubTypes.Type(value = ChecklistContent::class, name = "CHECKLIST"),
@@ -71,24 +73,6 @@ data class BoardCardResponse(
 sealed interface BoardCardContent {
     val kind: BoardCardKind
 }
-
-/**
- * The moments between joining and a first accepted piece of work.
- *
- * Composed from the hire's contribution timeline, so it holds for every track.
- * Every timestamp is nullable: "has not happened yet" is the normal state mid-onboarding, and it
- * is not the same as zero.
- */
-data class PathToFirstContributionContent(
-    override val kind: BoardCardKind = BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
-    val moments: List<BoardMomentResponse>,
-    /** How much accepted work there is so far — the ramp's only real counter. */
-    val acceptedCount: Int,
-    /** When onboarding ended for this hire, dated. Null while it is still going. */
-    val autonomyReachedAt: Instant?,
-    /** Why this hire currently reads as stalled, in plain words, or null when they do not. */
-    val stalledReason: String?,
-) : BoardCardContent
 
 /**
  * What still has to be true before this hire can work, and what they have already settled.
@@ -103,26 +87,6 @@ data class ArrivalStepsContent(
     val declaredCount: Int,
     val outstandingCount: Int,
 ) : BoardCardContent
-
-/**
- * One moment on the path, and whether it has happened.
- *
- * [key] is a stable identifier the client maps to its own copy. [reachedAt] null means not yet;
- * the client renders it as a dash, not a zero.
- */
-data class BoardMomentResponse(
-    val key: BoardMomentKey,
-    val reachedAt: Instant?,
-)
-
-/** The moments a path card reports, in the order they normally happen. */
-enum class BoardMomentKey {
-    JOINED,
-    TASK_CLAIMED,
-    WORK_SUBMITTED,
-    FIRST_RESPONSE,
-    WORK_ACCEPTED,
-}
 
 /**
  * The hire's still-open pull requests, longest-waiting first.
@@ -165,8 +129,6 @@ data class CurrentTaskContent(
     val title: String?,
     val summary: String?,
     val url: String?,
-    /** True when the hire claimed this as their goal, false for a Task 0 they were handed. */
-    val chosen: Boolean,
     /**
      * True once the issue behind this task is closed where it lives.
      *
@@ -193,6 +155,34 @@ data class BoardSuggestedTaskResponse(
     val title: String,
     val url: String?,
     val reasons: List<String>,
+)
+
+/**
+ * Every live task the hire may grab, best fit first.
+ *
+ * [currentTaskId] is the task they are on, if any, so the card can mark it rather than offering to
+ * grab what is already theirs. The order is the ranking; the client filters, never re-sorts.
+ */
+data class TaskPoolContent(
+    override val kind: BoardCardKind = BoardCardKind.TASK_POOL,
+    val tasks: List<BoardPoolTaskResponse>,
+    val currentTaskId: UUID?,
+) : BoardCardContent
+
+/** One task in the pool, with what the hire needs to choose it — and no score. */
+data class BoardPoolTaskResponse(
+    val taskId: UUID,
+    val title: String,
+    val summary: String?,
+    /** Why this is a reasonable first task, in the words of whoever put it in the pool. */
+    val rationale: String?,
+    val url: String?,
+    val taskType: TaskType,
+    val reasons: List<String>,
+    /** Among the top of the ranking and matched on at least one signal. */
+    val bestFit: Boolean,
+    /** Three-valued like the pool's own field: only `true` means somebody is on it. */
+    val sourceHasAssignee: Boolean?,
 )
 
 /** Something the hire wrote down. The one card whose text the board did not read from anywhere. */
@@ -305,6 +295,34 @@ data class BoardDiagramSourceResponse(
     val sourceUrl: String?,
     val artifactType: String?,
 )
+
+/**
+ * One step of the hire's onboarding path, hydrated live from it.
+ *
+ * A projection: [tasks] and [resources] are the same response shapes the path page itself serves,
+ * from the same mappers, so the board and the path page cannot describe the same step differently.
+ *
+ * [expectedOutcomes] is always exactly one element — [OnboardingStep.expectedOutcome] is a single
+ * column — kept as a list for the same reason the path's own step response does: room for more than
+ * one without a shape change.
+ *
+ * All-nullable, with [reason], because a path can be regenerated out from under a card that still
+ * points at a step which no longer exists. The card degrades rather than vanishing.
+ */
+data class PathStepContent(
+    override val kind: BoardCardKind = BoardCardKind.PATH_STEP,
+    val stepId: UUID?,
+    val phaseTitle: String?,
+    val title: String?,
+    val description: String?,
+    val status: StepStatus?,
+    val isAiAssisted: Boolean,
+    val expectedOutcomes: List<String>,
+    val tasks: List<GetOnboardingTasksResponse>,
+    val resources: List<GetOnboardingResourcesResponse>,
+    /** Why there is no step, when there is none. Null whenever [stepId] is set. */
+    val reason: String?,
+) : BoardCardContent
 
 /**
  * What the mentor remembers about this hire, in the mentor's own words.
