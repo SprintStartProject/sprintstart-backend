@@ -14,8 +14,17 @@ import kotlinx.coroutines.flow.FlowCollector
  */
 internal suspend fun FlowCollector<BuddyStreamEvent>.emitAgentReply(
     reply: String,
+    reasoning: List<String>,
     citations: List<BuddyCitationDto>,
 ) {
+    for (item in reasoning) {
+        emit(
+            BuddyStreamEvent(
+                type = "reasoning",
+                reasoning = item,
+            ),
+        )
+    }
     for (chunk in BuddyService.TOKEN_CHUNK.split(reply).filter { it.isNotEmpty() }) {
         emit(BuddyStreamEvent(type = BuddyService.TOKEN, content = chunk))
     }

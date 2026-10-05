@@ -121,7 +121,7 @@ class AttestationService(
      *
      * Stays [AttestationState.REQUESTED] rather than moving to a rejected state: the hire is
      * expected to act on the reason and the same request carries on, exactly as a pull request with
-     * changes requested does. [Attestation.returnedCount] is what autonomy later reads.
+     * changes requested does. [Attestation.returnedCount] is what the metrics count as rework.
      *
      * @throws ResponseStatusException 400 when no reason is given — "no, and I won't say why" is
      * not something a hire can act on.

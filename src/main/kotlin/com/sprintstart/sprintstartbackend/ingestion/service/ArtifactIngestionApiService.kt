@@ -96,7 +96,11 @@ internal class ArtifactIngestionApiService(
                     state = it.state,
                     changesRequestedCount = it.changesRequestedCount,
                     repositoryFullName = (
-                        artifactMetadataJsonMapper.fromJson(it.metadata) as? GithubArtifactMetadata
+                        artifactMetadataJsonMapper.fromJson(
+                            it.metadata,
+                            it.sourceSystem,
+                            it.artifactType,
+                        ) as? GithubArtifactMetadata
                     )?.repositoryFullName,
                     // Source ids are `github:owner/name:PULL_REQUEST:<number>`, so the number is
                     // already in the identifier and needs no extra lookup.
@@ -112,7 +116,11 @@ internal class ArtifactIngestionApiService(
         return artifactRepository
             .findAllByProjectIdAndAuthorLogin(projectId, authorLogin.lowercase())
             .map { artifact ->
-                val metadata = artifactMetadataJsonMapper.fromJson(artifact.metadata)
+                val metadata = artifactMetadataJsonMapper.fromJson(
+                    artifact.metadata,
+                    artifact.sourceSystem,
+                    artifact.artifactType,
+                )
                 AuthoredArtifact(
                     artifactType = artifact.artifactType.name,
                     repositoryFullName = (metadata as? GithubArtifactMetadata)?.repositoryFullName,
@@ -126,7 +134,13 @@ internal class ArtifactIngestionApiService(
         return artifactRepository
             .findAllByProjectIdAndArtifactType(projectId, ArtifactType.PULL_REQUEST)
             .groupBy {
-                (artifactMetadataJsonMapper.fromJson(it.metadata) as? GithubArtifactMetadata)?.repositoryFullName
+                (
+                    artifactMetadataJsonMapper.fromJson(
+                        it.metadata,
+                        it.sourceSystem,
+                        it.artifactType,
+                    ) as? GithubArtifactMetadata
+                )?.repositoryFullName
             }.mapNotNull { (repository, pullRequests) ->
                 if (repository == null) return@mapNotNull null
                 // A pull request that was merged without a recorded response still got attention,

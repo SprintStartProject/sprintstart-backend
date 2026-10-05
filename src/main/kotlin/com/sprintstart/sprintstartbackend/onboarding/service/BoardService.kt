@@ -22,8 +22,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Arriva
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardPullRequestResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
@@ -31,9 +29,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Curren
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.GetOnboardingResourcesResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
@@ -64,7 +61,6 @@ class BoardService(
     private val boardRepository: BoardRepository,
     private val boardCardRepository: BoardCardRepository,
     private val projectMembershipApi: ProjectMembershipApi,
-    private val onboardingMetricsService: OnboardingMetricsService,
     private val openPullRequestReader: OpenPullRequestReader,
     private val currentTaskReader: CurrentTaskReader,
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
@@ -113,7 +109,6 @@ class BoardService(
         // Whether the hire is on a task at all, for the pin. Read through the same
         // [CurrentTaskReader] the card's content comes from, so the pin and the card agree.
         val onATask = currentTaskReader.currentTaskFor(userId, projectId) != null
-        val timeline = onboardingMetricsService.getHireTimeline(userId, projectId)
         // One query for every diagram on the board, and the stored picture rather than a fresh one:
         // assembling costs a model call. The client revalidates afterwards.
         val diagrams = boardDiagramRepository
@@ -139,7 +134,7 @@ class BoardService(
                 .filter { it.state == BoardCardState.ACTIVE }
                 .sortedWith(attentionOrder(arrivalSteps, onATask))
                 .map {
-                    it.toResponse(member, projectId, timeline, diagrams[it.id], arrivalSteps, pathSteps) { matches }
+                    it.toResponse(member, projectId, diagrams[it.id], arrivalSteps, pathSteps) { matches }
                 },
         )
     }
@@ -440,7 +435,7 @@ class BoardService(
             ).apply { recordChange(BoardCardChange.CREATED, by, now) },
         )
         val arrivalSteps = arrivalStepService.forHire(member.userId)
-        return card.toResponse(member, projectId, timeline = null, arrivalSteps = arrivalSteps)
+        return card.toResponse(member, projectId, arrivalSteps = arrivalSteps)
     }
 
     /**
@@ -464,7 +459,7 @@ class BoardService(
         val member = memberOrNull(userId, board.projectId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project")
         val arrivalSteps = arrivalStepService.forHire(member.userId)
-        return card.toResponse(member, board.projectId, timeline = null, arrivalSteps = arrivalSteps)
+        return card.toResponse(member, board.projectId, arrivalSteps = arrivalSteps)
     }
 
     /**
@@ -509,7 +504,6 @@ class BoardService(
         return card.toResponse(
             member,
             projectId,
-            timeline = null,
             arrivalSteps = arrivalStepService.forHire(member.userId),
         )
     }
@@ -645,7 +639,6 @@ class BoardService(
         return card.toResponse(
             member,
             projectId,
-            timeline = null,
             arrivalSteps = arrivalStepService.forHire(member.userId),
         )
     }
@@ -762,13 +755,11 @@ class BoardService(
         card: BoardCard,
         member: ProjectMember,
         projectId: UUID,
-        timeline: HireTimelineResponse?,
         diagram: BoardDiagram?,
         arrivalSteps: List<ResolvedArrivalStep>,
         pathSteps: Map<UUID, ResolvedPathStep>,
         matches: () -> List<RankedStarterWorkTaskResponse>,
     ): BoardCardContent = when (card.kind) {
-        BoardCardKind.PATH_TO_FIRST_CONTRIBUTION -> pathContent(member, timeline)
         BoardCardKind.ARRIVAL_STEPS -> arrivalStepsContent(arrivalSteps)
         BoardCardKind.OPEN_PULL_REQUESTS -> openPullRequestsContent(member, projectId)
         BoardCardKind.CURRENT_TASK -> currentTaskContent(member.userId, projectId)
@@ -837,7 +828,10 @@ class BoardService(
      * Not [BuddyService.getOrCreateSession] — hydrating a card must not create a session.
      */
     private fun memoryRecapContent(userId: UUID): MemoryRecapContent {
-        val session = buddySessionRepository.findByUserId(userId)
+        val session = buddySessionRepository
+            .findByUserIdOrderByCreatedAtDesc(userId)
+            .firstOrNull()
+
         return MemoryRecapContent(
             memory = session?.summary,
             messagesRemembered = session?.summarizedCount ?: 0,
@@ -847,8 +841,8 @@ class BoardService(
     /**
      * The task the hire is on, read — never assigned.
      *
-     * Read through [CurrentTaskReader], not `TaskZeroService.getForHire`, which assigns on
-     * read. Hydration runs on every page load, so it must not be able to hand out a task.
+     * Read through [CurrentTaskReader], the same read the task packet uses, so the card and the
+     * packet cannot be about different tasks.
      *
      * A card with no task on it is a real state and says so.
      */
@@ -859,41 +853,11 @@ class BoardService(
             title = task?.title,
             summary = task?.summary,
             url = task?.sourceUrl,
-            // True for a goal the hire claimed, false for a Task 0 they were handed.
-            chosen = task != null && currentTaskReader.isClaimedGoal(userId, projectId),
             // Reconciliation moves a proposal to STALE when its issue closes at the source, so the
             // card can say so without a lookup of its own.
             closedAtSource = task?.status == ProposalStatus.STALE,
         )
     }
-
-    /**
-     * The path card's content, from the same timeline the PM dashboard reads.
-     *
-     * A hire with no timeline at all still gets the card, with every moment unreached: "nothing has
-     * happened yet" is the honest day-one state and is exactly what somebody on day one should see,
-     * rather than a card that is missing until they have already made progress.
-     */
-    private fun pathContent(
-        member: ProjectMember,
-        timeline: HireTimelineResponse?,
-    ): PathToFirstContributionContent = PathToFirstContributionContent(
-        moments = listOf(
-            // Joined comes from the membership rather than the timeline, so it is still shown when
-            // there is no timeline to read.
-            BoardMomentResponse(BoardMomentKey.JOINED, member.joinedAt),
-            BoardMomentResponse(BoardMomentKey.TASK_CLAIMED, timeline?.firstTaskClaimedAt),
-            // The timeline's field names still say "pull request"; the values behind them are
-            // composed from contributions of any kind, which is why the card can name them
-            // generally.
-            BoardMomentResponse(BoardMomentKey.WORK_SUBMITTED, timeline?.firstContributionOpenedAt),
-            BoardMomentResponse(BoardMomentKey.FIRST_RESPONSE, timeline?.firstResponseAt),
-            BoardMomentResponse(BoardMomentKey.WORK_ACCEPTED, timeline?.firstContributionAcceptedAt),
-        ),
-        acceptedCount = timeline?.acceptedContributionCount ?: 0,
-        autonomyReachedAt = timeline?.autonomyReachedAt,
-        stalledReason = timeline?.stalledReason,
-    )
 
     private fun openPullRequestsContent(
         member: ProjectMember,
@@ -918,7 +882,6 @@ class BoardService(
     private fun BoardCard.toResponse(
         member: ProjectMember,
         projectId: UUID,
-        timeline: HireTimelineResponse?,
         diagram: BoardDiagram? = null,
         arrivalSteps: List<ResolvedArrivalStep> = emptyList(),
         pathSteps: Map<UUID, ResolvedPathStep> = emptyMap(),
@@ -932,7 +895,7 @@ class BoardService(
         owner = owner,
         position = position,
         placedAt = placedAt,
-        content = hydrate(this, member, projectId, timeline, diagram, arrivalSteps, pathSteps, matches),
+        content = hydrate(this, member, projectId, diagram, arrivalSteps, pathSteps, matches),
         lastChange = toLastChangeResponse(),
     )
 

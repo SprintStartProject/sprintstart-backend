@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.chat.service
 
 import com.sprintstart.sprintstartbackend.chat.ChatAiClient
-import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
 import com.sprintstart.sprintstartbackend.chat.models.Chat
 import com.sprintstart.sprintstartbackend.chat.models.ChatMessage
 import com.sprintstart.sprintstartbackend.chat.models.ChatRole
@@ -19,6 +18,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.external.api.Conne
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorDisabledException
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid
@@ -119,7 +119,7 @@ internal class ChatPromptService(
         // to hand off asynchronously — nothing here waits on them, and the user's answer must not
         // be delayed by analytics.
         eventPublisher.publishEvent(
-            ChatQuestionAskedEvent(
+            QuestionAskedEvent(
                 messageId = msg.id,
                 chatId = chat.id,
                 projectId = projectId,

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.external.model
 
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -59,9 +60,16 @@ data class BuddyAgentRequest(
      * The projects this hire is on, scoping what `search_docs` may retrieve.
      *
      * Several is ordinary — somebody onboarding on two projects should find material from both,
-     * and from neither of anybody else's. Empty searches the whole corpus, which is right only on
-     * a deployment serving one project; material belonging to no project stays searchable either
-     * way, so nothing ingested before projects were carried disappears.
+     * and from neither of anybody else's. Material belonging to no project stays searchable
+     * either way, so nothing ingested before projects were carried disappears.
+     *
+     * Empty admits nothing: the AI service fails closed on an empty scope rather than searching the
+     * whole corpus. That is deliberate. An empty list is not evidence of intent — the same value
+     * comes back from a user record that has not synced, a membership lookup that returned nothing,
+     * and an account mid-provisioning — and treating it as "search everything" would turn a missing
+     * value into an authorization decision whose failure mode is showing one project's material to
+     * somebody on another. `BuddyService` therefore refuses the turn for a hire on no project
+     * instead of sending this empty.
      */
     @SerialName("project_ids") val projectIds: List<String> = emptyList(),
     /**
@@ -80,6 +88,7 @@ data class BuddyAgentRequest(
      * one, and a hop that lost the mode would answer a manager as if they were a new hire.
      */
     @SerialName("team_mode") val teamMode: Boolean = false,
+    @SerialName("filters") val filters: BuddySessionFilters? = null,
 )
 
 /**
@@ -194,4 +203,5 @@ data class BuddyAgentResponse(
     val messages: List<BuddyAgentMessageDto> = emptyList(),
     @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
     val citations: List<BuddyCitationDto> = emptyList(),
+    val reasoning: List<String> = emptyList(),
 )

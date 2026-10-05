@@ -34,6 +34,7 @@ class BuddyTeamToolsTest {
     private val projectMembershipApi: ProjectMembershipApi = mockk()
     private val areaToolsProvider: ObjectProvider<TeamAreaTools> = mockk()
     private val buddyProposalService: BuddyProposalService = mockk()
+    private val buddyAppGuideTools: BuddyAppGuideTools = mockk()
 
     private val projectId = UUID.randomUUID()
     private val memberId = UUID.randomUUID()
@@ -57,6 +58,7 @@ class BuddyTeamToolsTest {
             projectMembershipApi,
             areaToolsProvider,
             buddyProposalService,
+            buddyAppGuideTools,
         )
     }
 
@@ -111,7 +113,22 @@ class BuddyTeamToolsTest {
             BuddyTeamTools.GET_TEAM_ATTENTION,
             BuddyTeamTools.FIND_MEMBER,
             BuddyTeamTools.GET_MEMBER_PROGRESS,
+            BuddyAppGuideTools.GET_APP_GUIDE,
         )
+    }
+
+    @Test
+    fun `answers the app guide for the manager and the page they are on`() {
+        every { buddyAppGuideTools.guideFor(context.userId, "/pm-dashboard") } returns "the guide"
+        val tools = tools()
+
+        val result = tools.execute(
+            call(BuddyAppGuideTools.GET_APP_GUIDE),
+            context.copy(currentPage = "/pm-dashboard"),
+            readNames(tools),
+        )
+
+        assertThat(result).isEqualTo("the guide")
     }
 
     @Test
@@ -276,7 +293,6 @@ class BuddyTeamToolsTest {
             every { stalled } returns false
             every { stalledReason } returns null
             every { returnedContributionCount } returns 0
-            every { autonomyReachedAt } returns null
         }
         every { myCompetencyService.getCompetenciesForUser(memberId) } returns listOf(
             competency(label = "Kotlin", level = 3, target = 3),
@@ -373,5 +389,63 @@ class BuddyTeamToolsTest {
         val offered = area.getValue("enum").jsonArray
 
         assertThat(offered.map { it.jsonPrimitive.content }).containsExactly("knowledge")
+    }
+
+    /**
+     * The model picks an area from what the definition says is in it. Seen live: asked about questions hires
+     * were waiting on an answer for, it opened the arrival area, because "knowledge" said nothing.
+     */
+    @Test
+    fun `open_area's definition says what is in each area it offers, and only those`() {
+        val tools = tools(
+            actions = listOf(
+                action("answer_escalation", TeamArea.KNOWLEDGE),
+                action("create_arrival_steps", TeamArea.ARRIVAL),
+            ),
+        )
+
+        val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
+
+        assertThat(description).contains("- knowledge: ${TeamArea.KNOWLEDGE.summary}")
+        assertThat(description).contains("- arrival: ${TeamArea.ARRIVAL.summary}")
+        assertThat(description).doesNotContain("- starter_work:").doesNotContain("- content:")
+    }
+
+    @Test
+    fun `open_area's definition says an area stays open for a few replies, and forbids inventing a confirmation`() {
+        val tools = tools(actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
+
+        assertThat(description).contains("stays open for your next few replies")
+        assertThat(description).contains("open its area first")
+        assertThat(description).contains("Never say something has been offered for confirmation unless a tool")
+    }
+
+    /**
+     * Seen live: asked to answer escalations, the buddy said it could not act, because nothing it could see
+     * said the knowledge area held an answer action. With the names listed it can call one directly, and the
+     * backend opens the area for it.
+     */
+    @Test
+    fun `open_area's definition names the tools in each area, read tools and actions alike`() {
+        val tools = tools(knowledgeArea, actions = listOf(action("answer_escalation", TeamArea.KNOWLEDGE)))
+
+        val description = tools.toolSpecs(emptySet()).single { it.name == BuddyTeamTools.OPEN_AREA }.description
+
+        assertThat(description)
+            .contains("- knowledge: ${TeamArea.KNOWLEDGE.summary} (tools: list_open_escalations, answer_escalation)")
+            .contains("call it by the name listed below")
+    }
+
+    @Test
+    fun `knows the area of every read tool and action, and of nothing else`() {
+        val tools = tools(knowledgeArea, actions = listOf(action("create_arrival_steps", TeamArea.ARRIVAL)))
+
+        assertThat(tools.areaOf("list_open_escalations")).isEqualTo(TeamArea.KNOWLEDGE)
+        assertThat(tools.areaOf("create_arrival_steps")).isEqualTo(TeamArea.ARRIVAL)
+        assertThat(tools.areaOf(BuddyTeamTools.FIND_MEMBER)).isNull()
+        assertThat(tools.areaOf(BuddyTeamTools.OPEN_AREA)).isNull()
+        assertThat(tools.areaOf("not_a_tool")).isNull()
     }
 }

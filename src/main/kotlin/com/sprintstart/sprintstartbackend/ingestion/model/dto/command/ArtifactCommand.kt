@@ -49,6 +49,44 @@ data class GithubArtifactCommand(
     val changesRequestedCount: Int = 0,
 ) : ArtifactCommand
 
+/**
+ * One Bitbucket artifact the ingestion store is asked to persist or update.
+ *
+ * Mirrors [GithubArtifactCommand] without the issue fields: Bitbucket removed its native issue
+ * tracker, so issue-shaped work for a Bitbucket repository comes from Jira and never travels
+ * through this command.
+ *
+ * Bitbucket artifact commands carry no `authorLogin`: a Bitbucket account id is not a GitHub login,
+ * and storing a nickname in a column that is matched against `User.githubLogin` would let the two
+ * identity namespaces alias each other in the source-system-agnostic reader queries.
+ *
+ * @property metadata The [ArtifactMetadata] the artifact is scoped by: repository artifacts carry
+ *           [BitbucketArtifactMetadata], the workspace metadata artifact carries
+ *           [BitbucketWorkspaceMetadataArtifactMetadata].
+ */
+data class BitbucketArtifactCommand(
+    val ingestionRunId: UUID,
+    val sourceSystem: SourceSystem,
+    val sourceId: String,
+    val sourceUrl: String?,
+    val artifactType: ArtifactType,
+    val title: String?,
+    val bodyText: String?,
+    val mime: String?,
+    val language: String?,
+    val createdAtSource: Instant?,
+    val updatedAtSource: Instant?,
+    val hash: String?,
+    val metadata: ArtifactMetadata,
+    val state: String? = null,
+    /** Merge time for pull requests; null for every other artifact type. */
+    val mergedAtSource: Instant? = null,
+    /** First response by someone other than the author; pull requests only. */
+    val firstResponseAtSource: Instant? = null,
+    /** Reviews by someone other than the author that asked for changes; pull requests only. */
+    val changesRequestedCount: Int = 0,
+) : ArtifactCommand
+
 data class JiraArtifactCommand(
     val ingestionRunId: UUID,
     val sourceSystem: SourceSystem,

@@ -270,6 +270,42 @@ interface ArtifactRepository :
     ): Long
 
     /**
+     * Counts stored artifacts whose source id starts with the given prefix.
+     *
+     * Escaping is the caller's job, exactly as in [ArtifactProjectRepository]: only the caller knows
+     * which part of its prefix is a literal, and `_` and `%` are wildcards that occur in the values
+     * these prefixes are built from — a Bitbucket slug takes `_`. Unescaped, counting
+     * `bitbucket:acme/data_service:` would also count `bitbucket:acme/data-service:`, a repository
+     * nobody named.
+     *
+     * A Bitbucket artifact source id has the form `bitbucket:workspace/slug:TYPE:unique`, so this is
+     * the Bitbucket counterpart of the GitHub-specific [countByComponent].
+     *
+     * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
+     */
+    @Query(
+        "SELECT COUNT(a) FROM Artifact a WHERE a.sourceId LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
+    )
+    fun countBySourceIdPrefix(
+        @Param("prefix") prefix: String,
+    ): Long
+
+    /**
+     * Lists stored artifacts whose source id starts with the given prefix.
+     *
+     * Same escaping contract as [countBySourceIdPrefix]: the prefix arrives already run through
+     * [escapeLikeLiteral].
+     *
+     * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
+     */
+    @Query(
+        "SELECT a FROM Artifact a WHERE a.sourceId LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
+    )
+    fun findAllBySourceIdPrefix(
+        @Param("prefix") prefix: String,
+    ): List<Artifact>
+
+    /**
      * Counts stored artifacts belonging to a Jira instance.
      *
      * Jira issue artifacts store their web URL as `{instanceUrl}/browse/{key}`, so they are matched
