@@ -5,6 +5,7 @@ import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.persistence.Version
+import org.springframework.web.bind.support.SessionStatus
 import java.time.Instant
 import java.util.UUID
 
@@ -58,4 +59,7 @@ class BuddySession(
     var version: Long = 0,
     @Column("project_id")
     var projectId: UUID? = null,
+    var status: BuddySessionStatus = BuddySessionStatus.ACTIVE,
+    @Column(name = "binnet_at")
+    var binnedAt: Instant? = null,
 ) : BuddyMemory

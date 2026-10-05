@@ -342,4 +342,27 @@ class BuddyController(
     ) {
         buddyService.deleteMessage(jwt.subject, id)
     }
+
+    @Operation(
+        summary = "Bins an existing session",
+        description = "Sets the status of an existing session to BINNED, given that the session was created by the " +
+                "current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat binned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Session not found for current user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/sessions")
+    @PreAuthorize("hasRole('USER')")
+    fun binSession(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.binSession(jwt.subject, id)
+    }
 }

@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 import java.util.UUID
 
 interface BuddyCitationRepository : JpaRepository<BuddyCitation, UUID> {
+    fun deleteAllByMessageSessionId(sessionId: UUID)
 }

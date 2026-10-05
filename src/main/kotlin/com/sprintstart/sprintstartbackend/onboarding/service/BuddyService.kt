@@ -18,6 +18,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
@@ -43,6 +44,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Clock
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -74,13 +76,19 @@ class BuddyService(
     private val buddyAiClient: BuddyAiClient,
     private val eventPublisher: ApplicationEventPublisher,
     private val artifactLookupService: ArtifactLookupService,
+    private val clock: Clock,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /** Finds a user's ongoing buddy sessions. */
     fun getSessions(authId: String): GetSessionsResponse {
         val userId = resolveUserId(authId)
-        val sessions = buddySessionRepository.findByUserIdOrderByCreatedAtDesc(userId).map { it.toResponse() }.toList()
+        val sessions = buddySessionRepository
+            .findByUserIdAndStatusOrderByCreatedAtDesc(
+                userId,
+                BuddySessionStatus.ACTIVE,
+            ).map { it.toResponse() }
+            .toList()
         return GetSessionsResponse(sessions)
     }
 
@@ -692,6 +700,20 @@ class BuddyService(
             )
         }
         buddyMessageRepository.delete(message)
+    }
+
+    @Transactional
+    @Tracked("Binning session")
+    fun binSession(authId: String, sessionId: UUID) {
+        val userId = resolveUserId(authId)
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session with id $sessionId not found for current user",
+            )
+        session.status = BuddySessionStatus.BINNED
+        session.binnedAt = clock.instant()
+        buddySessionRepository.save(session)
     }
 }
 

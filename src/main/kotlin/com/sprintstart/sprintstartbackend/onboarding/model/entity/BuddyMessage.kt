@@ -59,5 +59,5 @@ class BuddyMessage(
     )
     val citations: List<BuddyCitation> = emptyList(),
     @Column(name = "is_incomplete")
-    var isIncomplete: Boolean = false,
+    val isIncomplete: Boolean = false,
 )
