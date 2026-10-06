@@ -5,7 +5,7 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
  *
  * Two owners is the whole model: one hire and one asynchronous mentor. There is no third editor
  * and no simultaneous editing, so the board needs no collaboration machinery — last write wins,
- * scoped by ownership.
+ * scoped by ownership. Who *made* a change is a separate question, answered by [BoardActor].
  */
 enum class BoardCardOwner {
     /**
@@ -17,10 +17,14 @@ enum class BoardCardOwner {
     AI,
 
     /**
-     * The hire put it there.
+     * The hire's own: a note, link or checklist they may edit — whoever first wrote it.
      *
-     * The mentor never edits or removes one of these. A board the mentor can tidy is a board the
-     * hire cannot trust to keep what they put on it.
+     * The mentor may change one of these too, but only the way it may change anything on the
+     * board: by proposing, with the hire confirming what would change, and with the change
+     * attributed to the mentor on the card afterwards ([BoardActor], `BoardCard.recordChange`). It
+     * used to be that the mentor never touched these at all, on the reasoning that a board the
+     * mentor can tidy is a board the hire cannot trust to keep what they put on it. What keeps that
+     * trust now is that nothing changes without their click, and nothing changed is unlabelled.
      */
     HIRE,
 }

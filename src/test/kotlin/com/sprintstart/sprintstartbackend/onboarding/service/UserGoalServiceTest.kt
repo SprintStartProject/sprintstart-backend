@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
@@ -109,7 +110,7 @@ class UserGoalServiceTest {
 
             // `placeOrRevive`, not `place`: a card the hire dismissed back when it had nothing on it
             // has to come back once they grab something.
-            verify { boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK) }
+            verify { boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE) }
         }
 
         @Test
@@ -146,7 +147,7 @@ class UserGoalServiceTest {
             assertEquals(HttpStatus.CONFLICT, exception.statusCode)
             verify(exactly = 0) { userGoalRepository.save(any()) }
             // Nothing was claimed, so nothing is pinned — the order inside claimForMe matters.
-            verify(exactly = 0) { boardService.placeOrRevive(any(), any(), any()) }
+            verify(exactly = 0) { boardService.placeOrRevive(any(), any(), any(), any()) }
         }
     }
 

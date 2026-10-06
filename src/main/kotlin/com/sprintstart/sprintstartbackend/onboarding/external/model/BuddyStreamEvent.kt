@@ -77,12 +77,28 @@ data class BuddyStreamEvent(
      *  hire confirms a change they can see rather than one they would have to go looking for. */
     @SerialName("line_before") val lineBefore: String? = null,
     @SerialName("line_after") val lineAfter: String? = null,
+    /** `place_link` / `edit_link` confirm payload: where the link points, and what it is called. */
+    @SerialName("link_url") val linkUrl: String? = null,
+    @SerialName("link_label") val linkLabel: String? = null,
+    /**
+     * `dismiss_cards` / `reorder_cards` confirm payload: the cards, in order. [cardNames] is the
+     * same list as the hire would read it, resolved server-side from the board rather than taken
+     * from the model — display only, and never sent back.
+     */
+    @SerialName("card_ids") val cardIds: List<String>? = null,
+    @SerialName("card_names") val cardNames: List<String>? = null,
+    /** `edit_note` / `edit_link` / `edit_checklist`: the card's words as proposed against, echoed back on confirm. */
+    @SerialName("based_on") val basedOn: String? = null,
     /**
      * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
      * instead of per-action payload fields — the client echoes nothing back but this.
      */
     @SerialName("proposal_id") val proposalId: String? = null,
-    /** Team-mode `action_proposal`: everything the manager is agreeing to, in words. */
+    /**
+     * Everything the confirmer is agreeing to, in words. Team mode sets it on every proposal; hire
+     * mode sets it on the board edits, whose change is easier to read as a sentence than to rebuild
+     * from payload fields.
+     */
     val preview: String? = null,
     /** Team-mode `action_proposal`: `STANDARD`, `DESTRUCTIVE` or `BULK`, deciding how the card is drawn. */
     val risk: String? = null,

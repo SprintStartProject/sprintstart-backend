@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
@@ -35,7 +36,7 @@ import java.util.UUID
 class BuddyBoardWriteActionsTest {
     private val boardService: BoardService = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val boardWrites = BuddyBoardWriteActions(boardService)
+    private val boardWrites = BuddyBoardWriteActions(boardService, BuddyBoardEditActions(boardService))
 
     private val service = BuddyActionService(
         taskOrientationService = mockk(relaxed = true),
@@ -100,7 +101,7 @@ class BuddyBoardWriteActionsTest {
         assertThat(outcome.proposal?.checklistTitle).isEqualTo("Getting started")
         assertThat(outcome.proposal?.checklistItems)
             .containsExactly("Find the component", "Run it locally")
-        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any()) }
+        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any(), any()) }
     }
 
     /** One bullet is how a model emphasises a sentence; a card of it repeats the reply above it. */
@@ -130,7 +131,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request)) }
+        verify { boardService.addAuthoredCard(userId, projectId, capture(request), BoardActor.BUDDY) }
         val checklist = request.captured as ChecklistCardRequest
         assertThat(checklist.title).isEqualTo("Getting started")
         assertThat(checklist.items.map { it.text })
@@ -154,7 +155,7 @@ class BuddyBoardWriteActionsTest {
         )
 
         assertThat(result.ok).isFalse()
-        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any()) }
+        verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any(), any()) }
     }
 
     // -- amend_checklist / place_note --------------------------------------------------------------
@@ -278,7 +279,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request)) }
+        verify { boardService.addAuthoredCard(userId, projectId, capture(request), BoardActor.BUDDY) }
         assertThat((request.captured as NoteCardRequest).text).isEqualTo(text)
     }
 

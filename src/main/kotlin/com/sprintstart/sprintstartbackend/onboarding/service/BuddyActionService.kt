@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyActionType
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
@@ -153,7 +154,11 @@ class BuddyActionService(
             BuddyActionType.REQUEST_ATTESTATION -> proposeAttestation(call, type, project.name)
             else ->
                 if (boardWrites.handles(type)) {
-                    boardWrites.propose(call, type, project.name)
+                    boardWrites.propose(
+                        call,
+                        type,
+                        BuddyBoardWriteActions.Scope(userId, project.projectId, project.name),
+                    )
                 } else {
                     proposed(type, project.name, question = null)
                 }
@@ -395,6 +400,12 @@ class BuddyActionService(
                     BuddyActionType.PLACE_NOTE,
                     BuddyActionType.TICK_CHECKLIST_ITEMS,
                     BuddyActionType.REWORD_CHECKLIST_ITEM,
+                    BuddyActionType.PLACE_LINK,
+                    BuddyActionType.EDIT_NOTE,
+                    BuddyActionType.EDIT_LINK,
+                    BuddyActionType.EDIT_CHECKLIST,
+                    BuddyActionType.DISMISS_CARDS,
+                    BuddyActionType.REORDER_CARDS,
                     -> boardWrites.perform(
                         type,
                         resolved.userId,
@@ -406,6 +417,10 @@ class BuddyActionService(
                             noteText = request.noteText,
                             lineBefore = request.lineBefore,
                             lineAfter = request.lineAfter,
+                            linkUrl = request.linkUrl,
+                            linkLabel = request.linkLabel,
+                            cardIds = request.cardIds,
+                            basedOn = request.basedOn,
                         ),
                     )
                     BuddyActionType.OPEN_ORIENTATION,
@@ -468,7 +483,7 @@ class BuddyActionService(
         }
         // Claiming also pins the current-task card (see `UserGoalService.claimForMe`), so the
         // message below can promise it is on the board.
-        val goal = userGoalService.claimForMe(authId, projectId, taskId)
+        val goal = userGoalService.claimForMe(authId, projectId, taskId, BoardActor.BUDDY)
         return BuddyActionResponse(
             ok = true,
             message = "You're now working toward “${goal.title}” — I'll shape your next steps around it. " +
@@ -631,11 +646,8 @@ class BuddyActionService(
             BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
             BuddyActionType.ADD_PATH_STEP -> "add a step to your path"
             BuddyActionType.REQUEST_SKIP -> "ask your PM to skip a step"
-            BuddyActionType.PLACE_CHECKLIST -> "keep a checklist on your board"
-            BuddyActionType.AMEND_CHECKLIST -> "add to a checklist on your board"
-            BuddyActionType.PLACE_NOTE -> "keep a note on your board"
-            BuddyActionType.TICK_CHECKLIST_ITEMS -> "tick something off your board"
-            BuddyActionType.REWORD_CHECKLIST_ITEM -> "reword a line on your board"
+            // The board writes: a table rather than eleven branches of the same shape.
+            else -> BOARD_WRITE_GERUNDS.getValue(this)
         }
 
     /** The result of proposing an action: what to tell the AI, and the proposal to show the hire (if any). */
@@ -688,6 +700,19 @@ class BuddyActionService(
         /** `reword_checklist_item`: the line as it reads now, and as it would read. */
         val lineBefore: String? = null,
         val lineAfter: String? = null,
+        /** `place_link` / `edit_link`: where the link points, and what it is called. */
+        val linkUrl: String? = null,
+        val linkLabel: String? = null,
+        /** `dismiss_cards` / `reorder_cards`: the cards, in order, and their names for display. */
+        val cardIds: List<UUID>? = null,
+        val cardNames: List<String>? = null,
+        /**
+         * `edit_note` / `edit_link` / `edit_checklist`: a fingerprint of the card's words as the
+         * proposal read them, echoed back so a confirm can tell the card changed in between.
+         */
+        val basedOn: String? = null,
+        /** The board edits: what confirming would change, as one sentence the hire can read. */
+        val preview: String? = null,
     )
 
     private sealed interface ProjectResolution {
@@ -714,6 +739,21 @@ class BuddyActionService(
     }
 
     private companion object {
+        /** [gerund] for every board write, in the words the no-project reason lines use. */
+        val BOARD_WRITE_GERUNDS = mapOf(
+            BuddyActionType.PLACE_CHECKLIST to "keep a checklist on your board",
+            BuddyActionType.AMEND_CHECKLIST to "add to a checklist on your board",
+            BuddyActionType.PLACE_NOTE to "keep a note on your board",
+            BuddyActionType.TICK_CHECKLIST_ITEMS to "tick something off your board",
+            BuddyActionType.REWORD_CHECKLIST_ITEM to "reword a line on your board",
+            BuddyActionType.PLACE_LINK to "keep a link on your board",
+            BuddyActionType.EDIT_NOTE to "update a note on your board",
+            BuddyActionType.EDIT_LINK to "update a link on your board",
+            BuddyActionType.EDIT_CHECKLIST to "update a list on your board",
+            BuddyActionType.DISMISS_CARDS to "clear cards off your board",
+            BuddyActionType.REORDER_CARDS to "rearrange your board",
+        )
+
         private fun noArgs() = buildJsonObject {
             put("type", "object")
             put("properties", buildJsonObject { })

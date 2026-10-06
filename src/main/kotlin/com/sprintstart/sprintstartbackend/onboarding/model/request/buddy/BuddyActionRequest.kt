@@ -86,4 +86,18 @@ data class BuddyActionRequest(
     /** `reword_checklist_item`: which line, and what it should say instead. */
     val lineBefore: String? = null,
     val lineAfter: String? = null,
+    /** `place_link` / `edit_link`: where the link points, and what it is called. */
+    val linkUrl: String? = null,
+    val linkLabel: String? = null,
+    /**
+     * `dismiss_cards` / `reorder_cards`: which cards, in order. Re-checked against the board at
+     * confirm time — ids not on it are skipped, never an error.
+     */
+    val cardIds: List<UUID>? = null,
+    /**
+     * `edit_note` / `edit_link` / `edit_checklist`: the fingerprint of the card's words the proposal
+     * was made against, echoed back. A confirm whose card no longer matches is refused, so a stale
+     * proposal cannot overwrite what was added after it.
+     */
+    val basedOn: String? = null,
 )
