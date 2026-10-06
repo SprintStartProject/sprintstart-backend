@@ -115,18 +115,9 @@ object AppGuide {
                 "links (many placed by the buddy), arranged in stages and areas.",
         ),
         AppGuidePage(
-            name = "Chat",
-            path = "/chat",
-            whereToFind = "sidebar, \"Chat\"",
-            purpose = "Ask the AI questions about the project's documentation and code; answers " +
-                "cite their sources. Separate from the buddy, which also knows the person's " +
-                "own onboarding.",
-            matches = listOf("/chat/"),
-        ),
-        AppGuidePage(
             name = "Buddy",
             path = "/buddy",
-            whereToFind = "the Buddy tab next to Chat, or the floating buddy on any page",
+            whereToFind = "the Buddy tab, or the floating buddy on any page",
             purpose = "The onboarding buddy as a full page, with the list of their earlier conversations.",
             howTos = listOf(
                 AppGuideHowTo(

@@ -7,6 +7,13 @@ import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 
+/**
+ * Drops the retired chat tables after the chat history has been backfilled into Buddy.
+ *
+ * The service does not run database migrations automatically, so this is executed on
+ * application startup. The statements are idempotent and therefore harmless once the
+ * tables have already been removed.
+ */
 @Component
 class ChatTablesDropper(
     private val jdbcTemplate: JdbcTemplate,

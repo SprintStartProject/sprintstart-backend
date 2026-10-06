@@ -72,7 +72,7 @@ sprintstart:
       debounce-seconds: 60
   default-skills:
     enabled: true
-  chat:
+  buddy:
     cleanup:
       cron: "0 0 3 * * *"
 
