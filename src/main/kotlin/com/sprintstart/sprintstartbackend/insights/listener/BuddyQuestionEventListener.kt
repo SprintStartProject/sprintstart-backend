@@ -9,18 +9,18 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 
 /**
- * Updates the FAQ insight whenever someone asks a question in the chat.
+ * Updates the FAQ insight whenever someone asks a question to the buddy.
  *
  * The handoff to [applicationScope] is the point of this class. A plain `@EventListener` runs on
- * the publisher's thread, and the publisher here is the chat prompt — so doing the work inline
+ * the publisher's thread, and the publisher here is the prompt — so doing the work inline
  * would make every user wait for an AI classification round-trip before their answer starts
- * streaming. The FAQ is allowed to lag by a second; the chat is not.
+ * streaming. The FAQ is allowed to lag by a second; the buddy is not.
  *
  * For the same reason failures are logged and dropped: a question that could not be filed is a
  * missing FAQ entry until the next manual refresh, which is not worth failing anything else over.
  */
 @Component
-class ChatQuestionEventListener(
+class BuddyQuestionEventListener(
     private val faqLiveUpdateService: FaqLiveUpdateService,
     private val applicationScope: CoroutineScope,
 ) {

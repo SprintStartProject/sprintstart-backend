@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import com.sprintstart.sprintstartbackend.chat.models.responses.AiGenerateChatTitleResponse
-import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.AiGenerateSessionTitleResponse
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -39,7 +39,7 @@ class WebClientTest {
             .get()
             .uri(mockWebServer.url("/test").toUri())
             .sync()
-            .perform<AiGenerateChatTitleResponse>()
+            .perform<AiGenerateSessionTitleResponse>()
 
         assertEquals("hello", response.title)
         assertEquals("/test", mockWebServer.takeRequest().path)
@@ -54,7 +54,7 @@ class WebClientTest {
                 .get()
                 .uri(mockWebServer.url("/test").toUri())
                 .sync()
-                .perform<AiGenerateChatTitleResponse>()
+                .perform<AiGenerateSessionTitleResponse>()
         }
 
         assertEquals(500, ex.statusCode)
@@ -83,7 +83,7 @@ class WebClientTest {
             .uri(mockWebServer.url("/stream").toUri())
             .body(mapOf("prompt" to "hi"))
             .stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertEquals(2, chunks.size)

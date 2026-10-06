@@ -52,7 +52,7 @@ class FaqLiveUpdateServiceTest {
 
     private fun event(question: String = "How do I get VPN access?") = QuestionAskedEvent(
         messageId = UUID.randomUUID(),
-        chatId = UUID.randomUUID(),
+        sessionId = UUID.randomUUID(),
         projectId = projectId,
         question = question,
         askedAt = askedAt,

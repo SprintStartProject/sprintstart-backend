@@ -18,7 +18,7 @@ import java.util.UUID
  */
 data class QuestionAskedEvent(
     val messageId: UUID,
-    val chatId: UUID,
+    val sessionId: UUID,
     val projectId: UUID,
     val question: String,
     val askedAt: Instant,

@@ -387,7 +387,7 @@ class BuddyService(
             eventPublisher.publishEvent(
                 QuestionAskedEvent(
                     messageId = message.id,
-                    chatId = session.id,
+                    sessionId = session.id,
                     projectId = projectId,
                     question = questionForFaq,
                     askedAt = message.createdAt,

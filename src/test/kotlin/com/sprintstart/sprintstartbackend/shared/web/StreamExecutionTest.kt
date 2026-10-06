@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import com.sprintstart.sprintstartbackend.chat.models.responses.AiStreamMessage
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -51,7 +51,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertEquals(2, chunks.size)
@@ -81,7 +81,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>(terminationMarkers = setOf("STREAM_END"))
+            .perform<BuddyStreamEvent>(terminationMarkers = setOf("STREAM_END"))
             .toList()
 
         assertEquals(1, chunks.size)
@@ -101,7 +101,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertEquals("text/event-stream", mockWebServer.takeRequest().getHeader("Accept"))
@@ -119,7 +119,7 @@ data: [DONE]
                     .toUri(),
             ).header("Accept", "application/x-ndjson")
             .stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertEquals("application/x-ndjson", mockWebServer.takeRequest().getHeader("Accept"))
@@ -151,7 +151,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         // Malformed chunk skipped, valid chunks either side still emitted
@@ -184,7 +184,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>(
+            .perform<BuddyStreamEvent>(
                 onChunkError = { _, _ -> false }, // cancel on error
             ).toList()
 
@@ -218,7 +218,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>(onChunkError = { _, _ ->
+            .perform<BuddyStreamEvent>(onChunkError = { _, _ ->
                 chunkErrors += 1
                 true
             })
@@ -255,7 +255,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertEquals(1, chunks.size)
@@ -282,7 +282,7 @@ data: [DONE]
                         .url("/stream")
                         .toUri(),
                 ).stream()
-                .perform<AiStreamMessage>()
+                .perform<BuddyStreamEvent>()
                 .toList()
         }
 
@@ -302,7 +302,7 @@ data: [DONE]
                     .url("/stream")
                     .toUri(),
             ).stream()
-            .perform<AiStreamMessage>()
+            .perform<BuddyStreamEvent>()
             .toList()
 
         assertTrue(chunks.isEmpty())
