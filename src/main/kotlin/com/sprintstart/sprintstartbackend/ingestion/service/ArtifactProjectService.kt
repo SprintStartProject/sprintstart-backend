@@ -123,6 +123,11 @@ class ArtifactProjectService(
         is ArtifactSourceRef.ConfluenceConnection -> {
             artifactProjectRepository.findAllConfluencePagesByConnectionId(source.connectionId)
         }
+
+        is ArtifactSourceRef.NotionConnection ->
+            artifactProjectRepository.findAllNotionPagesByConnectionId(source.connectionId)
+        is ArtifactSourceRef.NotionPage ->
+            artifactProjectRepository.findAllBySourceId("notion:${source.connectionId}:page:${source.pageId}")
     }
 
     /**

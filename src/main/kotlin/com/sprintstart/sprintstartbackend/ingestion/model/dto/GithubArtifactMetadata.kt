@@ -32,6 +32,7 @@ import java.util.UUID
     JsonSubTypes.Type(BitbucketArtifactMetadata::class),
     JsonSubTypes.Type(UploadArtifactMetadata::class),
     JsonSubTypes.Type(JiraArtifactMetadataWrapper::class),
+    JsonSubTypes.Type(NotionArtifactMetadata::class),
 )
 sealed interface ArtifactMetadata
 

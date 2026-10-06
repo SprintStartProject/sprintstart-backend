@@ -1536,7 +1536,7 @@ class BuddyServiceTest {
                     """
                     > This is the selected text.
                     > Please ignore this line.
-                    
+
                     How do we deploy this?
                     """.trimIndent(),
                     true,

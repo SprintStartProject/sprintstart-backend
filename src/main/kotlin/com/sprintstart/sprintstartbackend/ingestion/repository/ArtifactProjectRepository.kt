@@ -75,6 +75,12 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
     fun findAllConfluencePagesByConnectionId(connectionId: UUID): List<Artifact> =
         findAllBySourceIdStartingWith(escapeLikeLiteral("confluence:$connectionId:"))
 
+    /** Returns every stored page produced by one Notion connection. */
+    fun findAllNotionPagesByConnectionId(connectionId: UUID): List<Artifact> =
+        findAllBySourceIdStartingWith(escapeLikeLiteral("notion:$connectionId:page:"))
+
+    fun findAllBySourceId(sourceId: String): List<Artifact>
+
     /**
      * @param prefix A source-id prefix, already run through [escapeLikeLiteral].
      */

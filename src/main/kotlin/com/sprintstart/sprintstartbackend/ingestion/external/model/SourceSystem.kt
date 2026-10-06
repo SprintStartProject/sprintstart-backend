@@ -5,5 +5,6 @@ enum class SourceSystem {
     GITHUB,
     BITBUCKET,
     JIRA,
+    NOTION,
     UPLOAD,
 }
