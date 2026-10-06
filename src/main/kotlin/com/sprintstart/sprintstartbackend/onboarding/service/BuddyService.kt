@@ -335,8 +335,10 @@ class BuddyService(
      * back should not have to remember which state a switch was left in, and the transcript stays
      * one conversation across the change.
      *
-     * The user's message is persisted immediately; the assistant's reply is persisted only once the
-     * agent loop finishes, so a stream that errors or is cancelled leaves no garbage reply behind.
+     * The user's message is persisted immediately. The agent turn is relayed live, hop by hop, and the
+     * reply stored is exactly what was streamed to the hire — the words of every hop, so a reload
+     * reads as the turn did. A stream that errors or is cancelled at any point of the loop keeps what
+     * had been shown as an incomplete reply, and stores nothing if nothing had been shown.
      *
      * The AI never receives the whole transcript: only the window after the session's
      * [BuddySession.summarizedCount] cursor, plus the running summary standing in for the rest.
@@ -437,7 +439,7 @@ class BuddyService(
         // user's message is already persisted above, so the transcript still shows what they asked.
         if (projectIds.isEmpty()) {
             return flow {
-                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList(), StringBuilder())
+                emitAgentReply(NO_PROJECT_REPLY, emptyList(), StringBuilder())
                 buddyMessageRepository.save(
                     BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = NO_PROJECT_REPLY),
                 )
@@ -446,73 +448,77 @@ class BuddyService(
 
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
-            val reasoning = mutableListOf<String>()
             val citations = mutableListOf<BuddyCitationDto>()
+            // Everything the hire has been shown of the reply, across every hop of the loop.
+            val emittedContent = StringBuilder()
             var answer: String? = null
             var step = 0
+            val resolvedCitations: List<ResolvedBuddyCitation>
 
-            while (answer == null && step < MAX_AGENT_STEPS) {
-                step++
-                val response = onboardingAiClient.buddyAgentTurn(
-                    agentRequest(
-                        messages,
-                        tools,
-                        step,
-                        session,
-                        vocabulary,
-                        projectIds,
-                        capabilitiesEnabled,
-                        filters,
-                    ),
-                )
-                reasoning += response.reasoning
-                citations += response.citations
-                if (response.final) {
-                    answer = response.text
-                } else {
-                    // The AI needs a backend tool run: execute each on the caller's behalf and feed
-                    // the result back as a `tool` message appended to the running conversation.
-                    val next = response.messages.toMutableList()
-                    for (call in response.pendingToolCalls) {
-                        next.add(
-                            BuddyAgentMessageDto(
-                                role = "tool",
-                                content = runToolCall(call, userId, currentPage),
-                                toolCallId = call.id,
+            // The whole loop is guarded, not only the last emission: the words now leave while the
+            // loop runs, so a stop or a failure at any hop leaves a partial reply worth keeping.
+            try {
+                while (answer == null && step < MAX_AGENT_STEPS) {
+                    step++
+                    val response = relayAgentTurn(
+                        onboardingAiClient.buddyAgentTurnStream(
+                            agentRequest(
+                                messages,
+                                tools,
+                                step,
+                                session,
+                                vocabulary,
+                                projectIds,
+                                capabilitiesEnabled,
+                                filters,
                             ),
+                        ),
+                        emittedContent,
+                    )
+                    citations += response.citations
+                    if (response.final) {
+                        answer = response.text
+                    } else {
+                        // The AI needs a backend tool run: execute each on the caller's behalf and feed
+                        // the result back as a `tool` message appended to the running conversation.
+                        val next = response.messages.toMutableList()
+                        for (call in response.pendingToolCalls) {
+                            next.add(
+                                BuddyAgentMessageDto(
+                                    role = "tool",
+                                    content = runToolCall(call, userId, currentPage),
+                                    toolCallId = call.id,
+                                ),
+                            )
+                        }
+                        messages = next
+                    }
+                }
+
+                completeReply(answer, emittedContent)
+
+                resolvedCitations = citations.mapNotNull { citation ->
+                    val artifactId = citation.artifactId?.let(::parseUuidOrNull)
+                    val resolved = artifactId?.let(artifactLookupService::resolve)
+
+                    if (artifactId == null || resolved == null) {
+                        logger.warn(
+                            "Could not resolve artifact {} for buddy citation",
+                            citation.artifactId,
+                        )
+                        null
+                    } else {
+                        ResolvedBuddyCitation(
+                            artifactId = artifactId,
+                            filename = resolved.filename,
+                            sourceUrl = resolved.sourceUrl,
+                            startLine = citation.startLine,
+                            startPage = citation.startPage,
                         )
                     }
-                    messages = next
                 }
-            }
 
-            val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-
-            val resolvedCitations = citations.mapNotNull { citation ->
-                val artifactId = citation.artifactId?.let(::parseUuidOrNull)
-                val resolved = artifactId?.let(artifactLookupService::resolve)
-
-                if (artifactId == null || resolved == null) {
-                    logger.warn(
-                        "Could not resolve artifact {} for buddy citation",
-                        citation.artifactId,
-                    )
-                    null
-                } else {
-                    ResolvedBuddyCitation(
-                        artifactId = artifactId,
-                        filename = resolved.filename,
-                        sourceUrl = resolved.sourceUrl,
-                        startLine = citation.startLine,
-                        startPage = citation.startPage,
-                    )
-                }
-            }
-
-            val emittedContent = StringBuilder()
-
-            try {
-                emitAgentReply(reply, reasoning, resolvedCitations, emittedContent)
+                emitCitationsAndDone(resolvedCitations)
             } catch (e: CancellationException) {
                 saveIncompleteReply(session, emittedContent.toString())
                 throw e
@@ -525,7 +531,7 @@ class BuddyService(
                 BuddyMessage(
                     session = session,
                     role = BuddyMessageRole.ASSISTANT,
-                    content = reply,
+                    content = emittedContent.toString(),
                 ),
             )
 
@@ -730,6 +736,9 @@ class BuddyService(
         // confirming, whereas this only fills the composer with a question.
         const val TOKEN = "token"
         const val DONE = "done"
+
+        // Team mode only: the words shown so far were not the answer after all and are to be dropped.
+        const val RESET = "reset"
         const val OPENING_ACTION = "opening_action"
 
         // Split after each space, keeping the space on the preceding chunk, so concatenating every
