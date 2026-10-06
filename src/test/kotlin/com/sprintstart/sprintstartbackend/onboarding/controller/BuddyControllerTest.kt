@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
@@ -438,6 +439,49 @@ class BuddyControllerTest(
                 true,
                 null,
                 "/team-management",
+            )
+        }
+    }
+
+    /** The frontend sends snake_case; Jackson must map it, or the filters never reach the service. */
+    @Test
+    fun `sendMessageForMe passes snake_case filters through`() {
+        val sessionId = UUID.randomUUID()
+        coEvery {
+            buddyService.sendMessageForMe(any(), any(), any(), any(), any(), any())
+        } returns flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {"sessionId":"$sessionId","content":"hi","filters":{
+                          "source_systems":["GITHUB","JIRA"],
+                          "time_from":"2026-10-01T00:00:00Z",
+                          "time_to":"2026-10-06T21:59:59.999Z"}}
+                        """.trimIndent(),
+                    ),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "hi",
+                true,
+                match {
+                    it != null &&
+                        it.sourceSystems == listOf(SourceSystem.GITHUB, SourceSystem.JIRA) &&
+                        it.from == "2026-10-01T00:00:00Z" &&
+                        it.to == "2026-10-06T21:59:59.999Z"
+                },
+                null,
             )
         }
     }
