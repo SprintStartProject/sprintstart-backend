@@ -117,14 +117,19 @@ class BuddyService(
     /**
      * Creates a new session for the current user.
      *
+     * The frontend creates sessions without a project, so a missing [projectId] is filled in here:
+     * a user on exactly one project gets that project, which is what feeds the FAQ and the question
+     * counts (both are derived from the session's project). A user on several projects (a PM) or on
+     * none gets a session without one, since there is no single project to pick.
+     *
      * @param authId The ID of the currently authenticated user.
-     * @param projectId The (optional) ID of the project the chat is linked to.
+     * @param projectId The (optional) ID of the project the session is linked to.
      */
     fun createSession(authId: String, projectId: UUID?): CreateSessionResponse {
         val userId = resolveUserId(authId)
         val session = BuddySession(
             userId = userId,
-            projectId = projectId,
+            projectId = projectId ?: singleProjectOf(projectIdsFor(userId)),
         )
         buddySessionRepository.save(session)
         return CreateSessionResponse(session.id)
@@ -320,6 +325,12 @@ class BuddyService(
      * state for the hire to diagnose. They are told that instead, and what resolves it. See
      * [projectIdsFor].
      *
+     * A session bound to a project the user has since left is rebound before anything else runs:
+     * to the user's only project, or to none when there is no single one. Otherwise an old session
+     * would keep retrieving from, and asking its questions into, the previous project. The older
+     * questions of that session then count for the new project, because the question counts are
+     * derived from the session. A session without a project is never bound after the fact.
+     *
      * Per message rather than per session. A hire who looked something up and then wants the mentor
      * back should not have to remember which state a switch was left in, and the transcript stays
      * one conversation across the change.
@@ -354,6 +365,14 @@ class BuddyService(
             HttpStatus.NOT_FOUND,
             "Session not found for current user",
         )
+
+        // Resolved once per turn and reused for the retrieval scope below. A session whose project
+        // the user has left is rebound before the question event, so the event names the right one.
+        val memberProjects = projectIdsFor(userId)
+        if (session.projectId != null && session.projectId.toString() !in memberProjects) {
+            session.projectId = singleProjectOf(memberProjects)
+            buddySessionRepository.save(session)
+        }
 
         // Check if title has to be generated
         if (session.title.isBlank()) {
@@ -410,7 +429,7 @@ class BuddyService(
         // Both resolved once per turn, not per hop: neither can change mid-conversation, and
         // re-reading would cost a membership lookup on every step of the agent loop.
         val vocabulary = vocabulary()
-        val projectIds = session.projectId?.let { listOf(it.toString()) } ?: projectIdsFor(userId)
+        val projectIds = session.projectId?.let { listOf(it.toString()) } ?: memberProjects
 
         // A hire on no project has no scope the AI may retrieve from — it fails closed on an empty
         // list — so a turn would search nothing and answer as though the project had no material on
@@ -610,6 +629,10 @@ class BuddyService(
             ?.projects
             .orEmpty()
             .map { it.projectId.toString() }
+
+    /** The project to bind a session to: the only one the user is on, or null when there is no single one. */
+    private fun singleProjectOf(projectIds: List<String>): UUID? =
+        projectIds.singleOrNull()?.let { UUID.fromString(it) }
 
     /**
      * Runs one tool the AI asked for, emitting the event(s) the client needs to see, and returns

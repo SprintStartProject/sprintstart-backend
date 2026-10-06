@@ -146,7 +146,7 @@ class BuddyServiceTest {
     @Nested
     inner class CreateSession {
         @Test
-        fun `creates a session for the user`() {
+        fun `creates a session for the user and binds their only project`() {
             every { buddySessionRepository.save(any()) } answers { firstArg() }
             every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
 
@@ -156,10 +156,44 @@ class BuddyServiceTest {
             verify {
                 buddySessionRepository.save(
                     match {
-                        it.userId == userId && it.projectId == null
+                        it.userId == userId && it.projectId == defaultProjectId
                     },
                 )
             }
+        }
+
+        @Test
+        fun `leaves the session without a project when the user is on several`() {
+            every { buddySessionRepository.save(any()) } answers { firstArg() }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { userApi.getUsersByIds(listOf(userId)) } returns
+                listOf(userOn(UUID.randomUUID(), UUID.randomUUID()))
+
+            service.createSession(authId, null)
+
+            verify { buddySessionRepository.save(match { it.userId == userId && it.projectId == null }) }
+        }
+
+        @Test
+        fun `leaves the session without a project when the user is on none`() {
+            every { buddySessionRepository.save(any()) } answers { firstArg() }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
+
+            service.createSession(authId, null)
+
+            verify { buddySessionRepository.save(match { it.userId == userId && it.projectId == null }) }
+        }
+
+        @Test
+        fun `does not override an explicit project`() {
+            every { buddySessionRepository.save(any()) } answers { firstArg() }
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            val explicit = UUID.randomUUID()
+
+            service.createSession(authId, explicit)
+
+            verify { buddySessionRepository.save(match { it.projectId == explicit }) }
         }
 
         @Test
@@ -910,6 +944,58 @@ class BuddyServiceTest {
             val streamed = events.filter { it.type == "token" }.joinToString("") { it.content ?: "" }
             assertThat(streamed).contains("not on a project")
             assertThat(events.last().type).isEqualTo("done")
+        }
+
+        @Test
+        fun `a session whose project the hire left is rebound to their new project`() = runTest {
+            val oldProject = UUID.randomUUID()
+            val newProject = UUID.randomUUID()
+            val session = BuddySession(userId = userId, projectId = oldProject, title = "session")
+            stageConversation(session)
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn(newProject))
+            every { buddySessionRepository.save(any()) } answers { firstArg() }
+            every { eventPublisher.publishEvent(any<QuestionAskedEvent>()) } just runs
+            every { buddyCitationRepository.saveAll(emptyList<BuddyCitation>()) } returns emptyList()
+            val requests = mutableListOf<BuddyAgentRequest>()
+            coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+
+            assertThat(session.projectId).isEqualTo(newProject)
+            verify { buddySessionRepository.save(match { it.projectId == newProject }) }
+            verify { eventPublisher.publishEvent(match<QuestionAskedEvent> { it.projectId == newProject }) }
+            assertThat(requests.first().projectIds).containsExactly(newProject.toString())
+        }
+
+        @Test
+        fun `a session whose project the hire left is unbound when they have no project left`() = runTest {
+            val session = BuddySession(userId = userId, projectId = UUID.randomUUID(), title = "session")
+            stageConversation(session)
+            every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
+            every { buddySessionRepository.save(any()) } answers { firstArg() }
+
+            val events = service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+
+            assertThat(session.projectId).isNull()
+            verify { buddySessionRepository.save(match { it.projectId == null }) }
+            verify(exactly = 0) { eventPublisher.publishEvent(any<QuestionAskedEvent>()) }
+            coVerify(exactly = 0) { onboardingAiClient.buddyAgentTurn(any()) }
+            val streamed = events.filter { it.type == "token" }.joinToString("") { it.content ?: "" }
+            assertThat(streamed).contains("not on a project")
+        }
+
+        @Test
+        fun `a session that is still on one of the hire's projects is left alone`() = runTest {
+            val session = BuddySession(userId = userId, projectId = defaultProjectId, title = "session")
+            stageConversation(session)
+            every { eventPublisher.publishEvent(any<QuestionAskedEvent>()) } just runs
+            every { buddyCitationRepository.saveAll(emptyList<BuddyCitation>()) } returns emptyList()
+            coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Here.")
+
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+
+            assertThat(session.projectId).isEqualTo(defaultProjectId)
+            verify(exactly = 0) { buddySessionRepository.save(any()) }
         }
 
         @Test
@@ -1805,7 +1891,7 @@ class BuddyServiceTest {
 
         @Test
         fun `strips quoted selection before publishing question event`() = runTest {
-            val projectId = UUID.randomUUID()
+            val projectId = defaultProjectId
             val session = BuddySession(
                 userId = userId,
                 projectId = projectId,
@@ -1946,7 +2032,7 @@ class BuddyServiceTest {
         @Test
         fun `saves incomplete assistant reply when stream is cancelled after partial reply`() = runTest {
             val sessionId = UUID.randomUUID()
-            val projectId = UUID.randomUUID()
+            val projectId = defaultProjectId
 
             val session = BuddySession(
                 id = sessionId,
@@ -2015,7 +2101,7 @@ class BuddyServiceTest {
         @Test
         fun `propagates exception when persisting citations fails`() = runTest {
             val sessionId = UUID.randomUUID()
-            val projectId = UUID.randomUUID()
+            val projectId = defaultProjectId
 
             val session = BuddySession(
                 id = sessionId,
