@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposalRisk
@@ -11,6 +12,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStr
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyActionProposal
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
@@ -163,6 +165,42 @@ class BuddyTeamServiceTest {
 
         assertThat(requests).hasSize(2)
         assertThat(requests).allMatch { it.teamMode && it.projectIds == listOf(projectId.toString()) }
+    }
+
+    /** The AI narrows retrieval whichever mode it is in, so a hop that dropped the filters would silently widen it. */
+    @Test
+    fun `sends the retrieval filters to the AI on every hop`() = runTest {
+        val filters = BuddySessionFilters(
+            sourceSystems = listOf(SourceSystem.GITHUB),
+            from = "2026-10-01T00:00:00Z",
+            to = "2026-10-06T21:59:59.999Z",
+        )
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+            BuddyAgentResponse(
+                final = false,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                pendingToolCalls = listOf(BuddyToolCallDto(id = "c1", name = BuddyTeamTools.GET_TEAM_ATTENTION)),
+            ),
+            finalReply("Sam is waiting on a review."),
+        )
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "Sam is waiting."
+
+        service.sendMessageForMe(authId, projectId, "who is stuck?", filters = filters).toList()
+
+        assertThat(requests).hasSize(2)
+        assertThat(requests).allMatch { it.filters === filters }
+    }
+
+    @Test
+    fun `sends no filters when the manager set none`() = runTest {
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("Nobody is stuck.")
+
+        service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(requests).hasSize(1)
+        assertThat(requests.single().filters).isNull()
     }
 
     /**

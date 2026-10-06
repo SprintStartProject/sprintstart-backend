@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamE
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabularyDto
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
@@ -131,7 +132,9 @@ class BuddyTeamService(
     /**
      * Sends the manager's message in team mode and streams the reply.
      *
-     * With [capabilitiesEnabled] false no tools are mounted, exactly as for the hire's buddy.
+     * With [capabilitiesEnabled] false no tools are mounted, exactly as for the hire's buddy. The [filters]
+     * narrow retrieval by source system and time range; they are sent on every hop, because the AI service
+     * applies them on whichever hop the model chooses to search.
      *
      * @throws ResponseStatusException 404 if the user does not exist; 403 if they do not manage the project.
      */
@@ -140,6 +143,7 @@ class BuddyTeamService(
         projectId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        filters: BuddySessionFilters? = null,
         currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
@@ -185,6 +189,7 @@ class BuddyTeamService(
                         projectIds = listOf(projectId.toString()),
                         capabilitiesEnabled = capabilitiesEnabled,
                         teamMode = true,
+                        filters = filters,
                     ),
                 )
                 citations = response.citations
