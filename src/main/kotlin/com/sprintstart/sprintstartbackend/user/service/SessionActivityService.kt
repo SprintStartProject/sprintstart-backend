@@ -54,6 +54,7 @@ class SessionActivityService(
         }
     }
 
+    @Transactional
     fun recordActivityAndReturnLongAbsence(userId: UUID): Boolean {
         val user = userRepository
             .findById(userId)
@@ -67,6 +68,10 @@ class SessionActivityService(
 
         user.lastSeenAt = now
         userRepository.save(user)
+
+        if (longAbsence) {
+            eventPublisher.publishEvent(UserSessionStartedEvent(user.id))
+        }
 
         return longAbsence
     }

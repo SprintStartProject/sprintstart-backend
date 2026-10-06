@@ -39,8 +39,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * Exposes the hire's persistent onboarding buddy: one continuous, repo-grounded companion
- * conversation per user.
+ * Exposes the hire's persistent onboarding buddy.
  *
  * A project's manager can also talk to the buddy about that project's team. Team mode is selected per
  * request by naming the project (`teamProjectId`) and is a separate conversation per project; the
@@ -172,14 +171,14 @@ class BuddyController(
      * for the two to drift.
      */
     @Operation(
-        summary = "Open a buddy visit (streaming)",
-        description = "The same visit as `POST /open` — the previous visit folded into the mentor's durable " +
-            "memory, a proactive greeting grounded in the hire's state, no transcript replay — with the greeting " +
-            "streamed as it is written instead of arriving whole. Opening twice without the hire saying anything " +
-            "is the same visit: the greeting already there is replayed and no model is called. A visit whose " +
-            "stream breaks keeps whatever the hire already read. With `teamProjectId`, opens the caller's " +
-            "team-mode conversation about that project, greeting them with the team's attention list; the caller " +
-            "must manage the project.",
+        summary = "Open a buddy session (streaming)",
+        description = "Opens a buddy session like `POST /open`: the previous visit is folded into the mentor's " +
+            "durable memory, and a proactive greeting grounded in the hire's state is streamed as it is written " +
+            "instead of arriving whole. The first conversation and a visit after a long absence receive a new " +
+            "greeting. Otherwise, an existing opening is replayed when it is the latest message; conversations " +
+            "without a new opening are left untouched. A visit whose stream breaks keeps whatever the hire " +
+            "already read. With `teamProjectId`, opens the caller's team-mode conversation about that project, " +
+            "greeting them with the team's attention list; the caller must manage the project.",
     )
     @ApiResponses(
         value = [
@@ -321,7 +320,7 @@ class BuddyController(
     ): BuddyActionResponse = buddyActionService.perform(request, jwt)
 
     @Operation(
-        summary = "Delete a user message",
+        summary = "Delete a message",
         description = "Deletes a user message from a session owned by the current user.",
     )
     @ApiResponses(
@@ -344,7 +343,7 @@ class BuddyController(
     }
 
     @Operation(
-        summary = "Bins an existing session",
+        summary = "Bin an existing session",
         description = "Sets the status of an existing session to BINNED, given that the session was created by the " +
             "current user.",
     )

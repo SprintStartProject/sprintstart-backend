@@ -59,6 +59,6 @@ class BuddySession(
     @Column("project_id")
     var projectId: UUID? = null,
     var status: BuddySessionStatus = BuddySessionStatus.ACTIVE,
-    @Column(name = "binnet_at")
+    @Column(name = "binned_at")
     var binnedAt: Instant? = null,
 ) : BuddyMemory

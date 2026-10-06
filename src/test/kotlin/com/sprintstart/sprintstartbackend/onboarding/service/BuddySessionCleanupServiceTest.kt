@@ -63,7 +63,7 @@ class BuddySessionCleanupServiceTest {
 
         every {
             sessionRepository.findByStatusAndBinnedAtBefore(
-                BuddySessionStatus.ACTIVE,
+                BuddySessionStatus.BINNED,
                 cutoff,
             )
         } returns listOf(session1, session2)
@@ -72,7 +72,7 @@ class BuddySessionCleanupServiceTest {
 
         verify {
             sessionRepository.findByStatusAndBinnedAtBefore(
-                BuddySessionStatus.ACTIVE,
+                BuddySessionStatus.BINNED,
                 cutoff,
             )
         }
@@ -99,7 +99,7 @@ class BuddySessionCleanupServiceTest {
 
         every {
             sessionRepository.findByStatusAndBinnedAtBefore(
-                BuddySessionStatus.ACTIVE,
+                BuddySessionStatus.BINNED,
                 cutoff,
             )
         } returns emptyList()
@@ -108,7 +108,7 @@ class BuddySessionCleanupServiceTest {
 
         verify(exactly = 1) {
             sessionRepository.findByStatusAndBinnedAtBefore(
-                BuddySessionStatus.ACTIVE,
+                BuddySessionStatus.BINNED,
                 cutoff,
             )
         }

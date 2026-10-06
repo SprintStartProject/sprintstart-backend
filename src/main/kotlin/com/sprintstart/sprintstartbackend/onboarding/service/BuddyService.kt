@@ -50,8 +50,8 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Manages a hire's ongoing onboarding buddy conversation: one continuous [BuddySession] per user,
- * durable across visits, backed by the stateless AI buddy-agent endpoint.
+ * Manages a hire's ongoing onboarding buddy conversations: durable across visits, backed by the stateless AI
+ * buddy-agent endpoint.
  *
  * The buddy is a tool-using agent. This service runs the agent loop: it asks the AI to reason over
  * the conversation (with the backend tools it may call), executes any tool the AI hands back —
@@ -95,10 +95,7 @@ class BuddyService(
     }
 
     /**
-     * Returns the current visit's buddy messages, oldest first.
-     *
-     * From this visit's opening greeting onward. A visit opens fresh ([streamOpenForMe]); the
-     * durable memory, not a transcript, carries continuity across visits.
+     * Returns a session's buddy messages, oldest first.
      *
      * The boundary is the last opening marker, never [BuddySession.summarizedCount].
      * Keying it to the compaction cursor makes a hire's own scrollback shrink as the model folds.
@@ -198,7 +195,7 @@ class BuddyService(
                 }
         }
 
-        if (!firstConversation && !longAbsence && messages.isEmpty()) {
+        if (!firstConversation && !longAbsence) {
             return flowOf(BuddyStreamEvent(type = DONE))
         }
 
@@ -497,30 +494,6 @@ class BuddyService(
 
             try {
                 emitAgentReply(reply, reasoning, resolvedCitations, emittedContent)
-
-                val message = buddyMessageRepository.save(
-                    BuddyMessage(
-                        session = session,
-                        role = BuddyMessageRole.ASSISTANT,
-                        content = reply,
-                    ),
-                )
-
-                val citationEntities = resolvedCitations.map { citation ->
-                    BuddyCitation(
-                        artifactId = citation.artifactId,
-                        filename = citation.filename,
-                        sourceUrl = citation.sourceUrl,
-                        startLine = citation.startLine,
-                        startPage = citation.startPage,
-                        message = message,
-                    )
-                }
-
-                buddyCitationRepository.saveAll(citationEntities)
-                // Only now, with the reply persisted and the hire reading it. Folding before this point
-                // is what the whole change exists to stop.
-                compactInBackground(userId, session.id)
             } catch (e: CancellationException) {
                 saveIncompleteReply(session, emittedContent.toString())
                 throw e
@@ -528,6 +501,30 @@ class BuddyService(
                 saveIncompleteReply(session, emittedContent.toString())
                 throw e
             }
+
+            val message = buddyMessageRepository.save(
+                BuddyMessage(
+                    session = session,
+                    role = BuddyMessageRole.ASSISTANT,
+                    content = reply,
+                ),
+            )
+
+            val citationEntities = resolvedCitations.map { citation ->
+                BuddyCitation(
+                    artifactId = citation.artifactId,
+                    filename = citation.filename,
+                    sourceUrl = citation.sourceUrl,
+                    startLine = citation.startLine,
+                    startPage = citation.startPage,
+                    message = message,
+                )
+            }
+
+            buddyCitationRepository.saveAll(citationEntities)
+            // Only now, with the reply persisted and the hire reading it. Folding before this point
+            // is what the whole change exists to stop.
+            compactInBackground(userId, session.id)
         }
     }
 
@@ -733,7 +730,7 @@ class BuddyService(
         }
         val session = message.session
 
-        if (session.userId !== userId) {
+        if (session.userId != userId) {
             throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "Session containing message with id $messageId is not owned by the current user.",

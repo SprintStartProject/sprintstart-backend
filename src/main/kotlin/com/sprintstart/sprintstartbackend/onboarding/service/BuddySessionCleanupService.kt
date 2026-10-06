@@ -20,7 +20,7 @@ class BuddySessionCleanupService(
     @Transactional
     fun deleteBinnedChats() {
         val cutoff = clock.instant().minus(7, ChronoUnit.DAYS)
-        val sessions = sessionRepository.findByStatusAndBinnedAtBefore(BuddySessionStatus.ACTIVE, cutoff)
+        val sessions = sessionRepository.findByStatusAndBinnedAtBefore(BuddySessionStatus.BINNED, cutoff)
         sessions.forEach { session: BuddySession ->
             citationRepository.deleteAllByMessageSessionId(session.id)
             messageRepository.deleteAllBySessionId(session.id)

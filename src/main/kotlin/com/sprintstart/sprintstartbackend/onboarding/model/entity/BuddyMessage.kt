@@ -18,10 +18,6 @@ import java.util.UUID
  * One turn in a [BuddySession]'s conversation. Referenced by plain FK rather than a cascaded
  * collection on [BuddySession] -- mirrors the `chat` module's `Chat`/`ChatMessage` split, since a
  * long-running buddy conversation shouldn't be eagerly loaded through its parent.
- *
- * Deliberately carries no citations -- resolving/persisting them would need the `chat` module's
- * internal `ArtifactLookupService`, which isn't exposed cross-module; live `citation` SSE events
- * still reach the client during the stream, just aren't persisted for replay.
  */
 @Entity
 @Table(name = "buddy_messages")

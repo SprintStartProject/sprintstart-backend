@@ -38,9 +38,11 @@ import io.mockk.runs
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import org.assertj.core.api.Assertions.assertThat
@@ -465,7 +467,7 @@ class BuddyServiceTest {
             every {
                 sessionActivityService.recordActivityAndReturnLongAbsence(userId)
             } returns false
-            every { buddySessionRepository.countByUserId(userId) } returns 2L
+            every { buddySessionRepository.countByUserId(userId) } returns 1L
 
             val events = service.streamOpenForMe(authId, session.id).toList()
 
@@ -505,7 +507,7 @@ class BuddyServiceTest {
             every {
                 sessionActivityService.recordActivityAndReturnLongAbsence(userId)
             } returns false
-            every { buddySessionRepository.countByUserId(userId) } returns 2L
+            every { buddySessionRepository.countByUserId(userId) } returns 1L
 
             val events = service.streamOpenForMe(authId, session.id).toList()
 
@@ -540,7 +542,7 @@ class BuddyServiceTest {
             every {
                 sessionActivityService.recordActivityAndReturnLongAbsence(userId)
             } returns false
-            every { buddySessionRepository.countByUserId(userId) } returns 2L
+            every { buddySessionRepository.countByUserId(userId) } returns 1L
 
             service.streamOpenForMe(authId, session.id).toList()
 
@@ -582,47 +584,6 @@ class BuddyServiceTest {
         }
 
         /**
-         * The visit ends when the hire speaks: once they have, the next open is genuinely new.
-         * Without this the greeting would freeze permanently.
-         *
-         * Note the last message is an assistant reply, not an opening. "An opening exists" would
-         * wrongly replay here; "the last message is an opening" is the rule.
-         */
-        @Test
-        fun `opening again after the hire has spoken generates a fresh greeting`() = runTest {
-            val session = BuddySession(userId = userId)
-
-            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-            every {
-                buddySessionRepository.findByIdAndUserId(session.id, userId)
-            } returns session
-            every { buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns listOf(
-                BuddyMessage(
-                    session = session,
-                    role = BuddyMessageRole.ASSISTANT,
-                    content = "Hi!",
-                    opening = true,
-                ),
-                BuddyMessage(session = session, role = BuddyMessageRole.USER, content = "where do I start?"),
-                BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = "Here."),
-            )
-            every { buddyToolExecutor.stateSnapshot(userId) } returns "state"
-            every { onboardingAiClient.streamBuddyOpen(any()) } returns flowOf(
-                BuddyOpenStreamEvent(type = "token", content = "Welcome back!"),
-                BuddyOpenStreamEvent(type = "done", greeting = "Welcome back!"),
-            )
-            every { buddyMessageRepository.save(any()) } answers { firstArg() }
-            every { buddySessionRepository.countByUserId(userId) } returns 2L
-            every {
-                sessionActivityService.recordActivityAndReturnLongAbsence(userId)
-            } returns false
-
-            val events = service.streamOpenForMe(authId, session.id).toList()
-
-            assertThat(events.single { it.type == "token" }.content).isEqualTo("Welcome back!")
-        }
-
-        /**
          * The greeting can only be specific about a previous visit if it is *sent* one. The
          * cursor still answers this question — what the note does not yet cover — which is the one
          * job it genuinely has.
@@ -648,7 +609,9 @@ class BuddyServiceTest {
             every {
                 sessionActivityService.recordActivityAndReturnLongAbsence(userId)
             } returns false
-            every { buddySessionRepository.countByUserId(userId) } returns 2L
+            every {
+                buddySessionRepository.countByUserId(userId)
+            } returns 1L
 
             service.streamOpenForMe(authId, session.id).toList()
 
@@ -781,6 +744,58 @@ class BuddyServiceTest {
                 .isEqualTo("Welcome back!")
 
             verify {
+                onboardingAiClient.streamBuddyOpen(any())
+            }
+        }
+
+        @Test
+        fun `does not greet again when an existing conversation has messages`() = runTest {
+            val sessionId = UUID.randomUUID()
+
+            val session = BuddySession(
+                id = sessionId,
+                userId = userId,
+            )
+
+            val messages = listOf(
+                BuddyMessage(
+                    id = UUID.randomUUID(),
+                    session = session,
+                    role = BuddyMessageRole.USER,
+                    content = "Hello",
+                    opening = false,
+                ),
+            )
+
+            every {
+                userApi.getUserIdByAuthId(any())
+            } returns Optional.of(userId)
+
+            every {
+                buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            } returns session
+
+            every {
+                buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId)
+            } returns messages
+
+            every {
+                sessionActivityService.recordActivityAndReturnLongAbsence(userId)
+            } returns false
+
+            every {
+                buddySessionRepository.countByUserId(userId)
+            } returns 2L
+
+            val events = service
+                .streamOpenForMe(authId, sessionId)
+                .toList()
+
+            assertThat(events).containsExactly(
+                BuddyStreamEvent(type = "done"),
+            )
+
+            verify(exactly = 0) {
                 onboardingAiClient.streamBuddyOpen(any())
             }
         }
@@ -1929,7 +1944,76 @@ class BuddyServiceTest {
         }
 
         @Test
-        fun `saves incomplete assistant reply when persisting citations fails`() = runTest {
+        fun `saves incomplete assistant reply when stream is cancelled after partial reply`() = runTest {
+            val sessionId = UUID.randomUUID()
+            val projectId = UUID.randomUUID()
+
+            val session = BuddySession(
+                id = sessionId,
+                userId = userId,
+                title = "Test",
+                projectId = projectId,
+            )
+
+            every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+            every {
+                buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            } returns session
+            every {
+                buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId)
+            } returns emptyList()
+            every {
+                buddyMessageRepository.save(any<BuddyMessage>())
+            } answers { firstArg() }
+
+            every { eventPublisher.publishEvent(any<QuestionAskedEvent>()) } just runs
+            every { buddyToolExecutor.toolSpecs(userId) } returns emptyList()
+            every { buddyActionService.actionSpecs(userId) } returns emptyList()
+
+            coEvery {
+                onboardingAiClient.buddyAgentTurn(any())
+            } returns BuddyAgentResponse(
+                reasoning = emptyList(),
+                citations = emptyList(),
+                final = true,
+                text = "First chunk. Second chunk.",
+                messages = emptyList(),
+                pendingToolCalls = emptyList(),
+            )
+
+            every {
+                buddyCitationRepository.saveAll(any<Iterable<BuddyCitation>>())
+            } returns emptyList()
+
+            val job = launch {
+                service
+                    .sendMessageForMe(
+                        authId = authId,
+                        sessionId = sessionId,
+                        content = "Where is the architecture documented?",
+                        filters = null,
+                    ).collect { event ->
+                        if (event.type == BuddyService.TOKEN) {
+                            cancel()
+                        }
+                    }
+            }
+
+            job.join()
+
+            verify {
+                buddyMessageRepository.save(
+                    match<BuddyMessage> {
+                        it.role == BuddyMessageRole.ASSISTANT &&
+                            it.content.isNotBlank() &&
+                            it.isIncomplete
+                    },
+                )
+            }
+        }
+
+        @Test
+        fun `propagates exception when persisting citations fails`() = runTest {
             val sessionId = UUID.randomUUID()
             val projectId = UUID.randomUUID()
 
@@ -2007,14 +2091,8 @@ class BuddyServiceTest {
                 )
             }
 
-            verify {
-                buddyMessageRepository.save(
-                    match<BuddyMessage> {
-                        it.role == BuddyMessageRole.ASSISTANT &&
-                            it.content == "This is the answer." &&
-                            it.isIncomplete
-                    },
-                )
+            verify(exactly = 1) {
+                buddyCitationRepository.saveAll(any<Iterable<BuddyCitation>>())
             }
         }
     }
@@ -2023,7 +2101,10 @@ class BuddyServiceTest {
     inner class DeleteMessage {
         @Test
         fun `deletes own message`() {
-            val session = BuddySession(userId = userId)
+            val sessionUserId = UUID.fromString(userId.toString())
+            val resolvedUserId = UUID.fromString(userId.toString())
+
+            val session = BuddySession(userId = sessionUserId)
             val message = BuddyMessage(
                 id = UUID.randomUUID(),
                 session = session,
@@ -2037,7 +2118,7 @@ class BuddyServiceTest {
             } returns listOf(message)
             every {
                 userApi.getUserIdByAuthId(any())
-            } returns Optional.of(userId)
+            } returns Optional.of(resolvedUserId)
             every {
                 buddyMessageRepository.delete(any())
             } just runs
