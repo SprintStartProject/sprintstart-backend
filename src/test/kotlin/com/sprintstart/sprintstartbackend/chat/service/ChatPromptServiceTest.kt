@@ -18,6 +18,8 @@ import com.sprintstart.sprintstartbackend.connectors.overview.external.models.Co
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorDisabledException
 import com.sprintstart.sprintstartbackend.connectors.overview.service.ConnectorConfigurationService
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.onboarding.service.ArtifactLookupService
+import com.sprintstart.sprintstartbackend.onboarding.service.ResolvedArtifact
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify

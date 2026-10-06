@@ -4,4 +4,5 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
 enum class BuddyMessageRole {
     USER,
     ASSISTANT,
+    SYSTEM,
 }

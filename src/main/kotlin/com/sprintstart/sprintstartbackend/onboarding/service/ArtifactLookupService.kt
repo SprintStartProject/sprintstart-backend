@@ -1,4 +1,4 @@
-package com.sprintstart.sprintstartbackend.chat.service
+package com.sprintstart.sprintstartbackend.onboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -12,7 +12,7 @@ import java.util.UUID
  * @property filename The display name of the source file.
  * @property sourceUrl Where the artifact came from (e.g. a GitHub URL), or null for uploads.
  */
-internal data class ResolvedArtifact(
+data class ResolvedArtifact(
     val filename: String,
     val sourceUrl: String?,
 )
@@ -28,7 +28,7 @@ internal data class ResolvedArtifact(
  * random UUIDs, so checking one after the other is safe.
  */
 @Service
-internal class ArtifactLookupService(
+class ArtifactLookupService(
     private val uploadApi: UploadApi,
     private val artifactRepository: ArtifactIngestionApi,
 ) {

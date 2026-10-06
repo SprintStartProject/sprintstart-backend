@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.ConnectorNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.onboarding.service.ArtifactLookupService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import jakarta.validation.Valid

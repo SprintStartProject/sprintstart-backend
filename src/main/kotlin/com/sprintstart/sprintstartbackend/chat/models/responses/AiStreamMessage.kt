@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
  * contract exactly (snake_case where applicable). `citation` is the one exception: the
  * AI service only sends what it owns ([artifactId] + position), and the backend enriches
  * the event with [filename]/[sourceUrl] — resolved via
- * [com.sprintstart.sprintstartbackend.chat.service.ArtifactLookupService] — before
+ * [com.sprintstart.sprintstartbackend.onboarding.service.ArtifactLookupService] — before
  * forwarding it to the client, since the backend (not the AI service) owns file metadata.
  *
  * Event shapes:

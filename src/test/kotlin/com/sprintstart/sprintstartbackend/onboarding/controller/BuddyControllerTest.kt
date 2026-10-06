@@ -19,6 +19,8 @@ import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthoriz
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
+import io.mockk.runs
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.encodeToString
@@ -38,6 +40,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -94,6 +97,7 @@ class BuddyControllerTest(
             buddyService.getMessagesForMe(authId, sessionId)
         } returns listOf(
             BuddyMessageResponse(
+                id = UUID.randomUUID(),
                 role = BuddyMessageRole.USER,
                 content = "Hi",
                 createdAt = Instant.now(),
@@ -552,5 +556,97 @@ class BuddyControllerTest(
         mockMvc
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteMessage should return 204 and delegate to service`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } just runs
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        verify {
+            buddyService.deleteMessage(authId, messageId)
+        }
+    }
+
+    @Test
+    fun `deleteMessage should return 404 when message is not found`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } throws ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Message not found",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `deleteMessage should return 409 when message is summarized`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } throws ResponseStatusException(
+            HttpStatus.CONFLICT,
+            "Cannot delete a summarized message",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isConflict)
+    }
+
+    @Test
+    fun `binSession should return 204 and delegate to service`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.binSession(authId, sessionId)
+        } just runs
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/sessions/$sessionId")
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        verify {
+            buddyService.binSession(authId, sessionId)
+        }
+    }
+
+    @Test
+    fun `binSession should return 404 when session is not found`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.binSession(authId, sessionId)
+        } throws ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/sessions/$sessionId")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
     }
 }

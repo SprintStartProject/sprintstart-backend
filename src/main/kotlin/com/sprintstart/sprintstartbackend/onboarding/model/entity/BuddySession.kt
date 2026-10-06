@@ -58,4 +58,7 @@ class BuddySession(
     var version: Long = 0,
     @Column("project_id")
     var projectId: UUID? = null,
+    var status: BuddySessionStatus = BuddySessionStatus.ACTIVE,
+    @Column(name = "binned_at")
+    var binnedAt: Instant? = null,
 ) : BuddyMemory

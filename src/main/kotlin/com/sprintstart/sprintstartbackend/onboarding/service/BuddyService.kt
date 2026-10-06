@@ -14,9 +14,11 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabularyDto
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
@@ -25,9 +27,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGener
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
+import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyCitationRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
+import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.service.SessionActivityService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -38,12 +43,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Clock
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
- * Manages a hire's ongoing onboarding buddy conversation: one continuous [BuddySession] per user,
- * durable across visits, backed by the stateless AI buddy-agent endpoint.
+ * Manages a hire's ongoing onboarding buddy conversations: durable across visits, backed by the stateless AI
+ * buddy-agent endpoint.
  *
  * The buddy is a tool-using agent. This service runs the agent loop: it asks the AI to reason over
  * the conversation (with the backend tools it may call), executes any tool the AI hands back —
@@ -59,29 +67,35 @@ import java.util.UUID
 class BuddyService(
     private val buddySessionRepository: BuddySessionRepository,
     private val buddyMessageRepository: BuddyMessageRepository,
+    private val buddyCitationRepository: BuddyCitationRepository,
     private val onboardingAiClient: OnboardingAiClient,
     private val buddyToolExecutor: BuddyToolExecutor,
     private val buddyActionService: BuddyActionService,
     private val userApi: UserApi,
     private val buddyCompactionService: BuddyCompactionService,
+    private val artifactLookupService: ArtifactLookupService,
+    private val sessionActivityService: SessionActivityService,
     private val applicationScope: CoroutineScope,
     private val buddyAiClient: BuddyAiClient,
     private val eventPublisher: ApplicationEventPublisher,
+    private val clock: Clock,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
     /** Finds a user's ongoing buddy sessions. */
     fun getSessions(authId: String): GetSessionsResponse {
         val userId = resolveUserId(authId)
-        val sessions = buddySessionRepository.findByUserIdOrderByCreatedAtDesc(userId).map { it.toResponse() }.toList()
+        val sessions = buddySessionRepository
+            .findByUserIdAndStatusOrderByCreatedAtDesc(
+                userId,
+                BuddySessionStatus.ACTIVE,
+            ).map { it.toResponse() }
+            .toList()
         return GetSessionsResponse(sessions)
     }
 
     /**
-     * Returns the current visit's buddy messages, oldest first.
-     *
-     * From this visit's opening greeting onward. A visit opens fresh ([streamOpenForMe]); the
-     * durable memory, not a transcript, carries continuity across visits.
+     * Returns a session's buddy messages, oldest first.
      *
      * The boundary is the last opening marker, never [BuddySession.summarizedCount].
      * Keying it to the compaction cursor makes a hire's own scrollback shrink as the model folds.
@@ -129,62 +143,112 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    suspend fun streamOpenForMe(authId: String, sessionId: UUID?): Flow<BuddyStreamEvent> {
+    suspend fun streamOpenForMe(
+        authId: String,
+        sessionId: UUID?,
+    ): Flow<BuddyStreamEvent> {
         val userId = resolveUserId(authId)
+
         if (sessionId == null) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "sessionId required")
-        }
-        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId) ?: throw ResponseStatusException(
-            HttpStatus.NOT_FOUND,
-            "Session not found for current user",
-        )
-
-        val all = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
-
-        // Opening twice without the hire saying anything is the same visit: a visit ends when
-        // the hire speaks, so the greeting already there is replayed whole.
-        //
-        // The test is *the last message is an opening*, never *an opening exists* -- the hire
-        // speaking is exactly what puts something after it.
-        val greetingAlreadyThere = all.lastOrNull()?.takeIf { it.opening }
-        if (greetingAlreadyThere != null) {
-            return flowOf(
-                BuddyStreamEvent(type = TOKEN, content = greetingAlreadyThere.content),
-                BuddyStreamEvent(type = DONE),
+            throw ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "sessionId required",
             )
         }
 
-        // Everything the memory note does not yet cover, so the greeting can be specific about a
-        // previous visit. Still the compaction cursor -- this is a prompt, which is the one
-        // question that cursor really answers.
-        val recent = all.drop(session.summarizedCount).map { it.toAgentMessage() }
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session not found for current user",
+            )
+
+        val messages = buddyMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+
+        /*
+         * The current request is counted as activity, but the decision whether
+         * this is a long absence is made from the previous lastSeenAt.
+         */
+        val longAbsence = sessionActivityService.recordActivityAndReturnLongAbsence(userId)
+
+        val firstConversation = buddySessionRepository.countByUserId(userId) == 1L
+
+        /*
+         * The last opening is special: opening the same conversation again without
+         * the hire saying anything replays the existing opening instead of asking
+         * the AI for another greeting.
+         */
+        if (!longAbsence) {
+            messages
+                .lastOrNull()
+                ?.takeIf { it.opening }
+                ?.let { opening ->
+                    return flow {
+                        emit(
+                            BuddyStreamEvent(
+                                type = TOKEN,
+                                content = opening.content,
+                            ),
+                        )
+                        emit(BuddyStreamEvent(type = DONE))
+                    }
+                }
+        }
+
+        if (!firstConversation && !longAbsence) {
+            return flowOf(BuddyStreamEvent(type = DONE))
+        }
+
+        val recent = messages
+            .drop(session.summarizedCount)
+            .map { it.toAgentMessage() }
+
         val state = buddyToolExecutor.stateSnapshot(userId)
 
         return flow {
             val streamed = StringBuilder()
             var opening: BuddyOpenStreamEvent? = null
+
             try {
                 onboardingAiClient
                     .streamBuddyOpen(
-                        BuddyOpenRequest(memory = session.summary, recent = recent, state = state),
+                        BuddyOpenRequest(
+                            memory = session.summary,
+                            recent = recent,
+                            state = state,
+                        ),
                     ).collect { event ->
                         when (event.type) {
-                            BuddyOpenStreamEvent.TOKEN -> event.content?.let {
-                                streamed.append(it)
-                                emit(BuddyStreamEvent(type = TOKEN, content = it))
+                            TOKEN -> {
+                                streamed.append(event.content.orEmpty())
+
+                                emit(
+                                    BuddyStreamEvent(
+                                        type = TOKEN,
+                                        content = event.content,
+                                    ),
+                                )
                             }
 
-                            BuddyOpenStreamEvent.DONE -> opening = event
+                            DONE -> {
+                                opening = event
+                            }
                         }
                     }
-            } catch (@Suppress("SwallowedException") e: OnboardingAiException) {
-                // Opening the buddy must never fail the page.
-                logger.warn("Buddy open stream failed: {}", e.message)
+            } catch (e: OnboardingAiException) {
+                logger.warn(
+                    "Buddy opening failed for session {}",
+                    session.id,
+                    e,
+                )
             }
 
-            finishOpen(session, streamed.toString(), opening)
-            // Whatever the previous visit left unfolded gets folded now, while the hire is reading
-            // the greeting rather than waiting on it.
+            finishOpen(
+                session = session,
+                streamed = streamed.toString(),
+                opening = opening,
+            )
+
             compactInBackground(userId, session.id)
         }
     }
@@ -231,7 +295,7 @@ class BuddyService(
                 session = session,
                 role = BuddyMessageRole.ASSISTANT,
                 content = greeting,
-                // Marks the visit boundary, for the replay check above and the hire's transcript.
+                // This is the first message of the conversation.
                 opening = true,
             ),
         )
@@ -273,7 +337,7 @@ class BuddyService(
      *
      * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
      */
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod", "ThrowsCount")
     suspend fun sendMessageForMe(
         authId: String,
         sessionId: UUID?,
@@ -354,7 +418,7 @@ class BuddyService(
         // user's message is already persisted above, so the transcript still shows what they asked.
         if (projectIds.isEmpty()) {
             return flow {
-                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList())
+                emitAgentReply(NO_PROJECT_REPLY, emptyList(), emptyList(), StringBuilder())
                 buddyMessageRepository.save(
                     BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = NO_PROJECT_REPLY),
                 )
@@ -364,7 +428,7 @@ class BuddyService(
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
             val reasoning = mutableListOf<String>()
-            var citations: List<BuddyCitationDto> = emptyList()
+            val citations = mutableListOf<BuddyCitationDto>()
             var answer: String? = null
             var step = 0
 
@@ -383,7 +447,7 @@ class BuddyService(
                     ),
                 )
                 reasoning += response.reasoning
-                citations = response.citations
+                citations += response.citations
                 if (response.final) {
                     answer = response.text
                 } else {
@@ -404,15 +468,79 @@ class BuddyService(
             }
 
             val reply = answer?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
-            emitAgentReply(reply, reasoning, citations)
 
-            buddyMessageRepository.save(
-                BuddyMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = reply),
+            val resolvedCitations = citations.mapNotNull { citation ->
+                val artifactId = citation.artifactId?.let(::parseUuidOrNull)
+                val resolved = artifactId?.let(artifactLookupService::resolve)
+
+                if (artifactId == null || resolved == null) {
+                    logger.warn(
+                        "Could not resolve artifact {} for buddy citation",
+                        citation.artifactId,
+                    )
+                    null
+                } else {
+                    ResolvedBuddyCitation(
+                        artifactId = artifactId,
+                        filename = resolved.filename,
+                        sourceUrl = resolved.sourceUrl,
+                        startLine = citation.startLine,
+                        startPage = citation.startPage,
+                    )
+                }
+            }
+
+            val emittedContent = StringBuilder()
+
+            try {
+                emitAgentReply(reply, reasoning, resolvedCitations, emittedContent)
+            } catch (e: CancellationException) {
+                saveIncompleteReply(session, emittedContent.toString())
+                throw e
+            } catch (e: Exception) {
+                saveIncompleteReply(session, emittedContent.toString())
+                throw e
+            }
+
+            val message = buddyMessageRepository.save(
+                BuddyMessage(
+                    session = session,
+                    role = BuddyMessageRole.ASSISTANT,
+                    content = reply,
+                ),
             )
+
+            val citationEntities = resolvedCitations.map { citation ->
+                BuddyCitation(
+                    artifactId = citation.artifactId,
+                    filename = citation.filename,
+                    sourceUrl = citation.sourceUrl,
+                    startLine = citation.startLine,
+                    startPage = citation.startPage,
+                    message = message,
+                )
+            }
+
+            buddyCitationRepository.saveAll(citationEntities)
             // Only now, with the reply persisted and the hire reading it. Folding before this point
             // is what the whole change exists to stop.
             compactInBackground(userId, session.id)
         }
+    }
+
+    private fun saveIncompleteReply(session: BuddySession, content: String) {
+        if (content.isBlank()) {
+            return
+        }
+
+        buddyMessageRepository.save(
+            BuddyMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = content,
+                isIncomplete = true,
+            ),
+        )
     }
 
     /** The contribution vocabulary, in the shape the AI service's persona skeleton expects. */
@@ -592,4 +720,55 @@ class BuddyService(
             .filterNot { it.trimStart().startsWith(">") }
             .joinToString("\n")
             .trim()
+
+    @Transactional
+    @Tracked("Deleting message from session")
+    fun deleteMessage(authId: String, messageId: UUID) {
+        val userId = resolveUserId(authId)
+        val message = buddyMessageRepository.findById(messageId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "Message with id $messageId not found")
+        }
+        val session = message.session
+
+        if (session.userId != userId) {
+            throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session containing message with id $messageId is not owned by the current user.",
+            )
+        }
+
+        val messages = buddyMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+
+        val index = messages.indexOfFirst { it.id == message.id }
+
+        if (index < session.summarizedCount) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Cannot delete a summarized message",
+            )
+        }
+        buddyMessageRepository.delete(message)
+    }
+
+    @Transactional
+    @Tracked("Binning session")
+    fun binSession(authId: String, sessionId: UUID) {
+        val userId = resolveUserId(authId)
+        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Session with id $sessionId not found for current user",
+            )
+        session.status = BuddySessionStatus.BINNED
+        session.binnedAt = clock.instant()
+        buddySessionRepository.save(session)
+    }
 }
+
+internal fun parseUuidOrNull(value: String): UUID? =
+    try {
+        UUID.fromString(value)
+    } catch (_: IllegalArgumentException) {
+        null
+    }

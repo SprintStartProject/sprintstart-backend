@@ -2,15 +2,30 @@ package com.sprintstart.sprintstartbackend.onboarding.model.mapper
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyCitation
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyCitationResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 
 fun BuddyMessage.toResponse(): BuddyMessageResponse =
     BuddyMessageResponse(
+        id = id,
         role = role,
         content = content,
         createdAt = createdAt,
+        citations = citations.map { it.toResponse() },
+        isIncomplete = isIncomplete,
+    )
+
+fun BuddyCitation.toResponse(): BuddyCitationResponse =
+    BuddyCitationResponse(
+        id = id,
+        artifactId = artifactId,
+        filename = filename,
+        sourceUrl = sourceUrl,
+        startLine = startLine,
+        startPage = startPage,
     )
 
 /**
@@ -29,6 +44,7 @@ fun BuddyMessage.toAgentMessage(): BuddyAgentMessageDto =
 /** A team-mode message in the same client shape as the hire's, so one transcript view renders both. */
 fun BuddyTeamMessage.toResponse(): BuddyMessageResponse =
     BuddyMessageResponse(
+        id = id,
         role = role,
         content = content,
         createdAt = createdAt,
@@ -42,4 +58,5 @@ private fun BuddyMessageRole.toHistoryRole(): String =
     when (this) {
         BuddyMessageRole.USER -> "user"
         BuddyMessageRole.ASSISTANT -> "assistant"
+        BuddyMessageRole.SYSTEM -> "system"
     }

@@ -27,7 +27,9 @@ import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -37,8 +39,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * Exposes the hire's persistent onboarding buddy: one continuous, repo-grounded companion
- * conversation per user.
+ * Exposes the hire's persistent onboarding buddy.
  *
  * A project's manager can also talk to the buddy about that project's team. Team mode is selected per
  * request by naming the project (`teamProjectId`) and is a separate conversation per project; the
@@ -170,14 +171,14 @@ class BuddyController(
      * for the two to drift.
      */
     @Operation(
-        summary = "Open a buddy visit (streaming)",
-        description = "The same visit as `POST /open` — the previous visit folded into the mentor's durable " +
-            "memory, a proactive greeting grounded in the hire's state, no transcript replay — with the greeting " +
-            "streamed as it is written instead of arriving whole. Opening twice without the hire saying anything " +
-            "is the same visit: the greeting already there is replayed and no model is called. A visit whose " +
-            "stream breaks keeps whatever the hire already read. With `teamProjectId`, opens the caller's " +
-            "team-mode conversation about that project, greeting them with the team's attention list; the caller " +
-            "must manage the project.",
+        summary = "Open a buddy session (streaming)",
+        description = "Opens a buddy session like `POST /open`: the previous visit is folded into the mentor's " +
+            "durable memory, and a proactive greeting grounded in the hire's state is streamed as it is written " +
+            "instead of arriving whole. The first conversation and a visit after a long absence receive a new " +
+            "greeting. Otherwise, an existing opening is replayed when it is the latest message; conversations " +
+            "without a new opening are left untouched. A visit whose stream breaks keeps whatever the hire " +
+            "already read. With `teamProjectId`, opens the caller's team-mode conversation about that project, " +
+            "greeting them with the team's attention list; the caller must manage the project.",
     )
     @ApiResponses(
         value = [
@@ -317,4 +318,50 @@ class BuddyController(
         @AuthenticationPrincipal jwt: Jwt,
         @Valid @RequestBody request: BuddyActionRequest,
     ): BuddyActionResponse = buddyActionService.perform(request, jwt)
+
+    @Operation(
+        summary = "Delete a message",
+        description = "Deletes a user message from a session owned by the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Message not found for current user"),
+            ApiResponse(responseCode = "409", description = "Cannot delete a summarized message"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMessage(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.deleteMessage(jwt.subject, id)
+    }
+
+    @Operation(
+        summary = "Bin an existing session",
+        description = "Sets the status of an existing session to BINNED, given that the session was created by the " +
+            "current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat binned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Session not found for current user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/sessions/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun binSession(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.binSession(jwt.subject, id)
+    }
 }
