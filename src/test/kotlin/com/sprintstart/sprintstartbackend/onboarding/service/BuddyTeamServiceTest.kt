@@ -27,8 +27,10 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -675,7 +677,7 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `ends the turn with an error event when the AI reports an error and stores no reply`() = runTest {
+    fun `keeps what was shown and ends the turn with an error event when the AI reports an error`() = runTest {
         val saved = savedReplies()
         coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
             token("Part of "),
@@ -685,8 +687,47 @@ class BuddyTeamServiceTest {
         val events = service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
 
         assertThat(events.map { it.type }).containsExactly(BuddyService.TOKEN, BuddyService.ERROR)
+        // The provider's text stays in the log; the client gets a fixed sentence.
+        assertThat(events.last().message).isNotBlank().doesNotContain("model unavailable")
 
-        assertThat(saved.map { it.role }).containsExactly(BuddyMessageRole.USER)
+        assertThat(saved.map { it.role }).containsExactly(BuddyMessageRole.USER, BuddyMessageRole.ASSISTANT)
+        assertThat(saved.last().isIncomplete).isTrue()
+        assertThat(saved.last().content).isEqualTo("Part of ")
+    }
+
+    @Test
+    fun `keeps what was shown when the turn is stopped between hops`() = runTest {
+        val call = BuddyToolCallDto(id = "c1", name = BuddyTeamTools.GET_TEAM_ATTENTION)
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
+            token("Let me look. "),
+            toolUse("search_docs"),
+            result(
+                BuddyAgentResponse(
+                    final = false,
+                    messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                    pendingToolCalls = listOf(call),
+                ),
+            ),
+        )
+
+        val job = launch {
+            service.sendMessageForMe(authId, projectId, "who is stuck?").collect { event ->
+                if (event.type == "tool_use") {
+                    cancel()
+                }
+            }
+        }
+        job.join()
+
+        coVerify(exactly = 1) { onboardingAiClient.buddyAgentTurnStream(any()) }
+        verify(exactly = 0) { buddyTeamTools.execute(any(), any(), any()) }
+        verify {
+            buddyTeamMessageRepository.save(
+                match<BuddyTeamMessage> {
+                    it.role == BuddyMessageRole.ASSISTANT && it.isIncomplete && it.content == "Let me look. "
+                },
+            )
+        }
     }
 
     private fun shownAfterLastReset(events: List<BuddyStreamEvent>): String =
@@ -801,11 +842,18 @@ class BuddyTeamServiceTest {
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "old visit"),
             BuddyTeamMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = "Hello.", opening = true),
             BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = "who is stuck?"),
+            BuddyTeamMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = "Part of ",
+                isIncomplete = true,
+            ),
         )
 
         val messages = service.getMessagesForMe(authId, projectId)
 
-        assertThat(messages.map { it.content }).containsExactly("Hello.", "who is stuck?")
+        assertThat(messages.map { it.content }).containsExactly("Hello.", "who is stuck?", "Part of ")
+        assertThat(messages.last().isIncomplete).isTrue()
     }
 
     /**

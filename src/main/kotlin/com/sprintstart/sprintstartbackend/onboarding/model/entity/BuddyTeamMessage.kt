@@ -46,4 +46,6 @@ class BuddyTeamMessage(
      */
     @Column(name = "opened_areas", nullable = true)
     val openedAreas: String? = null,
+    @Column(name = "is_incomplete")
+    val isIncomplete: Boolean = false,
 )
