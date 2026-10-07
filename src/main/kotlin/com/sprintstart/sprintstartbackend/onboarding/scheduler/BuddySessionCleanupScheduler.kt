@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component
 class BuddySessionCleanupScheduler(
     private val sessionCleanupService: BuddySessionCleanupService,
 ) {
-    @Scheduled(cron = "\${sprintstart.chat.cleanup.cron}")
+    @Scheduled(cron = "\${sprintstart.buddy.cleanup.cron}")
     fun deleteSessions() {
         sessionCleanupService.deleteBinnedChats()
     }

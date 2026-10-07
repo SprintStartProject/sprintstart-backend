@@ -15,7 +15,6 @@ class AppGuideTest {
         assertThat(AppGuide.pages.map { it.path }).containsExactly(
             "/",
             "/board",
-            "/chat",
             "/buddy",
             "/knowledge-base",
             "/onboarding",
@@ -66,7 +65,6 @@ class AppGuideTest {
     @Test
     fun `names the page behind a detail route`() {
         assertThat(AppGuide.pageAt("/team/1234")?.name).isEqualTo("Team member")
-        assertThat(AppGuide.pageAt("/chat/abc")?.name).isEqualTo("Chat")
         assertThat(AppGuide.pageAt("/blueprints/abc")?.name).isEqualTo("Blueprints")
     }
 

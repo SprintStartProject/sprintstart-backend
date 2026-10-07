@@ -1,16 +1,20 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentResponse
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyActionProposal
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
@@ -37,6 +41,7 @@ import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
+@Suppress("LargeClass")
 class BuddyTeamServiceTest {
     private val buddyTeamSessionRepository: BuddyTeamSessionRepository = mockk()
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository = mockk()
@@ -126,7 +131,7 @@ class BuddyTeamServiceTest {
     fun `speaks into the conversation for this manager and this project`() = runTest {
         val saved = mutableListOf<BuddyTeamMessage>()
         every { buddyTeamMessageRepository.save(capture(saved)) } answers { firstArg() }
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Nobody is stuck.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Nobody is stuck.")
 
         service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
 
@@ -139,7 +144,7 @@ class BuddyTeamServiceTest {
         every { buddyTeamSessionRepository.findByUserIdAndProjectId(userId, projectId) } returns null
         every { buddyTeamSessionRepository.save(any()) } answers { firstArg() }
         every { buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(any()) } returns emptyList()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Hello.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Hello.")
 
         service.sendMessageForMe(authId, projectId, "hello").toList()
 
@@ -149,7 +154,7 @@ class BuddyTeamServiceTest {
     @Test
     fun `scopes retrieval to the one project and tells the AI it is team mode on every hop`() = runTest {
         val requests = mutableListOf<BuddyAgentRequest>()
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),
@@ -165,6 +170,44 @@ class BuddyTeamServiceTest {
         assertThat(requests).allMatch { it.teamMode && it.projectIds == listOf(projectId.toString()) }
     }
 
+    /** The AI narrows retrieval whichever mode it is in, so a hop that dropped the filters would silently widen it. */
+    @Test
+    fun `sends the retrieval filters to the AI on every hop`() = runTest {
+        val filters = BuddySessionFilters(
+            sourceSystems = listOf(SourceSystem.GITHUB),
+            from = "2026-10-01T00:00:00Z",
+            to = "2026-10-06T21:59:59.999Z",
+        )
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams listOf(
+            BuddyAgentResponse(
+                final = false,
+                messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                pendingToolCalls = listOf(BuddyToolCallDto(id = "c1", name = BuddyTeamTools.GET_TEAM_ATTENTION)),
+            ),
+            finalReply("Sam is waiting on a review."),
+        )
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "Sam is waiting."
+
+        service.sendMessageForMe(authId, projectId, "who is stuck?", filters = filters).toList()
+
+        assertThat(requests).hasSize(2)
+        assertThat(requests).allMatch { it.filters === filters }
+    }
+
+    @Test
+    fun `sends no filters when the manager set none`() = runTest {
+        val requests = mutableListOf<BuddyAgentRequest>()
+        coEvery {
+            onboardingAiClient.buddyAgentTurnStream(capture(requests))
+        } returnsStream finalReply("Nobody is stuck.")
+
+        service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(requests).hasSize(1)
+        assertThat(requests.single().filters).isNull()
+    }
+
     /**
      * An area opened on one hop is mounted on the next. Resolving tools once per turn — as the hire's
      * buddy does — would leave `open_area` returning "opened" and the tools never arriving.
@@ -178,7 +221,7 @@ class BuddyTeamServiceTest {
         }
         every { buddyTeamTools.openArea(any()) } returns
             BuddyTeamTools.OpenAreaOutcome(area = TeamArea.KNOWLEDGE, toolResult = "Opened knowledge.")
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),
@@ -241,7 +284,7 @@ class BuddyTeamServiceTest {
             reply(opened = "KNOWLEDGE"),
         )
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Done.")
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
 
@@ -254,7 +297,7 @@ class BuddyTeamServiceTest {
         val mountedSets = mountedOnEachHop()
         every { buddyTeamTools.openArea(any()) } returns
             BuddyTeamTools.OpenAreaOutcome(area = TeamArea.KNOWLEDGE, toolResult = "Opened knowledge.")
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),
@@ -280,7 +323,7 @@ class BuddyTeamServiceTest {
         asTranscript(reply(opened = "KNOWLEDGE"))
         val saved = savedReplies()
         mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Sent.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Sent.")
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
 
@@ -294,7 +337,7 @@ class BuddyTeamServiceTest {
         mountedOnEachHop()
         every { buddyTeamTools.openArea(any()) } returns
             BuddyTeamTools.OpenAreaOutcome(area = TeamArea.KNOWLEDGE, toolResult = "Opened knowledge.")
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),
@@ -325,7 +368,7 @@ class BuddyTeamServiceTest {
             reply(content = "Friendlier draft."),
         )
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Done.")
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
 
@@ -336,7 +379,7 @@ class BuddyTeamServiceTest {
     fun `every area the latest replies opened stays mounted`() = runTest {
         asTranscript(reply(opened = "KNOWLEDGE"), reply(opened = "TEAM,ARRIVAL"))
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Done.")
 
         service.sendMessageForMe(authId, projectId, "go ahead").toList()
 
@@ -351,7 +394,7 @@ class BuddyTeamServiceTest {
             *Array(AREA_OPEN_FOR_REPLIES) { reply(content = "Something else.") },
         )
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Ok.")
 
         service.sendMessageForMe(authId, projectId, "and now?").toList()
 
@@ -373,7 +416,7 @@ class BuddyTeamServiceTest {
             listOf(spec(BuddyTeamTools.OPEN_AREA), spec("list_open_escalations"))
         every { buddyTeamTools.areaOf("list_open_escalations") } returns TeamArea.KNOWLEDGE
         every { buddyTeamTools.execute(any(), any(), any()) } returns "One open question."
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams
             listOf(toolCall("list_open_escalations"), finalReply("There is one."))
 
         service.sendMessageForMe(authId, projectId, "anything else open?").toList()
@@ -392,7 +435,7 @@ class BuddyTeamServiceTest {
         val mountedSets = mountedOnEachHop()
         every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
         val requests = mutableListOf<BuddyAgentRequest>()
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams
             listOf(toolCall("answer_escalation"), finalReply("Confirm below."))
 
         val events = service.sendMessageForMe(authId, projectId, "You can send it").toList()
@@ -439,7 +482,7 @@ class BuddyTeamServiceTest {
             )
             every { buddyProposalService.propose(any(), any()) } returns
                 BuddyProposalService.ProposeOutcome(toolResult = "Offered to the manager.", proposal = proposal)
-            coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+            coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams listOf(
                 toolCall("answer_escalation"),
                 toolCall("answer_escalation"),
                 finalReply("It is in front of you to confirm."),
@@ -457,7 +500,7 @@ class BuddyTeamServiceTest {
         every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
         val requests = mutableListOf<BuddyAgentRequest>()
         val written = """{"name":"answer_escalation","parameters":{"request_id":"r1"}}"""
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = true,
                 text = written,
@@ -488,7 +531,7 @@ class BuddyTeamServiceTest {
         }
         every { buddyTeamTools.areaOf("answer_escalation") } returns TeamArea.KNOWLEDGE
         every { buddyTeamTools.execute(any(), any(), any()) } returns "The tool answer_escalation is not available."
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams
             listOf(toolCall("answer_escalation"), finalReply("I cannot do that here."))
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
@@ -499,7 +542,7 @@ class BuddyTeamServiceTest {
     @Test
     fun `a new visit starts with nothing mounted`() = runTest {
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Ok.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Ok.")
 
         // What an earlier visit opened is closed by the greeting that begins the next one.
         asTranscript(reply(opened = "KNOWLEDGE"), reply(content = "Hi again.", opening = true))
@@ -516,7 +559,7 @@ class BuddyTeamServiceTest {
     fun `an area opened in this visit survives a greeting that came before it`() = runTest {
         asTranscript(reply(opened = "TEAM"), reply(content = "Hi again.", opening = true), reply(opened = "KNOWLEDGE"))
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Done.")
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
 
@@ -528,10 +571,11 @@ class BuddyTeamServiceTest {
      * ran, and the manager was shown a broken request as if it were an answer.
      */
     @Test
-    fun `a tool call written out as the reply is sent back rather than shown`() = runTest {
+    fun `a tool call written out as the reply is sent back rather than kept`() = runTest {
+        val saved = savedReplies()
         val requests = mutableListOf<BuddyAgentRequest>()
         val written = """I'll look them up. {"name":"find_member","parameters":{"query":"Ada"}}"""
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = true,
                 text = written,
@@ -545,22 +589,111 @@ class BuddyTeamServiceTest {
         assertThat(requests).hasSize(2)
         assertThat(requests[1].messages.map { it.role }.takeLast(2)).containsExactly("assistant", "user")
         assertThat(requests[1].messages.last().content).isEqualTo(TOOL_CALL_WRITTEN_OUT)
-        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo("Ada is on the project.")
+        assertThat(shownAfterLastReset(events)).isEqualTo("Ada is on the project.")
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.content)
+            .isEqualTo("Ada is on the project.")
+    }
+
+    /**
+     * The words leave while the model writes them, so the call it wrote out has already been shown by
+     * the time it is known not to be an answer. The client is told to take it back, in between.
+     */
+    @Test
+    fun `tells the client to drop the words already shown when the reply turns out to be a tool call`() = runTest {
+        val written = """{"name":"find_member","parameters":{"query":"Ada"}}"""
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsMany listOf(
+            streamOf(token(written), result(finalReply(written))),
+            streamOf(token("Ada is "), token("on the project."), result(finalReply("Ada is on the project."))),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
+
+        assertThat(events.map { it.type }).containsExactly("token", "reset", "token", "token", "done")
+        assertThat(events.first().content).isEqualTo(written)
     }
 
     @Test
     fun `a model that keeps writing the call out ends in the fallback reply, never the raw call`() = runTest {
         val saved = savedReplies()
         val written = """{"name":"find_member","parameters":{"query":"Ada"}}"""
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply(written)
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply(written)
 
         val events = service.sendMessageForMe(authId, projectId, "how is Ada?").toList()
 
-        assertThat(events.mapNotNull { it.content }.joinToString("")).isEqualTo(BuddyService.FALLBACK_REPLY)
+        assertThat(shownAfterLastReset(events)).isEqualTo(BuddyService.FALLBACK_REPLY)
+        assertThat(events.count { it.type == BuddyService.RESET }).isEqualTo(BuddyService.MAX_AGENT_STEPS)
         assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.content)
             .isEqualTo(BuddyService.FALLBACK_REPLY)
-        coVerify(exactly = BuddyService.MAX_AGENT_STEPS) { onboardingAiClient.buddyAgentTurn(any()) }
+        coVerify(exactly = BuddyService.MAX_AGENT_STEPS) { onboardingAiClient.buddyAgentTurnStream(any()) }
     }
+
+    @Test
+    fun `passes reasoning, words and searches on as the AI streams them`() = runTest {
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
+            reasoning("Checking "),
+            reasoning("the team."),
+            toolUse("search_docs"),
+            token("Nobody "),
+            token("is stuck."),
+            result(finalReply("Nobody is stuck.")),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(events.map { it.type })
+            .containsExactly("reasoning", "reasoning", "tool_use", "token", "token", "done")
+        assertThat(events.filter { it.type == "reasoning" }.map { it.reasoning })
+            .containsExactly("Checking ", "the team.")
+        assertThat(events.first { it.type == "tool_use" }.name).isEqualTo("search_docs")
+    }
+
+    @Test
+    fun `stores everything the manager was shown, and sets the hops apart`() = runTest {
+        val saved = savedReplies()
+        val call = BuddyToolCallDto(id = "c1", name = BuddyTeamTools.GET_TEAM_ATTENTION)
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsMany listOf(
+            streamOf(
+                token("Let me look. "),
+                result(
+                    BuddyAgentResponse(
+                        final = false,
+                        messages = listOf(BuddyAgentMessageDto(role = "assistant")),
+                        pendingToolCalls = listOf(call),
+                    ),
+                ),
+            ),
+            streamOf(token("Sam is waiting."), result(finalReply("Sam is waiting."))),
+        )
+        every { buddyTeamTools.execute(any(), any(), any()) } returns "Sam is waiting."
+
+        val events = service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(events.filter { it.type == "token" }.map { it.content })
+            .containsExactly("Let me look. ", "\n\n", "Sam is waiting.")
+        assertThat(saved.single { it.role == BuddyMessageRole.ASSISTANT }.content)
+            .isEqualTo("Let me look. \n\nSam is waiting.")
+    }
+
+    @Test
+    fun `ends the turn with an error event when the AI reports an error and stores no reply`() = runTest {
+        val saved = savedReplies()
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
+            token("Part of "),
+            BuddyAgentStreamEvent(type = BuddyAgentStreamEvent.ERROR, message = "model unavailable"),
+        )
+
+        val events = service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(events.map { it.type }).containsExactly(BuddyService.TOKEN, BuddyService.ERROR)
+
+        assertThat(saved.map { it.role }).containsExactly(BuddyMessageRole.USER)
+    }
+
+    private fun shownAfterLastReset(events: List<BuddyStreamEvent>): String =
+        events
+            .takeLastWhile { it.type != BuddyService.RESET }
+            .filter { it.type == BuddyService.TOKEN }
+            .joinToString("") { it.content.orEmpty() }
 
     @Test
     fun `folding old messages into the memory note does not close what the last reply opened`() = runTest {
@@ -572,7 +705,7 @@ class BuddyTeamServiceTest {
             reply(opened = "KNOWLEDGE"),
         )
         val mountedSets = mountedOnEachHop()
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Done.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Done.")
 
         service.sendMessageForMe(authId, projectId, "You can send it").toList()
 
@@ -582,7 +715,9 @@ class BuddyTeamServiceTest {
     @Test
     fun `capabilities off mounts no tools in team mode either`() = runTest {
         val requests = mutableListOf<BuddyAgentRequest>()
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returns finalReply("From the docs.")
+        coEvery {
+            onboardingAiClient.buddyAgentTurnStream(capture(requests))
+        } returnsStream finalReply("From the docs.")
 
         service.sendMessageForMe(authId, projectId, "how do we deploy?", capabilitiesEnabled = false).toList()
 
@@ -593,7 +728,7 @@ class BuddyTeamServiceTest {
 
     @Test
     fun `passes each tool call the tools mounted on the hop it came from`() = runTest {
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),
@@ -617,7 +752,7 @@ class BuddyTeamServiceTest {
     /** The team note is folded; the manager's own onboarding memory is never touched from here. */
     @Test
     fun `asks for a team fold once the reply is persisted, never the hire's`() = runTest {
-        coEvery { onboardingAiClient.buddyAgentTurn(any()) } returns finalReply("Nobody is stuck.")
+        coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Nobody is stuck.")
 
         service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
 
@@ -695,7 +830,7 @@ class BuddyTeamServiceTest {
         every { buddyProposalService.propose(any(), any()) } returns
             BuddyProposalService.ProposeOutcome(toolResult = "Proposed to the manager.", proposal = proposal)
         val requests = mutableListOf<BuddyAgentRequest>()
-        coEvery { onboardingAiClient.buddyAgentTurn(capture(requests)) } returnsMany listOf(
+        coEvery { onboardingAiClient.buddyAgentTurnStream(capture(requests)) } returnsStreams listOf(
             BuddyAgentResponse(
                 final = false,
                 messages = listOf(BuddyAgentMessageDto(role = "assistant")),

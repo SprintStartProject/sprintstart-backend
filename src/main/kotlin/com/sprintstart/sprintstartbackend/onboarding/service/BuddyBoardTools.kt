@@ -412,7 +412,7 @@ class BuddyBoardTools(
         val PLACE_CARD_SPEC = BuddyToolSpecDto(
             name = PLACE_CARD,
             description = "Put a card on the hire's board — the page where things stay put between " +
-                "conversations, since this chat starts fresh every visit. Use it when something " +
+                "conversations, since a new conversation does not see the earlier ones. Use it when something " +
                 "you have just discussed is worth them still having tomorrow: after they pick a " +
                 "task to work on (CURRENT_TASK), or when they are looking for work and you have " +
                 "shown them suggestions (SUGGESTED_TASKS), after explaining how some part of the " +

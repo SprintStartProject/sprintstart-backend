@@ -290,6 +290,7 @@ class BuddyController(
                 teamProjectId,
                 request.content,
                 request.capabilitiesEnabled,
+                request.filters,
                 request.currentPage,
             )
         }

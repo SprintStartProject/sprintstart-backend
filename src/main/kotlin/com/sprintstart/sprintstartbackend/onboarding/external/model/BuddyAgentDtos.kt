@@ -28,6 +28,16 @@ data class BuddyAgentMessageDto(
     val content: String = "",
     @SerialName("tool_calls") val toolCalls: List<BuddyToolCallDto> = emptyList(),
     @SerialName("tool_call_id") val toolCallId: String? = null,
+    /**
+     * The model's reasoning on an assistant turn, opaque to the backend and carried back verbatim.
+     *
+     * A provider with extended thinking on rejects a resumed conversation whose last tool-using
+     * assistant turn lost its signed thinking blocks, so the hop after a backend tool needs them.
+     * [reasoningDetails] are those structured blocks; [reasoning] is the plain-text form for a
+     * provider that returns no structured ones.
+     */
+    val reasoning: String? = null,
+    @SerialName("reasoning_details") val reasoningDetails: List<JsonObject> = emptyList(),
 )
 
 @Serializable
@@ -205,3 +215,45 @@ data class BuddyAgentResponse(
     val citations: List<BuddyCitationDto> = emptyList(),
     val reasoning: List<String> = emptyList(),
 )
+
+/**
+ * One chunk of the AI service's streamed agent turn (`POST /api/v1/onboarding/buddy/agent/stream`).
+ *
+ * A `reasoning` or `token` carries a fragment in [content]; a `tool_use` names the search the AI is
+ * about to run itself in [name]. The one terminal `result` carries the fields of [BuddyAgentResponse]
+ * and is what the backend acts on: its [text] is authoritative, and its [pendingToolCalls] are the
+ * tools only this side can run. A failure after the response has started arrives as an `error`
+ * carrying [message], because the status line has already been sent by then.
+ */
+@Serializable
+data class BuddyAgentStreamEvent(
+    val type: String,
+    val content: String? = null,
+    val name: String? = null,
+    val message: String? = null,
+    val final: Boolean = false,
+    val text: String = "",
+    val messages: List<BuddyAgentMessageDto> = emptyList(),
+    @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
+    val citations: List<BuddyCitationDto> = emptyList(),
+    val reasoning: List<String> = emptyList(),
+) {
+    /** The turn's outcome, for a `result` event. */
+    fun toResponse(): BuddyAgentResponse =
+        BuddyAgentResponse(
+            final = final,
+            text = text,
+            messages = messages,
+            pendingToolCalls = pendingToolCalls,
+            citations = citations,
+            reasoning = reasoning,
+        )
+
+    companion object {
+        const val REASONING = "reasoning"
+        const val TOKEN = "token"
+        const val TOOL_USE = "tool_use"
+        const val RESULT = "result"
+        const val ERROR = "error"
+    }
+}

@@ -9,8 +9,8 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * A hire's ongoing onboarding buddy companion -- one continuous conversation per user, unlike the
- * general-purpose `chat` module's multiple user-created chats. The AI buddy endpoint is stateless;
+ * A hire's onboarding buddy conversation. A user can have multiple sessions, with each
+ * session representing a separate conversation. The AI buddy endpoint is stateless;
  * this session plus its [BuddyMessage]s is what makes the conversation durable across visits.
  */
 @Entity

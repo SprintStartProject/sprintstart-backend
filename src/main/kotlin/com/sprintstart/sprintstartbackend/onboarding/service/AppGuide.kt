@@ -90,7 +90,7 @@ object AppGuide {
     /** Not a page either: the buddy itself, which lives on every page. */
     const val BUDDY_EVERYWHERE =
         "The buddy is the floating window in the corner of every page (drag it to another " +
-            "corner), and also a full page at /buddy next to the Chat."
+            "corner), and also a full page at /buddy with the list of earlier conversations."
 
     val pages: List<AppGuidePage> = listOf(
         AppGuidePage(
@@ -98,7 +98,7 @@ object AppGuide {
             path = "/",
             whereToFind = "sidebar, \"Dashboard\" (the start page)",
             purpose = "Personal overview: greeting, next step, onboarding progress, skills, " +
-                "recent chats and project widgets.",
+                "recent buddy conversations (\"Your conversations\") and project widgets.",
             howTos = listOf(
                 AppGuideHowTo(
                     "change which widgets show",
@@ -115,18 +115,9 @@ object AppGuide {
                 "links (many placed by the buddy), arranged in stages and areas.",
         ),
         AppGuidePage(
-            name = "Chat",
-            path = "/chat",
-            whereToFind = "sidebar, \"Chat\"",
-            purpose = "Ask the AI questions about the project's documentation and code; answers " +
-                "cite their sources. Separate from the buddy, which also knows the person's " +
-                "own onboarding.",
-            matches = listOf("/chat/"),
-        ),
-        AppGuidePage(
             name = "Buddy",
             path = "/buddy",
-            whereToFind = "the Buddy tab next to Chat, or the floating buddy on any page",
+            whereToFind = "the Buddy tab, or the floating buddy on any page",
             purpose = "The onboarding buddy as a full page, with the list of their earlier conversations.",
             howTos = listOf(
                 AppGuideHowTo(

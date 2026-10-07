@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamE
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyVocabularyDto
 import com.sprintstart.sprintstartbackend.onboarding.model.ContributionWording
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
@@ -131,7 +132,9 @@ class BuddyTeamService(
     /**
      * Sends the manager's message in team mode and streams the reply.
      *
-     * With [capabilitiesEnabled] false no tools are mounted, exactly as for the hire's buddy.
+     * With [capabilitiesEnabled] false no tools are mounted, exactly as for the hire's buddy. The [filters]
+     * narrow retrieval by source system and time range; they are sent on every hop, because the AI service
+     * applies them on whichever hop the model chooses to search.
      *
      * @throws ResponseStatusException 404 if the user does not exist; 403 if they do not manage the project.
      */
@@ -140,6 +143,7 @@ class BuddyTeamService(
         projectId: UUID,
         content: String,
         capabilitiesEnabled: Boolean = true,
+        filters: BuddySessionFilters? = null,
         currentPage: String? = null,
     ): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
@@ -166,6 +170,8 @@ class BuddyTeamService(
         return flow {
             var messages = history + BuddyAgentMessageDto(role = "user", content = content)
             var citations: List<BuddyCitationDto> = emptyList()
+            // Everything the manager has been shown of the reply, across every hop of the loop.
+            val emittedContent = StringBuilder()
             var answer: String? = null
             var step = 0
             val areas = OpenAreas(carriedOver)
@@ -175,23 +181,32 @@ class BuddyTeamService(
                 // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
                 // one the latest replies opened or used is mounted from the first.
                 val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
-                val response = onboardingAiClient.buddyAgentTurn(
-                    BuddyAgentRequest(
-                        messages = messages,
-                        backendTools = tools,
-                        priorSummary = if (step == 1) session.summary else null,
-                        vocabulary = VOCABULARY,
-                        // Retrieval is scoped to the one project this conversation is about.
-                        projectIds = listOf(projectId.toString()),
-                        capabilitiesEnabled = capabilitiesEnabled,
-                        teamMode = true,
+                val response = relayAgentTurn(
+                    onboardingAiClient.buddyAgentTurnStream(
+                        BuddyAgentRequest(
+                            messages = messages,
+                            backendTools = tools,
+                            priorSummary = if (step == 1) session.summary else null,
+                            vocabulary = VOCABULARY,
+                            // Retrieval is scoped to the one project this conversation is about.
+                            projectIds = listOf(projectId.toString()),
+                            capabilitiesEnabled = capabilitiesEnabled,
+                            teamMode = true,
+                            filters = filters,
+                        ),
                     ),
+                    emittedContent,
                 )
                 citations = response.citations
                 if (response.final && response.text.writesOutAToolCall()) {
                     // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
                     // and if the budget runs out the reply is the fallback, never the raw call.
+                    //
+                    // The words were already streamed while the model wrote them, so the client is told to
+                    // take back what it has shown, and the stored reply starts over with the next ask.
                     logger.warn("Team buddy wrote a tool call out as its reply; asking again")
+                    emit(BuddyStreamEvent(type = BuddyService.RESET))
+                    emittedContent.setLength(0)
                     val retry = openAreasWrittenOut(response.text, tools.map { it.name }.toSet(), areas)
                     messages = response.messages.ifEmpty {
                         messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
@@ -214,7 +229,7 @@ class BuddyTeamService(
                 }
             }
 
-            val reply = answer?.takeIf { it.isNotBlank() } ?: BuddyService.FALLBACK_REPLY
+            completeReply(answer, emittedContent)
 
             val resolvedCitations = citations.mapNotNull { citation ->
                 val artifactId = citation.artifactId?.let(::parseUuidOrNull)
@@ -237,19 +252,19 @@ class BuddyTeamService(
                 }
             }
 
-            emitAgentReply(reply, emptyList(), resolvedCitations, StringBuilder())
+            emitCitationsAndDone(resolvedCitations)
 
             buddyTeamMessageRepository.save(
                 BuddyTeamMessage(
                     session = session,
                     role = BuddyMessageRole.ASSISTANT,
-                    content = reply,
+                    content = emittedContent.toString(),
                     // What this reply opened or used; the next message reads the latest replies' back.
                     openedAreas = areas.activeThisTurn.encoded(),
                 ),
             )
             compactInBackground(userId, projectId)
-        }
+        }.endFailureWithErrorEvent()
     }
 
     /**
