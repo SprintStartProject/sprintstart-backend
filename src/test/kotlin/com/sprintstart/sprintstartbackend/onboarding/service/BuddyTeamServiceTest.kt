@@ -17,7 +17,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyActionPro
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
-import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
@@ -676,16 +675,16 @@ class BuddyTeamServiceTest {
     }
 
     @Test
-    fun `fails the turn when the AI reports an error and stores no reply`() = runTest {
+    fun `ends the turn with an error event when the AI reports an error and stores no reply`() = runTest {
         val saved = savedReplies()
         coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
             token("Part of "),
             BuddyAgentStreamEvent(type = BuddyAgentStreamEvent.ERROR, message = "model unavailable"),
         )
 
-        assertThrows<OnboardingAiException> {
-            service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
-        }.also { assertThat(it.statusCode).isEqualTo(503) }
+        val events = service.sendMessageForMe(authId, projectId, "who is stuck?").toList()
+
+        assertThat(events.map { it.type }).containsExactly(BuddyService.TOKEN, BuddyService.ERROR)
 
         assertThat(saved.map { it.role }).containsExactly(BuddyMessageRole.USER)
     }

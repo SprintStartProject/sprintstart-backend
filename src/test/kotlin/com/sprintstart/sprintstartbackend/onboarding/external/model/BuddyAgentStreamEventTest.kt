@@ -1,6 +1,10 @@
 package com.sprintstart.sprintstartbackend.onboarding.external.model
 
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -75,6 +79,42 @@ class BuddyAgentStreamEventTest {
             .toolCalls
             .single()
         assertThat(carriedBack.id).isEqualTo("call_0")
+    }
+
+    @Test
+    fun `carries the reasoning of a tool-using turn back into the next request verbatim`() {
+        val event = decode(
+            """
+            {"type": "result", "final": false, "text": "",
+             "messages": [{"role": "assistant", "content": "",
+                           "tool_calls": [{"id": "call_0", "name": "read_board", "arguments": {}}],
+                           "reasoning": "Check the board.",
+                           "reasoning_details": [{"type": "reasoning.text", "text": "Check the board.",
+                                                  "signature": "sig-1", "index": 0}]}],
+             "pending_tool_calls": [{"id": "call_0", "name": "read_board", "arguments": {}}],
+             "citations": [], "reasoning": ["Check the board."]}
+            """.trimIndent(),
+        )
+
+        // Encoded the way the client sends it, so a field dropped there is caught here.
+        val clientJson = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+        }
+        val sent = clientJson.parseToJsonElement(
+            clientJson.encodeToString(BuddyAgentRequest(messages = event.toResponse().messages)),
+        )
+
+        val assistant = sent.jsonObject["messages"]!!
+            .jsonArray
+            .single()
+            .jsonObject
+        assertThat(assistant["reasoning"]!!.jsonPrimitive.content).isEqualTo("Check the board.")
+        assertThat(assistant["reasoning_details"]).isEqualTo(
+            json.parseToJsonElement(
+                """[{"type": "reasoning.text", "text": "Check the board.", "signature": "sig-1", "index": 0}]""",
+            ),
+        )
     }
 
     @Test

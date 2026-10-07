@@ -28,6 +28,16 @@ data class BuddyAgentMessageDto(
     val content: String = "",
     @SerialName("tool_calls") val toolCalls: List<BuddyToolCallDto> = emptyList(),
     @SerialName("tool_call_id") val toolCallId: String? = null,
+    /**
+     * The model's reasoning on an assistant turn, opaque to the backend and carried back verbatim.
+     *
+     * A provider with extended thinking on rejects a resumed conversation whose last tool-using
+     * assistant turn lost its signed thinking blocks, so the hop after a backend tool needs them.
+     * [reasoningDetails] are those structured blocks; [reasoning] is the plain-text form for a
+     * provider that returns no structured ones.
+     */
+    val reasoning: String? = null,
+    @SerialName("reasoning_details") val reasoningDetails: List<JsonObject> = emptyList(),
 )
 
 @Serializable

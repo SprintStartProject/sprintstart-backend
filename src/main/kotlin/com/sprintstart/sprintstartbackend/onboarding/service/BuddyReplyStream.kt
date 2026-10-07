@@ -6,8 +6,14 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamE
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onEach
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Relays one streamed AI agent call to the browser as it arrives, and returns how the call ended.
@@ -64,6 +70,35 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.relayAgentTurn(
         "",
         "The AI service ended the buddy turn without a result.",
     )
+}
+
+/**
+ * Ends a turn that failed part-way with an `error` event instead of a broken connection.
+ *
+ * By the time a hop fails, the status line and the first events have been sent, so an exception
+ * thrown out of the flow can no longer become an HTTP error: the server drops the connection
+ * without its closing chunk, and Vite's dev proxy keeps the browser's side of it open, so the reply
+ * spins until the client's watchdog gives up. The cause is logged here; the client gets a fixed
+ * sentence, because the upstream text is provider detail the reader cannot act on.
+ *
+ * A stop is rethrown untouched, since nobody is left to read an event. So is a failure after `done`
+ * (persisting the reply or its citations): the reader already has the whole answer and has stopped
+ * reading, and a second terminal event would contradict the first.
+ */
+internal fun Flow<BuddyStreamEvent>.endFailureWithErrorEvent(): Flow<BuddyStreamEvent> {
+    val upstream = this
+    return flow {
+        var answered = false
+        emitAll(
+            upstream
+                .onEach { if (it.type == BuddyService.DONE) answered = true }
+                .catch { e ->
+                    if (e is CancellationException || answered) throw e
+                    logger.error("Buddy turn failed after its stream started", e)
+                    emit(BuddyStreamEvent(type = BuddyService.ERROR, message = TURN_FAILED_MESSAGE))
+                },
+        )
+    }
 }
 
 /**
@@ -130,6 +165,12 @@ private suspend fun FlowCollector<BuddyStreamEvent>.emitToken(content: String, e
 }
 
 private const val HOP_SEPARATOR = "\n\n"
+
+private const val TURN_FAILED_MESSAGE = "The buddy could not finish this reply."
+
+private val logger = LoggerFactory.getLogger(
+    "com.sprintstart.sprintstartbackend.onboarding.service.BuddyReplyStream",
+)
 
 internal data class ResolvedBuddyCitation(
     val artifactId: UUID,

@@ -1213,7 +1213,7 @@ class BuddyServiceTest {
         }
 
         @Test
-        fun `keeps what was shown and fails the turn when the AI reports an error`() = runTest {
+        fun `keeps what was shown and ends the turn with an error event when the AI reports an error`() = runTest {
             val session = BuddySession(userId = userId, title = "session")
             stageConversation(session)
             every { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(
@@ -1221,12 +1221,11 @@ class BuddyServiceTest {
                 BuddyAgentStreamEvent(type = BuddyAgentStreamEvent.ERROR, message = "model unavailable"),
             )
 
-            val failure = assertThrows<OnboardingAiException> {
-                service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
-            }
+            val events = service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
 
-            assertThat(failure.statusCode).isEqualTo(503)
-            assertThat(failure.body).isEqualTo("model unavailable")
+            assertThat(events.map { it.type }).containsExactly(BuddyService.TOKEN, BuddyService.ERROR)
+            // The provider's text stays in the log; the client gets a fixed sentence.
+            assertThat(events.last().message).isNotBlank().doesNotContain("model unavailable")
             verify {
                 buddyMessageRepository.save(
                     match<BuddyMessage> {
@@ -1237,16 +1236,15 @@ class BuddyServiceTest {
         }
 
         @Test
-        fun `fails the turn when the AI ends its stream without a result`() = runTest {
+        fun `ends the turn with an error event when the AI ends its stream without a result`() = runTest {
             val session = BuddySession(userId = userId, title = "session")
             stageConversation(session)
             every { onboardingAiClient.buddyAgentTurnStream(any()) } returns streamOf(token("Part of "))
 
-            val failure = assertThrows<OnboardingAiException> {
-                service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
-            }
+            val events = service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
 
-            assertThat(failure.statusCode).isEqualTo(502)
+            assertThat(events.last().type).isEqualTo(BuddyService.ERROR)
+            assertThat(events.map { it.type }).doesNotContain(BuddyService.DONE)
             verify {
                 buddyMessageRepository.save(
                     match<BuddyMessage> { it.isIncomplete && it.content == "Part of " },
@@ -1858,17 +1856,16 @@ class BuddyServiceTest {
             coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } throws
                 OnboardingAiException(502, "", "AI buddy responded with error: boom")
 
-            assertThrows<OnboardingAiException> {
-                service
-                    .sendMessageForMe(
-                        authId,
-                        session.id,
-                        "Hi",
-                        true,
-                        null,
-                    ).toList()
-            }
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "Hi",
+                    true,
+                    null,
+                ).toList()
 
+            assertThat(events.single().type).isEqualTo(BuddyService.ERROR)
             assertThat(saved.map { it.role }).containsExactly(BuddyMessageRole.USER)
         }
 
@@ -2026,16 +2023,14 @@ class BuddyServiceTest {
             coEvery { onboardingAiClient.buddyAgentTurnStream(any()) } throws
                 OnboardingAiException(500, "boom", "AI down")
 
-            assertThrows<OnboardingAiException> {
-                service
-                    .sendMessageForMe(
-                        authId,
-                        session.id,
-                        "Hi",
-                        true,
-                        null,
-                    ).toList()
-            }
+            service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "Hi",
+                    true,
+                    null,
+                ).toList()
 
             coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any(), session.id) }
         }

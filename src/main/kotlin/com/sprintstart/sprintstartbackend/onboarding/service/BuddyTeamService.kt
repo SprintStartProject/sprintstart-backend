@@ -264,7 +264,7 @@ class BuddyTeamService(
                 ),
             )
             compactInBackground(userId, projectId)
-        }
+        }.endFailureWithErrorEvent()
     }
 
     /**

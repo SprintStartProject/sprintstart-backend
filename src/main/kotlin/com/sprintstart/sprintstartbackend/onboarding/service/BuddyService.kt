@@ -550,7 +550,7 @@ class BuddyService(
             // Only now, with the reply persisted and the hire reading it. Folding before this point
             // is what the whole change exists to stop.
             compactInBackground(userId, session.id)
-        }
+        }.endFailureWithErrorEvent()
     }
 
     private fun saveIncompleteReply(session: BuddySession, content: String) {
@@ -736,6 +736,9 @@ class BuddyService(
         // confirming, whereas this only fills the composer with a question.
         const val TOKEN = "token"
         const val DONE = "done"
+
+        // Terminal like DONE: the turn failed after its stream had started.
+        const val ERROR = "error"
 
         // Team mode only: the words shown so far were not the answer after all and are to be dropped.
         const val RESET = "reset"
