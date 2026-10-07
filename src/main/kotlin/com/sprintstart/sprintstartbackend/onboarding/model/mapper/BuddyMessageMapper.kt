@@ -48,6 +48,7 @@ fun BuddyTeamMessage.toResponse(): BuddyMessageResponse =
         role = role,
         content = content,
         createdAt = createdAt,
+        isIncomplete = isIncomplete,
     )
 
 /** A team-mode message as the AI expects it, spelled by the same role mapping as the hire's. */

@@ -32,6 +32,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Team mode: a project manager's buddy conversation about one project's team.
@@ -176,83 +177,94 @@ class BuddyTeamService(
             var step = 0
             val areas = OpenAreas(carriedOver)
 
-            while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
-                step++
-                // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
-                // one the latest replies opened or used is mounted from the first.
-                val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
-                val response = relayAgentTurn(
-                    onboardingAiClient.buddyAgentTurnStream(
-                        BuddyAgentRequest(
-                            messages = messages,
-                            backendTools = tools,
-                            priorSummary = if (step == 1) session.summary else null,
-                            vocabulary = VOCABULARY,
-                            // Retrieval is scoped to the one project this conversation is about.
-                            projectIds = listOf(projectId.toString()),
-                            capabilitiesEnabled = capabilitiesEnabled,
-                            teamMode = true,
-                            filters = filters,
-                        ),
-                    ),
-                    emittedContent,
-                )
-                citations = response.citations
-                if (response.final && response.text.writesOutAToolCall()) {
-                    // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
-                    // and if the budget runs out the reply is the fallback, never the raw call.
-                    //
-                    // The words were already streamed while the model wrote them, so the client is told to
-                    // take back what it has shown, and the stored reply starts over with the next ask.
-                    logger.warn("Team buddy wrote a tool call out as its reply; asking again")
-                    emit(BuddyStreamEvent(type = BuddyService.RESET))
-                    emittedContent.setLength(0)
-                    val retry = openAreasWrittenOut(response.text, tools.map { it.name }.toSet(), areas)
-                    messages = response.messages.ifEmpty {
-                        messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
-                    } + BuddyAgentMessageDto(role = "user", content = retry)
-                } else if (response.final) {
-                    answer = response.text
-                } else {
-                    val mounted = tools.map { it.name }.toSet()
-                    val next = response.messages.toMutableList()
-                    for (call in response.pendingToolCalls) {
-                        next.add(
-                            BuddyAgentMessageDto(
-                                role = "tool",
-                                content = runToolCall(call, context, mounted, areas),
-                                toolCallId = call.id,
+            // The whole loop is guarded, not only the last emission: the words now leave while the
+            // loop runs, so a stop or a failure at any hop leaves a partial reply worth keeping —
+            // the same guard, and the same reason, as the hire's buddy has.
+            try {
+                while (answer == null && step < BuddyService.MAX_AGENT_STEPS) {
+                    step++
+                    // Per hop, not per turn: an area opened on the previous hop is mounted from this one, and
+                    // one the latest replies opened or used is mounted from the first.
+                    val tools = if (capabilitiesEnabled) buddyTeamTools.toolSpecs(areas.mounted) else emptyList()
+                    val response = relayAgentTurn(
+                        onboardingAiClient.buddyAgentTurnStream(
+                            BuddyAgentRequest(
+                                messages = messages,
+                                backendTools = tools,
+                                priorSummary = if (step == 1) session.summary else null,
+                                vocabulary = VOCABULARY,
+                                // Retrieval is scoped to the one project this conversation is about.
+                                projectIds = listOf(projectId.toString()),
+                                capabilitiesEnabled = capabilitiesEnabled,
+                                teamMode = true,
+                                filters = filters,
                             ),
+                        ),
+                        emittedContent,
+                    )
+                    citations = response.citations
+                    if (response.final && response.text.writesOutAToolCall()) {
+                        // Not an answer: shown, it would read as a reply to the manager. Sent back once per hop,
+                        // and if the budget runs out the reply is the fallback, never the raw call.
+                        //
+                        // The words were already streamed while the model wrote them, so the client is told to
+                        // take back what it has shown, and the stored reply starts over with the next ask.
+                        logger.warn("Team buddy wrote a tool call out as its reply; asking again")
+                        emit(BuddyStreamEvent(type = BuddyService.RESET))
+                        emittedContent.setLength(0)
+                        val retry = openAreasWrittenOut(response.text, tools.map { it.name }.toSet(), areas)
+                        messages = response.messages.ifEmpty {
+                            messages + BuddyAgentMessageDto(role = "assistant", content = response.text)
+                        } + BuddyAgentMessageDto(role = "user", content = retry)
+                    } else if (response.final) {
+                        answer = response.text
+                    } else {
+                        val mounted = tools.map { it.name }.toSet()
+                        val next = response.messages.toMutableList()
+                        for (call in response.pendingToolCalls) {
+                            next.add(
+                                BuddyAgentMessageDto(
+                                    role = "tool",
+                                    content = runToolCall(call, context, mounted, areas),
+                                    toolCallId = call.id,
+                                ),
+                            )
+                        }
+                        messages = next
+                    }
+                }
+
+                completeReply(answer, emittedContent)
+
+                val resolvedCitations = citations.mapNotNull { citation ->
+                    val artifactId = citation.artifactId?.let(::parseUuidOrNull)
+                    val resolved = artifactId?.let(artifactLookupService::resolve)
+
+                    if (artifactId == null || resolved == null) {
+                        logger.warn(
+                            "Could not resolve artifact {} for buddy citation",
+                            citation.artifactId,
+                        )
+                        null
+                    } else {
+                        ResolvedBuddyCitation(
+                            artifactId = artifactId,
+                            filename = resolved.filename,
+                            sourceUrl = resolved.sourceUrl,
+                            startLine = citation.startLine,
+                            startPage = citation.startPage,
                         )
                     }
-                    messages = next
                 }
+
+                emitCitationsAndDone(resolvedCitations)
+            } catch (e: CancellationException) {
+                saveIncompleteReply(session, emittedContent.toString(), areas)
+                throw e
+            } catch (e: Exception) {
+                saveIncompleteReply(session, emittedContent.toString(), areas)
+                throw e
             }
-
-            completeReply(answer, emittedContent)
-
-            val resolvedCitations = citations.mapNotNull { citation ->
-                val artifactId = citation.artifactId?.let(::parseUuidOrNull)
-                val resolved = artifactId?.let(artifactLookupService::resolve)
-
-                if (artifactId == null || resolved == null) {
-                    logger.warn(
-                        "Could not resolve artifact {} for buddy citation",
-                        citation.artifactId,
-                    )
-                    null
-                } else {
-                    ResolvedBuddyCitation(
-                        artifactId = artifactId,
-                        filename = resolved.filename,
-                        sourceUrl = resolved.sourceUrl,
-                        startLine = citation.startLine,
-                        startPage = citation.startPage,
-                    )
-                }
-            }
-
-            emitCitationsAndDone(resolvedCitations)
 
             buddyTeamMessageRepository.save(
                 BuddyTeamMessage(
@@ -265,6 +277,28 @@ class BuddyTeamService(
             )
             compactInBackground(userId, projectId)
         }.endFailureWithErrorEvent()
+    }
+
+    /**
+     * Keeps a turn that was cut short — stopped or failed mid-answer — as an incomplete reply, the
+     * same way the hire's buddy does, so the manager's read shows what they saw. The areas the turn
+     * had opened are stored with it, exactly as a finished reply's are: the tools it used stay
+     * mounted for the reply that comes next.
+     */
+    private fun saveIncompleteReply(session: BuddyTeamSession, content: String, areas: OpenAreas) {
+        if (content.isBlank()) {
+            return
+        }
+
+        buddyTeamMessageRepository.save(
+            BuddyTeamMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = content,
+                openedAreas = areas.activeThisTurn.encoded(),
+                isIncomplete = true,
+            ),
+        )
     }
 
     /**

@@ -15,9 +15,9 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * What a team reply opened has to survive the trip to the database and back: the next message reads it to
- * decide which tools to mount, and a value that came back changed or empty would silently bring the
- * "yes, send it" failure back.
+ * What a team reply opened — and whether it was cut short — has to survive the trip to the database and
+ * back: the next message reads the areas to decide which tools to mount, and the incomplete flag is what
+ * tells a reader the reply stopped mid-air instead of ending.
  */
 @ActiveProfiles("test")
 @DataJpaTest
@@ -52,5 +52,26 @@ class BuddyTeamMessageRepositoryTest {
         val stored = repository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
 
         assertThat(stored.map { it.openedAreas }).containsExactly("ARRIVAL,KNOWLEDGE", null)
+    }
+
+    @Test
+    fun `a reply that was cut short comes back marked incomplete`() {
+        val session = session()
+        repository.save(
+            BuddyTeamMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = "Part of ",
+                createdAt = Instant.parse("2026-09-21T10:00:01Z"),
+                isIncomplete = true,
+            ),
+        )
+        repository.save(message(session, 2, null))
+        entityManager.flush()
+        entityManager.clear()
+
+        val stored = repository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
+
+        assertThat(stored.map { it.isIncomplete }).containsExactly(true, false)
     }
 }
