@@ -2,16 +2,21 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ConfluenceSourceInstanceDto
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.AiSyncStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.escapeLikeLiteral
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
@@ -21,15 +26,19 @@ import java.util.UUID
 
 class IngestionSourceStatusServiceTest {
     private val githubRepositoryApi = mockk<GithubRepositoryApi>()
+    private val bitbucketRepositoryApi = mockk<BitbucketRepositoryApi>(relaxed = true)
     private val jiraInstanceApi = mockk<JiraInstanceApi>()
     private val confluenceConnectionApi = mockk<ConfluenceConnectionApi>(relaxed = true)
+    private val notionConnectionApi = mockk<NotionConnectionApi>(relaxed = true)
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val service =
         IngestionSourceStatusService(
             githubRepositoryApi,
+            bitbucketRepositoryApi,
             jiraInstanceApi,
             confluenceConnectionApi,
+            notionConnectionApi,
             ingestionRunRepository,
             artifactRepository,
         )
@@ -147,6 +156,64 @@ class IngestionSourceStatusServiceTest {
         assertThat(response.repositoryId).isEqualTo(repositoryId)
         assertThat(response.connectionStatus).isEqualTo("OUT_OF_DATE")
         assertThat(response.artifactCount).isEqualTo(5)
+    }
+
+    @Test
+    fun `maps connected Bitbucket repository with its latest run counters and PR sync time`() {
+        val repositoryId = UUID.randomUUID()
+        val prAt = Instant.parse("2026-07-06T12:00:00Z")
+        val instance = BitbucketSourceInstanceDto(
+            repositoryId = repositoryId,
+            workspace = "sprintstart",
+            slug = "sprintstart-backend",
+            sourceUrl = "https://bitbucket.org/sprintstart/sprintstart-backend",
+            status = "CONNECTED",
+            enabled = true,
+            lastPullRequestsSyncAt = prAt,
+        )
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceInstanceId = repositoryId,
+            sourceInstanceRef = "sprintstart/sprintstart-backend",
+            startedAt = Instant.parse("2026-07-06T12:30:00Z"),
+            ingestedCount = 21,
+            updatedCount = 6,
+            deletedCount = 2,
+            failedCount = 1,
+            status = IngestionRunStatus.PARTIAL,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(null) } returns emptyList()
+        every { bitbucketRepositoryApi.getSourceInstances(null) } returns listOf(instance)
+        every { jiraInstanceApi.getSourceInstances(null) } returns emptyList()
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(repositoryId) } returns run
+        every {
+            artifactRepository.countBySourceIdPrefix(escapeLikeLiteral("bitbucket:sprintstart/sprintstart-backend:"))
+        } returns 64
+
+        val response = service.getStatusPerSourceInstance().single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.BITBUCKET)
+        assertThat(response.sourceId).isEqualTo("sprintstart/sprintstart-backend")
+        assertThat(response.displayName).isEqualTo("sprintstart/sprintstart-backend")
+        assertThat(response.repositoryId).isEqualTo(repositoryId)
+        assertThat(response.owner).isEqualTo("sprintstart")
+        assertThat(response.name).isEqualTo("sprintstart-backend")
+        assertThat(response.sourceUrl).isEqualTo("https://bitbucket.org/sprintstart/sprintstart-backend")
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(21)
+        assertThat(response.updatedCount).isEqualTo(6)
+        assertThat(response.deletedCount).isEqualTo(2)
+        assertThat(response.failedCount).isEqualTo(1)
+        assertThat(response.artifactCount).isEqualTo(64)
+        // Bitbucket has no issue tracker and tracks files/commits by revision, so only the PR
+        // timestamp is reported.
+        assertThat(response.lastCommitsSyncAt).isNull()
+        assertThat(response.lastIssuesSyncAt).isNull()
+        assertThat(response.lastPullRequestsSyncAt).isEqualTo(prAt)
     }
 
     @Test
@@ -275,6 +342,53 @@ class IngestionSourceStatusServiceTest {
         val response = service.getStatusPerSourceInstance(projectId).single()
 
         assertThat(response.displayName).isEqualTo("ENG")
+    }
+
+    @Test
+    fun `maps project scoped Notion page with latest run and artifact count`() {
+        val projectId = UUID.randomUUID()
+        val connectionId = UUID.randomUUID()
+        val sourceUrl = "https://www.notion.so/engineering-runbook"
+        val instance = NotionSourceInstanceDto(
+            connectionId = connectionId,
+            sourceRef = sourceUrl,
+            workspaceId = "page-1",
+            workspaceName = "Engineering Runbook",
+            workspaceUrl = sourceUrl,
+            status = "CONNECTED",
+            enabled = true,
+            lastSyncedAt = Instant.parse("2026-09-30T11:00:00Z"),
+        )
+        val run = IngestionRun(
+            id = UUID.randomUUID(),
+            sourceSystem = SourceSystem.NOTION,
+            sourceInstanceId = connectionId,
+            sourceInstanceRef = sourceUrl,
+            startedAt = Instant.parse("2026-09-30T12:00:00Z"),
+            ingestedCount = 1,
+            status = IngestionRunStatus.COMPLETED,
+            aiSyncStatus = AiSyncStatus.SUCCEEDED,
+        )
+        every { githubRepositoryApi.getSourceInstances(projectId) } returns emptyList()
+        every { jiraInstanceApi.getSourceInstances(projectId) } returns emptyList()
+        every { confluenceConnectionApi.getSourceInstances(projectId) } returns emptyList()
+        every { notionConnectionApi.getSourceInstances(projectId) } returns listOf(instance)
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(connectionId) } returns run
+        every { artifactRepository.countNotionArtifactsByConnectionId(connectionId.toString()) } returns 1
+        every { artifactRepository.countUploadArtifactsByProjectId(projectId) } returns 0
+        every { ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId) } returns null
+
+        val response = service.getStatusPerSourceInstance(projectId).single()
+
+        assertThat(response.sourceSystem).isEqualTo(SourceSystem.NOTION)
+        assertThat(response.sourceId).isEqualTo(sourceUrl)
+        assertThat(response.displayName).isEqualTo("Engineering Runbook")
+        assertThat(response.sourceUrl).isEqualTo(sourceUrl)
+        assertThat(response.connectionStatus).isEqualTo("CONNECTED")
+        assertThat(response.enabled).isTrue()
+        assertThat(response.lastRunTime).isEqualTo(run.startedAt)
+        assertThat(response.ingestedCount).isEqualTo(1)
+        assertThat(response.artifactCount).isEqualTo(1)
     }
 
     @Test

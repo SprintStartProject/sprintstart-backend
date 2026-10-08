@@ -24,6 +24,8 @@ data class ApplicationConfig(
     val confluence: ConfluenceConfig = ConfluenceConfig(),
     val insights: InsightsConfig = InsightsConfig(),
     val onboarding: OnboardingConfig = OnboardingConfig(),
+    val notion: NotionConfig = NotionConfig(),
+    val bitbucket: BitbucketConfig,
 )
 
 /**
@@ -72,6 +74,25 @@ data class ConfluenceRetryConfig(
     val initialDelay: Duration = Duration.ofMillis(500),
     val maxDelay: Duration = Duration.ofSeconds(30),
     val multiplier: Double = 2.0,
+)
+
+data class NotionConfig(
+    val apiVersion: String = "2026-03-11",
+    val retry: NotionRetryConfig = NotionRetryConfig(),
+    val throttle: NotionThrottleConfig = NotionThrottleConfig(),
+)
+
+data class NotionRetryConfig(
+    val maxAttempts: Int = 4,
+    val initialDelay: Duration = Duration.ofMillis(500),
+    val maxDelay: Duration = Duration.ofSeconds(30),
+    val multiplier: Double = 2.0,
+    val jitter: Duration = Duration.ofMillis(250),
+)
+
+data class NotionThrottleConfig(
+    val minInterval: Duration = Duration.ofMillis(334),
+    val maxWait: Duration = Duration.ofSeconds(30),
 )
 
 /**
@@ -180,6 +201,23 @@ data class AiConfig(
  * ´´´
  */
 data class GithubConfig(
+    @get:JsonProperty("base-url")
+    val baseUrl: String,
+)
+
+/**
+ * Contains the following application.yml config parameters
+ *
+ * ```yaml
+ * sprintstart:
+ *     bitbucket:
+ *         base-url: ...
+ * ```
+ *
+ * The base URL points at the Bitbucket Cloud REST API root, normally
+ * `https://api.bitbucket.org/2.0`; a test configuration points it at a mock server instead.
+ */
+data class BitbucketConfig(
     @get:JsonProperty("base-url")
     val baseUrl: String,
 )

@@ -80,8 +80,10 @@ class ArtifactService(
             }
 
             SourceSystem.GITHUB,
+            SourceSystem.BITBUCKET,
             SourceSystem.JIRA,
             SourceSystem.CONFLUENCE,
+            SourceSystem.NOTION,
             -> {
                 artifact.sourceUrl?.let {
                     return ArtifactContentRedirectResponse(it)

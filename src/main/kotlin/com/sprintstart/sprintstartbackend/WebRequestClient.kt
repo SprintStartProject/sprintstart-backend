@@ -16,8 +16,6 @@ import java.net.http.HttpResponse
  * *Note on Concurrency:* This client bridges asynchronous coroutine-like mechanics using [runBlocking],
  * making operations synchronous and blocking. For high-throughput reactive architectures, consider
  * refactoring these to native `suspend` functions instead, or implement custom traffic clients.
- *
- * @see com.sprintstart.sprintstartbackend.chat.AiWebRequestClient
  */
 open class WebRequestClient {
     /**

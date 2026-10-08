@@ -113,6 +113,37 @@ class BoardReadingTest {
         assertEquals(listOf(one), BoardReading.actionable(cards, structure).map { it.id })
     }
 
+    /**
+     * Every card carries the id the board actions need — notes and links too, so the buddy can
+     * propose to edit or clear them — and the hire's own cards carry their words, since a note
+     * cannot be rewritten by somebody who cannot see what it says.
+     */
+    @Test
+    fun `the id section names every card, with what the hire's own cards say`() {
+        val section = BoardReading.cardsSection(
+            listOf(note(one, "Deploys run on Thursdays"), link(two, "Runbook")),
+            limit = 40,
+        )
+
+        assertTrue(section.contains("(their note, id: $one)"))
+        assertTrue(section.contains("Deploys run on Thursdays"))
+        assertTrue(section.contains("(their link, id: $two)"))
+        assertTrue(section.contains("https://example.com"))
+    }
+
+    @Test
+    fun `the id section is capped and says how many it left out`() {
+        val section = BoardReading.cardsSection(listOf(note(one, "a"), note(two, "b")), limit = 1)
+
+        assertFalse(section.contains(two.toString()))
+        assertTrue(section.contains("and 1 more, not listed"))
+    }
+
+    @Test
+    fun `an empty board has no id section`() {
+        assertEquals("", BoardReading.cardsSection(emptyList(), limit = 40))
+    }
+
     private fun note(id: UUID, text: String) = BoardCardResponse(
         id = id,
         kind = BoardCardKind.NOTE,

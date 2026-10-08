@@ -45,7 +45,11 @@ class AssignedIssueReader(
      * two kinds of nothing.
      */
     fun read(artifact: Artifact, assigneeDisplayName: String): AssignedIssue? {
-        val metadata = artifactMetadataJsonMapper.fromJson(artifact.metadata) as? JiraArtifactMetadataWrapper
+        val metadata = artifactMetadataJsonMapper.fromJson(
+            artifact.metadata,
+            artifact.sourceSystem,
+            artifact.artifactType,
+        ) as? JiraArtifactMetadataWrapper
             ?: return null
         if (!metadata.assignee?.displayName.equals(assigneeDisplayName, ignoreCase = true)) {
             return null
@@ -138,8 +142,8 @@ class AssignedIssueReader(
      *
      * The tracker's version of a review asking for changes: the assignee said it was ready, and
      * somebody who was not them moved it back. Counting every status change instead would count the
-     * normal flow of work as rework, and reporting a flat zero would hand every tracked issue the
-     * clean-run half of the autonomy signal without it having been earned.
+     * normal flow of work as rework, and reporting a flat zero would hand every tracked issue a
+     * clean run it never earned.
      */
     private fun returnedCount(statusChanges: List<JiraIssueHistoryItem>, assignee: String): Int {
         var returned = 0

@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.external.events.ChatQuestionAskedEvent
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyResponse
@@ -10,6 +9,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
 import com.sprintstart.sprintstartbackend.insights.repository.FaqQuestionRepository
+import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,7 +65,7 @@ class FaqLiveUpdateService(
      * filed, or when the AI service classifies it as not a real question.
      */
     @Tracked("Filing an asked question into the FAQ")
-    suspend fun onQuestionAsked(event: ChatQuestionAskedEvent) {
+    suspend fun onQuestionAsked(event: QuestionAskedEvent) {
         if (!faqConfig.liveUpdates) return
 
         projectLocks.computeIfAbsent(event.projectId) { Mutex() }.withLock {
@@ -114,7 +114,7 @@ class FaqLiveUpdateService(
      *
      * @return whether this opened a new entry rather than joining an existing one.
      */
-    private fun apply(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse): Boolean {
+    private fun apply(event: QuestionAskedEvent, classification: AiFaqClassifyResponse): Boolean {
         val matchedId = classification.groupId?.let(::parseUuidOrNull)
 
         return txTemplate.execute {
@@ -149,7 +149,7 @@ class FaqLiveUpdateService(
         } ?: false
     }
 
-    private fun newGroup(event: ChatQuestionAskedEvent, classification: AiFaqClassifyResponse): FaqGroup {
+    private fun newGroup(event: QuestionAskedEvent, classification: AiFaqClassifyResponse): FaqGroup {
         val question = classification.question.ifBlank { event.question }
         val group = FaqGroup(
             projectId = event.projectId,

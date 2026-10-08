@@ -1,6 +1,9 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.model.entity.BlueprintPath
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.CheckQuestionType
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
@@ -8,6 +11,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.PhaseCheckQues
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import com.sprintstart.sprintstartbackend.user.external.UserOnboardingProfile
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.every
 import io.mockk.just
@@ -24,15 +28,24 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.Optional
 import java.util.UUID
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class OnboardingPathServiceTest {
     private val onboardingPathRepository: OnboardingPathRepository = mockk()
     private val questionAttemptRepository: QuestionAttemptRepository = mockk(relaxed = true)
     private val userApi: UserApi = mockk()
-    private val onboardingPositionReader: OnboardingPositionReader = mockk(relaxed = true)
-    private val service =
-        OnboardingPathService(onboardingPathRepository, questionAttemptRepository, userApi, onboardingPositionReader)
+    private val blueprintPathRepository: BlueprintPathRepository = mockk()
+
+    // The real reader: it now owns the active-step and progress rules this service's team
+    // overview reports, so stubbing it would hollow out exactly what these tests assert.
+    private val service = OnboardingPathService(
+        onboardingPathRepository,
+        questionAttemptRepository,
+        userApi,
+        OnboardingPositionReader(onboardingPathRepository),
+        blueprintPathRepository,
+    )
 
     private val userId = UUID.randomUUID()
     private val pathId = UUID.randomUUID()
@@ -250,6 +263,194 @@ class OnboardingPathServiceTest {
             assertThrows<ResponseStatusException> {
                 service.deleteOnboardingPathForMe(authId)
             }.also { assertEquals(404, it.statusCode.value()) }
+        }
+    }
+
+    @Nested
+    inner class RequireMayReplacePath {
+        private val callerAuthId = "auth|caller"
+        private val ownerAuthId = "auth|owner"
+        private val projectA = UUID.randomUUID()
+        private val projectB = UUID.randomUUID()
+        private val blueprintA = UUID.randomUUID()
+
+        private fun givenPathFrom(project: UUID?) {
+            val blueprintId = project?.let { blueprintA }
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintId))
+            if (blueprintId != null) {
+                every { blueprintPathRepository.findById(blueprintId) } returns
+                    Optional.of(mockk<BlueprintPath> { every { projectId } returns project })
+            }
+        }
+
+        private fun givenOwnerAssignedTo(vararg projects: UUID) {
+            every { userApi.getAuthIdByUserId(userId) } returns Optional.of(ownerAuthId)
+            every { userApi.getOnboardingProfileByAuthId(ownerAuthId) } returns Optional.of(
+                UserOnboardingProfile(id = userId, projectIds = projects.toSet(), projectRoles = emptyMap()),
+            )
+        }
+
+        private fun assertForbidden(block: () -> Unit) {
+            assertThrows<ResponseStatusException>(block).also { assertEquals(403, it.statusCode.value()) }
+        }
+
+        @Test
+        fun `lets anybody build a first path`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
+
+            service.requireMayReplacePath(callerAuthId, userId, projectA)
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `refuses a rebuild by a caller who does not manage the target project`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, projectA) }
+        }
+
+        @Test
+        fun `refuses a rebuild for an owner who is not assigned to the target project`() {
+            givenPathFrom(projectA)
+            givenOwnerAssignedTo(projectA)
+            every { userApi.canManageProject(callerAuthId, projectB) } returns true
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, projectB) }
+        }
+
+        @Test
+        fun `lets the target project's manager replace a path from another project`() {
+            // A member with a path from A joins B: B's manager must be able to move them, or
+            // only an admin could.
+            givenPathFrom(projectA)
+            givenOwnerAssignedTo(projectA, projectB)
+            every { userApi.canManageProject(callerAuthId, projectB) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, projectB)
+
+            verify(exactly = 0) { userApi.canManageProject(callerAuthId, projectA) }
+        }
+
+        @Test
+        fun `lets a rebuild replace a path whose origin is unknown`() {
+            givenPathFrom(null)
+            givenOwnerAssignedTo(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, projectA)
+        }
+
+        @Test
+        fun `lets the origin project's manager delete the path`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns true
+
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `refuses deleting a path from a project the caller does not manage`() {
+            givenPathFrom(projectA)
+            every { userApi.canManageProject(callerAuthId, projectA) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+        }
+
+        @Test
+        fun `leaves deleting a path of unknown origin to admins`() {
+            givenPathFrom(null)
+            every { userApi.isAdmin(callerAuthId) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+
+            every { userApi.isAdmin(callerAuthId) } returns true
+            service.requireMayReplacePath(callerAuthId, userId, null)
+        }
+
+        @Test
+        fun `treats a path whose blueprint was deleted as of unknown origin`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintA))
+            every { blueprintPathRepository.findById(blueprintA) } returns Optional.empty()
+            every { userApi.isAdmin(callerAuthId) } returns false
+
+            assertForbidden { service.requireMayReplacePath(callerAuthId, userId, null) }
+        }
+    }
+
+    @Nested
+    inner class FindHiddenPhaseForUserId {
+        /**
+         * A phase generation left empty is hidden from `phases` and only reported as an issue -- but it
+         * is what the buddy's add_path_step repairs, so it has to be findable by id, through the
+         * owner's own path.
+         */
+        @Test
+        fun `a phase generation left empty is hidden from the hire's path but found for repair`() {
+            val path = makePath()
+            val empty = OnboardingPhase(
+                path = path,
+                position = 1,
+                title = "Deployment",
+                description = "How a change reaches production",
+                generationStatus = GenerationStatus.SKIPPED,
+            )
+            path.phases += empty
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+            every { questionAttemptRepository.findPassedQuestionIdsByUserId(userId) } returns emptyList()
+            every { questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId) } returns emptyList()
+
+            val read = service.findPathForUserId(userId)!!
+            val repairable = service.findHiddenPhaseForUserId(userId, empty.id)
+
+            assertTrue(read.phases.none { it.id == empty.id })
+            assertEquals(empty.id, read.generationIssues.single().phaseId)
+            assertEquals("How a change reaches production", read.generationIssues.single().description)
+            assertEquals(empty.id, repairable?.id)
+        }
+
+        @Test
+        fun `a visible phase or one from another path is not a hidden phase of theirs`() {
+            val path = makePath()
+            val visible = OnboardingPhase(path = path, position = 0, title = "Setup", description = "")
+            path.phases += visible
+            every { onboardingPathRepository.findOnboardingPathByUserId(userId) } returns Optional.of(path)
+
+            assertNull(service.findHiddenPhaseForUserId(userId, visible.id))
+            assertNull(service.findHiddenPhaseForUserId(userId, UUID.randomUUID()))
+        }
+    }
+
+    @Nested
+    inner class FindPathOrigin {
+        private val blueprintId = UUID.randomUUID()
+        private val projectId = UUID.randomUUID()
+
+        @Test
+        fun `names the project whose blueprint the path was built from`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = blueprintId))
+            every { blueprintPathRepository.findById(blueprintId) } returns
+                Optional.of(mockk<BlueprintPath> { every { projectId } returns this@FindPathOrigin.projectId })
+
+            assertEquals(OnboardingPathService.PathOrigin(projectId), service.findPathOrigin(userId))
+        }
+
+        @Test
+        fun `has no project for a path without a blueprint`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns
+                Optional.of(OnboardingPath(id = pathId, userId = userId, blueprintId = null))
+
+            assertEquals(OnboardingPathService.PathOrigin(null), service.findPathOrigin(userId))
+        }
+
+        @Test
+        fun `is null without a path`() {
+            every { onboardingPathRepository.findByUserId(userId) } returns Optional.empty()
+
+            assertNull(service.findPathOrigin(userId))
         }
     }
 

@@ -1,7 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -14,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.escapeLikeLiteral
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -57,11 +59,17 @@ class GithubArtifactProviderService(
     fun persistArtifact(command: GithubArtifactCommand) {
         val runId = command.ingestionRunId
         val projectIds = when (command.metadata) {
-            is GithubArtifactMetadata ->
+            is GithubArtifactMetadata -> {
                 githubRepositoryApi.getRepositoryProjectIdsById(command.metadata.repositoryId).toMutableSet()
-            is GithubOrgMetadataArtifactMetadata ->
+            }
+
+            is GithubOrgMetadataArtifactMetadata -> {
                 githubRepositoryApi.getProjectIdsByOwner(command.metadata.login).toMutableSet()
-            else -> mutableSetOf()
+            }
+
+            else -> {
+                mutableSetOf()
+            }
         }
 
         val existing = artifactRepository.findBySourceId(command.sourceId)
@@ -145,10 +153,14 @@ class GithubArtifactProviderService(
             // link is ever worth acting on.
             ArtifactType.COMMIT,
             ArtifactType.ORG_METADATA,
-            -> ArtifactChange.NOTHING
+            -> {
+                ArtifactChange.NOTHING
+            }
 
             // Confluence pages never reach this provider; they have one of their own.
-            ArtifactType.PAGE -> error("GitHub artifact commands do not support PAGE artifacts")
+            ArtifactType.PAGE -> {
+                error("GitHub artifact commands do not support PAGE artifacts")
+            }
 
             ArtifactType.FILE -> {
                 if (artifact.hash == command.hash) {
@@ -292,6 +304,40 @@ class GithubArtifactProviderService(
         artifactRepository.deleteById(artifact.id)
         run.deletedCount++
         run.artifactIdsToDeindex.add(artifact.id.toString())
+    }
+
+    /**
+     * Removes stored file artifacts a fallback full ingest did not see, and records them for AI
+     * deindexing at the end of the run.
+     *
+     * A full ingest re-upserts everything it visits but never reports deletions, so files removed
+     * while the cursor revision was missing would otherwise linger in the store and the index
+     * forever. Only file artifacts of this repository are candidates, and only those whose path is
+     * absent from the visited set go: failed reads are visited too, so an unreadable file is kept,
+     * not mistaken for a deleted one.
+     *
+     * The run is locked once for the whole reconciliation, like the single-delete path locks it per
+     * file. When nothing is stale the run is left untouched.
+     *
+     * @param event The resync event carrying repository identity and every path the full ingest saw.
+     * @throws IngestionRunNotFoundException when the run id is unknown.
+     */
+    @Transactional
+    fun reconcileDeletedFiles(event: GithubFilesResyncedEvent) {
+        val prefix = "github:${event.repositoryOwner}/${event.repositoryName}:${ArtifactType.FILE}:"
+        val stale = artifactRepository
+            .findAllBySourceIdPrefix(escapeLikeLiteral(prefix))
+            .filter { it.artifactType == ArtifactType.FILE }
+            .filter { it.sourceId.startsWith(prefix) }
+            .filter { it.sourceId.removePrefix(prefix) !in event.visitedPaths }
+        if (stale.isEmpty()) return
+
+        val run = lockRun(event.transactionId)
+        stale.forEach { artifact ->
+            artifactRepository.deleteById(artifact.id)
+            run.deletedCount++
+            run.artifactIdsToDeindex.add(artifact.id.toString())
+        }
     }
 }
 

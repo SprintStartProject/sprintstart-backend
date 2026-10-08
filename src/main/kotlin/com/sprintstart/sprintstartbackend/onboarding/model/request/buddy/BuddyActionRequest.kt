@@ -29,6 +29,49 @@ data class BuddyActionRequest(
     val competencyKey: String? = null,
     val level: String? = null,
     /**
+     * The path node a path action is aimed at: [stepId] for `complete_step` and `request_skip`,
+     * [questionId] for `answer_question`, [phaseId] for `add_path_step`.
+     *
+     * Echoed back verbatim like every other payload here, and re-resolved server-side through the
+     * caller's *own* path — so an id that belongs to somebody else's onboarding is not found rather
+     * than acted on.
+     */
+    val stepId: UUID? = null,
+    val questionId: UUID? = null,
+    val phaseId: UUID? = null,
+    /**
+     * The checklist line `complete_task` would tick off.
+     *
+     * Its own field rather than [taskId], which already means a *starter-work* task for `claim_goal`.
+     * Two different things called a task is confusing enough in the product without one wire field
+     * standing for both.
+     */
+    val onboardingTaskId: UUID? = null,
+    /**
+     * The hire's answer to a knowledge question, for `answer_question`: their own words for a text
+     * question, and for multiple choice the option labels exactly as the confirm button showed them.
+     */
+    val answer: String? = null,
+    /**
+     * The options a multiple-choice [answer] stands for, as resolved when it was proposed.
+     *
+     * Checked at confirm time against the question as it is *now*: every option must still exist
+     * and still read the way [answer] shows it, or nothing is sent. Re-matching the hire's words
+     * instead could land on a different option after a PM renamed them, recording an answer other
+     * than the one the hire read on the button.
+     */
+    val optionIds: List<UUID> = emptyList(),
+    /** What a step added by `add_path_step` is about, one or two sentences. */
+    val description: String? = null,
+    /** The reason `request_skip` sends to the PM, in the words the hire confirmed. */
+    val reason: String? = null,
+    /**
+     * Where `add_path_step` puts the new step in its phase's graph: the items it waits on, and the
+     * items that will wait on it instead. Re-checked against the caller's own path at confirm time.
+     */
+    val waitsOnIds: List<UUID> = emptyList(),
+    val unlocksIds: List<UUID> = emptyList(),
+    /**
      * The checklist to keep, for `place_checklist` — echoed back exactly as it was proposed.
      *
      * Capped server-side rather than trusted: this is the one action whose payload is free text
@@ -43,4 +86,18 @@ data class BuddyActionRequest(
     /** `reword_checklist_item`: which line, and what it should say instead. */
     val lineBefore: String? = null,
     val lineAfter: String? = null,
+    /** `place_link` / `edit_link`: where the link points, and what it is called. */
+    val linkUrl: String? = null,
+    val linkLabel: String? = null,
+    /**
+     * `dismiss_cards` / `reorder_cards`: which cards, in order. Re-checked against the board at
+     * confirm time — ids not on it are skipped, never an error.
+     */
+    val cardIds: List<UUID>? = null,
+    /**
+     * `edit_note` / `edit_link` / `edit_checklist`: the fingerprint of the card's words the proposal
+     * was made against, echoed back. A confirm whose card no longer matches is refused, so a stale
+     * proposal cannot overwrite what was added after it.
+     */
+    val basedOn: String? = null,
 )

@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.entity
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardChange
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
@@ -87,4 +89,36 @@ class BoardCard(
     val createdAt: Instant = Instant.now(),
     @Column(name = "updated_at", nullable = false)
     var updatedAt: Instant = Instant.now(),
-)
+    /**
+     * The most recent change anybody made to this card, or null for one nobody has touched since
+     * the board seeded it.
+     *
+     * [placedAt] set the precedent — attribution the hire cannot check is attribution they cannot
+     * trust — and this extends it past creation. Once the buddy can edit, tick, dismiss and move a
+     * hire's cards, "your buddy put this here" is no longer the only claim worth making, and a note
+     * whose words changed must be able to say who changed them. Set together with [lastChangedBy] and
+     * [lastChangedAt] through [recordChange], never one at a time.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_change")
+    var lastChange: BoardCardChange? = null,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_changed_by")
+    var lastChangedBy: BoardActor? = null,
+    @Column(name = "last_changed_at")
+    var lastChangedAt: Instant? = null,
+) {
+    /**
+     * Notes who just changed this card and how, and bumps [updatedAt] with it.
+     *
+     * The one way the attribution columns are written, so the three can never disagree — a change
+     * with no author, or an author with no time, is exactly the unverifiable claim they exist to
+     * replace.
+     */
+    fun recordChange(change: BoardCardChange, by: BoardActor, at: Instant = Instant.now()) {
+        lastChange = change
+        lastChangedBy = by
+        lastChangedAt = at
+        updatedAt = at
+    }
+}

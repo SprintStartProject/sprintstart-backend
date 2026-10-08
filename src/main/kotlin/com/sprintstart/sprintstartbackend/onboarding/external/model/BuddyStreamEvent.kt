@@ -4,13 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * One SSE chunk the backend emits to the browser on the buddy stream -- mirrors `sprintstart-backend`'s
- * own `chat` module's `AiStreamMessage` shape field-for-field, using the same
- * `sse_event` vocabulary `/chat` does (`tool_use`/`token`/`citation`/`action_proposal`/`done`/`error`).
- * Kept as its
- * own type in this module rather than reused from `chat` (that module's `AiStreamMessage` is
- * `internal` and this module owns its own AI-contract DTOs, same convention every other
- * `OnboardingAiClient` method follows).
+ * One SSE chunk the backend emits to the browser on the buddy stream.
  */
 @Serializable
 data class BuddyStreamEvent(
@@ -43,6 +37,24 @@ data class BuddyStreamEvent(
     @SerialName("competency_key") val competencyKey: String? = null,
     val level: String? = null,
     /**
+     * Path-action confirm payloads: which node of the hire's own onboarding path the action is aimed
+     * at, the answer `answer_question` will send in the hire's own words, and the description of a
+     * step `add_path_step` would add.
+     */
+    @SerialName("step_id") val stepId: String? = null,
+    @SerialName("question_id") val questionId: String? = null,
+    @SerialName("phase_id") val phaseId: String? = null,
+    @SerialName("onboarding_task_id") val onboardingTaskId: String? = null,
+    val answer: String? = null,
+    /** `answer_question` confirm payload: the options the answer on the button stands for. */
+    @SerialName("option_ids") val optionIds: List<String>? = null,
+    val description: String? = null,
+    /** `request_skip` confirm payload: the reason that goes to the PM. */
+    val reason: String? = null,
+    /** `add_path_step` confirm payload: where the step goes in its phase's graph. */
+    @SerialName("waits_on_ids") val waitsOnIds: List<String>? = null,
+    @SerialName("unlocks_ids") val unlocksIds: List<String>? = null,
+    /**
      * `place_checklist` confirm payload: the list the mentor offered to keep, as it was offered.
      *
      * Echoed back on confirm like every other payload here, and for a sharper reason: these lines
@@ -59,13 +71,30 @@ data class BuddyStreamEvent(
      *  hire confirms a change they can see rather than one they would have to go looking for. */
     @SerialName("line_before") val lineBefore: String? = null,
     @SerialName("line_after") val lineAfter: String? = null,
+    /** `place_link` / `edit_link` confirm payload: where the link points, and what it is called. */
+    @SerialName("link_url") val linkUrl: String? = null,
+    @SerialName("link_label") val linkLabel: String? = null,
+    /**
+     * `dismiss_cards` / `reorder_cards` confirm payload: the cards, in order. [cardNames] is the
+     * same list as the hire would read it, resolved server-side from the board rather than taken
+     * from the model — display only, and never sent back.
+     */
+    @SerialName("card_ids") val cardIds: List<String>? = null,
+    @SerialName("card_names") val cardNames: List<String>? = null,
+    /** `edit_note` / `edit_link` / `edit_checklist`: the card's words as proposed against, echoed back on confirm. */
+    @SerialName("based_on") val basedOn: String? = null,
     /**
      * Set on a team-mode `action_proposal`: the stored proposal to confirm or dismiss by id. Present
      * instead of per-action payload fields — the client echoes nothing back but this.
      */
     @SerialName("proposal_id") val proposalId: String? = null,
-    /** Team-mode `action_proposal`: everything the manager is agreeing to, in words. */
+    /**
+     * Everything the confirmer is agreeing to, in words. Team mode sets it on every proposal; hire
+     * mode sets it on the board edits, whose change is easier to read as a sentence than to rebuild
+     * from payload fields.
+     */
     val preview: String? = null,
     /** Team-mode `action_proposal`: `STANDARD`, `DESTRUCTIVE` or `BULK`, deciding how the card is drawn. */
     val risk: String? = null,
+    val reasoning: String? = null,
 )

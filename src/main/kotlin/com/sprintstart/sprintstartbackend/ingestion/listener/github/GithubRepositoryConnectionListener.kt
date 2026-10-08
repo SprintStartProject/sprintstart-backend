@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryAlreadyConnectedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.initial.GithubRepositoryConnectionInitiationFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
