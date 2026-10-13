@@ -11,7 +11,9 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /**
@@ -107,7 +109,87 @@ class BoardCard(
     var lastChangedBy: BoardActor? = null,
     @Column(name = "last_changed_at")
     var lastChangedAt: Instant? = null,
+    /**
+     * What this card said before its most recent content edit, whole — or null when it has never
+     * been edited. Authored cards only.
+     *
+     * The undo for an edit. While only the hire could edit, replacing content outright was fine:
+     * the only person who could lose their words was the one choosing to. Once the buddy can rewrite
+     * a hire's note, an unrecoverable overwrite is a real way to lose somebody's work.
+     *
+     * **A depth of one, on the row, on purpose.** Undo needs the content an edit replaced and
+     * nothing older; anything deeper is a version history nobody has asked for. Keeping it here
+     * rather than in a table of snapshots is what bounds it: the next edit supersedes this one, so
+     * a card holds at most one previous version however often it changes. Whole content rather than
+     * a diff, for the reason edits are whole — a patch language for a three-line note would be more
+     * machinery than the note.
+     *
+     * Written only through [replacePayload], together with [previousReplacedBy] and
+     * [previousReplacedAt], which say whose edit and when this content was replaced — hire and
+     * buddy alike, so the history reads the same whoever made it.
+     */
+    @Column(name = "previous_payload", columnDefinition = "TEXT")
+    var previousPayload: String? = null,
+    @Enumerated(EnumType.STRING)
+    @Column(name = "previous_replaced_by")
+    var previousReplacedBy: BoardActor? = null,
+    @Column(name = "previous_replaced_at")
+    var previousReplacedAt: Instant? = null,
+    /**
+     * Which content this card is on: starts at zero and goes up by one with every real content
+     * change, in [replacePayload] and nowhere else.
+     *
+     * The undo token. A client holding the previous version echoes back the revision it saw, and
+     * the restore is refused unless that is still the card's. A counter rather than a time because
+     * a time is a wall clock, not an identity — two edits can share a millisecond, and a clock can
+     * stand still or step back. This one cannot, and it does not move for changes that leave the
+     * content alone (dismissing, reordering), which [version] does.
+     */
+    @Column(name = "content_revision", nullable = false, columnDefinition = "bigint not null default 0")
+    var contentRevision: Long = 0,
+    /**
+     * Optimistic-lock version, bumped by Hibernate on every update of the row.
+     *
+     * Every write to a card replaces the whole row, so two transactions that read the same state
+     * would otherwise each write theirs over the other's — an undo silently discarding an edit that
+     * committed in between, along with the only copy of what it replaced. With this, the second
+     * writer's UPDATE matches no row and fails instead of committing a stale card. Not the undo
+     * token — see [contentRevision].
+     */
+    @Version
+    @Column(nullable = false, columnDefinition = "bigint not null default 0")
+    var version: Long = 0,
 ) {
+    /**
+     * Replaces this card's content, keeping what it said before as the one previous version.
+     *
+     * The single way an authored card's content changes after creation, so no edit can skip the
+     * snapshot. An edit that leaves the content exactly as it was is not an edit: it records
+     * nothing and, more importantly, does not overwrite the previous version — a no-op save must not
+     * be what takes away the undo for a real change made just before it.
+     *
+     * [contentRevision] goes up with it, which is what names this edit to a client that wants to
+     * undo exactly it. [previousReplacedAt] is for showing when, not for telling edits apart.
+     *
+     * @return Whether anything changed.
+     */
+    fun replacePayload(
+        newPayload: String,
+        change: BoardCardChange,
+        by: BoardActor,
+        at: Instant = Instant.now(),
+    ): Boolean {
+        if (newPayload == payload) return false
+        val stamp = atClientPrecision(at)
+        previousPayload = payload
+        previousReplacedBy = by
+        previousReplacedAt = stamp
+        contentRevision += 1
+        payload = newPayload
+        recordChange(change, by, stamp)
+        return true
+    }
+
     /**
      * Notes who just changed this card and how, and bumps [updatedAt] with it.
      *
@@ -116,9 +198,22 @@ class BoardCard(
      * replace.
      */
     fun recordChange(change: BoardCardChange, by: BoardActor, at: Instant = Instant.now()) {
+        val stamp = atClientPrecision(at)
         lastChange = change
         lastChangedBy = by
-        lastChangedAt = at
-        updatedAt = at
+        lastChangedAt = stamp
+        updatedAt = stamp
+    }
+
+    companion object {
+        /**
+         * [at], cut to whole milliseconds.
+         *
+         * So a time shown to a client comes back from the database and through a JavaScript `Date`
+         * unchanged: `Instant.now()` can carry nanoseconds, Postgres keeps microseconds and a `Date`
+         * milliseconds. It says when, and nothing more — it is not unique and is not used to
+         * identify an edit; [contentRevision] is.
+         */
+        fun atClientPrecision(at: Instant): Instant = at.truncatedTo(ChronoUnit.MILLIS)
     }
 }

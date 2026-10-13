@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ReorderBoardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.RestorePreviousContentRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.TickPathStepTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
@@ -184,6 +185,47 @@ class BoardController(
         @PathVariable taskId: UUID,
         @RequestBody request: TickPathStepTaskRequest,
     ): PathStepContent = boardService.tickPathStepTask(resolveUserId(jwt), cardId, taskId, request.done)
+
+    /**
+     * Puts one of the caller's cards back to what it said before its most recent edit.
+     *
+     * The body is optional: without a `revision` there is no stale check and the latest edit is
+     * undone whatever it is. A client showing an undo should send the `previous.revision` it is
+     * showing, so a card edited again in the meantime is refused with 409 rather than undone.
+     */
+    @Operation(
+        summary = "Undo the last edit to a card of mine",
+        description = "Puts a note, link or checklist back to what it said before its most recent " +
+            "edit, whether you or the buddy made it. Undoing is itself an edit, so it can be undone " +
+            "the same way. Send the `revision` of the version you are undoing, from the card's " +
+            "`previous`, and nothing happens (409) if the card has been edited again since.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "The card, as it now reads"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "404", description = "No such card on your board"),
+            ApiResponse(
+                responseCode = "409",
+                description = "The card has no earlier version, has been edited again since, or was " +
+                    "changed while this ran",
+            ),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/me/board/cards/{cardId}/restore-previous")
+    @PreAuthorize("hasAnyRole('USER', 'PM', 'HR', 'ADMIN')")
+    fun restorePreviousContent(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable cardId: UUID,
+        @RequestBody(required = false) request: RestorePreviousContentRequest?,
+    ): BoardCardResponse = boardService.restorePreviousContent(
+        resolveUserId(jwt),
+        cardId,
+        request?.revision,
+        request?.replacedAt,
+    )
 
     @Operation(
         summary = "Arrange my board",
