@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.onboarding.model.entity
 
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
+import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
@@ -8,6 +9,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
+import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
 import java.time.Instant
 import java.util.UUID
@@ -16,10 +18,6 @@ import java.util.UUID
  * One turn in a [BuddySession]'s conversation. Referenced by plain FK rather than a cascaded
  * collection on [BuddySession] -- mirrors the `chat` module's `Chat`/`ChatMessage` split, since a
  * long-running buddy conversation shouldn't be eagerly loaded through its parent.
- *
- * Deliberately carries no citations -- resolving/persisting them would need the `chat` module's
- * internal `ArtifactLookupService`, which isn't exposed cross-module; live `citation` SSE events
- * still reach the client during the stream, just aren't persisted for replay.
  */
 @Entity
 @Table(name = "buddy_messages")
@@ -50,4 +48,12 @@ class BuddyMessage(
      */
     @Column(nullable = false)
     val opening: Boolean = false,
+    @OneToMany(
+        mappedBy = "message",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val citations: List<BuddyCitation> = emptyList(),
+    @Column(name = "is_incomplete")
+    val isIncomplete: Boolean = false,
 )

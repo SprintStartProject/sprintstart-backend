@@ -85,7 +85,6 @@ class TaskOrientationServiceTest {
         summary = "The header is computed once at boot.",
         sourceUrl = "https://github.com/org/repo/issues/7",
         status = ProposalStatus.LIVE,
-        taskZeroEligible = true,
     )
 
     private fun isMember() {
@@ -95,8 +94,6 @@ class TaskOrientationServiceTest {
 
     private fun hasTask(cached: TaskOrientationPacket? = null) {
         isMember()
-        // Through the shared reader, which is the point: a claimed goal and an assigned Task 0 are
-        // both "the task this hire is on", and orientation must not be able to see only one of them.
         every { currentTaskReader.currentTaskFor(hireId, projectId) } returns proposal
         every { proposalRepository.findById(proposal.id) } returns Optional.of(proposal)
         every { artifactIngestionApi.getTaskSource(proposal.sourceId) } returns null

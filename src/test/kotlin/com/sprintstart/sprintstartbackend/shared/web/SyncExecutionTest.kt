@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import com.sprintstart.sprintstartbackend.chat.models.responses.AiGenerateChatTitleResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.AiGenerateSessionTitleResponse
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
@@ -39,7 +39,7 @@ class SyncExecutionTest {
             .get()
             .uri(mockWebServer.url("/test").toUri())
             .sync()
-            .perform<AiGenerateChatTitleResponse>()
+            .perform<AiGenerateSessionTitleResponse>()
 
         assertEquals("Generated title", response.title)
     }
@@ -73,7 +73,7 @@ class SyncExecutionTest {
                 .get()
                 .uri(mockWebServer.url("/test").toUri())
                 .sync()
-                .perform<AiGenerateChatTitleResponse>()
+                .perform<AiGenerateSessionTitleResponse>()
         }
 
         assertEquals(400, ex.statusCode)
@@ -88,7 +88,7 @@ class SyncExecutionTest {
                 .get()
                 .uri(mockWebServer.url("/test").toUri())
                 .sync()
-                .perform<AiGenerateChatTitleResponse>()
+                .perform<AiGenerateSessionTitleResponse>()
         }
 
         assertEquals(500, ex.statusCode)

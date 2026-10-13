@@ -22,7 +22,7 @@ import java.util.UUID
  * and nothing to backfill. Attestations are the exception, and have a table.
  *
  * This service is only the composition rule: every [EvidenceProvider] runs, and their contributions
- * become one time-ordered stream that the ramp and the metrics read.
+ * become one time-ordered stream that the metrics read.
  */
 @Service
 class ContributionService(
@@ -36,7 +36,7 @@ class ContributionService(
      * requests, the user id for attestations.
      *
      * Every provider runs, for every hire. Filtering the stream by the kind of work somebody is
-     * expected to do would take a PM's pull requests off their own ramp.
+     * expected to do would take a PM's pull requests off their own timeline.
      *
      * @param member The hire, already resolved against the project.
      * @param projectId The project to look in.
@@ -57,9 +57,9 @@ class ContributionService(
  * the *goal* a hire is working toward, this is the *evidence* that they completed something. The
  * two meet only in that finishing the former produces the latter.
  *
- * [firstResponseAt] null means nobody has answered yet — a finding, not missing data. A
- * [returnedCount] of zero is half the operational definition of autonomy: acceptance alone cannot
- * tell clean work from work sent back three times.
+ * [firstResponseAt] null means nobody has answered yet — a finding, not missing data.
+ * [returnedCount] is kept beside acceptance because acceptance alone cannot tell clean work from
+ * work sent back three times.
  *
  * Invariant: [state] `== ACCEPTED` implies [acceptedAt] is non-null, and vice versa. It is
  * established in the mappers that build these, which are the only way one is constructed.
@@ -75,7 +75,7 @@ data class Contribution(
     val acceptedAt: Instant?,
     val returnedCount: Int,
 ) {
-    /** Accepted through the team's normal quality bar. The unit the ramp counts. */
+    /** Accepted through the team's normal quality bar. The unit the metrics count. */
     val isAccepted: Boolean
         get() = state == ContributionState.ACCEPTED
 

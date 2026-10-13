@@ -187,6 +187,12 @@ Narrate what you are doing as you go. Do not work silently and present a result 
 * Keep validation errors user-facing and predictable.
 * For PATCH requests, nullable fields are acceptable when omitted values should remain unchanged.
 
+## Buddy app guide
+
+* `onboarding/service/AppGuide.kt` is the buddy's map of the frontend: every page, where it is, its tabs and their deep links, and who may open it. It is hand-written and mirrors `sprintstart-frontend/src/auth/accessPolicy.ts` and the UI's own labels.
+* When a frontend page, tab, tab URL parameter or quoted label changes, update `AppGuide.kt` (and the route list in `AppGuideTest`) in the same piece of work, and the frontend's `src/features/buddy/appGuideRoutes.ts` with it.
+* A how-to's `link` may only use a URL parameter the frontend actually reads.
+
 ## Do not
 
 * Do not add new production dependencies without explaining why and confirming it with me.

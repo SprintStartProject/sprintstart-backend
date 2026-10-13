@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchUserRequest
 import com.sprintstart.sprintstartbackend.user.model.request.user.UpdateUserEnabledRequest
+import com.sprintstart.sprintstartbackend.user.repository.DashboardLayoutRepository
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import com.sprintstart.sprintstartbackend.user.service.GithubLoginService
@@ -37,6 +38,7 @@ class UserServiceTest {
     private val projectRepository: ProjectRepository = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk()
     private val keycloakAdminClient: KeycloakAdminClient = mockk()
+    private val dashboardLayoutRepository: DashboardLayoutRepository = mockk(relaxed = true)
     private val githubLoginService = GithubLoginService(userRepository)
     private val jiraDisplayNameService = JiraDisplayNameService(userRepository)
     private val userService = UserService(
@@ -46,6 +48,7 @@ class UserServiceTest {
         keycloakAdminClient,
         githubLoginService,
         jiraDisplayNameService,
+        dashboardLayoutRepository,
     )
 
     @Test
@@ -202,6 +205,7 @@ class UserServiceTest {
         verify(exactly = 1) { keycloakAdminClient.deleteUser("auth-1") }
         verify(exactly = 1) { userRepository.deleteRolesByUserId(user.id) }
         verify(exactly = 1) { userRepository.deleteProjectionById(user.id) }
+        verify(exactly = 1) { dashboardLayoutRepository.deleteByUserId(user.id) }
         // Other modules hold data about this person that only they can reach.
         verify(exactly = 1) { eventPublisher.publishEvent(UserDeletedEvent(user.id)) }
     }

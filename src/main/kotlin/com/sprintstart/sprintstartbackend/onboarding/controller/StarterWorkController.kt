@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.competency.Re
 import com.sprintstart.sprintstartbackend.onboarding.model.request.starterwork.ClaimGoalRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.starterwork.CreateStarterWorkTaskRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.starterwork.PromoteStarterWorkCandidateRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.starterwork.SetTaskZeroEligibilityRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.goal.GoalView
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.GenerateStarterWorkResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
@@ -312,6 +313,36 @@ class StarterWorkController(
         @Parameter(description = "UUID of the starter-work task to mark reviewed")
         @PathVariable id: UUID,
     ): StarterWorkTaskProposalResponse = starterWorkTaskProposalService.markReviewed(id)
+
+    /**
+     * Flags a live task as a good first one for somebody.
+     *
+     * A note on the task, not an assignment: the pool shows it so a PM can see at a glance which
+     * tasks they consider gentle starts. Nothing hands a flagged task to a hire and nothing
+     * withholds an unflagged one -- hires claim their own work.
+     */
+    @Operation(
+        summary = "Flag a starter-work task as a good first one (Task 0)",
+        description = "A PM's judgement that this live task is small and safe enough to be somebody's " +
+            "first one. A label the pool shows, never a gate or an assignment.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Flag updated"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "No task found with the given id"),
+            ApiResponse(responseCode = "409", description = "The task is no longer in the pool"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @PostMapping("/{id}/task-zero")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM')")
+    fun setTaskZeroEligibility(
+        @Parameter(description = "UUID of the starter-work task to flag")
+        @PathVariable id: UUID,
+        @RequestBody request: SetTaskZeroEligibilityRequest,
+    ): StarterWorkTaskProposalResponse = starterWorkTaskProposalService.setTaskZeroEligibility(id, request.eligible)
 
     /**
      * Takes a starter-work task out of the pool for good.

@@ -117,6 +117,46 @@ class ArtifactProjectRepositoryTest {
     }
 
     @Test
+    fun `a Notion connection matches its own pages only`() {
+        val wanted = UUID.randomUUID()
+        val other = UUID.randomUUID()
+        val page = storeNotionPage(wanted, "page-1")
+        val secondPage = storeNotionPage(wanted, "page-2")
+        val elsewhere = storeNotionPage(other, "page-1")
+        entityManager.flush()
+
+        val found = repository.findAllNotionPagesByConnectionId(wanted).map { it.id }
+
+        assertThat(found).containsExactlyInAnyOrder(page.id, secondPage.id)
+        assertThat(found).doesNotContain(elsewhere.id)
+    }
+
+    @Test
+    fun `a workspace artifact is found by its exact source id only`() {
+        val workspace = store(
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceId = "bitbucket:sprintstart:ORG_METADATA",
+            sourceUrl = "https://bitbucket.org/sprintstart",
+            type = ArtifactType.ORG_METADATA,
+        )
+        val repoFile = store(
+            sourceSystem = SourceSystem.BITBUCKET,
+            sourceId = "bitbucket:sprintstart/backend:FILE:README.md",
+            sourceUrl = "https://bitbucket.org/sprintstart/backend",
+            type = ArtifactType.FILE,
+        )
+        entityManager.flush()
+
+        assertThat(repository.findBySourceId("bitbucket:sprintstart:ORG_METADATA")?.id)
+            .isEqualTo(workspace.id)
+        assertThat(repository.findBySourceId("bitbucket:other:ORG_METADATA")).isNull()
+        // The id carries no slug segment, so no repository prefix query may match it.
+        assertThat(
+            repository.findAllBitbucketArtifactsByWorkspaceAndSlug("sprintstart", "backend").map { it.id },
+        ).containsExactly(repoFile.id)
+    }
+
+    @Test
     fun `deleting a project drops its links and leaves the others alone`() {
         val deleted = UUID.randomUUID()
         val kept = UUID.randomUUID()
@@ -149,6 +189,13 @@ class ArtifactProjectRepositoryTest {
         sourceSystem = SourceSystem.CONFLUENCE,
         sourceId = "confluence:$connectionId:page:$pageId",
         sourceUrl = "https://acme.atlassian.net/wiki/spaces/ENG/pages/$pageId",
+        type = ArtifactType.PAGE,
+    )
+
+    private fun storeNotionPage(connectionId: UUID, pageId: String): Artifact = store(
+        sourceSystem = SourceSystem.NOTION,
+        sourceId = "notion:$connectionId:page:$pageId",
+        sourceUrl = "https://www.notion.so/$pageId",
         type = ArtifactType.PAGE,
     )
 

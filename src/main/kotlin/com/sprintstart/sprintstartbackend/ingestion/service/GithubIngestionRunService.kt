@@ -68,11 +68,11 @@ class GithubIngestionRunService(
             .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
 
-        // Gated on the phase not having closed yet, because the same failure can be reported twice:
-        // `GithubFileService.fetchAndIngestFileUpdatesIncremental` publishes its fetch-failed event
-        // explicitly for a blank last SHA *and* again from the `runCatching` around it. Ungated,
-        // that run records the same failure twice, and -- if FILES is the last outstanding phase --
-        // finishes twice, firing `RunFinishedEvent` and the whole AI sync a second time.
+        // Gated on the phase not having closed yet: the same failure can be reported twice, for
+        // example by a retry after a transient error, or by two operations of one phase that fail
+        // for the same reason. Ungated, that run records the failure twice, and -- if the phase is
+        // the last outstanding one -- finishes twice, firing `RunFinishedEvent` and the whole AI
+        // sync a second time.
         if (!run.finishedTypes.add(finishedType)) {
             return
         }

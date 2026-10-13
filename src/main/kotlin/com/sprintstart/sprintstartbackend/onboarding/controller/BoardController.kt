@@ -109,8 +109,9 @@ class BoardController(
     @Operation(
         summary = "Put a card of my own on my board",
         description = "Adds a note, a link or a checklist. It is yours: you can edit it, the buddy " +
-            "never touches it, and a board can hold as many of them as you like — unlike the live " +
-            "cards, of which there is one each.",
+            "changes it only when you confirm a change it proposed (and the card then says so), " +
+            "and a board can hold as many of them as you like — unlike the live cards, of which " +
+            "there is one each.",
     )
     @ApiResponses(
         value = [

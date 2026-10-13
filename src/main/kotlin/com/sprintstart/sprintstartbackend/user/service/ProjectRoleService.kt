@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
-import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi
 import com.sprintstart.sprintstartbackend.user.external.SkillSuggestionAiClient
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleShortDto
 import com.sprintstart.sprintstartbackend.user.external.enums.SkillStatus
@@ -41,7 +40,7 @@ class ProjectRoleService(
     private val userRepository: UserRepository,
     private val projectIndustryApi: ProjectIndustryApi,
     private val skillSuggestionAiClient: SkillSuggestionAiClient,
-) : ProjectRoleApi {
+) {
     @Transactional(readOnly = true)
     @Tracked("Retrieving all project roles")
     fun getAllRoles(): List<ProjectRole> {
@@ -237,6 +236,12 @@ class ProjectRoleService(
         val holders = projectUserAssignmentRepository.findAllHoldingRole(roleId)
         holders.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
         projectUserAssignmentRepository.saveAll(holders)
+        // The same for the skills linked to it: `sprintstart_skill_project_roles` references the
+        // role too, and without this a role that carries any skill could not be deleted at all —
+        // the constraint failed the delete. The skills themselves stay in the catalog.
+        val linkedSkills = skillRepository.findAllByProjectRolesId(roleId)
+        linkedSkills.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
+        skillRepository.saveAll(linkedSkills)
         projectRoleRepository.deleteById(roleId)
     }
 
@@ -392,13 +397,13 @@ class ProjectRoleService(
     /**
      * Returns the project roles matching the given ids.
      *
-     * Implementation of the module-facing [ProjectRoleApi]. Unknown ids are silently omitted,
-     * so the result may be smaller than the requested id set — or empty.
+     * Unknown ids are silently omitted, so the result may be smaller than the requested id set —
+     * or empty. [ProjectRoleApiService] publishes this to the other modules.
      *
      * @param ids Ids of the project roles to resolve.
      * @return The matching project roles, mapped to [ProjectRoleShortDto]s.
      */
-    override fun getProjectRolesByIds(ids: Set<UUID>): Set<ProjectRoleShortDto> {
+    fun getProjectRolesByIds(ids: Set<UUID>): Set<ProjectRoleShortDto> {
         return projectRoleRepository
             .findAllById(ids)
             .map { it.toShortDto() }

@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.user.external
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
 import com.sprintstart.sprintstartbackend.UploadConfig
@@ -38,6 +39,7 @@ class SkillSuggestionAiClientTest {
             github = GithubConfig(baseUrl = "https://github.example.com"),
             crypto = CryptoConfig(masterKey = "test-master-key", salt = "test-salt"),
             upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
+            bitbucket = BitbucketConfig(baseUrl = "https://bitbucket.org"),
         )
         client = SkillSuggestionAiClient(webClient, applicationConfig)
     }

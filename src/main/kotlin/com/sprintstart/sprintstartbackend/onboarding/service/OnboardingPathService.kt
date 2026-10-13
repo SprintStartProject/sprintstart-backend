@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.blueprint.repository.BlueprintPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toGetForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.CurrentPhaseDto
@@ -8,6 +9,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.path.GetOnbo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkillDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.onboarding.model.response.path.TeamOverviewUserDto
+import com.sprintstart.sprintstartbackend.onboarding.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.OnboardingPathRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.QuestionAttemptRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
@@ -29,12 +31,26 @@ import java.util.UUID
  * the owning onboarding path. Admin-scoped operations address a user directly by UUID.
  */
 @Service
+// One function per way a path is read or replaced (hire, buddy, PM, team overview); splitting
+// them across classes would scatter the access rules they share.
+@Suppress("TooManyFunctions")
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
     private val questionAttemptRepository: QuestionAttemptRepository,
     private val userApi: UserApi,
     private val onboardingPositionReader: OnboardingPositionReader,
+    private val blueprintPathRepository: BlueprintPathRepository,
 ) {
+    /**
+     * Where an existing path came from.
+     *
+     * @property builtFromProjectId The project whose blueprint the path was copied from; `null` for
+     * a path built from a system-wide blueprint, or one whose blueprint no longer exists.
+     */
+    data class PathOrigin(
+        val builtFromProjectId: UUID?,
+    )
+
 //  ========================== Methods for users ==========================
 
     /**
@@ -67,6 +83,94 @@ class OnboardingPathService(
     }
 
     /**
+     * The origin of [userId]'s onboarding path, or `null` when they have none.
+     *
+     * Rebuilding or deleting a path is decided by who manages the project it was built from, so the
+     * rules about replacing a path need this rather than the path itself.
+     *
+     * @param userId Identifier of the path's owner.
+     * @return Where the path came from, or `null` without a path.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Resolving the origin of an onboarding path")
+    fun findPathOrigin(userId: UUID): PathOrigin? =
+        onboardingPathRepository
+            .findByUserId(userId)
+            .map { path ->
+                PathOrigin(
+                    builtFromProjectId = path.blueprintId
+                        ?.let { blueprintPathRepository.findById(it).orElse(null) }
+                        ?.projectId,
+                )
+            }.orElse(null)
+
+    /**
+     * Refuses [callerAuthId] replacing or deleting [userId]'s path when that is not theirs to decide.
+     *
+     * A user's first path is theirs to build, so without a path there is nothing to check. An
+     * existing one holds the user's progress, so throwing it away is a manager's call:
+     *
+     * - **Rebuilding** from [projectId] needs the caller to manage [projectId] and the owner to be
+     *   assigned to it. Where the old path came from does not matter: a user has one path across
+     *   all their projects, and a member who joins project B with a path from A must be able to get
+     *   one for B from B's manager -- otherwise only an admin could ever move them.
+     * - **Deleting** replaces the path with nothing, so it is decided by the project the path was
+     *   built from: the caller must manage that project. A path whose origin is unknown (its
+     *   blueprint was deleted, or it came from a system-wide one) has no manager to vouch for it,
+     *   so only an admin may delete it.
+     *
+     * @param callerAuthId The acting user's auth ID.
+     * @param userId The path's owner.
+     * @param projectId The project a rebuild builds from, or `null` for a deletion.
+     * @throws ResponseStatusException `403` when the caller may not.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Checking whether an onboarding path may be replaced")
+    fun requireMayReplacePath(callerAuthId: String, userId: UUID, projectId: UUID?) {
+        val origin = findPathOrigin(userId) ?: return
+        if (projectId != null) {
+            requireMayRebuildFrom(callerAuthId, userId, projectId)
+            return
+        }
+        val builtFrom = origin.builtFromProjectId
+        val mayDelete = if (builtFrom == null) {
+            userApi.isAdmin(callerAuthId)
+        } else {
+            userApi.canManageProject(callerAuthId, builtFrom)
+        }
+        if (!mayDelete) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                if (builtFrom == null) {
+                    "Only an admin can delete an onboarding path whose project is unknown"
+                } else {
+                    "The onboarding path was built from a project the caller does not manage"
+                },
+            )
+        }
+    }
+
+    private fun requireMayRebuildFrom(callerAuthId: String, userId: UUID, projectId: UUID) {
+        if (!userApi.canManageProject(callerAuthId, projectId)) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "Only the project manager can rebuild an existing onboarding path",
+            )
+        }
+        val ownerAssigned = userApi
+            .getAuthIdByUserId(userId)
+            .flatMap { authId -> userApi.getOnboardingProfileByAuthId(authId) }
+            .map { profile -> projectId in profile.projectIds }
+            .orElse(false)
+        if (!ownerAssigned) {
+            throw ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "The path's owner is not assigned to project: $projectId",
+            )
+        }
+    }
+
+    /**
      * Deletes the onboarding path owned by the authenticated user.
      *
      * @param authId External authentication identifier.
@@ -82,10 +186,22 @@ class OnboardingPathService(
     }
 
     /**
+     * Whether this user has an onboarding path at all.
+     *
+     * A row count rather than a read: the buddy asks this once per turn to decide whether to mount
+     * its path tool, and loading every phase and step to answer "is there one" would put the
+     * heaviest read in the module behind a question about its own existence.
+     */
+    fun hasPath(userId: UUID): Boolean = onboardingPathRepository.existsByUserId(userId)
+
+    /**
      * A user's path as they see it, by user id, or `null` when they have none.
      *
      * The same read as [getOnboardingPathForMe] -- question attempts included, so the statuses are
-     * the ones on their screen -- reached by user id, for a reviewer looking at somebody's path.
+     * the ones on their screen -- reached by user id and without the 404, for the buddy and for a
+     * reviewer looking at somebody's path. Having no path yet is an ordinary state for a caller that
+     * is deciding what to say about it, not an error to catch: the buddy needs "there is nothing
+     * here" as an answer, and a thrown 404 would make every reader wrap this in a try.
      */
     @Transactional(readOnly = true)
     @Tracked("Retrieving onboarding path by user id")
@@ -97,6 +213,26 @@ class OnboardingPathService(
                     passedQuestionIds = questionAttemptRepository.findPassedQuestionIdsByUserId(userId).toSet(),
                     attemptedQuestionIds = questionAttemptRepository.findAttemptedQuestionIdsByUserId(userId).toSet(),
                 )
+            }.orElse(null)
+
+    /**
+     * One phase of the user's own path that generation left empty (or that failed), in the hire's
+     * form, or `null`.
+     *
+     * [findPathForUserId] leaves these out of `phases` -- a hire should not be walked through a phase
+     * with nothing in it -- and reports them only as `generationIssues`. They are exactly what the
+     * buddy's `add_path_step` exists to repair, though, so it needs them by id: resolved through the
+     * owner's own path like every other lookup, so an id from anywhere else is not found.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving a hidden onboarding phase by user id")
+    fun findHiddenPhaseForUserId(userId: UUID, phaseId: UUID): GetOnboardingPhaseForUserResponse? =
+        onboardingPathRepository
+            .findOnboardingPathByUserId(userId)
+            .map { path ->
+                path.phases
+                    .firstOrNull { it.id == phaseId && it.generationStatus.isHiddenFromUser() }
+                    ?.toGetForUserResponse()
             }.orElse(null)
 
 //  ========================== Methods for admins ==========================

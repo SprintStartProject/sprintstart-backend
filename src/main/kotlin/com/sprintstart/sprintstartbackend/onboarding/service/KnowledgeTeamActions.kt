@@ -9,9 +9,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.CanonicalAnswe
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.KnowledgeRequest
 import com.sprintstart.sprintstartbackend.onboarding.repository.CanonicalAnswerRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.KnowledgeRequestRepository
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID
@@ -27,6 +27,29 @@ import java.util.UUID
  * the recheck and the write. So the writes go through the service's conditional variants, whose
  * condition is part of the update, and a lost race comes back as a refusal the manager can read.
  */
+
+/** What a confirmed answer to an escalated question carries. */
+@Serializable
+data class AnswerEscalationParams(
+    @SerialName("request_id") @Serializable(with = UuidSerializer::class) val requestId: UUID,
+    val answer: String,
+    val question: String,
+)
+
+/** The escalated question a confirmed dismissal takes out of the inbox. */
+@Serializable
+data class DismissEscalationParams(
+    @SerialName("request_id") @Serializable(with = UuidSerializer::class) val requestId: UUID,
+)
+
+/** The new wording of a canonical answer, and the version of it the manager saw. */
+@Serializable
+data class EditCanonicalAnswerParams(
+    @SerialName("answer_id") @Serializable(with = UuidSerializer::class) val answerId: UUID,
+    val question: String,
+    val answer: String,
+    @SerialName("seen_updated_at") @Serializable(with = InstantSerializer::class) val seenUpdatedAt: Instant,
+)
 
 /** The request [requestId] names, if it is still open and on [projectId]. */
 private fun KnowledgeRequestRepository.openOn(requestId: UUID?, projectId: UUID): KnowledgeRequest? =
@@ -56,7 +79,7 @@ private const val GONE_SINCE = "That question was answered or dismissed since, s
 class AnswerEscalationAction(
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val knowledgeBaseService: KnowledgeBaseService,
-) : TeamActionHandler {
+) : TypedTeamAction<AnswerEscalationParams>(AnswerEscalationParams.serializer()) {
     override val area = TeamArea.KNOWLEDGE
     override val risk = BuddyProposalRisk.STANDARD
     override val spec = BuddyToolSpecDto(
@@ -81,12 +104,8 @@ class AnswerEscalationAction(
             return TeamActionDraft.Refused("No answer was written. Draft it from the docs first, then offer it.")
         }
         val question = call.textArgument("question").ifBlank { request.question }
-        return TeamActionDraft.Proposed(
-            params = buildJsonObject {
-                put("request_id", request.id.toString())
-                put("answer", answer)
-                put("question", question)
-            },
+        return proposed(
+            params = AnswerEscalationParams(request.id, answer, question),
             label = "Answer: ${question.forLabel()}",
             preview = "Question: $question\n\nAnswer:\n$answer\n\n" +
                 "This becomes a canonical answer on this project: the buddy quotes it to anyone who asks " +
@@ -94,16 +113,16 @@ class AnswerEscalationAction(
         )
     }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? =
-        GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.uuid("request_id"), context.projectId) == null }
+    override fun recheckParams(params: AnswerEscalationParams, context: TeamToolContext): String? =
+        GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.requestId, context.projectId) == null }
 
-    override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
+    override suspend fun performParams(params: AnswerEscalationParams, context: TeamToolContext): String {
         knowledgeBaseService.answerOpenOn(
             pmAuthId = context.authId,
             projectId = context.projectId,
-            requestId = requireNotNull(params.uuid("request_id")),
-            answerText = params.text("answer"),
-            questionOverride = params.text("question"),
+            requestId = params.requestId,
+            answerText = params.answer,
+            questionOverride = params.question,
         )
         return "Answered. It is now a canonical answer on this project, and the person who asked can see it."
     }
@@ -114,7 +133,7 @@ class AnswerEscalationAction(
 class DismissEscalationAction(
     private val knowledgeRequestRepository: KnowledgeRequestRepository,
     private val knowledgeBaseService: KnowledgeBaseService,
-) : TeamActionHandler {
+) : TypedTeamAction<DismissEscalationParams>(DismissEscalationParams.serializer()) {
     override val area = TeamArea.KNOWLEDGE
     override val risk = BuddyProposalRisk.DESTRUCTIVE
     override val spec = BuddyToolSpecDto(
@@ -131,19 +150,19 @@ class DismissEscalationAction(
     override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft {
         val request = knowledgeRequestRepository.openOn(call.uuidArgument("request_id"), context.projectId)
             ?: return TeamActionDraft.Refused(NOT_OPEN_HERE)
-        return TeamActionDraft.Proposed(
-            params = buildJsonObject { put("request_id", request.id.toString()) },
+        return proposed(
+            params = DismissEscalationParams(request.id),
             label = "Dismiss: ${request.question.forLabel()}",
             preview = "Dismiss the question “${request.question}” without answering it.\n\n" +
                 "It leaves the inbox, the person who asked sees it as dismissed, and no canonical answer is written.",
         )
     }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? =
-        GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.uuid("request_id"), context.projectId) == null }
+    override fun recheckParams(params: DismissEscalationParams, context: TeamToolContext): String? =
+        GONE_SINCE.takeIf { knowledgeRequestRepository.openOn(params.requestId, context.projectId) == null }
 
-    override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
-        knowledgeBaseService.dismissOpenOn(context.projectId, requireNotNull(params.uuid("request_id")))
+    override suspend fun performParams(params: DismissEscalationParams, context: TeamToolContext): String {
+        knowledgeBaseService.dismissOpenOn(context.projectId, params.requestId)
         return "Dismissed. The question left the inbox without an answer."
     }
 }
@@ -159,7 +178,7 @@ class DismissEscalationAction(
 class EditCanonicalAnswerAction(
     private val canonicalAnswerRepository: CanonicalAnswerRepository,
     private val knowledgeBaseService: KnowledgeBaseService,
-) : TeamActionHandler {
+) : TypedTeamAction<EditCanonicalAnswerParams>(EditCanonicalAnswerParams.serializer()) {
     override val area = TeamArea.KNOWLEDGE
     override val risk = BuddyProposalRisk.STANDARD
     override val spec = BuddyToolSpecDto(
@@ -185,24 +204,18 @@ class EditCanonicalAnswerAction(
         if (question == current.question && answer == current.answer) {
             return TeamActionDraft.Refused("Nothing would change. Give a new question, a new answer, or both.")
         }
-        return TeamActionDraft.Proposed(
-            params = buildJsonObject {
-                put("answer_id", current.id.toString())
-                put("question", question)
-                put("answer", answer)
-                put("seen_updated_at", current.updatedAt.toString())
-            },
+        return proposed(
+            params = EditCanonicalAnswerParams(current.id, question, answer, current.updatedAt),
             label = "Edit answer: ${question.forLabel()}",
             preview = "Before:\nQ: ${current.question}\nA: ${current.answer}\n\n" +
                 "After:\nQ: $question\nA: $answer\n\nThe buddy quotes the new wording from now on.",
         )
     }
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? {
-        val current = canonicalAnswerRepository.on(params.uuid("answer_id"), context.projectId)
+    override fun recheckParams(params: EditCanonicalAnswerParams, context: TeamToolContext): String? {
+        val current = canonicalAnswerRepository.on(params.answerId, context.projectId)
             ?: return "That answer no longer exists, so nothing was changed."
-        val seen = runCatching { Instant.parse(params.text("seen_updated_at")) }.getOrNull()
-        return if (current.updatedAt == seen) {
+        return if (current.updatedAt == params.seenUpdatedAt) {
             null
         } else {
             "Somebody changed that answer after this was proposed, so it was not overwritten. Ask again to " +
@@ -210,14 +223,14 @@ class EditCanonicalAnswerAction(
         }
     }
 
-    override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
+    override suspend fun performParams(params: EditCanonicalAnswerParams, context: TeamToolContext): String {
         knowledgeBaseService.editAnswerIfUnchanged(
             pmAuthId = context.authId,
             projectId = context.projectId,
-            answerId = requireNotNull(params.uuid("answer_id")),
-            question = params.text("question"),
-            answer = params.text("answer"),
-            seenUpdatedAt = Instant.parse(params.text("seen_updated_at")),
+            answerId = params.answerId,
+            question = params.question,
+            answer = params.answer,
+            seenUpdatedAt = params.seenUpdatedAt,
         )
         return "Updated the canonical answer. The buddy quotes the new wording from now on."
     }
@@ -246,8 +259,6 @@ class RefreshFaqAction(
                 "questions, replacing the current groups. It asks the AI service and can take a while.",
         )
 
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? = null
-
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val groups = insightsRefreshApi.refreshFaq(context.projectId)
         return "Refreshed the FAQ: $groups recurring-question groups."
@@ -275,8 +286,6 @@ class RefreshKnowledgeGapsAction(
             preview = "Rescan this project's components for missing documentation, replacing the current list " +
                 "of gaps. It asks the AI service and can take a while.",
         )
-
-    override fun recheck(params: JsonObject, context: TeamToolContext): String? = null
 
     override suspend fun perform(params: JsonObject, context: TeamToolContext): String {
         val refresh = insightsRefreshApi.refreshKnowledgeGaps(context.projectId)

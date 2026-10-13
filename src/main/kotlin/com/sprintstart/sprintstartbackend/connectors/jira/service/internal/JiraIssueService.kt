@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraIssue
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraIssueRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -113,6 +114,7 @@ internal class JiraIssueService(
      *
      * This method changes the status of the instance to UPDATING during the process of fetching
      * and processing updates. Once the updates are completed, the instance status is set to UP_TO_DATE.
+     * An update that fails settles the status to FAILED instead of leaving it on UPDATING.
      *
      * @param instance The Jira instance to be updated.
      * @param transactionId A unique identifier for the ongoing transaction.
@@ -122,10 +124,19 @@ internal class JiraIssueService(
         instance.status = ConnectionState.UPDATING
         instanceRepository.save(instance)
 
-        val newAndUpdatedIssues = fetchNewAndUpdatedIssues(instance.instanceUrl, transactionId)
+        try {
+            val newAndUpdatedIssues = fetchNewAndUpdatedIssues(instance.instanceUrl, transactionId)
 
-        if (newAndUpdatedIssues.isNotEmpty()) {
-            processAndIngestIssues(instance, newAndUpdatedIssues, transactionId)
+            if (newAndUpdatedIssues.isNotEmpty()) {
+                processAndIngestIssues(instance, newAndUpdatedIssues, transactionId)
+            }
+        } catch (e: CancellationException) {
+            // Never swallow cancellation: the update is abandoned, not failed.
+            throw e
+        } catch (e: Exception) {
+            instance.status = ConnectionState.FAILED
+            instanceRepository.save(instance)
+            throw e
         }
 
         instance.status = ConnectionState.UP_TO_DATE
@@ -219,6 +230,11 @@ internal class JiraIssueService(
      * `JiraIssueFetchedEvent` with a proper per-issue source URL and the instance's
      * project associations. The artifact provider service handles update-in-place logic.
      *
+     * Publishing an issue runs the persistence listener synchronously, so a failure while storing
+     * one surfaces here. It is reported as a [JiraResourceFetchingFailedEvent] and rethrown: the
+     * ingestion run is only finalized by a terminal event, so letting it escape silently would leave
+     * the run waiting for one forever.
+     *
      * @param instance The Jira instance to which the issues belong.
      * @param issues The list of Jira issues to be processed and ingested.
      * @param transactionId The unique identifier for the transaction during which the issues are processed.
@@ -228,22 +244,29 @@ internal class JiraIssueService(
         issues: List<JiraIssueResponse>,
         transactionId: UUID,
     ) {
-        for (issue in issues) {
-            val issueEntity = JiraIssue(issue.id, instance)
-            issueRepository.save(issueEntity)
+        try {
+            for (issue in issues) {
+                val issueEntity = JiraIssue(issue.id, instance)
+                issueRepository.save(issueEntity)
 
-            val sourceUrl = "${instance.instanceUrl}/browse/${issue.key}"
+                val sourceUrl = "${instance.instanceUrl}/browse/${issue.key}"
 
+                eventPublisher.publishEvent(
+                    JiraIssueFetchedEvent(
+                        transactionId = transactionId,
+                        instanceId = instance.instanceUrl,
+                        instanceUrl = instance.instanceUrl,
+                        sourceUrl = sourceUrl,
+                        issue = issue,
+                        projectIds = instance.projectIds,
+                    ),
+                )
+            }
+        } catch (e: Exception) {
             eventPublisher.publishEvent(
-                JiraIssueFetchedEvent(
-                    transactionId = transactionId,
-                    instanceId = instance.instanceUrl,
-                    instanceUrl = instance.instanceUrl,
-                    sourceUrl = sourceUrl,
-                    issue = issue,
-                    projectIds = instance.projectIds,
-                ),
+                JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instance.instanceUrl),
             )
+            throw e
         }
     }
 

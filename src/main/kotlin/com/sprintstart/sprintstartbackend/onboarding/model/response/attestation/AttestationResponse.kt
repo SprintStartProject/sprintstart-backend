@@ -8,7 +8,7 @@ import java.util.UUID
  * One request for somebody to confirm a hire's work.
  *
  * [returnedCount] is shown rather than hidden: work that took three passes is not the same as work
- * that took none, and autonomy reads exactly this number.
+ * that took none.
  */
 data class AttestationResponse(
     val id: UUID,

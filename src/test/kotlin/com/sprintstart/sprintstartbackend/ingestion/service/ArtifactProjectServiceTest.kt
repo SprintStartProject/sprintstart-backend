@@ -126,6 +126,40 @@ class ArtifactProjectServiceTest {
     }
 
     @Test
+    fun `a Notion connection resolves only the pages it produced`() = runTest {
+        val connectionId = UUID.randomUUID()
+        val artifact = artifact(existingProject)
+        every { artifactProjectRepository.findAllNotionPagesByConnectionId(connectionId) } returns listOf(artifact)
+        coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns succeeded(artifact.id)
+
+        service.applyProjectLink(
+            ArtifactSourceRef.NotionConnection(connectionId),
+            newProject,
+            linked = false,
+        )
+
+        assertThat(artifact.projectIds).containsExactly(existingProject)
+        verify(exactly = 1) { artifactProjectRepository.findAllNotionPagesByConnectionId(connectionId) }
+    }
+
+    @Test
+    fun `a workspace source resolves its single metadata artifact`() = runTest {
+        val artifact = artifact(existingProject)
+        every {
+            artifactProjectRepository.findBySourceId("bitbucket:sprintstart:ORG_METADATA")
+        } returns artifact
+        coEvery { artifactIngestionClient.syncProjectMemberships(any()) } returns succeeded(artifact.id)
+
+        service.applyProjectLink(
+            ArtifactSourceRef.BitbucketWorkspace("sprintstart"),
+            newProject,
+            linked = true,
+        )
+
+        assertThat(artifact.projectIds).containsExactlyInAnyOrder(existingProject, newProject)
+    }
+
+    @Test
     fun `an artifact the AI service could not re-scope fails the operation`() {
         val artifact = artifact(existingProject)
         every { artifactProjectRepository.findAllByComponent("acme/repo") } returns listOf(artifact)

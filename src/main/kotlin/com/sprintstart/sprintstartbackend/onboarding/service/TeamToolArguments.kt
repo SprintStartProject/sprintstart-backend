@@ -14,10 +14,11 @@ import kotlinx.serialization.json.putJsonObject
 import java.util.UUID
 
 /*
- * Reading what the model passed to a team-mode tool, and what a stored proposal kept of it.
+ * Reading what the model passed to a team-mode tool.
  *
- * Both are untrusted in the same way: a missing, blank or malformed value comes back empty or null,
- * never as an exception, so every tool can answer with a sentence the model can act on.
+ * It is untrusted: a missing, blank or malformed value comes back empty or null, never as an exception,
+ * so every tool can answer with a sentence the model can act on. What a confirmed proposal stores is not
+ * read here but through the typed params of [TypedTeamAction].
  */
 
 /** A text argument of a tool call, trimmed; empty when missing or not text. */
@@ -29,33 +30,20 @@ internal fun BuddyToolCallDto.uuidArgument(name: String): UUID? = arguments.uuid
 /** A boolean argument of a tool call; null when missing or neither `true` nor `false`. */
 internal fun BuddyToolCallDto.booleanArgument(name: String): Boolean? = arguments.boolean(name)
 
-/** A text field of stored params, trimmed; empty when missing or not text. */
+/** A text field, trimmed; empty when missing or not text. */
 internal fun JsonObject.text(name: String): String = (this[name] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
 
-/**
- * A text field of stored params when the proposal carried it at all, blank included; null when not.
- *
- * For a field whose blank value means something — a description confirmed to be taken off — where
- * [text] alone cannot tell that apart from a field the proposal never mentioned.
- */
-internal fun JsonObject.textIfPresent(name: String): String? = if (containsKey(name)) text(name) else null
-
-/** A UUID field of stored params; null when missing or not a UUID. */
+/** A UUID field; null when missing or not a UUID. */
 internal fun JsonObject.uuid(name: String): UUID? = runCatching { UUID.fromString(text(name)) }.getOrNull()
 
-/** A boolean field of stored params; null when missing or neither `true` nor `false`. Models send `"true"` too. */
+/** A boolean field; null when missing or neither `true` nor `false`. */
 internal fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
 
-/**
- * The object entries of an array field; non-objects are dropped rather than failing the read.
- *
- * Read off `call.arguments` for a tool call and off the stored params for a confirm — the two are
- * the same shape, and an array the model sent is untrusted in both places.
- */
+/** The object entries of an array field; non-objects are dropped rather than failing the read. */
 internal fun JsonObject.objectArray(name: String): List<JsonObject> =
     (this[name] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
 
-/** The text entries of a stored array field, trimmed, with blanks dropped. */
+/** The text entries of an array field, trimmed, with blanks dropped. */
 internal fun JsonObject.textArray(name: String): List<String> =
     (this[name] as? JsonArray)
         .orEmpty()

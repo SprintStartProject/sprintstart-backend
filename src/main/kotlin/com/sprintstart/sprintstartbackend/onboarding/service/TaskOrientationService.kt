@@ -54,14 +54,8 @@ import java.util.UUID
  * Nothing is ever fabricated. "No packet" is an ordinary returned state carrying the reason —
  * never an empty packet, never an error.
  *
- * Reading orientation never assigns anything: the hire's current task comes from
- * [CurrentTaskReader], not from [TaskZeroService.getForHire], which assigns on read.
- *
- * **Through that reader and not around it.** This used to go to the Task 0 assignment table
- * directly, which made a hire who had *claimed a goal* invisible here: their board showed the task
- * they had chosen and the orientation said they had no current task at all. Which task somebody is
- * on is one question, and a hire told two different answers to it has no way to know which is
- * true — see the reader's own note on why it exists.
+ * Reading orientation never assigns anything: the task is the one the hire claimed, read through
+ * [CurrentTaskReader] -- the same read the board's current-task card uses.
  *
  * A human-authored packet is pinned [OrientationOrigin.HUMAN] and every cache rule above is
  * switched off for it: [getForHire] serves it as-is and never calls the AI, so it is never

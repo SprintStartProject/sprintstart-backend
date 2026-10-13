@@ -1,0 +1,73 @@
+[
+  {
+    "type": "text",
+    "text": {
+      "content": "Read ",
+      "link": null
+    },
+    "plain_text": "Read ",
+    "annotations": {
+      "bold": false,
+      "italic": false,
+      "strikethrough": false,
+      "underline": false,
+      "code": false,
+      "color": "default"
+    },
+    "href": null
+  },
+  {
+    "type": "text",
+    "text": {
+      "content": "the docs",
+      "link": {
+        "url": "https://example.com/docs"
+      }
+    },
+    "plain_text": "the docs",
+    "annotations": {
+      "bold": true,
+      "italic": false,
+      "strikethrough": false,
+      "underline": false,
+      "code": false,
+      "color": "default"
+    },
+    "href": "https://example.com/docs"
+  },
+  {
+    "type": "mention",
+    "mention": {
+      "type": "page",
+      "page": {
+        "id": "22222222-2222-4222-8222-222222222222"
+      }
+    },
+    "plain_text": "Runbook",
+    "href": "https://www.notion.so/22222222222242228222222222222222",
+    "annotations": {
+      "bold": false,
+      "italic": false,
+      "strikethrough": false,
+      "underline": false,
+      "code": false,
+      "color": "default"
+    }
+  },
+  {
+    "type": "equation",
+    "equation": {
+      "expression": "x^2"
+    },
+    "plain_text": "x^2",
+    "href": null,
+    "annotations": {
+      "bold": false,
+      "italic": true,
+      "strikethrough": true,
+      "underline": true,
+      "code": true,
+      "color": "blue"
+    }
+  }
+]

@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardStage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
@@ -35,37 +34,62 @@ object BoardReading {
     private const val LINES_PER_CARD = 12
 
     /**
-     * The hire's own checklists, named with the ids `amend_checklist` needs, or "" when they have
-     * none.
+     * How much of a note the mentor is shown. Enough to edit a real note from; a runaway one is cut
+     * and marked, so the mentor knows it does not have all of it before proposing to rewrite it.
+     */
+    const val NOTE_PREVIEW = 1500
+
+    /**
+     * Every card on the board with the id the board tools need, and what the hire's own cards say,
+     * or "" for an empty board.
      *
      * Ids appear in this one section and nowhere else in a board read. Every other line of that
      * read is written to be *said* — names, counts, what waits on what — and an id sitting in one
      * of those is a thing the mentor ends up reading out to somebody who cannot use it.
      *
+     * Every card rather than only the checklists, since the buddy may now propose to edit a note or
+     * a link, take any card off, or rearrange the board — and each of those needs the id of a card
+     * it could not otherwise name. The hire's own cards carry their words as well: a note cannot be
+     * rewritten by somebody who cannot see what it says now.
+     *
      * Built here rather than in `BuddyBoardTools.readBoard` so that function gains no branch: it
      * is already at detekt's complexity ceiling, and a board read is exactly the kind of function
      * that grows a condition per release until nobody can follow it.
      */
-    fun amendableSection(cards: List<BoardCardResponse>, limit: Int): String {
-        val amendable = cards
-            .asSequence()
-            .filter { it.kind == BoardCardKind.CHECKLIST && it.owner == BoardCardOwner.HIRE }
-            .take(limit)
-            .toList()
-        if (amendable.isEmpty()) return ""
+    fun cardsSection(cards: List<BoardCardResponse>, limit: Int): String {
+        if (cards.isEmpty()) return ""
 
         return buildString {
-            append("\n\nChecklists of theirs, with what is on them. Add steps with amend_checklist ")
-            append("rather than making a second card beside one, and tick lines off with ")
-            append("tick_checklist_items when they say they have done them — both match by the ")
-            append("words below, so quote them exactly. The id is for the tools only — never say ")
-            append("it to the hire:")
-            amendable.forEach { card ->
-                append("\n- " + nameOf(card) + " (id: " + card.id + ")")
-                append(lines(card))
+            append("\n\nEvery card, in board order, with its id. The ids are for the board tools only ")
+            append("— never say one to the hire. Their own cards show what is on them: add steps ")
+            append("with amend_checklist rather than making a second card beside one, and tick ")
+            append("lines off with tick_checklist_items when they say they have done them — both ")
+            append("match by the words below, so quote them exactly:")
+            cards.take(limit).forEach { card ->
+                append("\n- " + nameOf(card) + " (" + describe(card) + ", id: " + card.id + ")")
+                append(contentOf(card))
             }
+            if (cards.size > limit) append("\n- and ${cards.size - limit} more, not listed")
         }
     }
+
+    /** What kind of card this is, and whose, in a few words. */
+    private fun describe(card: BoardCardResponse): String {
+        val kind = card.kind.name
+            .lowercase()
+            .replace('_', ' ')
+        return if (card.owner == BoardCardOwner.HIRE) "their $kind" else kind
+    }
+
+    /** The words on one of the hire's own cards, capped; nothing for a live card. */
+    private fun contentOf(card: BoardCardResponse): String =
+        when (val content = card.content) {
+            is ChecklistContent -> lines(card)
+            is NoteContent -> "\n    " + content.text.take(NOTE_PREVIEW).replace("\n", "\n    ") +
+                if (content.text.length > NOTE_PREVIEW) "…" else ""
+            is LinkContent -> "\n    " + content.url
+            else -> ""
+        }
 
     /**
      * One checklist's lines, ticked or not, capped.

@@ -262,7 +262,14 @@ class ArrivalTeamActionsTest {
             onList(step("vpn"))
 
             val stale = action.recheck(
-                buildJsonObject { putJsonArray("steps") { addJsonObject { put("key", "vpn") } } },
+                buildJsonObject {
+                    putJsonArray("steps") {
+                        addJsonObject {
+                            put("key", "vpn")
+                            put("title", "VPN")
+                        }
+                    }
+                },
                 context,
             )
 

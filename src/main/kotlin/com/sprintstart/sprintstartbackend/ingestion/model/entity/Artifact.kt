@@ -9,6 +9,7 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import java.time.Instant
@@ -48,6 +49,12 @@ class Artifact(
     @CollectionTable(
         name = "artifact_projects",
         joinColumns = [JoinColumn(name = "artifact_id")],
+        indexes = [
+            Index(
+                name = "idx_artifact_projects_project",
+                columnList = "project_id, artifact_id",
+            ),
+        ],
     )
     @Column(name = "project_id", nullable = false)
     // Add companion obj to Artifact to have Artifact.create

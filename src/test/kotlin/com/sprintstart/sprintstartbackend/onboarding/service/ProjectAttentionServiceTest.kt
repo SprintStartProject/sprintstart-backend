@@ -40,7 +40,6 @@ class ProjectAttentionServiceTest {
         displayName = "A Hire",
         githubLogin = "hire",
         joinedAt = null,
-        taskZeroAssignedAt = null,
         firstTaskClaimedAt = null,
         firstContributionOpenedAt = null,
         firstResponseAt = null,
@@ -52,7 +51,6 @@ class ProjectAttentionServiceTest {
         longestOpenWaitHours = longestOpenWaitHours,
         stalled = stalled,
         stalledReason = stalledReason,
-        autonomyReachedAt = null,
         returnedContributionCount = 0,
     )
 

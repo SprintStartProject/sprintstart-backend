@@ -3,6 +3,8 @@ package com.sprintstart.sprintstartbackend.onboarding.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredPullRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardActor
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardChange
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BoardCardState
@@ -20,24 +22,28 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardCardPaylo
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistItemPayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.ChecklistPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.LinkPayload
+import com.sprintstart.sprintstartbackend.onboarding.model.entity.NotePayload
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingResource
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTaskProposal
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.AuthoredCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistItemRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.LinkCardRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.ArrivalStepsContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentKey
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardMomentResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CompetencyProgressContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.MemoryRecapContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.OpenPullRequestsContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
-import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathToFirstContributionContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.SuggestedTasksContent
+import com.sprintstart.sprintstartbackend.onboarding.model.response.board.TaskPoolContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.competency.MyCompetencyResponse
-import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.starterwork.StarterWorkTaskProposalResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
@@ -57,6 +63,7 @@ import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.http.HttpStatus
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.web.server.ResponseStatusException
 import java.time.Clock
@@ -82,7 +89,6 @@ class BoardServiceTest {
     private val boardRepository: BoardRepository = mockk()
     private val boardCardRepository: BoardCardRepository = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
-    private val onboardingMetricsService: OnboardingMetricsService = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val currentTaskReader: CurrentTaskReader = mockk()
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService = mockk()
@@ -118,7 +124,6 @@ class BoardServiceTest {
         boardRepository,
         boardCardRepository,
         projectMembershipApi,
-        onboardingMetricsService,
         OpenPullRequestReader(artifactIngestionApi, Clock.fixed(now, ZoneOffset.UTC)),
         currentTaskReader,
         starterWorkTaskProposalService,
@@ -134,17 +139,15 @@ class BoardServiceTest {
     @BeforeEach
     fun setUp() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns listOf(member())
-        every { onboardingMetricsService.getHireTimeline(hireId, projectId) } returns timeline()
         every { artifactIngestionApi.getAuthoredPullRequests(projectId, "ada") } returns emptyList()
         every { boardRepository.save(any()) } answers { firstArg() }
         every { boardCardRepository.saveAll(any<List<BoardCard>>()) } answers { firstArg() }
         every { boardCardRepository.findAllByBoardId(any()) } returns emptyList()
         every { boardCardRepository.save(any()) } answers { firstArg() }
         every { currentTaskReader.currentTaskFor(hireId, projectId) } returns null
-        every { currentTaskReader.isClaimedGoal(hireId, projectId) } returns false
         every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns emptyList()
         every { myCompetencyService.getCompetenciesForUser(hireId) } returns emptyList()
-        every { buddySessionRepository.findByUserId(hireId) } returns null
+        every { buddySessionRepository.findByUserId(hireId) } returns emptyList()
         every { boardDiagramRepository.findAllByCardIdIn(any()) } returns emptyList()
         every { onboardingPathRepository.findOnboardingPathByUserId(hireId) } returns Optional.empty()
     }
@@ -157,36 +160,6 @@ class BoardServiceTest {
         displayName = "Ada",
         githubLogin = githubLogin,
         joinedAt = joinedAt,
-    )
-
-    @Suppress("LongParameterList")
-    private fun timeline(
-        firstTaskClaimedAt: Instant? = null,
-        firstOpenedAt: Instant? = null,
-        firstResponseAt: Instant? = null,
-        acceptedAt: Instant? = null,
-        acceptedCount: Int = 0,
-        stalledReason: String? = null,
-        autonomyReachedAt: Instant? = null,
-    ) = HireTimelineResponse(
-        userId = hireId,
-        displayName = "Ada",
-        githubLogin = "ada",
-        joinedAt = now.minusSeconds(86_400),
-        taskZeroAssignedAt = null,
-        firstTaskClaimedAt = firstTaskClaimedAt,
-        firstContributionOpenedAt = firstOpenedAt,
-        firstResponseAt = firstResponseAt,
-        firstContributionAcceptedAt = acceptedAt,
-        hoursToFirstAcceptedContribution = null,
-        hoursToFirstResponse = null,
-        acceptedContributionCount = acceptedCount,
-        openContributionCount = 0,
-        longestOpenWaitHours = null,
-        stalled = stalledReason != null,
-        stalledReason = stalledReason,
-        autonomyReachedAt = autonomyReachedAt,
-        returnedContributionCount = 0,
     )
 
     private fun existingBoard(): Board {
@@ -217,15 +190,12 @@ class BoardServiceTest {
     }
 
     @Test
-    fun `an engineering hire gets the path card and the open pull request card`() {
+    fun `an engineering hire gets the open pull request and task pool cards`() {
         noBoardYet()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
-        assertEquals(
-            listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, BoardCardKind.OPEN_PULL_REQUESTS),
-            kinds,
-        )
+        assertEquals(listOf(BoardCardKind.OPEN_PULL_REQUESTS, BoardCardKind.TASK_POOL), kinds)
     }
 
     @Test
@@ -271,12 +241,17 @@ class BoardServiceTest {
 
     /**
      * Attention ordering: a hire who cannot clone the repository should not have to scroll to find
-     * out what to do about it. The arrival card is ensured *after* the others, so without this it
-     * lands last — the worst possible position for the most urgent thing.
+     * out what to do about it. On a board that existed before the step was authored the arrival card
+     * is added *after* the others, so without this it lands last — the worst possible position for
+     * the most urgent thing.
      */
     @Test
     fun `an outstanding arrival step puts its card first`() {
-        noBoardYet()
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 0),
+            card(board, BoardCardKind.ARRIVAL_STEPS, position = 1),
+        )
         every { arrivalStepService.forHire(hireId) } returns listOf(
             ResolvedArrivalStep(
                 step = ArrivalStep(key = "vpn", title = "Request VPN access"),
@@ -297,7 +272,11 @@ class BoardServiceTest {
      */
     @Test
     fun `a fully settled arrival card takes its ordinary place again`() {
-        noBoardYet()
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 0),
+            card(board, BoardCardKind.ARRIVAL_STEPS, position = 1),
+        )
         every { arrivalStepService.forHire(hireId) } returns listOf(
             ResolvedArrivalStep(
                 step = ArrivalStep(key = "vpn", title = "Request VPN access"),
@@ -308,7 +287,7 @@ class BoardServiceTest {
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
-        assertEquals(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, kinds!!.first())
+        assertEquals(BoardCardKind.OPEN_PULL_REQUESTS, kinds!!.first())
         assertTrue(kinds.contains(BoardCardKind.ARRIVAL_STEPS))
     }
 
@@ -320,7 +299,7 @@ class BoardServiceTest {
     fun `the task the hire is on comes first`() {
         val board = existingBoard()
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
-            card(board, BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, position = 0),
+            card(board, BoardCardKind.MEMORY_RECAP, position = 0),
             card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 1),
             card(board, BoardCardKind.CURRENT_TASK, position = 2),
         )
@@ -328,6 +307,9 @@ class BoardServiceTest {
             sourceId = "github:org/repo:ISSUE:7",
             title = "Fix the flaky login test",
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -335,7 +317,7 @@ class BoardServiceTest {
         // Underneath, their own arrangement is untouched -- the pin is a sort on read, never a
         // write to `position`, which is what makes overriding it acceptable rather than destructive.
         assertEquals(
-            listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, BoardCardKind.OPEN_PULL_REQUESTS),
+            listOf(BoardCardKind.MEMORY_RECAP, BoardCardKind.OPEN_PULL_REQUESTS, BoardCardKind.TASK_POOL),
             kinds.drop(1),
         )
     }
@@ -348,10 +330,13 @@ class BoardServiceTest {
     fun `a hire on no task gets their own order back`() {
         val board = existingBoard()
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
-            card(board, BoardCardKind.PATH_TO_FIRST_CONTRIBUTION, position = 0),
+            card(board, BoardCardKind.MEMORY_RECAP, position = 0),
             card(board, BoardCardKind.OPEN_PULL_REQUESTS, position = 1),
             card(board, BoardCardKind.CURRENT_TASK, position = 2),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -360,9 +345,10 @@ class BoardServiceTest {
         // best place on the board for having nothing on it.
         assertEquals(
             listOf(
-                BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                BoardCardKind.MEMORY_RECAP,
                 BoardCardKind.OPEN_PULL_REQUESTS,
                 BoardCardKind.CURRENT_TASK,
+                BoardCardKind.TASK_POOL,
             ),
             kinds,
         )
@@ -412,12 +398,12 @@ class BoardServiceTest {
     fun `a busy board loses nothing to the ordering`() {
         val board = existingBoard()
         val kindsOnBoard = listOf(
-            BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
             BoardCardKind.OPEN_PULL_REQUESTS,
             BoardCardKind.CURRENT_TASK,
             BoardCardKind.SUGGESTED_TASKS,
             BoardCardKind.COMPETENCY_PROGRESS,
             BoardCardKind.MEMORY_RECAP,
+            BoardCardKind.TASK_POOL,
         )
         every { boardCardRepository.findAllByBoardId(board.id) } returns kindsOnBoard
             .mapIndexed { index, kind -> card(board, kind, position = index) }
@@ -425,6 +411,9 @@ class BoardServiceTest {
             sourceId = "github:org/repo:ISSUE:7",
             title = "Fix the flaky login test",
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
@@ -433,31 +422,20 @@ class BoardServiceTest {
     }
 
     @Test
-    fun `the path card is placed for every track, because its moments are not about git`() {
-        noBoardYet()
-
-        val board = service.getBoard(hireId, projectId)
-
-        assertTrue(
-            board?.cards.orEmpty().any { it.kind == BoardCardKind.PATH_TO_FIRST_CONTRIBUTION },
-        )
-    }
-
-    @Test
     fun `ensuring cards is idempotent — a second read adds nothing`() {
         val board = existingBoard()
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             BoardCard(
                 boardId = board.id,
-                kind = BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                kind = BoardCardKind.OPEN_PULL_REQUESTS,
                 owner = BoardCardOwner.AI,
                 position = 0,
             ),
             BoardCard(
                 boardId = board.id,
-                kind = BoardCardKind.OPEN_PULL_REQUESTS,
+                kind = BoardCardKind.TASK_POOL,
                 owner = BoardCardOwner.AI,
-                position = 1,
+                position = 2,
             ),
         )
 
@@ -481,9 +459,9 @@ class BoardServiceTest {
 
         val kinds = service.getBoard(hireId, projectId)?.cards?.map { it.kind }
 
-        // The dismissed row is what makes the removal stick: the path card is added because it is
-        // missing, the pull-request card is not re-added because the hire said no to it.
-        assertEquals(listOf(BoardCardKind.PATH_TO_FIRST_CONTRIBUTION), kinds)
+        // The dismissed row is what makes the removal stick: the task pool card is added because it
+        // is missing, the pull-request card is not re-added because the hire said no to it.
+        assertEquals(listOf(BoardCardKind.TASK_POOL), kinds)
     }
 
     @Test
@@ -492,69 +470,22 @@ class BoardServiceTest {
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             BoardCard(
                 boardId = board.id,
-                kind = BoardCardKind.PATH_TO_FIRST_CONTRIBUTION,
+                kind = BoardCardKind.MEMORY_RECAP,
                 owner = BoardCardOwner.AI,
                 position = 7,
             ),
         )
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns emptyList()
 
         val cards = service.getBoard(hireId, projectId)?.cards.orEmpty()
 
         // Ensuring a card exists must never reshuffle a board the hire has arranged.
-        assertEquals(BoardCardKind.OPEN_PULL_REQUESTS, cards.last().kind)
-        assertEquals(8, cards.last().position)
-    }
-
-    @Test
-    fun `an unreached moment is absent, never zero`() {
-        noBoardYet()
-
-        val content = service.pathCard()
-
-        assertEquals(now.minusSeconds(86_400), content.moments.momentAt(BoardMomentKey.JOINED))
-        assertNull(content.moments.momentAt(BoardMomentKey.WORK_ACCEPTED))
-        assertEquals(0, content.acceptedCount)
-    }
-
-    @Test
-    fun `the path card reports the moments the timeline has reached`() {
-        noBoardYet()
-        val accepted = now.minusSeconds(3_600)
-        every { onboardingMetricsService.getHireTimeline(hireId, projectId) } returns timeline(
-            firstTaskClaimedAt = now.minusSeconds(50_000),
-            firstOpenedAt = now.minusSeconds(20_000),
-            firstResponseAt = now.minusSeconds(10_000),
-            acceptedAt = accepted,
-            acceptedCount = 2,
-            autonomyReachedAt = accepted,
+        assertEquals(
+            listOf(BoardCardKind.OPEN_PULL_REQUESTS to 8, BoardCardKind.TASK_POOL to 9),
+            cards.drop(1).map { it.kind to it.position },
         )
-
-        val content = service.pathCard()
-
-        assertEquals(accepted, content.moments.momentAt(BoardMomentKey.WORK_ACCEPTED))
-        assertEquals(2, content.acceptedCount)
-        assertEquals(accepted, content.autonomyReachedAt)
-    }
-
-    @Test
-    fun `a hire with no timeline still gets the card, with nothing reached`() {
-        noBoardYet()
-        every { onboardingMetricsService.getHireTimeline(hireId, projectId) } returns null
-
-        val content = service.pathCard()
-
-        // Day one is a real state, and the card that describes it must exist on day one.
-        assertEquals(now.minusSeconds(86_400), content.moments.momentAt(BoardMomentKey.JOINED))
-        assertTrue(content.moments.drop(1).all { it.reachedAt == null })
-    }
-
-    @Test
-    fun `a stall is shown to the person in it`() {
-        noBoardYet()
-        every { onboardingMetricsService.getHireTimeline(hireId, projectId) } returns
-            timeline(stalledReason = "no response in 5 days")
-
-        assertEquals("no response in 5 days", service.pathCard().stalledReason)
     }
 
     @Test
@@ -674,6 +605,33 @@ class BoardServiceTest {
         )
     }
 
+    @Test
+    fun `a dismissed current-task card comes back when the hire grabs a task`() {
+        val board = existingBoard()
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        val outcome = service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
+
+        // Grabbing is the hire saying "this is what I'm working on", which is what the card says.
+        assertEquals(BoardService.PlacementOutcome.PLACED, outcome)
+        assertEquals(BoardCardState.ACTIVE, dismissed.state)
+        verify { boardCardRepository.save(dismissed) }
+    }
+
+    @Test
+    fun `the mentor's place still leaves a dismissed card alone`() {
+        val board = existingBoard()
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        assertEquals(
+            BoardService.PlacementOutcome.DISMISSED_BY_HIRE,
+            service.place(hireId, projectId, BoardCardKind.CURRENT_TASK),
+        )
+        assertEquals(BoardCardState.DISMISSED, dismissed.state)
+    }
+
     // ---- the hire removes (slice 1) ----
 
     @Test
@@ -730,13 +688,10 @@ class BoardServiceTest {
             summary = "It fails about one run in five.",
             sourceUrl = "https://example.test/issues/7",
         )
-        every { currentTaskReader.isClaimedGoal(hireId, projectId) } returns true
 
         val content = service.currentTaskCard()
 
         assertEquals("Fix the flaky login test", content.title)
-        // Chosen, not handed: only one of those is theirs to change their mind about.
-        assertTrue(content.chosen)
     }
 
     @Test
@@ -750,7 +705,6 @@ class BoardServiceTest {
 
         // A card that vanishes when the goal is cleared reads as the board losing things.
         assertNull(content.taskId)
-        assertFalse(content.chosen)
     }
 
     @Test
@@ -766,6 +720,45 @@ class BoardServiceTest {
         val tasks = service.suggestionsCard().tasks
 
         assertEquals(listOf("You have worked in this repository before"), tasks.first().reasons)
+    }
+
+    @Test
+    fun `the suggestions and the pool share one ranking per board read`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.SUGGESTED_TASKS, position = 0),
+            card(board, BoardCardKind.TASK_POOL, position = 1),
+        )
+        every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns listOf(
+            ranked("Fix a typo", listOf("You have worked in this repository before")),
+        )
+
+        service.getBoard(hireId, projectId)
+
+        // A pass over the whole live pool plus a responsiveness read — once, not once per card.
+        verify(exactly = 1) { starterWorkTaskProposalService.matchForUserId(hireId, projectId) }
+    }
+
+    @Test
+    fun `the task pool card lists the whole pool in rank order and marks the current task`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
+            card(board, BoardCardKind.TASK_POOL),
+        )
+        val pool = (1..5).map { ranked("Task $it", listOf("reason $it")) }
+        every { starterWorkTaskProposalService.matchForUserId(hireId, projectId) } returns pool
+        every { currentTaskReader.currentTaskFor(hireId, projectId) } returns StarterWorkTaskProposal(
+            id = pool[3].task.id,
+            sourceId = "src-Task 4",
+            title = "Task 4",
+        )
+
+        val content = service.taskPoolCard()
+
+        // Uncapped, unlike the suggestions card: nothing is hidden behind "ask your buddy".
+        assertEquals(pool.map { it.task.title }, content.tasks.map { it.title })
+        assertEquals(listOf(true, true, true, false, false), content.tasks.map { it.bestFit })
+        assertEquals(pool[3].task.id, content.currentTaskId)
     }
 
     // ---- what the mentor's other cards say (slice 3) ----
@@ -810,11 +803,16 @@ class BoardServiceTest {
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             card(board, BoardCardKind.MEMORY_RECAP),
         )
-        every { buddySessionRepository.findByUserId(hireId) } returns BuddySession(
+
+        val session = BuddySession(
             userId = hireId,
             summary = "Ada is working through the login refactor and asked about our test setup.",
             summarizedCount = 12,
         )
+
+        every {
+            buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId)
+        } returns listOf(session)
 
         val content = service.memoryCard()
 
@@ -828,6 +826,7 @@ class BoardServiceTest {
         every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(
             card(board, BoardCardKind.MEMORY_RECAP),
         )
+        every { buddySessionRepository.findByUserIdOrderByCreatedAtDesc(hireId) } returns emptyList()
 
         val content = service.memoryCard()
 
@@ -905,20 +904,17 @@ class BoardServiceTest {
             .first { it.kind == BoardCardKind.SUGGESTED_TASKS }
             .content as SuggestedTasksContent
 
-    private fun BoardService.pathCard(): PathToFirstContributionContent =
+    private fun BoardService.taskPoolCard(): TaskPoolContent =
         getBoard(hireId, projectId)!!
             .cards
-            .first { it.kind == BoardCardKind.PATH_TO_FIRST_CONTRIBUTION }
-            .content as PathToFirstContributionContent
+            .first { it.kind == BoardCardKind.TASK_POOL }
+            .content as TaskPoolContent
 
     private fun BoardService.pullRequestCard(): OpenPullRequestsContent =
         getBoard(hireId, projectId)!!
             .cards
             .first { it.kind == BoardCardKind.OPEN_PULL_REQUESTS }
             .content as OpenPullRequestsContent
-
-    private fun List<BoardMomentResponse>.momentAt(key: BoardMomentKey): Instant? =
-        first { it.key == key }.reachedAt
 
     // ---- PATH_STEP ----
 
@@ -1214,9 +1210,159 @@ class BoardServiceTest {
     private fun savedChecklist(card: BoardCard): ChecklistPayload =
         assertNotNull(json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload)) as? ChecklistPayload)
 
+    private fun versionOf(card: BoardCard) = BoardCardVersion.of(card.decodedPayload())
+
     private fun onBoard(card: BoardCard, board: Board) {
         every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
         every { boardCardRepository.findLockedById(card.id) } returns card
+    }
+
+    // -- A buddy edit is only as good as the card it was proposed against -------------------------
+
+    private fun buddyEdit(card: BoardCard, basedOn: String?, request: AuthoredCardRequest) =
+        service.editAuthoredCardForBuddy(hireId, projectId, card.id, request, basedOn)
+
+    private fun secondLineChecklist() = ChecklistCardRequest(
+        title = "Getting started",
+        items = listOf(ChecklistItemRequest(text = "Run it locally"), ChecklistItemRequest(text = "Fix it")),
+    )
+
+    /**
+     * The fingerprint is checked on the row this transaction holds the lock on, so a change that
+     * lands after the proposal — however late — is one the write refuses rather than removes.
+     */
+    @Test
+    fun `a checklist replace refuses when a line was added after the proposal`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val added = ChecklistItemPayload(UUID.randomUUID().toString(), "Rotate production credentials")
+        card.payload = json.encodeToString<BoardCardPayload>(
+            ChecklistPayload(title = "Getting started", items = savedChecklist(card).items + added),
+        )
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, secondLineChecklist())
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        assertEquals(3, savedChecklist(card).items.size)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a note replace refuses when the note grew past what the buddy can read`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val grown = NotePayload(text = "x".repeat(BoardReading.NOTE_PREVIEW + 1))
+        card.payload = json.encodeToString<BoardCardPayload>(grown)
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /** Even a fingerprint that matches cannot license rewriting a note the buddy only saw the start of. */
+    @Test
+    fun `a note longer than the buddy can read is never replaced whole`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        card.payload =
+            json.encodeToString<BoardCardPayload>(NotePayload(text = "x".repeat(BoardReading.NOTE_PREVIEW + 1)))
+        onBoard(card, board)
+
+        val refusal = assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, versionOf(card), NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        assertEquals(HttpStatus.CONFLICT, refusal.statusCode)
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a link replace refuses when the link changed after the proposal`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = BoardCard(
+            boardId = board.id,
+            kind = BoardCardKind.LINK,
+            owner = BoardCardOwner.HIRE,
+            position = 0,
+            payload = json.encodeToString<BoardCardPayload>(LinkPayload(url = "https://wiki/old")),
+        )
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        card.payload = json.encodeToString<BoardCardPayload>(LinkPayload(url = "https://wiki/other"))
+
+        assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, proposedAgainst, LinkCardRequest(url = "https://wiki/new"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `a buddy edit with no fingerprint is refused`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+
+        assertFailsWith<ResponseStatusException> {
+            buddyEdit(card, null, NoteCardRequest(text = "Deploys run on Tuesdays"))
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    @Test
+    fun `ticking a line after the proposal does not make a checklist replace stale`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+        val proposedAgainst = versionOf(card)
+        val ticked = savedChecklist(card).items.map { it.copy(done = true) }
+        card.payload =
+            json.encodeToString<BoardCardPayload>(ChecklistPayload(title = "Getting started", items = ticked))
+
+        buddyEdit(card, proposedAgainst, secondLineChecklist())
+
+        assertEquals(listOf(true, true), savedChecklist(card).items.map { it.done })
+    }
+
+    // -- Who placed or brought back a card ---------------------------------------------------------
+
+    @Test
+    fun `a current-task card placed by a hand grab is the hire's placement`() {
+        val board = existingBoard()
+        every { boardCardRepository.findAllByBoardId(board.id) } returns emptyList()
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
+
+        assertEquals(BoardCardChange.CREATED, saved.captured.lastChange)
+        assertEquals(BoardActor.HIRE, saved.captured.lastChangedBy)
+    }
+
+    @Test
+    fun `a revived card stops saying it was dismissed and says who brought it back`() {
+        val board = existingBoard()
+        val long = Instant.parse("2026-01-01T00:00:00Z")
+        val dismissed = card(board, BoardCardKind.CURRENT_TASK, state = BoardCardState.DISMISSED)
+            .apply { recordChange(BoardCardChange.DISMISSED, BoardActor.BUDDY, long) }
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(dismissed)
+
+        service.placeOrRevive(hireId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE)
+
+        assertEquals(BoardCardState.ACTIVE, dismissed.state)
+        assertEquals(BoardCardChange.CREATED, dismissed.lastChange)
+        assertEquals(BoardActor.HIRE, dismissed.lastChangedBy)
+        assertTrue(assertNotNull(dismissed.lastChangedAt).isAfter(long))
     }
 
     /**
@@ -1357,5 +1503,296 @@ class BoardServiceTest {
 
         assertFalse(reworded)
         verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    // -- Attribution and the buddy's reach into the hire's own cards ------------------------------
+
+    private fun noteCard(board: Board, text: String = "Deploys run on Thursdays") = BoardCard(
+        boardId = board.id,
+        kind = BoardCardKind.NOTE,
+        owner = BoardCardOwner.HIRE,
+        position = 0,
+        payload = json.encodeToString<BoardCardPayload>(NotePayload(text = text)),
+    )
+
+    private fun liveCard(
+        board: Board,
+        kind: BoardCardKind,
+        position: Int,
+        state: BoardCardState = BoardCardState.ACTIVE,
+    ) = BoardCard(boardId = board.id, kind = kind, owner = BoardCardOwner.AI, state = state, position = position)
+
+    /** The precedent `placedAt` set, extended: a placement also says whose change it was. */
+    @Test
+    fun `placing a card records it as the buddy's creation, dated with the placement`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.place(hireId, projectId, BoardCardKind.CURRENT_TASK)
+
+        assertEquals(BoardCardChange.CREATED, saved.captured.lastChange)
+        assertEquals(BoardActor.BUDDY, saved.captured.lastChangedBy)
+        assertEquals(saved.captured.placedAt, saved.captured.lastChangedAt)
+    }
+
+    /**
+     * A note the buddy wrote is still the hire's to edit, and the board can say who put it there —
+     * both on the row and in what the client is sent.
+     */
+    @Test
+    fun `a card the buddy writes stays the hire's and says the buddy put it there`() {
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns
+            Board(userId = hireId, projectId = projectId)
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        val response = service.addAuthoredCard(
+            hireId,
+            projectId,
+            NoteCardRequest(text = "Ask Sam about CI"),
+            BoardActor.BUDDY,
+        )
+
+        assertEquals(BoardCardOwner.HIRE, saved.captured.owner)
+        assertNotNull(saved.captured.placedAt)
+        assertEquals(BoardActor.BUDDY, response.lastChange?.by)
+        assertEquals(BoardCardChange.CREATED, response.lastChange?.change)
+    }
+
+    /** Hire-made changes are never labelled as the buddy's. */
+    @Test
+    fun `a card the hire writes is attributed to the hire and not dated as a placement`() {
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns
+            Board(userId = hireId, projectId = projectId)
+        val saved = slot<BoardCard>()
+        every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.addAuthoredCard(hireId, projectId, NoteCardRequest(text = "My own note"))
+
+        assertNull(saved.captured.placedAt)
+        assertEquals(BoardActor.HIRE, saved.captured.lastChangedBy)
+    }
+
+    /** "Ticked two off" and "rewrote your list" are different things to be told about a card. */
+    @Test
+    fun `the hire ticking their own checklist is recorded as a tick by the hire`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        every { boardCardRepository.findLockedById(card.id) } returns card
+        every { boardRepository.findById(board.id) } returns Optional.of(board)
+
+        service.editAuthoredCard(
+            hireId,
+            card.id,
+            ChecklistCardRequest(
+                title = "Getting started",
+                items = listOf(
+                    ChecklistItemRequest(id = UUID.fromString(firstLineId), text = "Run it locally", done = true),
+                    ChecklistItemRequest(id = UUID.fromString(secondLineId), text = "Fix it", done = true),
+                ),
+            ),
+        )
+
+        assertEquals(BoardCardChange.TICKED, card.lastChange)
+        assertEquals(BoardActor.HIRE, card.lastChangedBy)
+    }
+
+    @Test
+    fun `a buddy edit rewrites the hire's note and says the buddy changed it`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            NoteCardRequest(text = "Deploys run on Tuesdays"),
+            versionOf(card),
+        )
+
+        val saved = json.decodeFromString<BoardCardPayload>(assertNotNull(card.payload))
+        assertEquals(NotePayload(text = "Deploys run on Tuesdays"), saved)
+        assertEquals(BoardCardChange.EDITED, card.lastChange)
+        assertEquals(BoardActor.BUDDY, card.lastChangedBy)
+        assertNotNull(card.lastChangedAt)
+    }
+
+    /**
+     * Tidying a list must not undo the work already ticked off it: a line whose words survive keeps
+     * its id and its tick, wherever it moves to. A dropped line is gone; a new one starts unticked.
+     */
+    @Test
+    fun `a buddy checklist edit keeps the ids and ticks of the lines that survive it`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        service.editAuthoredCardForBuddy(
+            hireId,
+            projectId,
+            card.id,
+            ChecklistCardRequest(
+                title = "First week",
+                items = listOf(
+                    ChecklistItemRequest(text = "Fix it"),
+                    ChecklistItemRequest(text = " run IT locally "),
+                    // A client-supplied tick on a new line is not trusted: new lines start open.
+                    ChecklistItemRequest(text = "Open a PR", done = true),
+                ),
+            ),
+            versionOf(card),
+        )
+
+        val checklist = savedChecklist(card)
+        assertEquals("First week", checklist.title)
+        assertEquals(listOf(secondLineId, firstLineId), checklist.items.take(2).map { it.id })
+        assertEquals(listOf(false, true, false), checklist.items.map { it.done })
+        assertEquals(BoardActor.BUDDY, card.lastChangedBy)
+    }
+
+    /** The widening is to the hire's own cards of the kind proposed — nothing else. */
+    @Test
+    fun `a buddy edit refuses a card of another kind than the proposal named`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = noteCard(board)
+        onBoard(card, board)
+
+        assertFailsWith<ResponseStatusException> {
+            service.editAuthoredCardForBuddy(
+                hireId,
+                projectId,
+                card.id,
+                LinkCardRequest(url = "https://example.com"),
+                versionOf(card),
+            )
+        }
+
+        verify(exactly = 0) { boardCardRepository.save(any()) }
+    }
+
+    /**
+     * Only active cards on this project's board leave, and a card the hire had already taken off
+     * keeps the hire's attribution rather than being re-dismissed as the buddy's.
+     */
+    @Test
+    fun `a buddy dismissal takes only active cards off and attributes each to the buddy`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val stale = noteCard(board)
+        val alreadyGone = liveCard(board, BoardCardKind.SUGGESTED_TASKS, 1, BoardCardState.DISMISSED)
+            .apply { recordChange(BoardCardChange.DISMISSED, BoardActor.HIRE) }
+        val untouched = liveCard(board, BoardCardKind.CURRENT_TASK, 2)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(stale, alreadyGone, untouched)
+
+        val gone = service.dismissForBuddy(hireId, projectId, listOf(stale.id, alreadyGone.id, UUID.randomUUID()))
+
+        assertEquals(1, gone)
+        assertEquals(BoardCardState.DISMISSED, stale.state)
+        assertEquals(BoardActor.BUDDY, stale.lastChangedBy)
+        assertEquals(BoardActor.HIRE, alreadyGone.lastChangedBy)
+        assertEquals(BoardCardState.ACTIVE, untouched.state)
+        assertNull(untouched.lastChange)
+    }
+
+    /** A stale confirm from somebody who has left the project reads nothing and writes nothing. */
+    @Test
+    fun `a buddy dismissal from a hire who is no longer a member reads nothing`() {
+        every { projectMembershipApi.getProjectMembers(projectId) } returns emptyList()
+
+        assertFailsWith<ResponseStatusException> {
+            service.dismissForBuddy(hireId, projectId, listOf(UUID.randomUUID()))
+        }
+
+        verify(exactly = 0) { boardCardRepository.findAllByBoardId(any()) }
+        verify(exactly = 0) { boardCardRepository.saveAll(any<List<BoardCard>>()) }
+    }
+
+    /**
+     * Only cards that actually moved are marked, and a dismissed card is renumbered without being
+     * marked — overwriting "dismissed" with "moved" would lose the one change worth seeing on it.
+     */
+    @Test
+    fun `a buddy reorder marks only the cards that moved and never a dismissed one`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val first = liveCard(board, BoardCardKind.CURRENT_TASK, 0)
+        val dismissed = liveCard(board, BoardCardKind.SUGGESTED_TASKS, 1, BoardCardState.DISMISSED)
+            .apply { recordChange(BoardCardChange.DISMISSED, BoardActor.HIRE) }
+        val last = liveCard(board, BoardCardKind.MEMORY_RECAP, 2)
+        val stays = liveCard(board, BoardCardKind.COMPETENCY_PROGRESS, 3)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(first, dismissed, last, stays)
+
+        val moved = service.reorderForBuddy(hireId, projectId, listOf(last.id))
+
+        assertEquals(listOf(0, 1, 2, 3), listOf(last, first, dismissed, stays).map { it.position })
+        assertEquals(1, moved)
+        assertEquals(BoardCardChange.MOVED, last.lastChange)
+        assertEquals(BoardActor.BUDDY, last.lastChangedBy)
+        // Renumbered, but still in the same place relative to everything else: not moved.
+        assertNull(first.lastChange)
+        assertEquals(BoardCardChange.DISMISSED, dismissed.lastChange)
+        assertEquals(BoardActor.HIRE, dismissed.lastChangedBy)
+        assertNull(stays.lastChange)
+    }
+
+    @Test
+    fun `the hire's own reorder is attributed to the hire`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val first = liveCard(board, BoardCardKind.CURRENT_TASK, 0)
+        val second = liveCard(board, BoardCardKind.MEMORY_RECAP, 1)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findAllByBoardId(board.id) } returns listOf(first, second)
+
+        service.reorder(hireId, projectId, listOf(second.id))
+
+        assertEquals(BoardCardChange.MOVED, second.lastChange)
+        assertEquals(BoardActor.HIRE, second.lastChangedBy)
+        assertNull(first.lastChange)
+    }
+
+    /**
+     * Putting one card first renumbers every card above it. Only the one that was picked up moved;
+     * the rest keep their attribution — here, the buddy's edit the hire's drag must not overwrite.
+     */
+    @Test
+    fun `moving one card to the top marks only that card, even when the whole board is resent`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val cards = listOf(
+            BoardCardKind.CURRENT_TASK,
+            BoardCardKind.MEMORY_RECAP,
+            BoardCardKind.COMPETENCY_PROGRESS,
+            BoardCardKind.SUGGESTED_TASKS,
+        ).mapIndexed { i, kind -> liveCard(board, kind, i) }
+        cards[1].recordChange(BoardCardChange.EDITED, BoardActor.BUDDY)
+        every { boardRepository.findByUserIdAndProjectId(hireId, projectId) } returns board
+        every { boardCardRepository.findAllByBoardId(board.id) } returns cards
+
+        // The client sends the whole board in its new order, as a drag does.
+        service.reorder(hireId, projectId, listOf(cards[3], cards[0], cards[1], cards[2]).map { it.id })
+
+        assertEquals(listOf(1, 2, 3, 0), cards.map { it.position })
+        assertEquals(BoardCardChange.MOVED, cards[3].lastChange)
+        assertNull(cards[0].lastChange)
+        assertEquals(BoardCardChange.EDITED, cards[1].lastChange)
+        assertEquals(BoardActor.BUDDY, cards[1].lastChangedBy)
+    }
+
+    /** Every buddy checklist write — append, tick, reword — lands attributed, not only the new ones. */
+    @Test
+    fun `the buddy's existing checklist writes are attributed to the buddy too`() {
+        val board = Board(userId = hireId, projectId = projectId)
+        val card = checklistCard(board)
+        onBoard(card, board)
+
+        service.tickChecklistItems(hireId, projectId, card.id, listOf("Fix it"))
+        assertEquals(BoardCardChange.TICKED, card.lastChange)
+        assertEquals(BoardActor.BUDDY, card.lastChangedBy)
+
+        service.appendChecklistItems(hireId, projectId, card.id, listOf("Open a PR"))
+        assertEquals(BoardCardChange.EDITED, card.lastChange)
+        assertEquals(BoardActor.BUDDY, card.lastChangedBy)
     }
 }

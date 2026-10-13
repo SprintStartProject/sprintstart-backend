@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.SkipStatus
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
@@ -79,6 +81,10 @@ class OnboardingStepService(
         authId: String,
         phaseId: UUID,
         request: CreateOnboardingStepRequest,
+        // Who is adding it, which the request may not decide: a client that could name its own
+        // origin could claim a step came from the team. Defaults to the hire, because this endpoint
+        // is theirs; the buddy passes [StepOrigin.BUDDY] when it is a confirmed proposal.
+        origin: StepOrigin = StepOrigin.HIRE,
     ): CreateOnboardingStepResponse {
         val userId = userApi
             .getUserIdByAuthId(authId)
@@ -87,6 +93,13 @@ class OnboardingStepService(
         val phase = onboardingPhaseRepository
             .findByIdAndPathUserId(phaseId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
+
+        // A phase generation left empty is hidden from the hire until something is in it. This is
+        // that something -- typically the buddy repairing it -- so the phase comes back into view
+        // with the step, instead of the step landing somewhere nobody can see.
+        if (phase.generationStatus.isHiddenFromUser()) {
+            phase.generationStatus = GenerationStatus.GENERATED
+        }
 
         // Shift right
         shiftStepsRight(phase, request)
@@ -98,6 +111,7 @@ class OnboardingStepService(
             description = request.description,
             type = request.type,
             aiAssisted = false,
+            origin = origin,
             estimatedMinutes = request.estimatedMinutes,
             expectedOutcome = request.expectedOutcome,
             status = StepStatus.WAITING,
@@ -335,6 +349,8 @@ class OnboardingStepService(
             description = request.description,
             type = request.type,
             aiAssisted = false,
+            // Written on somebody else's path, which only a PM, HR or an admin can do.
+            origin = StepOrigin.PM,
             estimatedMinutes = request.estimatedMinutes,
             expectedOutcome = request.expectedOutcome,
             status = StepStatus.WAITING,
@@ -421,7 +437,7 @@ class OnboardingStepService(
      * rows it owns -- the ones saying what *it* waits on. The rows saying what waits on *it* belong to
      * the other nodes and outlived it: the delete failed on the join table, or the items after it
      * stayed locked behind a step nobody could finish any more. PMs add and delete steps right in the
-     * graph, so this is not a corner case.
+     * graph, and a hire can delete the ones they add with their buddy, so this is not a corner case.
      *
      * Bridged rather than only cut: for A -> X -> B, deleting X leaves A -> B, so B still opens after
      * what it opened after before X was put in the way -- instead of suddenly opening at once.

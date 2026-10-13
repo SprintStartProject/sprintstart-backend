@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
+import com.sprintstart.sprintstartbackend.onboarding.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.OnboardingSubGraphNode
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toCreateResponse
@@ -38,11 +39,31 @@ class OnboardingStepPlacementService(
     private val onboardingStepRepository: OnboardingStepRepository,
 ) {
     /**
-     * Creates a step on a member's phase, then connects it: it waits on [waitsOn], and every item in
+     * Creates the hire's own step, then connects it: it waits on [waitsOn], and every item in
      * [unlocks] waits on it. Both sets must be items of the same phase, and no item in [unlocks] may
      * be something the new step would itself (transitively) wait on -- that would be a cycle, and a
-     * cycle is a phase nobody can ever finish. [graphX]/[graphY], when both are given, is where the
-     * PM dropped the step on the canvas and wins over the position worked out from its neighbours.
+     * cycle is a phase nobody can ever finish.
+     *
+     * One transaction, so a step never exists half-connected.
+     */
+    @Transactional
+    @Tracked("Creating a connected onboarding step for user")
+    fun createConnectedStepForMe(
+        authId: String,
+        phaseId: UUID,
+        request: CreateOnboardingStepRequest,
+        origin: StepOrigin,
+        waitsOn: Set<UUID>,
+        unlocks: Set<UUID>,
+    ): CreateOnboardingStepResponse {
+        val created = onboardingStepService.createOnboardingStepForMe(authId, phaseId, request, origin)
+        return connect(created.id, waitsOn, unlocks, pinnedAt = null)
+    }
+
+    /**
+     * The same for a PM adding a step to a member's phase. [graphX]/[graphY], when both are given,
+     * is where the PM dropped the step on the canvas and wins over the position worked out from its
+     * neighbours.
      *
      * One transaction, so a step never exists half-connected.
      */

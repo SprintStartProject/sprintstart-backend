@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
@@ -10,13 +11,18 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.SendBud
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddySuggestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyTeamService
+import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
+import io.mockk.runs
+import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -26,19 +32,24 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.request
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
+import java.util.UUID
 
 @WebMvcTest(BuddyController::class)
 @Import(SecurityConfig::class)
@@ -63,6 +74,9 @@ class BuddyControllerTest(
     @MockkBean
     private lateinit var jwtDecoder: JwtDecoder
 
+    @MockkBean(name = "projectAuth")
+    private lateinit var projectAuth: ProjectAuthorization
+
     private val objectMapper = jacksonObjectMapper()
     private val authId = "test-auth-id"
 
@@ -78,14 +92,44 @@ class BuddyControllerTest(
 
     @Test
     fun `getMessagesForMe should return 200 with the conversation`() {
-        every { buddyService.getMessagesForMe(authId) } returns listOf(
-            BuddyMessageResponse(role = BuddyMessageRole.USER, content = "Hi", createdAt = Instant.now()),
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.getMessagesForMe(authId, sessionId)
+        } returns listOf(
+            BuddyMessageResponse(
+                id = UUID.randomUUID(),
+                role = BuddyMessageRole.USER,
+                content = "Hi",
+                createdAt = Instant.now(),
+            ),
         )
 
         mockMvc
-            .perform(get("/api/v1/onboarding/me/buddy/messages").with(userJwt))
-            .andExpect(status().isOk)
+            .perform(
+                get("/api/v1/onboarding/me/buddy/messages")
+                    .param("sessionId", sessionId.toString())
+                    .with(userJwt),
+            ).andExpect(status().isOk)
             .andExpect(jsonPath("$[0].content").value("Hi"))
+
+        verify { buddyService.getMessagesForMe(authId, sessionId) }
+    }
+
+    @Test
+    fun `getMessagesForMe without a sessionId should return 400`() {
+        every {
+            buddyService.getMessagesForMe(authId, null)
+        } throws ResponseStatusException(
+            HttpStatus.BAD_REQUEST,
+            "sessionId required",
+        )
+
+        mockMvc
+            .perform(
+                get("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
     }
 
     @Test
@@ -98,14 +142,17 @@ class BuddyControllerTest(
     @Test
     fun `getSuggestionsForMe should return 200 with the hire's chips`() {
         every { buddySuggestionService.forMe(authId) } returns listOf(
-            BuddySuggestionResponse(label = "What should I work on?", question = "What should I work on next?"),
+            BuddySuggestionResponse(
+                label = "Anything I can pick up?",
+                question = "Is there something in the work pool I could pick up?",
+            ),
         )
 
         mockMvc
             .perform(get("/api/v1/onboarding/me/buddy/suggestions").with(userJwt))
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$[0].label").value("What should I work on?"))
-            .andExpect(jsonPath("$[0].question").value("What should I work on next?"))
+            .andExpect(jsonPath("$[0].label").value("Anything I can pick up?"))
+            .andExpect(jsonPath("$[0].question").value("Is there something in the work pool I could pick up?"))
     }
 
     /**
@@ -120,6 +167,70 @@ class BuddyControllerTest(
     }
 
     @Test
+    fun `creates session for accessible project`() {
+        val projectId = UUID.randomUUID()
+        val sessionId = UUID.randomUUID()
+
+        every {
+            projectAuth.canAccessProject(any(), projectId)
+        } returns true
+
+        every {
+            buddyService.createSession(authId, projectId)
+        } returns CreateSessionResponse(sessionId)
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"projectId":"$projectId"}""")
+                    .with(userJwt),
+            ).andExpect(status().isCreated)
+    }
+
+    @Test
+    fun `rejects session creation for inaccessible project`() {
+        val projectId = UUID.randomUUID()
+
+        every {
+            projectAuth.canAccessProject(any(), projectId)
+        } returns false
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"projectId":"$projectId"}""")
+                    .with(userJwt),
+            ).andExpect(status().isForbidden)
+
+        verify(exactly = 0) {
+            buddyService.createSession(any(), any())
+        }
+    }
+
+    @Test
+    fun `creates unscoped session without checking project access`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.createSession(authId, null)
+        } returns CreateSessionResponse(sessionId)
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/sessions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{}")
+                    .with(userJwt),
+            ).andExpect(status().isCreated)
+
+        verify(exactly = 0) {
+            projectAuth.canAccessProject(any(), any())
+        }
+    }
+
+    @Test
     fun `streamOpenForMe should stream the greeting and its suggested next step`() {
         val events = listOf(
             BuddyStreamEvent(type = "token", content = "Welcome "),
@@ -127,12 +238,18 @@ class BuddyControllerTest(
             BuddyStreamEvent(type = "opening_action", label = "Find me a task", question = "What next?"),
             BuddyStreamEvent(type = "done"),
         )
-        coEvery { buddyService.streamOpenForMe(authId) } returns flowOf(*events.toTypedArray())
+        val sessionId = UUID.randomUUID()
+
+        coEvery {
+            buddyService.streamOpenForMe(authId, sessionId)
+        } returns flowOf(*events.toTypedArray())
 
         val asyncResult = mockMvc
-            .perform(post("/api/v1/onboarding/me/buddy/open/stream").with(userJwt))
-            .andExpect(request().asyncStarted())
-            .andReturn()
+            .perform(
+                post("/api/v1/onboarding/me/buddy/open/stream")
+                    .param("sessionId", sessionId.toString())
+                    .with(userJwt),
+            ).andReturn()
 
         val mvcResult = mockMvc
             .perform(asyncDispatch(asyncResult))
@@ -143,6 +260,27 @@ class BuddyControllerTest(
             .replace("data:", "")
             .replace("\n", "")
         assertEquals(events.joinToString("") { Json.encodeToString(it) }, actual)
+    }
+
+    @Test
+    fun `streamOpenForMe without a sessionId should return 400`() {
+        coEvery {
+            buddyService.streamOpenForMe(authId, null)
+        } throws ResponseStatusException(
+            HttpStatus.BAD_REQUEST,
+            "sessionId required",
+        )
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/open/stream")
+                    .with(userJwt),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isBadRequest)
     }
 
     /**
@@ -176,8 +314,17 @@ class BuddyControllerTest(
      */
     @Test
     fun `sendMessageForMe passes the capability mode through`() {
-        coEvery { buddyService.sendMessageForMe(authId, "where are the deploy docs?", false) } returns
-            flowOf(BuddyStreamEvent(type = "done"))
+        val sessionId = UUID.randomUUID()
+
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are the deploy docs?",
+                false,
+                null,
+            )
+        } returns flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
             .perform(
@@ -186,7 +333,11 @@ class BuddyControllerTest(
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         objectMapper.writeValueAsString(
-                            SendBuddyMessageRequest("where are the deploy docs?", capabilitiesEnabled = false),
+                            SendBuddyMessageRequest(
+                                content = "where are the deploy docs?",
+                                sessionId = sessionId,
+                                capabilitiesEnabled = false,
+                            ),
                         ),
                     ),
             ).andExpect(request().asyncStarted())
@@ -194,13 +345,77 @@ class BuddyControllerTest(
 
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
-        coVerify { buddyService.sendMessageForMe(authId, "where are the deploy docs?", false) }
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are the deploy docs?",
+                false,
+                null,
+            )
+        }
     }
 
     /** A client that has never heard of the switch gets the full mentor, as it always did. */
     @Test
     fun `sendMessageForMe defaults to the full mentor`() {
-        coEvery { buddyService.sendMessageForMe(authId, "hi", true) } returns
+        val sessionId = UUID.randomUUID()
+
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "hi",
+                true,
+                null,
+            )
+        } returns flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        objectMapper.writeValueAsString(
+                            SendBuddyMessageRequest(
+                                content = "hi",
+                                sessionId = sessionId,
+                            ),
+                        ),
+                    ),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc
+            .perform(asyncDispatch(asyncResult))
+            .andExpect(status().isOk)
+
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "hi",
+                true,
+                null,
+            )
+        }
+    }
+
+    /** The page the hire was on reaches the buddy, so "where is this here?" has a "here". */
+    @Test
+    fun `sendMessageForMe passes the current page through`() {
+        val sessionId = UUID.randomUUID()
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are roles?",
+                true,
+                null,
+                "/team-management",
+            )
+        } returns
             flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
@@ -208,13 +423,67 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/messages")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("""{"content":"hi"}"""),
+                    .content(
+                        """{"sessionId":"$sessionId","content":"where are roles?","currentPage":"/team-management"}""",
+                    ),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
-        coVerify { buddyService.sendMessageForMe(authId, "hi", true) }
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "where are roles?",
+                true,
+                null,
+                "/team-management",
+            )
+        }
+    }
+
+    /** The frontend sends snake_case; Jackson must map it, or the filters never reach the service. */
+    @Test
+    fun `sendMessageForMe passes snake_case filters through`() {
+        val sessionId = UUID.randomUUID()
+        coEvery {
+            buddyService.sendMessageForMe(any(), any(), any(), any(), any(), any())
+        } returns flowOf(BuddyStreamEvent(type = "done"))
+
+        val asyncResult = mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/buddy/messages")
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {"sessionId":"$sessionId","content":"hi","filters":{
+                          "source_systems":["GITHUB","JIRA"],
+                          "time_from":"2026-10-01T00:00:00Z",
+                          "time_to":"2026-10-06T21:59:59.999Z"}}
+                        """.trimIndent(),
+                    ),
+            ).andExpect(request().asyncStarted())
+            .andReturn()
+
+        mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
+
+        coVerify {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "hi",
+                true,
+                match {
+                    it != null &&
+                        it.sourceSystems == listOf(SourceSystem.GITHUB, SourceSystem.JIRA) &&
+                        it.from == "2026-10-01T00:00:00Z" &&
+                        it.to == "2026-10-06T21:59:59.999Z"
+                },
+                null,
+            )
+        }
     }
 
     @Test
@@ -224,14 +493,28 @@ class BuddyControllerTest(
             BuddyStreamEvent(type = "token", content = "is too basic."),
             BuddyStreamEvent(type = "done"),
         )
-        coEvery { buddyService.sendMessageForMe(authId, "How do I get set up?") } returns flowOf(*events.toTypedArray())
+        val sessionId = UUID.randomUUID()
+
+        coEvery {
+            buddyService.sendMessageForMe(
+                authId,
+                sessionId,
+                "How do I get set up?",
+                true,
+                null,
+            )
+        } returns flowOf(*events.toTypedArray())
 
         val asyncResult = mockMvc
             .perform(
                 post("/api/v1/onboarding/me/buddy/messages")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(SendBuddyMessageRequest("How do I get set up?"))),
+                    .content(
+                        objectMapper.writeValueAsString(
+                            SendBuddyMessageRequest(sessionId, "How do I get set up?"),
+                        ),
+                    ),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -255,7 +538,11 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/messages")
                     .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(SendBuddyMessageRequest("Hi"))),
+                    .content(
+                        objectMapper.writeValueAsString(
+                            SendBuddyMessageRequest(null, "Hi"),
+                        ),
+                    ),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -270,21 +557,25 @@ class BuddyControllerTest(
             .perform(
                 post("/api/v1/onboarding/me/buddy/messages")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(SendBuddyMessageRequest("Hi"))),
+                    .content(
+                        objectMapper.writeValueAsString(
+                            SendBuddyMessageRequest(null, "Hi"),
+                        ),
+                    ),
             ).andExpect(status().isUnauthorized)
     }
 
     @Test
     fun `performAction should return 200 with the outcome`() {
         coEvery { buddyActionService.perform(any(), any()) } returns
-            BuddyActionResponse(ok = true, message = "Task 0 is yours.")
+            BuddyActionResponse(ok = true, message = "You are now working toward it.")
 
         val asyncResult = mockMvc
             .perform(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -292,7 +583,7 @@ class BuddyControllerTest(
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.ok").value(true))
-            .andExpect(jsonPath("$.message").value("Task 0 is yours."))
+            .andExpect(jsonPath("$.message").value("You are now working toward it."))
     }
 
     @Test
@@ -302,12 +593,104 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_task_zero"))),
+                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
         mockMvc
             .perform(asyncDispatch(asyncResult))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `deleteMessage should return 204 and delegate to service`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } just runs
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        verify {
+            buddyService.deleteMessage(authId, messageId)
+        }
+    }
+
+    @Test
+    fun `deleteMessage should return 404 when message is not found`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } throws ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Message not found",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `deleteMessage should return 409 when message is summarized`() {
+        val messageId = UUID.randomUUID()
+
+        every {
+            buddyService.deleteMessage(authId, messageId)
+        } throws ResponseStatusException(
+            HttpStatus.CONFLICT,
+            "Cannot delete a summarized message",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/messages/$messageId")
+                    .with(userJwt),
+            ).andExpect(status().isConflict)
+    }
+
+    @Test
+    fun `binSession should return 204 and delegate to service`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.binSession(authId, sessionId)
+        } just runs
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/sessions/$sessionId")
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        verify {
+            buddyService.binSession(authId, sessionId)
+        }
+    }
+
+    @Test
+    fun `binSession should return 404 when session is not found`() {
+        val sessionId = UUID.randomUUID()
+
+        every {
+            buddyService.binSession(authId, sessionId)
+        } throws ResponseStatusException(
+            HttpStatus.NOT_FOUND,
+            "Session not found for current user",
+        )
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/me/buddy/sessions/$sessionId")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
     }
 }

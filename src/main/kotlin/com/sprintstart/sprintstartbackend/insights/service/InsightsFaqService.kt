@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.chat.external.ChatQuestion
-import com.sprintstart.sprintstartbackend.chat.external.ChatQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
@@ -17,6 +15,8 @@ import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiEx
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiFaqGroupMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.FaqResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
+import com.sprintstart.sprintstartbackend.onboarding.external.BuddyQuestionApi
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyQuestion
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -42,7 +42,7 @@ import java.util.UUID
 class InsightsFaqService(
     private val faqGroupRepository: FaqGroupRepository,
     private val insightsAiClient: InsightsAiClient,
-    private val chatQuestionApi: ChatQuestionApi,
+    private val buddyQuestionApi: BuddyQuestionApi,
     private val aiFaqGroupMapper: AiFaqGroupMapper,
     private val faqResponseMapper: FaqResponseMapper,
     private val faqTrendCalculator: FaqTrendCalculator,
@@ -68,7 +68,7 @@ class InsightsFaqService(
             faqTrendCalculator.statsByGroup(projectId),
             // Counted rather than loaded: this only tells the client how much material a rebuild
             // would work on, so a PM can judge the scope before triggering one.
-            questionCount = chatQuestionApi.countUserQuestionsForProject(projectId).toInt(),
+            questionCount = buddyQuestionApi.countUserQuestionsForProject(projectId).toInt(),
         )
     }
 
@@ -104,13 +104,13 @@ class InsightsFaqService(
         val now = Instant.now()
 
         return FaqRebuildPreviewResponse(
-            totalQuestionCount = chatQuestionApi.countUserQuestionsForProject(projectId).toInt(),
+            totalQuestionCount = buddyQuestionApi.countUserQuestionsForProject(projectId).toInt(),
             rebuildQuestionLimit = limit,
             windows = windowsInDays.map { days ->
                 val scope = FaqRebuildScope(sinceDays = days)
                 FaqRebuildWindowResponse(
                     sinceDays = days,
-                    questionCount = chatQuestionApi
+                    questionCount = buddyQuestionApi
                         .countUserQuestionsForProject(projectId, scope.notBefore(now))
                         .coerceAtMost(limit.toLong())
                         .toInt(),
@@ -169,14 +169,14 @@ class InsightsFaqService(
      * Chronological order is restored afterwards because the AI service treats a cluster's first
      * member as its representative, and the oldest phrasing is the more established one.
      */
-    private fun questionsForRebuild(projectId: UUID, scope: FaqRebuildScope): List<ChatQuestion> {
+    private fun questionsForRebuild(projectId: UUID, scope: FaqRebuildScope): List<BuddyQuestion> {
         val notBefore = scope.notBefore()
         val limit = minOf(
             scope.questionLimit ?: Int.MAX_VALUE,
             applicationConfig.insights.faq.rebuildQuestionLimit,
         )
 
-        return chatQuestionApi
+        return buddyQuestionApi
             .getUserQuestionsForProject(projectId)
             .filter { notBefore == null || !it.askedAt.isBefore(notBefore) }
             .sortedByDescending { it.askedAt }

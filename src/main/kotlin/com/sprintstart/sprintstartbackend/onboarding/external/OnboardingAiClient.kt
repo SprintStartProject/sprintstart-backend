@@ -6,7 +6,7 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.AssembleDiag
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AssembleOrientationRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.AssemblePhaseRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentResponse
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCompactRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCompactResponse
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenRequest
@@ -20,6 +20,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.Onboarding
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URI
@@ -112,27 +113,37 @@ class OnboardingAiClient(
         }
 
     /**
-     * Runs one turn of the tool-using buddy agent.
+     * Runs one turn of the tool-using buddy agent, streaming it as it happens.
      *
      * Stateless: the backend carries [BuddyAgentRequest.messages] between turns and executes the
-     * tools only it can run. A non-final response returns the pending backend-tool calls plus the
-     * running message list to carry back with each tool result appended. A non-2xx response is
-     * wrapped in an [OnboardingAiException] carrying the upstream status/body.
+     * tools only it can run. The AI emits `reasoning` and `token` fragments and a `tool_use` before
+     * each search it runs itself, then one terminal `result` — either the final answer
+     * (`final=true`) or the pending backend-tool calls plus the running message list to carry back
+     * with each tool result appended.
      *
-     * @return Either the final answer (`final=true`) or pending backend-tool calls (`final=false`).
+     * A malformed chunk is logged and skipped. A non-2xx response is wrapped in an
+     * [OnboardingAiException] carrying the upstream status/body; so is a failure after the response
+     * started, which the AI reports as an `error` event, and a stream that ends without a `result`
+     * (see `relayAgentTurn`).
      */
-    suspend fun buddyAgentTurn(request: BuddyAgentRequest): BuddyAgentResponse =
-        try {
-            webClient
-                .post()
-                .uri(uri("/api/v1/onboarding/buddy/agent"))
-                .body(request)
-                .sync()
-                .perform<BuddyAgentResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            val msg = "Failed to run buddy agent turn (HTTP ${e.statusCode}): ${e.body}"
-            throw OnboardingAiException(e.statusCode, e.body, msg)
-        }
+    fun buddyAgentTurnStream(request: BuddyAgentRequest): Flow<BuddyAgentStreamEvent> =
+        webClient
+            .post()
+            .uri(uri("/api/v1/onboarding/buddy/agent/stream"))
+            .body(request)
+            .stream()
+            .perform<BuddyAgentStreamEvent>(
+                onChunkError = { raw, err ->
+                    logger.warn("Skipping malformed buddy agent chunk '{}': {}", raw, err.message)
+                    true
+                },
+            ).catch { e ->
+                if (e is WebClientException) {
+                    val msg = "Failed to run buddy agent turn (HTTP ${e.statusCode}): ${e.body}"
+                    throw OnboardingAiException(e.statusCode, e.body, msg)
+                }
+                throw e
+            }
 
     /**
      * Folds older buddy turns into the mentor's durable memory note.

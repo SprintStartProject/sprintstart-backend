@@ -18,6 +18,7 @@ class ArtifactMapper {
             ingestedAt = artifact.ingestedAt,
             lastChangedAt = artifact.lastChangedAt,
             sourceVersion = artifact.sourceVersion,
+            language = artifact.language,
         )
     }
 }

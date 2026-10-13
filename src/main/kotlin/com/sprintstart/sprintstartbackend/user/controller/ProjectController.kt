@@ -149,13 +149,19 @@ class ProjectController(
     /**
      * Assigns users to a managed project.
      *
+     * A regular user belongs to exactly one project, so assigning one moves them: their memberships in
+     * other projects, including the project roles held there, are removed, and their onboarding path
+     * is reset. Users with the PM or ADMIN role keep their other memberships.
+     *
      * @param projectId Project identifier.
      * @param request User assignment payload.
      * @return The full assigned-user list after the operation.
      */
     @Operation(
         summary = "Assign project users",
-        description = "Assigns one or more users to a project the caller manages.",
+        description = "Assigns one or more users to a project the caller manages. Regular users are moved: " +
+            "their memberships in other projects, the project roles held there and their onboarding path " +
+            "are removed. Users with the PM or ADMIN role keep their other memberships.",
     )
     @ApiResponses(
         value = [

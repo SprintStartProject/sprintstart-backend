@@ -2,10 +2,13 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
+import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.CreateSessionRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.SendBuddyMessageRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddySuggestionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
+import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
@@ -24,7 +27,9 @@ import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -34,8 +39,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * Exposes the hire's persistent onboarding buddy: one continuous, repo-grounded companion
- * conversation per user.
+ * Exposes the hire's persistent onboarding buddy.
  *
  * A project's manager can also talk to the buddy about that project's team. Team mode is selected per
  * request by naming the project (`teamProjectId`) and is a separate conversation per project; the
@@ -51,8 +55,30 @@ class BuddyController(
     private val buddySuggestionService: BuddySuggestionService,
 ) {
     @Operation(
-        summary = "Get the current user's buddy conversation",
-        description = "Returns the authenticated user's buddy conversation so far, oldest first. With " +
+        summary = "Get the current user's buddy sessions",
+        description = "Returns all sessions owned (= created) by the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Sessions returned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this endpoint"),
+            ApiResponse(responseCode = "404", description = "User not found"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.OK)
+    @GetMapping("/sessions")
+    @PreAuthorize("hasRole('USER')")
+    fun getSessions(
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): GetSessionsResponse {
+        return buddyService.getSessions(jwt.subject)
+    }
+
+    @Operation(
+        summary = "Get the messages of a current user's buddy conversation",
+        description = "Returns the messages of the specified buddy conversation so far, oldest first. With " +
             "`teamProjectId`, returns their team-mode conversation about that project instead; the caller must " +
             "manage the project.",
     )
@@ -73,13 +99,14 @@ class BuddyController(
     fun getMessagesForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
+        @RequestParam sessionId: UUID?,
         @Parameter(
             description = "The managed project whose team-mode conversation to return. Omit for the caller's own.",
         )
         @RequestParam(required = false) teamProjectId: UUID?,
     ): List<BuddyMessageResponse> =
         if (teamProjectId == null) {
-            buddyService.getMessagesForMe(jwt.subject)
+            buddyService.getMessagesForMe(jwt.subject, sessionId)
         } else {
             buddyTeamService.getMessagesForMe(jwt.subject, teamProjectId)
         }
@@ -106,6 +133,32 @@ class BuddyController(
         @AuthenticationPrincipal jwt: Jwt,
     ): List<BuddySuggestionResponse> = buddySuggestionService.forMe(jwt.subject)
 
+    @Operation(
+        summary = "Create a new session",
+        description = "Creates a new session for the authenticated user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "201", description = "Session created"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role to access this conversation"),
+            ApiResponse(responseCode = "404", description = "The authenticated user does not exist"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/sessions")
+    @PreAuthorize(
+        "hasRole('USER') and (#request.projectId == null or " +
+            "@projectAuth.canAccessProject(authentication, #request.projectId))",
+    )
+    fun createSession(
+        @Valid @RequestBody request: CreateSessionRequest,
+        @Parameter(hidden = true)
+        @AuthenticationPrincipal jwt: Jwt,
+    ): CreateSessionResponse {
+        return buddyService.createSession(jwt.subject, request.projectId)
+    }
+
     /**
      * Opens a buddy visit, streaming the greeting as the mentor writes it.
      *
@@ -118,14 +171,14 @@ class BuddyController(
      * for the two to drift.
      */
     @Operation(
-        summary = "Open a buddy visit (streaming)",
-        description = "The same visit as `POST /open` — the previous visit folded into the mentor's durable " +
-            "memory, a proactive greeting grounded in the hire's state, no transcript replay — with the greeting " +
-            "streamed as it is written instead of arriving whole. Opening twice without the hire saying anything " +
-            "is the same visit: the greeting already there is replayed and no model is called. A visit whose " +
-            "stream breaks keeps whatever the hire already read. With `teamProjectId`, opens the caller's " +
-            "team-mode conversation about that project, greeting them with the team's attention list; the caller " +
-            "must manage the project.",
+        summary = "Open a buddy session (streaming)",
+        description = "Opens a buddy session like `POST /open`: the previous visit is folded into the mentor's " +
+            "durable memory, and a proactive greeting grounded in the hire's state is streamed as it is written " +
+            "instead of arriving whole. The first conversation and a visit after a long absence receive a new " +
+            "greeting. Otherwise, an existing opening is replayed when it is the latest message; conversations " +
+            "without a new opening are left untouched. A visit whose stream breaks keeps whatever the hire " +
+            "already read. With `teamProjectId`, opens the caller's team-mode conversation about that project, " +
+            "greeting them with the team's attention list; the caller must manage the project.",
     )
     @ApiResponses(
         value = [
@@ -160,18 +213,20 @@ class BuddyController(
     suspend fun streamOpenForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
+        @Parameter(description = "The session to open")
+        @RequestParam sessionId: UUID?,
         @Parameter(description = "The managed project to open team mode for. Omit for the caller's own buddy.")
         @RequestParam(required = false) teamProjectId: UUID?,
     ): Flow<BuddyStreamEvent> =
         if (teamProjectId == null) {
-            buddyService.streamOpenForMe(jwt.subject)
+            buddyService.streamOpenForMe(jwt.subject, sessionId)
         } else {
             buddyTeamService.streamOpenForMe(jwt.subject, teamProjectId)
         }
 
     @Operation(
         summary = "Send a message to the buddy",
-        description = "Adds the message to the user's ongoing buddy session and streams a grounded reply. " +
+        description = "Adds the message to a user's ongoing buddy session and streams a grounded reply. " +
             "Set `capabilitiesEnabled` to false to ask the corpus rather than the mentor: the reply is still " +
             "grounded and cited, but no tools are mounted, so nothing can be proposed or written. The setting " +
             "is per message, and the conversation is the same one either way. Set `teamProjectId` to speak in " +
@@ -204,7 +259,11 @@ class BuddyController(
                 responseCode = "403",
                 description = "Insufficient role, or `teamProjectId` names a project the caller does not manage",
             ),
-            ApiResponse(responseCode = "404", description = "The authenticated user does not exist"),
+            ApiResponse(
+                responseCode = "404",
+                description = "The authenticated user does not exist, or the specified session does not belong to " +
+                    "the current user.",
+            ),
         ],
     )
     @ResponseStatus(HttpStatus.OK)
@@ -217,13 +276,22 @@ class BuddyController(
     ): Flow<BuddyStreamEvent> {
         val teamProjectId = request.teamProjectId
         return if (teamProjectId == null) {
-            buddyService.sendMessageForMe(jwt.subject, request.content, request.capabilitiesEnabled)
+            buddyService.sendMessageForMe(
+                jwt.subject,
+                request.sessionId,
+                request.content,
+                request.capabilitiesEnabled,
+                request.filters,
+                request.currentPage,
+            )
         } else {
             buddyTeamService.sendMessageForMe(
                 jwt.subject,
                 teamProjectId,
                 request.content,
                 request.capabilitiesEnabled,
+                request.filters,
+                request.currentPage,
             )
         }
     }
@@ -231,9 +299,10 @@ class BuddyController(
     @Operation(
         summary = "Confirm a buddy-proposed action",
         description = "Runs an action the buddy proposed, on the hire's explicit confirmation — for example " +
-            "start Task 0, open the task packet, flag a question to the PM, or keep, extend, tick or reword a " +
-            "checklist on the hire's board. The full set is `BuddyActionType`. The action is re-scoped to the " +
-            "caller server-side. Returns a single line to relay; a handled failure is `ok = false`, not an error.",
+            "claim a task, open the task packet, tick off a step of their path, flag a question to the PM, or " +
+            "keep, extend, tick or reword a checklist on the hire's board. The full set is `BuddyActionType`. " +
+            "The action is re-scoped to the caller server-side. Returns a single line to relay; a handled " +
+            "failure is `ok = false`, not an error.",
     )
     @ApiResponses(
         value = [
@@ -250,4 +319,50 @@ class BuddyController(
         @AuthenticationPrincipal jwt: Jwt,
         @Valid @RequestBody request: BuddyActionRequest,
     ): BuddyActionResponse = buddyActionService.perform(request, jwt)
+
+    @Operation(
+        summary = "Delete a message",
+        description = "Deletes a user message from a session owned by the current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Message deleted successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Message not found for current user"),
+            ApiResponse(responseCode = "409", description = "Cannot delete a summarized message"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/messages/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun deleteMessage(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.deleteMessage(jwt.subject, id)
+    }
+
+    @Operation(
+        summary = "Bin an existing session",
+        description = "Sets the status of an existing session to BINNED, given that the session was created by the " +
+            "current user.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "204", description = "Chat binned successfully"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Insufficient role"),
+            ApiResponse(responseCode = "404", description = "Session not found for current user"),
+        ],
+    )
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/sessions/{id}")
+    @PreAuthorize("hasRole('USER')")
+    fun binSession(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal jwt: Jwt,
+    ) {
+        buddyService.binSession(jwt.subject, id)
+    }
 }

@@ -88,6 +88,7 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    maxHeapSize = "2g"
 }
 
 tasks.jacocoTestReport {

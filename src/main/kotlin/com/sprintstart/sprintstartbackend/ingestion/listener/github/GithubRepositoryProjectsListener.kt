@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.github
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService

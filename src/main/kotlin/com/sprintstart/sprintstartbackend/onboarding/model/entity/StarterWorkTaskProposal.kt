@@ -67,10 +67,16 @@ class StarterWorkTaskProposal(
     @Column(nullable = false)
     var reviewed: Boolean = false,
     /**
-     * Whether a PM has flagged this task as suitable for Task 0 — the trivial first
-     * task a new hire is auto-assigned once their environment is ready, to walk the
-     * branch → PR → review → merge loop once while the stakes are nil. A deliberate PM
-     * choice, not a default.
+     * A PM's judgement that this task is small and safe enough to be somebody's first one.
+     *
+     * A fact about the *task*, not about anybody's onboarding. That distinction is the whole of
+     * what #311 changed here: the flag used to feed an assignment that handed a hire their first
+     * task and called it onboarding, and onboarding is now the path their PM's blueprint
+     * prescribes. The assignment is gone; the judgement is worth keeping, because "this one is
+     * safe to start on" is a useful thing for a PM to record and for the pool to show.
+     *
+     * Nothing withholds an unflagged task from anybody: hires claim their own work from the whole
+     * live pool.
      */
     @Column(name = "task_zero_eligible", nullable = false)
     var taskZeroEligible: Boolean = false,

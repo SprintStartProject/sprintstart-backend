@@ -11,8 +11,9 @@ import java.util.UUID
 /**
  * The starter-work task a hire has claimed as their goal, per project.
  *
- * The north star is time-to-first-contribution, so a hire aims at a piece of real work rather than
- * at a position in a curriculum. This row is what makes that concrete.
+ * Picking up real work runs alongside the onboarding path, not instead of it: the path is the
+ * curriculum their PM's blueprint prescribes, and this row is the piece of work the hire chose
+ * beside it (#311).
  *
  * Stored rather than derived. Hire→task matching is a ranking, so deriving it per read
  * would let a hire's destination change under them between two page loads. The hire claims one from

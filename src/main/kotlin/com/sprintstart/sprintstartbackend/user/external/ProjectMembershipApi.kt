@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.external
 
 import java.time.Instant
+import java.util.Optional
 import java.util.UUID
 
 /**
@@ -20,6 +21,40 @@ interface ProjectMembershipApi {
      * @return One entry per assigned member; empty when the project has none or does not exist.
      */
     fun getProjectMembers(projectId: UUID): List<ProjectMember>
+
+    /**
+     * The person assigned as this project's manager, if one is.
+     *
+     * Not the same question as [UserApi.canManageProject], and not answerable with it: that asks
+     * whether somebody *may* manage the project and is true for every administrator, while this
+     * asks who the project's manager actually *is*. A caller deciding whether a particular member
+     * may be removed needs the second one — an administrator who happens to be on the project is
+     * an ordinary member of it.
+     *
+     * @return The manager's user id, or empty when the project has none or does not exist.
+     */
+    fun getProjectManagerId(projectId: UUID): Optional<UUID>
+
+    /**
+     * Puts people on a project, leaving anybody already on it as they are.
+     *
+     * Idempotent, so a caller need not diff against the current membership first.
+     *
+     * @throws org.springframework.web.server.ResponseStatusException 404 when the project or any
+     * of the users does not exist.
+     */
+    fun addMembers(projectId: UUID, userIds: Set<UUID>)
+
+    /**
+     * Takes one person off a project.
+     *
+     * The membership carries their roles on that project, so this removes those too, and putting
+     * them back later gives them a fresh membership with none.
+     *
+     * @throws org.springframework.web.server.ResponseStatusException 409 when they manage the
+     * project, 404 when there is no such project or they are not on it.
+     */
+    fun removeMember(projectId: UUID, userId: UUID)
 }
 
 /**

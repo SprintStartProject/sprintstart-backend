@@ -23,21 +23,15 @@ import java.util.UUID
 /**
  * Stores the changes the team-mode buddy offers a manager, and runs one only when they confirm it.
  *
- * Proposing never changes anything but this table. Confirming runs, in order:
+ * Proposing changes nothing but this table. Confirming runs, in order:
  *
- * 1. **Owner.** Only the manager the proposal was made for can decide it; anybody else gets a 404, so
- *    a proposal id says nothing about whether it exists.
+ * 1. **Owner.** Only the manager the proposal was made for can decide it; anybody else gets a 404.
  * 2. **Still open.** Anything already decided or expired is refused with a sentence, not an error.
  * 3. **Claim.** One conditional update from `PROPOSED` to `CONFIRMING`; a confirm that loses the race
  *    runs nothing.
- * 4. **Still the manager**, through [UserApi.canManageProject] — they may have lost the project since.
- * 5. **Still valid**, through the action's [TeamActionHandler.recheck].
- * 6. **Perform**, then record `CONFIRMED` or `FAILED` with the line shown to the manager.
- *
- * The outcome is recorded with a second conditional update, from `CONFIRMING`, even when the action
- * throws something unexpected — so a claimed proposal ends in `CONFIRMED` or `FAILED`. The one way it
- * can stay `CONFIRMING` is the database refusing that write; then the failure is logged, and the
- * manager is still told what actually happened rather than shown an error for a change that was made.
+ * 4. **Still the manager**, through [UserApi.canManageProject].
+ * 5. **Still valid**, through [TeamActionHandler.recheck].
+ * 6. **Perform**, then record `CONFIRMED` or `FAILED`, even if the action throws.
  */
 @Service
 class BuddyProposalService(
@@ -49,15 +43,12 @@ class BuddyProposalService(
     private val logger = LoggerFactory.getLogger(javaClass)
     private val json = Json { ignoreUnknownKeys = true }
 
-    // Resolved lazily, for the same reason as BuddyTeamTools' area tools.
     private val handlers: Map<String, TeamActionHandler> by lazy {
         handlersProvider.orderedStream().toList().associateBy { it.spec.name }
     }
 
-    /** The areas that have at least one action, so `open_area` can offer them. */
     fun actionAreas(): Set<TeamArea> = handlers.values.map { it.area }.toSet()
 
-    /** The action tools of the areas opened so far this turn. */
     fun actionSpecs(openedAreas: Set<TeamArea>): List<BuddyToolSpecDto> =
         handlers.values.filter { it.area in openedAreas }.map { it.spec }
 
@@ -156,8 +147,7 @@ class BuddyProposalService(
         } catch (e: ResponseStatusException) {
             outcome = Outcome(ok = false, message = e.reason ?: "That did not go through.")
         } finally {
-            // Also reached when the action throws something unexpected: the proposal is recorded as
-            // failed rather than left claimed, and the exception still propagates.
+            // Also reached on an unexpected exception, which then propagates: the proposal is never left claimed.
             recordOutcome(proposal.id, outcome)
         }
         return BuddyActionResponse(ok = outcome.ok, message = outcome.message)
@@ -176,11 +166,10 @@ class BuddyProposalService(
     }
 
     /**
-     * Records how a claimed proposal ended, without ever replacing the real result with an error.
+     * Records how a claimed proposal ended.
      *
-     * By the time this runs the action may have committed its change. A failure to *record* that must
-     * not surface as a failed request — the manager would be told a change failed that in fact happened —
-     * so it is logged, and the caller returns the real outcome.
+     * The action may already have committed, so a failure to record it is logged rather than thrown: the
+     * manager must not be told a change failed that in fact happened.
      */
     private fun recordOutcome(proposalId: UUID, outcome: Outcome) {
         val recorded = try {
@@ -221,7 +210,6 @@ class BuddyProposalService(
             BuddyProposalStatus.FAILED -> "This did not go through earlier. Ask the buddy again if you still want it."
         }
 
-    /** What proposing produced: the line for the model, and the stored proposal to show when there is one. */
     data class ProposeOutcome(
         val toolResult: String,
         val proposal: BuddyActionProposal?,
@@ -233,10 +221,7 @@ class BuddyProposalService(
     )
 
     companion object {
-        /**
-         * How long a proposal can be confirmed. A day covers a manager who reads it later the same day,
-         * while a preview written about last week's state is not confirmed as if it were current.
-         */
+        /** Long enough to read it later the same day, short enough that a stale preview is not confirmed. */
         val TIME_TO_LIVE: Duration = Duration.ofHours(24)
 
         private const val EXPIRED_MESSAGE =

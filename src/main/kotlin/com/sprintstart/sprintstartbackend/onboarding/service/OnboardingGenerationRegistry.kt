@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -80,22 +82,35 @@ class OnboardingGenerationRegistry(
     }
 
     /**
-     * Starts a generation for the caller from [projectId], or attaches to the one already running.
+     * Starts a generation for [authId] from [projectId], or attaches to the one already running.
      *
-     * An attach ignores [projectId]: the running generation builds from the project it was started
-     * with, and a user has one path, so there is nothing a second project could do but replace it
-     * again. [status] reports which project that is.
+     * An attach ignores [projectId] by default: the running generation builds from the project it
+     * was started with, and a user has one path, so there is nothing a second project could do but
+     * replace it again. [status] reports which project that is. With [sameProjectOnly] an attach to a
+     * run for another project is refused instead -- for a caller acting on somebody else's behalf,
+     * whose rights reach only as far as [projectId].
      *
-     * @throws org.springframework.web.server.ResponseStatusException the checks
+     * [beforeStart] runs only when a new generation is about to start, under the same lock that
+     * guarantees one run per user, so a rule about *starting* (who may replace a path) cannot race a
+     * concurrent start. Attaching never runs it.
+     *
+     * @throws ResponseStatusException `409` when [sameProjectOnly] is set and the running generation
+     * is for another project; whatever [beforeStart] throws; and the checks
      * [OnboardingPersonalizationService.personalize] makes before its flow exists (unknown user, user
      * not assigned to the project), so they still arrive as HTTP statuses.
      */
-    fun startOrAttach(authId: String, projectId: UUID): Flow<OnboardingSseEvent> {
-        runs[authId]?.let { return it.watch() }
+    fun startOrAttach(
+        authId: String,
+        projectId: UUID,
+        sameProjectOnly: Boolean = false,
+        beforeStart: () -> Unit = {},
+    ): Flow<OnboardingSseEvent> {
+        runs[authId]?.let { return attach(it, projectId, sameProjectOnly) }
 
         synchronized(startLockFor(authId)) {
-            runs[authId]?.let { return it.watch() }
+            runs[authId]?.let { return attach(it, projectId, sameProjectOnly) }
 
+            beforeStart()
             val generation = personalizationService.personalize(authId, projectId)
             val run = GenerationRun(projectId = projectId, startedAt = Instant.now())
             runs[authId] = run
@@ -119,6 +134,16 @@ class OnboardingGenerationRegistry(
 
             return run.watch()
         }
+    }
+
+    private fun attach(run: GenerationRun, projectId: UUID, sameProjectOnly: Boolean): Flow<OnboardingSseEvent> {
+        if (sameProjectOnly && run.projectId != projectId) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "A generation for another project is already running for this user",
+            )
+        }
+        return run.watch()
     }
 
     /**

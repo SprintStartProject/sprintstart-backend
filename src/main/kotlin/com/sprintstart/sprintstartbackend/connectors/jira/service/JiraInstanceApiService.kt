@@ -13,7 +13,7 @@ import java.util.UUID
  * Repository-backed implementation of the Jira module API exposed to other modules.
  *
  * The counterpart to
- * [com.sprintstart.sprintstartbackend.connectors.github.service.GithubRepositoryApiService] for
+ * [com.sprintstart.sprintstartbackend.connectors.git.github.service.GithubRepositoryApiService] for
  * Jira.
  */
 @Service

@@ -1,13 +1,17 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
+import com.sprintstart.sprintstartbackend.user.external.events.UserMovedToProjectEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
+import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminDetailResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toAdminListResponse
 import com.sprintstart.sprintstartbackend.user.model.mapper.toProjectUserResponse
@@ -36,12 +40,14 @@ import java.util.UUID
  * explicit module-facing APIs.
  */
 @Service
+@Suppress("TooManyFunctions")
 class AdminProjectService(
     private val projectRepository: ProjectRepository,
     private val userRepository: UserRepository,
     private val assignmentRepository: ProjectUserAssignmentRepository,
     private val projectSourceApi: ProjectSourceApi,
     private val githubRepositoryApi: GithubRepositoryApi,
+    private val bitbucketRepositoryApi: BitbucketRepositoryApi,
     private val eventPublisher: ApplicationEventPublisher,
     private val jiraInstanceApi: JiraInstanceApi,
 ) {
@@ -173,6 +179,7 @@ class AdminProjectService(
         val assignments = assignmentRepository.findAllByProjectId(project.id)
         assignmentRepository.deleteAll(assignments)
         githubRepositoryApi.removeProjectFromAllRepositories(project.id)
+        bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id)
         jiraInstanceApi.removeProjectFromAllInstances(project.id)
         projectRepository.delete(project)
         eventPublisher.publishEvent(ProjectDeletedEvent(project.id))
@@ -199,7 +206,15 @@ class AdminProjectService(
     /**
      * Assigns one or more users to a project.
      *
-     * Existing assignments are left unchanged, making repeated assignment requests idempotent.
+     * Users that are already members are left unchanged, making repeated assignment requests
+     * idempotent. A regular user belongs to exactly one project, so a user who joins here is moved:
+     * their memberships in all other projects are ended, and the project roles held on those go with
+     * them. Users with the [Role.PM] or [Role.ADMIN] role may be in several projects and keep their
+     * other memberships. A membership in a project the user is the assigned manager of is kept as
+     * well, matching [removeUser].
+     *
+     * Every user that actually left another project is announced with a [UserMovedToProjectEvent],
+     * so modules holding data derived from the old project can reset it in the same transaction.
      *
      * @param projectId Project identifier.
      * @param request User assignment payload.
@@ -221,10 +236,16 @@ class AdminProjectService(
             .findAllByProjectId(project.id)
             .map { it.user.id }
             .toSet()
-        val newAssignments = users
-            .filter { it.id !in existingAssignmentIds }
-            .map { ProjectUserAssignment(user = it, project = project) }
+        val joiningUsers = users.filter { it.id !in existingAssignmentIds }
 
+        joiningUsers.forEach { user ->
+            val previousProjectIds = leaveOtherProjects(user, project.id)
+            if (previousProjectIds.isNotEmpty()) {
+                eventPublisher.publishEvent(UserMovedToProjectEvent(user.id, project.id, previousProjectIds))
+            }
+        }
+
+        val newAssignments = joiningUsers.map { ProjectUserAssignment(user = it, project = project) }
         if (newAssignments.isNotEmpty()) {
             assignmentRepository.saveAll(newAssignments)
         }
@@ -259,6 +280,33 @@ class AdminProjectService(
             )
 
         assignmentRepository.delete(assignment)
+    }
+
+    /**
+     * Ends the memberships a regular user holds outside [targetProjectId].
+     *
+     * Project roles live on the assignment, so deleting it removes them too. Users who may be in
+     * several projects ([Role.PM], [Role.ADMIN]) are left alone, and so is a membership in a project
+     * the user still manages, which can only be cleared by first replacing the project manager.
+     *
+     * @param user The user joining the target project.
+     * @param targetProjectId The project the user is joining.
+     * @return The ids of the projects whose membership was ended, empty if nothing was removed.
+     */
+    private fun leaveOtherProjects(user: User, targetProjectId: UUID): List<UUID> {
+        if (Role.PM in user.roles || Role.ADMIN in user.roles) {
+            return emptyList()
+        }
+
+        val leaving = user.projectAssignments.filter {
+            it.id.projectId != targetProjectId && it.project.manager?.id != user.id
+        }
+        if (leaving.isEmpty()) {
+            return emptyList()
+        }
+
+        assignmentRepository.deleteAll(leaving)
+        return leaving.map { it.id.projectId }
     }
 
     /**

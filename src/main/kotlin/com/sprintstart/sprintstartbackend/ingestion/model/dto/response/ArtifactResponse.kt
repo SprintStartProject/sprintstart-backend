@@ -20,4 +20,10 @@ data class ArtifactResponse(
     val lastChangedAt: Instant?,
     val metadata: String,
     val sourceVersion: String? = null,
+    /**
+     * Display name of the artifact's programming or document language (for example "Kotlin",
+     * "Markdown", "Plain Text"), derived from the file extension at ingestion; null when it has no
+     * file extension to go by, as with issues, pull requests and pages.
+     */
+    val language: String? = null,
 )

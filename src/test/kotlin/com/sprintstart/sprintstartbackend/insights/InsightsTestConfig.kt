@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.insights
 
 import com.sprintstart.sprintstartbackend.AiConfig
 import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.BitbucketConfig
 import com.sprintstart.sprintstartbackend.CryptoConfig
 import com.sprintstart.sprintstartbackend.FaqInsightsConfig
 import com.sprintstart.sprintstartbackend.GithubConfig
@@ -21,6 +22,7 @@ fun insightsTestConfig(
 ): ApplicationConfig = ApplicationConfig(
     ai = AiConfig(baseUrl = "http://ai.test"),
     github = GithubConfig(baseUrl = "https://github.test"),
+    bitbucket = BitbucketConfig(baseUrl = "https://api.bitbucket.org/2.0"),
     crypto = CryptoConfig(masterKey = "test-master-key", salt = "0123456789abcdef"),
     upload = UploadConfig(directory = "/tmp/uploads", maxFileSizeBytes = 100),
     insights = InsightsConfig(faq = faq, knowledgeGaps = knowledgeGaps),

@@ -2,8 +2,9 @@ package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
-import com.sprintstart.sprintstartbackend.connectors.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.projects.GithubRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
+import com.sprintstart.sprintstartbackend.connectors.notion.external.events.projects.NotionWorkspaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService
@@ -134,6 +135,21 @@ class ProjectLinkPropagationTest {
         coVerify(timeout = LISTENER_TIMEOUT_MS) {
             artifactProjectService.applyProjectLink(
                 ArtifactSourceRef.ConfluenceConnection(connectionId),
+                projectId,
+                false,
+            )
+        }
+    }
+
+    @Test
+    fun `a deleted Notion connection announced outside a transaction still reaches its pages`() {
+        val connectionId = UUID.randomUUID()
+
+        eventPublisher.publishEvent(NotionWorkspaceConnectionDeletedEvent(connectionId, projectId))
+
+        coVerify(timeout = LISTENER_TIMEOUT_MS) {
+            artifactProjectService.applyProjectLink(
+                ArtifactSourceRef.NotionConnection(connectionId),
                 projectId,
                 false,
             )

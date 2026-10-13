@@ -20,4 +20,10 @@ internal class AtlassianCredentialRuntimeService(
             ?: return null
         return AtlassianCredentialSecret(userEmail = credential.userEmail, apiToken = credential.authToken)
     }
+
+    @Transactional(readOnly = true)
+    override fun findAllSecretsByAuthId(authId: String): List<AtlassianCredentialSecret> =
+        credentialRepository.findAllByAuthId(authId).map {
+            AtlassianCredentialSecret(userEmail = it.userEmail, apiToken = it.authToken)
+        }
 }

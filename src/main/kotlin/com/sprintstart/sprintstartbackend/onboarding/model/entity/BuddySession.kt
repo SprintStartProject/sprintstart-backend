@@ -4,26 +4,25 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
-import jakarta.persistence.UniqueConstraint
 import jakarta.persistence.Version
 import java.time.Instant
 import java.util.UUID
 
 /**
- * A hire's ongoing onboarding buddy companion -- one continuous conversation per user, unlike the
- * general-purpose `chat` module's multiple user-created chats. The AI buddy endpoint is stateless;
+ * A hire's onboarding buddy conversation. A user can have multiple sessions, with each
+ * session representing a separate conversation. The AI buddy endpoint is stateless;
  * this session plus its [BuddyMessage]s is what makes the conversation durable across visits.
  */
 @Entity
 @Table(
     name = "buddy_sessions",
-    uniqueConstraints = [UniqueConstraint(name = "uq_buddy_sessions_user", columnNames = ["user_id"])],
 )
 class BuddySession(
     @Id
     override val id: UUID = UUID.randomUUID(),
     @Column(name = "user_id", nullable = false)
     val userId: UUID,
+    var title: String = "",
     @Column(name = "created_at", nullable = false)
     val createdAt: Instant = Instant.now(),
     /**
@@ -57,4 +56,9 @@ class BuddySession(
     @Version
     @Column(nullable = false)
     var version: Long = 0,
+    @Column("project_id")
+    var projectId: UUID? = null,
+    var status: BuddySessionStatus = BuddySessionStatus.ACTIVE,
+    @Column(name = "binned_at")
+    var binnedAt: Instant? = null,
 ) : BuddyMemory

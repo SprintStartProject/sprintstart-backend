@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
@@ -37,6 +38,7 @@ class AdminProjectServiceTest {
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val projectSourceApi: ProjectSourceApi = mockk()
     private val githubRepositoryApi: GithubRepositoryApi = mockk()
+    private val bitbucketRepositoryApi: BitbucketRepositoryApi = mockk()
     private val jiraInstanceApi: JiraInstanceApi = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val service = AdminProjectService(
@@ -45,6 +47,7 @@ class AdminProjectServiceTest {
         assignmentRepository = assignmentRepository,
         projectSourceApi = projectSourceApi,
         githubRepositoryApi = githubRepositoryApi,
+        bitbucketRepositoryApi = bitbucketRepositoryApi,
         jiraInstanceApi = jiraInstanceApi,
         eventPublisher = eventPublisher,
     )
@@ -544,6 +547,7 @@ class AdminProjectServiceTest {
         every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
         every { assignmentRepository.deleteAll(capture(deletedAssignments)) } just runs
         every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
         every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
 
@@ -552,6 +556,9 @@ class AdminProjectServiceTest {
         assertThat(result.deleted).isTrue()
         assertThat(deletedAssignments.captured.toList()).containsExactly(assignment)
         verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
+        // A deleted project must be unlinked from Bitbucket too, or the connection keeps
+        // referencing a project that no longer exists and its artifacts stay keyed to nothing.
+        verify(exactly = 1) { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) }
         verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
     }
@@ -565,6 +572,7 @@ class AdminProjectServiceTest {
         every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
         every { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) } just runs
         every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
+        every { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
         every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
         every { eventPublisher.publishEvent(capture(event)) } just runs

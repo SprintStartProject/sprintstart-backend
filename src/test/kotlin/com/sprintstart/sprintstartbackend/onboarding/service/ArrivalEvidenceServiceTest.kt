@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.connectors.github.external.GithubUserApi
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubUserApi
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionEvidenceKind
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.ContributionState
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.Rigor

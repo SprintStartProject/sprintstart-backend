@@ -31,8 +31,7 @@ val HTTP_SUCCESS_RANGE = 200..299
  * For each bounded context (chat, uploads, connectors, ...) create a thin wrapper that
  * takes [WebClient] as a constructor dependency and exposes domain-typed suspend
  * functions. The wrapper owns URI construction and request/response mapping;
- * [WebClient] owns transport only. See [com.sprintstart.sprintstartbackend.chat.ChatAiClient]
- * for a reference implementation.
+ * [WebClient] owns transport only.
  */
 @Component
 class WebClient(

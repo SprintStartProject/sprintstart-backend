@@ -1,6 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactFacetsResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactPageResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.PageMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMapper
@@ -69,18 +73,17 @@ class ArtifactQueryService(
     }
 
     /**
-     * Returns one paginated artifact list limited to a single project visible to the caller.
-     *
-     * The method first validates project access and then delegates to project-scoped repository
-     * queries using the same filter semantics as the global artifact search.
+     * Returns one paginated artifact list limited to a single project visible to the caller using criteria.
      *
      * @param page The 1-based page number to return.
      * @param size The maximum number of artifacts to include in one page.
-     * @param filter Optional case-insensitive text used to narrow the result set.
+     * @param criteria Filter criteria containing search string, types, sources, repos, and formats.
+     * @param sort Row order; the repository applies it together with the `id ASC` tie-break.
      * @param projectId The SprintStart project that scopes the artifact listing.
      * @param authId The authenticated caller subject from the JWT.
      * @return One project-scoped artifact page together with pagination metadata.
-     * @throws ResponseStatusException `403` when the caller has no access to the project.
+     * @throws ResponseStatusException `400` when `from` is after `to`, `403` when the caller has no
+     *   access to the project.
      * @throws IllegalArgumentException when Spring Data rejects the requested page or page size.
      */
     @Transactional(readOnly = true)
@@ -88,25 +91,21 @@ class ArtifactQueryService(
     fun getProjectArtifacts(
         page: Int,
         size: Int,
-        filter: String?,
+        criteria: ArtifactFilterCriteria,
+        sort: ArtifactSort,
         projectId: UUID,
         authId: String,
     ): ArtifactPageResponse {
+        requireValidDateWindow(criteria)
         ensureAccessToProject(authId, projectId)
-        val pageable = PageRequest.of(
-            page - 1,
-            size,
-            Sort.by("ingestedAt").descending(),
-        )
+        // Unsorted on purpose: the criteria repository owns ORDER BY (see ArtifactSort) and
+        // would ignore a Pageable sort, so passing one here would only suggest otherwise.
+        val pageable = PageRequest.of(page - 1, size)
 
-        val result: Page<Artifact> =
-            if (filter.isNullOrBlank()) {
-                artifactRepository.findAllByProjectId(projectId, pageable)
-            } else {
-                artifactRepository.searchByProjectId(projectId, filter.trim(), pageable)
-            }
+        val result: Page<ArtifactResponse> =
+            artifactRepository.findProjectArtifactsWithCriteria(projectId, criteria, sort, pageable)
         return ArtifactPageResponse(
-            items = result.content.map { artifactMapper.toResponse(it) },
+            items = result.content,
             page = PageMetadata(
                 number = page.toLong(),
                 size = size.toLong(),
@@ -116,6 +115,73 @@ class ArtifactQueryService(
                 hasPrevious = result.hasPrevious(),
             ),
         )
+    }
+
+    /**
+     * Returns aggregated facet counts for a project based on the supplied criteria.
+     *
+     * @param projectId The SprintStart project that scopes the artifact listing.
+     * @param criteria Active filter criteria.
+     * @param authId The authenticated caller subject from the JWT.
+     * @return Aggregated facet counts.
+     * @throws ResponseStatusException `400` when `from` is after `to`, `403` when the caller has no
+     *   access to the project.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving artifact facets for project")
+    fun getProjectArtifactFacets(
+        projectId: UUID,
+        criteria: ArtifactFilterCriteria,
+        authId: String,
+    ): ArtifactFacetsResponse {
+        requireValidDateWindow(criteria)
+        ensureAccessToProject(authId, projectId)
+        return artifactRepository.findFacets(projectId, criteria)
+    }
+
+    /**
+     * Retrieves a single artifact by its ID within the project scope.
+     *
+     * @param projectId The SprintStart project that scopes the artifact.
+     * @param artifactId The ID of the artifact to retrieve.
+     * @param authId The authenticated caller subject from the JWT.
+     * @return The artifact response DTO.
+     * @throws ResponseStatusException `403` if access is denied, `404` if not found in project.
+     */
+    @Transactional(readOnly = true)
+    @Tracked("Retrieving single artifact for project")
+    fun getArtifact(
+        projectId: UUID,
+        artifactId: UUID,
+        authId: String,
+    ): ArtifactResponse {
+        ensureAccessToProject(authId, projectId)
+        // A projection, not the entity: opening a deep link needs metadata only, and
+        // `Artifact.content` is an eagerly fetched TEXT column (see
+        // ArtifactFacetRepositoryImpl.artifactProjection).
+        return artifactRepository.findProjectArtifactById(projectId, artifactId)
+            ?: throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Artifact $artifactId not found in project $projectId",
+            )
+    }
+
+    /**
+     * Rejects an activity-date window whose start lies after its end.
+     *
+     * Such a window can match nothing, so answering it with an empty page would hide a client bug
+     * (typically swapped bounds) behind a plausible "no results". List and facets both call this,
+     * so the two endpoints can never disagree on whether a window is valid.
+     *
+     * @param criteria The filter whose `from`/`to` bounds are checked; open bounds always pass.
+     * @throws ResponseStatusException `400` when `from` is after `to`.
+     */
+    private fun requireValidDateWindow(criteria: ArtifactFilterCriteria) {
+        val from = criteria.from ?: return
+        val to = criteria.to ?: return
+        if (from.isAfter(to)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "`from` ($from) must not be after `to` ($to)")
+        }
     }
 
     /**

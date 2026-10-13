@@ -3,7 +3,7 @@ package com.sprintstart.sprintstartbackend.shared.web
 /**
  * Thrown when an HTTP response carries a non-2xx status code.
  *
- * This is a *transport-level* exception. Module wrappers (e.g. [com.sprintstart.sprintstartbackend.chat.ChatAiClient])
+ * This is a *transport-level* exception. Module wrappers
  * should catch this and rethrow domain-specific exceptions where appropriate,
  * rather than letting [WebClientException] leak into business logic.
  *

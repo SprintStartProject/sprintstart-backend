@@ -60,18 +60,38 @@ class BuddyCompactionServiceTest {
 
     private val userId = UUID.randomUUID()
 
-    private fun sessionWith(messageCount: Int, cursor: Int = 0, summary: String? = null): BuddySession {
-        val session = BuddySession(userId = userId, summary = summary, summarizedCount = cursor)
-        every { buddySessionRepository.findByUserId(userId) } returns session
-        every { buddySessionRepository.findById(session.id) } returns Optional.of(session)
-        every { buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id) } returns
+    private fun sessionWith(
+        messageCount: Int,
+        cursor: Int = 0,
+        summary: String? = null,
+    ): BuddySession {
+        val session = BuddySession(
+            userId = userId,
+            summary = summary,
+            summarizedCount = cursor,
+        )
+
+        every {
+            buddySessionRepository.findByIdAndUserId(session.id, userId)
+        } returns session
+        every {
+            buddySessionRepository.findById(session.id)
+        } returns Optional.of(session)
+        every {
+            buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
+        } returns
             (1..messageCount).map {
                 BuddyMessage(
                     session = session,
-                    role = if (it % 2 == 1) BuddyMessageRole.USER else BuddyMessageRole.ASSISTANT,
+                    role = if (it % 2 == 1) {
+                        BuddyMessageRole.USER
+                    } else {
+                        BuddyMessageRole.ASSISTANT
+                    },
                     content = "m$it",
                 )
             }
+
         return session
     }
 
@@ -83,7 +103,7 @@ class BuddyCompactionServiceTest {
         coEvery { onboardingAiClient.compactBuddyMemory(capture(requests)) } returns
             BuddyCompactResponse(memory = "We covered m1 through m6.")
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         // 26 messages, window 20: the six oldest slide out.
         assertThat(requests.single().folded.map { it.content })
@@ -95,9 +115,9 @@ class BuddyCompactionServiceTest {
 
     @Test
     fun `does nothing and calls no model when the window still fits`() = runTest {
-        sessionWith(messageCount = 20)
+        val session = sessionWith(messageCount = 20)
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         coVerify(exactly = 0) { onboardingAiClient.compactBuddyMemory(any()) }
         verify(exactly = 0) { buddySessionRepository.save(any()) }
@@ -110,26 +130,26 @@ class BuddyCompactionServiceTest {
      */
     @Test
     fun `folds the whole backlog at once, not one exchange`() = runTest {
-        sessionWith(messageCount = 60)
+        val session = sessionWith(messageCount = 60)
         every { buddySessionRepository.save(any()) } answers { firstArg() }
         val requests = mutableListOf<BuddyCompactRequest>()
         coEvery { onboardingAiClient.compactBuddyMemory(capture(requests)) } returns
             BuddyCompactResponse(memory = "note")
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         assertThat(requests.single().folded).hasSize(40)
     }
 
     @Test
     fun `starts from the cursor, never from the top of the transcript`() = runTest {
-        sessionWith(messageCount = 30, cursor = 5)
+        val session = sessionWith(messageCount = 30, cursor = 5)
         every { buddySessionRepository.save(any()) } answers { firstArg() }
         val requests = mutableListOf<BuddyCompactRequest>()
         coEvery { onboardingAiClient.compactBuddyMemory(capture(requests)) } returns
             BuddyCompactResponse(memory = "note")
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         // 30 messages, 5 already covered, window 20: five more slide out, starting at m6.
         assertThat(requests.single().folded.map { it.content })
@@ -147,7 +167,7 @@ class BuddyCompactionServiceTest {
         coEvery { onboardingAiClient.compactBuddyMemory(any()) } throws
             OnboardingAiException(503, "model down", "unavailable")
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         assertThat(session.summarizedCount).isEqualTo(0)
         assertThat(session.summary).isEqualTo("Earlier notes.")
@@ -157,11 +177,11 @@ class BuddyCompactionServiceTest {
     /** Never throws: the caller is a fire-and-forget launch behind a hire's reply. */
     @Test
     fun `swallows an AI failure rather than surfacing it`() = runTest {
-        sessionWith(messageCount = 26)
+        val session = sessionWith(messageCount = 26)
         coEvery { onboardingAiClient.compactBuddyMemory(any()) } throws
             OnboardingAiException(500, "boom", "exploded")
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
     }
 
     /**
@@ -179,7 +199,7 @@ class BuddyCompactionServiceTest {
             BuddyCompactResponse(memory = "my note")
         }
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
 
         assertThat(session.summary).isEqualTo("somebody else's note")
         assertThat(session.summarizedCount).isEqualTo(6)
@@ -193,21 +213,27 @@ class BuddyCompactionServiceTest {
      */
     @Test
     fun `survives losing the optimistic lock on the swap`() = runTest {
-        sessionWith(messageCount = 26)
+        val session = sessionWith(messageCount = 26)
         coEvery { onboardingAiClient.compactBuddyMemory(any()) } returns
             BuddyCompactResponse(memory = "my note")
         every { buddySessionRepository.save(any()) } throws
             ObjectOptimisticLockingFailureException(BuddySession::class.java, UUID.randomUUID())
 
-        service.compactIfNeeded(userId)
+        service.compactIfNeeded(userId, session.id)
     }
 
     @Test
-    fun `does nothing when the user has no session`() = runTest {
-        every { buddySessionRepository.findByUserId(userId) } returns null
+    fun `does nothing when the session does not exist`() = runTest {
+        val sessionId = UUID.randomUUID()
 
-        service.compactIfNeeded(userId)
+        every {
+            buddySessionRepository.findByIdAndUserId(sessionId, userId)
+        } returns null
 
-        coVerify(exactly = 0) { onboardingAiClient.compactBuddyMemory(any()) }
+        service.compactIfNeeded(userId, sessionId)
+
+        coVerify(exactly = 0) {
+            onboardingAiClient.compactBuddyMemory(any())
+        }
     }
 }

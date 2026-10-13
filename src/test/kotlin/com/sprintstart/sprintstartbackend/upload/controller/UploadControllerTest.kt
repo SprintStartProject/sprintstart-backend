@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.upload.controller
 
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadFailure
+import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadListItemResponse
 import com.sprintstart.sprintstartbackend.upload.service.UploadService
@@ -229,33 +231,42 @@ class UploadControllerTest {
     // ========================== deleteUpload ==========================
 
     @Test
-    fun `deleteUpload returns 204 for PM`() {
+    fun `deleteUpload returns 200 with deleted ids and failures for PM`() {
+        val missingId = UUID.randomUUID()
         every {
             uploadService.deleteUpload(authId, setOf(artifactId), projectId)
-        } returns Unit
+        } returns DeleteUploadsResponse(
+            deletedIds = listOf(artifactId),
+            failed = listOf(DeleteUploadFailure(missingId, "Artifact with id $missingId not found.")),
+        )
 
         mockMvc
             .perform(
                 multipart(HttpMethod.DELETE, "/api/v1/uploads")
                     .file(deleteRequest)
                     .with(pmJwt),
-            ).andExpect(status().isNoContent)
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.deletedIds[0]").value(artifactId.toString()))
+            .andExpect(jsonPath("$.failed[0].artifactId").value(missingId.toString()))
+            .andExpect(jsonPath("$.failed[0].error").value("Artifact with id $missingId not found."))
 
         verify { uploadService.deleteUpload(authId, setOf(artifactId), projectId) }
     }
 
     @Test
-    fun `deleteUpload returns 204 for admin`() {
+    fun `deleteUpload returns 200 for admin`() {
         every {
             uploadService.deleteUpload(authId, setOf(artifactId), projectId)
-        } returns Unit
+        } returns DeleteUploadsResponse(deletedIds = listOf(artifactId), failed = emptyList())
 
         mockMvc
             .perform(
                 multipart(HttpMethod.DELETE, "/api/v1/uploads")
                     .file(deleteRequest)
                     .with(adminJwt),
-            ).andExpect(status().isNoContent)
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.deletedIds[0]").value(artifactId.toString()))
+            .andExpect(jsonPath("$.failed").isEmpty)
 
         verify { uploadService.deleteUpload(authId, setOf(artifactId), projectId) }
     }

@@ -99,7 +99,8 @@ class StarterWorkTeamTools(
                     "most recently changed first:",
             )
             matching.take(LIST_LIMIT).forEach { issue ->
-                append("- “${issue.title}” [source_id: ${issue.sourceId}] — ${githubRepositoryOf(issue.sourceId)}")
+                val repository = githubRepositoryOf(issue.sourceId)
+                append("- “${issue.title}” [source_id: ${issue.sourceId}] — $repository")
                 if (issue.labels.isNotEmpty()) append(", labels: ${issue.labels.joinToString()}")
                 appendLine()
                 issue.excerpt?.let { appendLine("  ${it.take(EXCERPT_CHARS).replace('\n', ' ').trim()}…") }

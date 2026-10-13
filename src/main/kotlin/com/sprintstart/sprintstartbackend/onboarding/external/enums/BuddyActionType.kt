@@ -13,7 +13,6 @@ enum class BuddyActionType(
     val label: String,
 ) {
     FLAG_TO_PM("flag_to_pm", "Flag this to your PM"),
-    CLAIM_TASK_ZERO("claim_task_zero", "Start Task 0"),
     OPEN_ORIENTATION("open_orientation", "Open the task packet"),
     CLAIM_GOAL("claim_goal", "Work toward this task"),
     REQUEST_ATTESTATION("request_attestation", "Ask them to confirm this"),
@@ -40,6 +39,54 @@ enum class BuddyActionType(
      * skill is not something anybody should have to confirm blind.
      */
     RECORD_ASSESSMENT("record_assessment", "Save this placement"),
+
+    /**
+     * The path actions, from here to [REQUEST_SKIP]: the mentor moving the hire along the curriculum
+     * their PM wrote.
+     *
+     * They are what turns the buddy from a second onboarding mechanism into the tutor for the first
+     * one. One line decides how far that goes, and it is worth stating here rather than only in the
+     * tool descriptions: **these touch the hire's own copy of the path, never the blueprint.** The
+     * curriculum belongs to the PM; a mentor that could edit it is a mentor whose team stops
+     * trusting it. Everything here is reversible on the hire's own page, which is what makes
+     * proposing them reasonable at all.
+     *
+     * Their [label]s are fallbacks. Each proposal names the actual step, the actual answer or the
+     * actual title, because "Confirm" over a change to somebody's onboarding is not something
+     * anybody should have to click blind.
+     */
+    COMPLETE_STEP("complete_step", "Mark this step as done"),
+
+    /**
+     * Sends the hire's own answer to a knowledge question.
+     *
+     * The hire's words, never the mentor's. The mentor is not told which option is correct (see
+     * `BuddyPathTools`), so it cannot answer for them even if it tried — and the button shows the
+     * answer that will be sent, because an attempt is recorded whether it is right or not.
+     */
+    ANSWER_QUESTION("answer_question", "Send this answer"),
+
+    /** Adds a step the conversation produced to a phase of the hire's own path. */
+    ADD_PATH_STEP("add_path_step", "Add this step to your path"),
+
+    /**
+     * Ticks one line off the checklist of the step the hire is on.
+     *
+     * Separate from [COMPLETE_STEP] because they are different claims, and the product treats them as
+     * such: a step may be finished with lines still open, and unticking a line reopens a finished
+     * step. A mentor that could only make the coarse claim would either tick a whole step off for one
+     * line of progress or do nothing at all.
+     */
+    COMPLETE_TASK("complete_task", "Tick this off"),
+
+    /**
+     * Asks the hire's PM to let them skip one step of their path, with the hire's reason.
+     *
+     * A *request*, and the PM's decision -- exactly the one the step page files. The mentor helps put
+     * the reason into words, and the button shows the whole of it, because it is sent to a person in
+     * the hire's name.
+     */
+    REQUEST_SKIP("request_skip", "Ask your PM to skip this"),
 
     /**
      * Keeps a list the mentor just wrote as a checklist card on the hire's board.
@@ -104,6 +151,41 @@ enum class BuddyActionType(
      * makes it an edit they can see rather than one they would have to go looking for.
      */
     REWORD_CHECKLIST_ITEM("reword_checklist_item", "Reword this line"),
+
+    /** Keeps a link on the hire's board — the last of the three kinds a hire writes themselves. */
+    PLACE_LINK("place_link", "Keep this link"),
+
+    /**
+     * Rewrites one of the hire's notes, when they ask for it to be changed.
+     *
+     * The first of the edits that reach past checklists into anything the hire wrote. What makes
+     * that acceptable is the pair every buddy board write now carries: the confirm shows the new
+     * words before anything is written, and the card says afterwards that the buddy changed it.
+     */
+    EDIT_NOTE("edit_note", "Update this note"),
+
+    /** Changes where one of the hire's links points, or what it is called. */
+    EDIT_LINK("edit_link", "Update this link"),
+
+    /**
+     * Rewrites a whole checklist — its title and its lines — when the hire asks for it tidied.
+     *
+     * Broader than [AMEND_CHECKLIST] and [REWORD_CHECKLIST_ITEM] on purpose, and still gated the
+     * same way: the confirm shows the list as it would read, so a dropped or reworded line is one
+     * the hire saw go. Lines that survive keep their ticks.
+     */
+    EDIT_CHECKLIST("edit_checklist", "Update this list"),
+
+    /**
+     * Takes cards off the hire's board — "clean up my board".
+     *
+     * Non-destructive, like the hire's own dismissal: the rows survive, so each card is a state flip
+     * away from coming back. The confirm names every card that would go.
+     */
+    DISMISS_CARDS("dismiss_cards", "Remove these from your board"),
+
+    /** Puts the hire's cards in a new order. The confirm shows the order it would leave. */
+    REORDER_CARDS("reorder_cards", "Rearrange your board"),
     ;
 
     companion object {

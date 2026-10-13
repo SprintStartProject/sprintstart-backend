@@ -3,10 +3,15 @@ package com.sprintstart.sprintstartbackend.onboarding.external.enums
 /**
  * The bounded catalog of cards a board can hold.
  *
- * A closed catalog, never free-form content. A card the buddy places is a request to show a
- * *known* read, never a request to render prose it wrote about the hire's state: the mentor decides
- * what to show, the backend decides what it says. Cards the *hire* writes are the exception —
- * that content is prose, it is theirs, and the mentor cannot touch it.
+ * A closed catalog of *live* kinds. A live card the buddy places is a request to show a *known*
+ * read, never a request to render prose it wrote about the hire's state: the mentor decides what to
+ * show, the backend decides what it says — and that part is applied without asking.
+ *
+ * The authored kinds are the other half: prose, and the hire's. The buddy may write and edit those
+ * too, on the same terms as any change it makes to the hire's board — it proposes, the hire
+ * confirms what would change, and the card records afterwards that the buddy made the change
+ * (`BoardCard.recordChange`). Pre-approval and attribution are what replaced "the mentor cannot
+ * touch it"; neither is optional.
  *
  * A live card stores nothing but its own existence; the content is re-read on every board
  * load from the same services the buddy's tools use, so a card and the tool of the same name cannot
@@ -17,20 +22,11 @@ enum class BoardCardKind(
     val takesSubject: Boolean = false,
 ) {
     /**
-     * The moments between joining and a first accepted piece of work, and which have happened.
-     *
-     * Composed from contributions, not pull requests, so the wording the board carries is what
-     * names one unit of accepted work.
-     */
-    PATH_TO_FIRST_CONTRIBUTION(Placement.BASELINE),
-
-    /**
      * What still has to be true before this hire can work: accounts, access, a machine that builds.
      *
-     * Baseline rather than mentor-placed for the same reason the path card is: nobody should depend
-     * on a model noticing that somebody has been unable to clone the repository for a week. It is
-     * ensured on every board read and is the one card that is *most* useful on day one, when the
-     * board is otherwise thin.
+     * Baseline rather than mentor-placed: nobody should depend on a model noticing that somebody has
+     * been unable to clone the repository for a week. It is ensured on every board read and is the
+     * one card that is *most* useful on day one, when the board is otherwise thin.
      *
      * It shows outstanding work; it does not withhold anything. An unsettled step never
      * stops a hire claiming a task, and nothing anywhere consults these rows before serving them.
@@ -59,8 +55,8 @@ enum class BoardCardKind(
      * The task the hire is on, and where it came from.
      *
      * Not part of the baseline, because it is only true some of the time — somebody with no claimed
-     * goal and no Task 0 is not "between tasks", they simply have no task, and a card about nothing
-     * is worse than no card. The mentor places it, and confirming `claim_goal` places it too.
+     * goal is not "between tasks", they simply have no task, and a card about nothing is worse than
+     * no card. The mentor places it, and confirming `claim_goal` places it too.
      */
     CURRENT_TASK(Placement.MENTOR),
 
@@ -72,6 +68,16 @@ enum class BoardCardKind(
      * from the conversation and the board does not.
      */
     SUGGESTED_TASKS(Placement.MENTOR),
+
+    /**
+     * The whole live starter-work pool, ranked for this hire, to browse and grab from by hand.
+     *
+     * Baseline, unlike [SUGGESTED_TASKS]: picking your own task is not something the mentor should
+     * have to decide to offer. The buddy stays the way to get help choosing; this is the way to
+     * choose without asking anybody. Same ranking and same reasons as `GET /me/matches`, so the card
+     * and the conversation cannot disagree about which task fits best.
+     */
+    TASK_POOL(Placement.BASELINE),
 
     /**
      * What the hire has shown they can do, and what they are still short of.
@@ -133,7 +139,7 @@ enum class BoardCardKind(
      */
     PATH_STEP(Placement.MENTOR, takesSubject = true),
 
-    /** Something the hire wrote down. Markdown, theirs, and nothing reads it back as fact. */
+    /** Something written down for the hire. Markdown, theirs, and nothing reads it back as fact. */
     NOTE(Placement.AUTHORED),
 
     /** A link the hire wants to keep. The smallest possible card, and probably the most used. */
@@ -170,11 +176,13 @@ enum class BoardCardKind(
         MENTOR,
 
         /**
-         * Written by the hire.
+         * Written by the hire, or by the buddy for them behind a confirm — theirs either way.
          *
-         * The only cards that carry stored content, the only ones a board may hold several of, and
-         * the only ones the mentor must never touch. A board the mentor can tidy is a board the
-         * hire cannot trust to keep what they put on it.
+         * The only cards that carry stored content, and the only ones a board may hold several of.
+         * The mentor may create and edit these, but never directly: every such write is a proposal
+         * the hire confirms, and is attributed to the mentor on the card once it lands. A board the
+         * mentor could tidy silently would be one the hire cannot trust to keep what they put on it;
+         * one where every change was theirs to agree to, and says whose it was, still can be.
          */
         AUTHORED,
     }

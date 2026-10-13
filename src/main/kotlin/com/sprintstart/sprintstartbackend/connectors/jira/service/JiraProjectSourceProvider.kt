@@ -10,7 +10,7 @@ import java.util.UUID
  * Provides project-scoped source summaries for connected Jira instances.
  *
  * The Jira counterpart to
- * [com.sprintstart.sprintstartbackend.connectors.github.service.GithubProjectSourceProvider]. Without
+ * [com.sprintstart.sprintstartbackend.connectors.git.github.service.GithubProjectSourceProvider]. Without
  * it the connector overview only ever reported GitHub repositories, so Jira instances linked to a
  * project were missing from the project source lists (admin projects, project details and the
  * project switcher). The status vocabulary and the disabled-source folding are already applied by

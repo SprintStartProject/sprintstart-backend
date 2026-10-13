@@ -1,8 +1,6 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.FaqInsightsConfig
-import com.sprintstart.sprintstartbackend.chat.external.ChatQuestion
-import com.sprintstart.sprintstartbackend.chat.external.ChatQuestionApi
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqDocument
@@ -18,6 +16,8 @@ import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiEx
 import com.sprintstart.sprintstartbackend.insights.model.mapper.AiFaqGroupMapper
 import com.sprintstart.sprintstartbackend.insights.model.mapper.FaqResponseMapper
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
+import com.sprintstart.sprintstartbackend.onboarding.external.BuddyQuestionApi
+import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyQuestion
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -42,7 +42,7 @@ class InsightsFaqServiceTest {
     private val faqGroupRepository = mockk<FaqGroupRepository>()
     private val projectId: UUID = UUID.randomUUID()
     private val insightsAiClient = mockk<InsightsAiClient>()
-    private val chatQuestionApi = mockk<ChatQuestionApi>()
+    private val buddyQuestionApi = mockk<BuddyQuestionApi>()
     private val aiFaqGroupMapper = AiFaqGroupMapper()
     private val applicationConfig = insightsTestConfig()
     private val faqResponseMapper = FaqResponseMapper(applicationConfig)
@@ -58,7 +58,7 @@ class InsightsFaqServiceTest {
     private val service = InsightsFaqService(
         faqGroupRepository = faqGroupRepository,
         insightsAiClient = insightsAiClient,
-        chatQuestionApi = chatQuestionApi,
+        buddyQuestionApi = buddyQuestionApi,
         aiFaqGroupMapper = aiFaqGroupMapper,
         faqResponseMapper = faqResponseMapper,
         faqTrendCalculator = faqTrendCalculator,
@@ -84,7 +84,7 @@ class InsightsFaqServiceTest {
     fun `getFaqOverview maps groups and exposes the document reference as the id`() {
         val group = buildGroup()
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns listOf(group)
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 14
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns 14
 
         val overview = service.getFaqOverview(projectId)
 
@@ -150,9 +150,9 @@ class InsightsFaqServiceTest {
                 ),
             ),
         )
-        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns
-            listOf(ChatQuestion(id = messageId, text = "How do I get VPN access?", askedAt = askedAt))
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 1
+        every { buddyQuestionApi.getUserQuestionsForProject(projectId) } returns
+            listOf(BuddyQuestion(id = messageId, text = "How do I get VPN access?", askedAt = askedAt))
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns 1
         val requestSlot = slot<AiFaqGroupingRequest>()
         coEvery { insightsAiClient.groupFaqQuestions(capture(requestSlot)) } returns aiResponse
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
@@ -191,8 +191,8 @@ class InsightsFaqServiceTest {
 
     @Test
     fun `refreshFaqGroups clears the cache even when the AI returns no groups`() = runTest {
-        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns emptyList()
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 0
+        every { buddyQuestionApi.getUserQuestionsForProject(projectId) } returns emptyList()
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns 0
         coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(groups = emptyList())
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
@@ -204,25 +204,25 @@ class InsightsFaqServiceTest {
         verify(exactly = 1) { faqGroupRepository.deleteAllByProjectId(projectId) }
     }
 
-    private fun questions(count: Int): List<ChatQuestion> =
+    private fun questions(count: Int): List<BuddyQuestion> =
         (1..count).map {
-            ChatQuestion(
+            BuddyQuestion(
                 id = UUID.randomUUID(),
                 text = "Question $it",
                 askedAt = Instant.parse("2026-08-01T10:00:00Z").plusSeconds(it.toLong()),
             )
         }
 
-    private fun givenQuestions(chatQuestions: List<ChatQuestion>) {
-        every { chatQuestionApi.getUserQuestionsForProject(projectId) } returns chatQuestions
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns chatQuestions.size.toLong()
+    private fun givenQuestions(chatQuestions: List<BuddyQuestion>) {
+        every { buddyQuestionApi.getUserQuestionsForProject(projectId) } returns chatQuestions
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns chatQuestions.size.toLong()
         every { faqGroupRepository.deleteAllByProjectId(projectId) } just Runs
         every { faqGroupRepository.deleteAllByProjectIdIsNull() } just Runs
         every { faqGroupRepository.saveAll(any<List<FaqGroup>>()) } answers
             { firstArg<List<FaqGroup>>().toMutableList() }
     }
 
-    private fun singletonGroups(chatQuestions: List<ChatQuestion>) = AiFaqGroupingResponse(
+    private fun singletonGroups(chatQuestions: List<BuddyQuestion>) = AiFaqGroupingResponse(
         groups = chatQuestions.map {
             AiFaqGroup(question = it.text, count = 1, title = it.text, questionIds = listOf(it.id.toString()))
         },
@@ -233,7 +233,7 @@ class InsightsFaqServiceTest {
         val service = InsightsFaqService(
             faqGroupRepository = faqGroupRepository,
             insightsAiClient = insightsAiClient,
-            chatQuestionApi = chatQuestionApi,
+            buddyQuestionApi = buddyQuestionApi,
             aiFaqGroupMapper = aiFaqGroupMapper,
             faqResponseMapper = faqResponseMapper,
             faqTrendCalculator = faqTrendCalculator,
@@ -300,7 +300,7 @@ class InsightsFaqServiceTest {
     @Test
     fun `getFaqOverview reports the material a rebuild has and the ceiling on it`() {
         every { faqGroupRepository.findAllByProjectIdOrderByOccurrenceCountDesc(projectId) } returns emptyList()
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 5_000
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns 5_000
 
         val overview = service.getFaqOverview(projectId)
 
@@ -314,8 +314,8 @@ class InsightsFaqServiceTest {
         val old = Instant.now().minus(200, java.time.temporal.ChronoUnit.DAYS)
         val recent = Instant.now().minus(1, java.time.temporal.ChronoUnit.DAYS)
         val chatQuestions = listOf(
-            ChatQuestion(id = UUID.randomUUID(), text = "Old question", askedAt = old),
-            ChatQuestion(id = UUID.randomUUID(), text = "Recent question", askedAt = recent),
+            BuddyQuestion(id = UUID.randomUUID(), text = "Old question", askedAt = old),
+            BuddyQuestion(id = UUID.randomUUID(), text = "Recent question", askedAt = recent),
         )
         givenQuestions(chatQuestions)
         val requestSlot = slot<AiFaqGroupingRequest>()
@@ -333,7 +333,7 @@ class InsightsFaqServiceTest {
         val service = InsightsFaqService(
             faqGroupRepository = faqGroupRepository,
             insightsAiClient = insightsAiClient,
-            chatQuestionApi = chatQuestionApi,
+            buddyQuestionApi = buddyQuestionApi,
             aiFaqGroupMapper = aiFaqGroupMapper,
             faqResponseMapper = faqResponseMapper,
             faqTrendCalculator = faqTrendCalculator,
@@ -356,7 +356,7 @@ class InsightsFaqServiceTest {
         val repeated = List(3) { UUID.randomUUID() }
         val askedAt = Instant.parse("2026-08-01T10:00:00Z")
         givenQuestions(
-            repeated.map { ChatQuestion(id = it, text = "How do I get VPN access?", askedAt = askedAt) },
+            repeated.map { BuddyQuestion(id = it, text = "How do I get VPN access?", askedAt = askedAt) },
         )
         coEvery { insightsAiClient.groupFaqQuestions(any()) } returns AiFaqGroupingResponse(
             groups = listOf(
@@ -395,7 +395,7 @@ class InsightsFaqServiceTest {
         val service = InsightsFaqService(
             faqGroupRepository = faqGroupRepository,
             insightsAiClient = insightsAiClient,
-            chatQuestionApi = chatQuestionApi,
+            buddyQuestionApi = buddyQuestionApi,
             aiFaqGroupMapper = aiFaqGroupMapper,
             faqResponseMapper = faqResponseMapper,
             faqTrendCalculator = faqTrendCalculator,
@@ -404,8 +404,8 @@ class InsightsFaqServiceTest {
         )
         // The windowed stub first: mockk matches the most recently defined one, and `any()` would
         // otherwise swallow the null call too.
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, any<Instant>()) } returns 400
-        every { chatQuestionApi.countUserQuestionsForProject(projectId, null) } returns 900
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, any<Instant>()) } returns 400
+        every { buddyQuestionApi.countUserQuestionsForProject(projectId, null) } returns 900
 
         val preview = service.previewRebuild(projectId, listOf(1, 30))
 

@@ -7,4 +7,6 @@ data class OnboardingGenerationIssueResponse(
     val phaseId: UUID,
     val title: String,
     val status: GenerationStatus,
+    /** What the phase was meant to cover. The buddy talks it through from this to repair the phase. */
+    val description: String = "",
 )

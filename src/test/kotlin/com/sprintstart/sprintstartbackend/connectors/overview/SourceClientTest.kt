@@ -28,6 +28,9 @@ class SourceClientTest {
             github = com.sprintstart.sprintstartbackend.GithubConfig(
                 baseUrl = "https://github.example.com",
             ),
+            bitbucket = com.sprintstart.sprintstartbackend.BitbucketConfig(
+                baseUrl = "https://api.bitbucket.org/2.0",
+            ),
             crypto = com.sprintstart.sprintstartbackend.CryptoConfig(
                 masterKey = "test-master-key",
                 salt = "test-salt",
