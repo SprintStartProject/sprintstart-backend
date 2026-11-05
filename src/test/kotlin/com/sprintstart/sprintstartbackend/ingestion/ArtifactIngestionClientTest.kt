@@ -1,7 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion
 
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.AiArtifactSummaryRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.ArtifactSummaryAiException
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.shared.config.AiConfig
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
@@ -11,6 +13,7 @@ import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
 import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -20,6 +23,8 @@ import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.io.IOException
 import java.net.http.HttpClient
 import java.net.http.HttpTimeoutException
@@ -123,6 +128,65 @@ class ArtifactIngestionClientTest {
         assertEquals("Failed to purge project memberships (HTTP 404): no such project", error.message)
         assertRefusalKept(error, status = 404, body = "no such project")
     }
+
+    @Test
+    fun `summarizeStream passes stage, token and citation chunks through`() = runTest {
+        mockWebServer.enqueue(
+            sse(
+                """data: {"type":"stage","name":"retrieve"}""",
+                """data: {"type":"token","content":"Hello"}""",
+                """data: {"type":"citation","artifact_id":"a1","filename":"guide.md"}""",
+                "data: [DONE]",
+            ),
+        )
+
+        val chunks = client.summarizeStream(UUID.randomUUID(), AiArtifactSummaryRequest()).toList()
+
+        assertEquals(listOf("stage", "token", "citation"), chunks.map { it.type })
+        assertEquals("Hello", chunks[1].content)
+        assertEquals("guide.md", chunks[2].filename)
+    }
+
+    @Test
+    fun `summarizeStream says the artifact is still being indexed when the AI service does not know it yet`() = runTest {
+        mockWebServer.enqueue(MockResponse().setResponseCode(404).setBody("not indexed"))
+
+        val error = assertFailsWith<ResponseStatusException> {
+            client.summarizeStream(UUID.randomUUID(), AiArtifactSummaryRequest()).toList()
+        }
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, error.statusCode)
+        assertEquals("Artifact is still being indexed by the AI service", error.reason)
+    }
+
+    @Test
+    fun `summarizeStream lets any other refusal through unchanged`() = runTest {
+        mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+
+        val error = assertFailsWith<WebClientException> {
+            client.summarizeStream(UUID.randomUUID(), AiArtifactSummaryRequest()).toList()
+        }
+
+        assertEquals(500, error.statusCode)
+    }
+
+    @Test
+    fun `summarizeStream turns an error chunk from the AI service into an exception`() = runTest {
+        mockWebServer.enqueue(
+            sse("""data: {"type":"token","content":"partial"}""", """data: {"type":"error","message":"model down"}"""),
+        )
+
+        val error = assertFailsWith<ArtifactSummaryAiException> {
+            client.summarizeStream(UUID.randomUUID(), AiArtifactSummaryRequest()).toList()
+        }
+
+        assertEquals("AI responded with error: model down", error.message)
+    }
+
+    private fun sse(vararg lines: String) = MockResponse()
+        .setResponseCode(200)
+        .setHeader("Content-Type", "text/event-stream")
+        .setBody(lines.joinToString("\n", postfix = "\n"))
 
     private fun assertRefusalKept(error: Throwable, status: Int, body: String) {
         val cause = error.cause

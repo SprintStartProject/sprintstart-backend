@@ -37,6 +37,16 @@ class AiMockServer : AutoCloseable {
         server.enqueue(MockResponse().setResponseCode(status).setBody(body))
     }
 
+    /** Makes the next request answer with these lines as a server-sent event stream. */
+    fun streamNext(vararg lines: String) {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(lines.joinToString("\n", postfix = "\n")),
+        )
+    }
+
     override fun close() = server.shutdown()
 }
 
