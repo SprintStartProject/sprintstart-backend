@@ -38,8 +38,8 @@ class AiServiceCalls(
                 .body(body)
                 .sync()
                 .perform<R>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw AiServiceException(e.statusCode, e.body, "Failed to $action (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw AiServiceException(e.statusCode, e.body, "Failed to $action (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     /**

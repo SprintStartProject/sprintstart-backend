@@ -8,4 +8,5 @@ package com.sprintstart.sprintstartbackend.insights.model.exceptions
  */
 class InsightsAiException(
     message: String,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)

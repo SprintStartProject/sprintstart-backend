@@ -8,4 +8,5 @@ package com.sprintstart.sprintstartbackend.insights.model.exceptions
  */
 class KnowledgeGapsAiException(
     message: String,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)

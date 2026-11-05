@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion
 
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.shared.config.AiConfig
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
@@ -8,6 +10,7 @@ import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
 import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
 import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
+import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -23,6 +26,7 @@ import java.net.http.HttpTimeoutException
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class ArtifactIngestionClientTest {
@@ -83,6 +87,48 @@ class ArtifactIngestionClientTest {
         }
 
         assertEquals("Failed to read ingest status (HTTP 503): down", error.message)
+        assertRefusalKept(error, status = 503, body = "down")
+    }
+
+    @Test
+    fun `ingest keeps the refusal as the cause`() = runTest {
+        mockWebServer.enqueue(MockResponse().setResponseCode(502).setBody("bad gateway"))
+
+        val error = assertFailsWith<IngestionResponseException> {
+            client.ingest(RunArtifactsAiSyncRequest(artifactsToIngest = emptyList(), artifactsToDeindex = emptyList()))
+        }
+
+        assertEquals("Failed to ingest artifact (HTTP 502): bad gateway", error.message)
+        assertRefusalKept(error, status = 502, body = "bad gateway")
+    }
+
+    @Test
+    fun `syncProjectMemberships keeps the refusal as the cause`() = runTest {
+        mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("oops"))
+
+        val error = assertFailsWith<IngestionResponseException> {
+            client.syncProjectMemberships(ArtifactProjectsAiSyncRequest(artifacts = emptyList()))
+        }
+
+        assertEquals("Failed to sync project memberships (HTTP 500): oops", error.message)
+        assertRefusalKept(error, status = 500, body = "oops")
+    }
+
+    @Test
+    fun `deleteProjectMemberships keeps the refusal as the cause`() = runTest {
+        mockWebServer.enqueue(MockResponse().setResponseCode(404).setBody("no such project"))
+
+        val error = assertFailsWith<IngestionResponseException> { client.deleteProjectMemberships(UUID.randomUUID()) }
+
+        assertEquals("Failed to purge project memberships (HTTP 404): no such project", error.message)
+        assertRefusalKept(error, status = 404, body = "no such project")
+    }
+
+    private fun assertRefusalKept(error: Throwable, status: Int, body: String) {
+        val cause = error.cause
+        assertIs<WebClientException>(cause)
+        assertEquals(status, cause.statusCode)
+        assertEquals(body, cause.body)
     }
 
     @Test
