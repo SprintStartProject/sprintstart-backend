@@ -203,9 +203,6 @@ internal class ConfluenceConnectionService(
         throw spaceCheckFailed("Confluence returned invalid space metadata", 502, exception)
     }
 
-    /** A failed space check, keeping what the client reported as its cause. */
-    private fun spaceCheckFailed(message: String, httpStatus: Int, cause: Exception) =
-        ConfluenceConnectionConfigurationException(message, httpStatus = httpStatus, cause = cause)
 }
 
 private val NUMERIC_SPACE_ID = Regex("^[0-9]+$")
@@ -217,3 +214,7 @@ private fun normalizeSpaceId(rawSpaceId: String): String {
     }
     return spaceId
 }
+
+/** A failed space check, keeping what the client reported as its cause. */
+private fun spaceCheckFailed(message: String, httpStatus: Int, cause: Exception) =
+    ConfluenceConnectionConfigurationException(message, httpStatus = httpStatus, cause = cause)
