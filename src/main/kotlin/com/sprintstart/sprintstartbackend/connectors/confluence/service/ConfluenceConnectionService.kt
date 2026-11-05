@@ -202,7 +202,6 @@ internal class ConfluenceConnectionService(
     } catch (exception: ConfluenceInvalidResponseException) {
         throw spaceCheckFailed("Confluence returned invalid space metadata", 502, exception)
     }
-
 }
 
 private val NUMERIC_SPACE_ID = Regex("^[0-9]+$")
