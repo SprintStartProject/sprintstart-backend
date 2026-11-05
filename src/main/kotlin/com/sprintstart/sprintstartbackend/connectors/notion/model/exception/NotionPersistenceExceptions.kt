@@ -5,13 +5,11 @@ import java.util.UUID
 internal sealed class NotionPersistenceException(
     message: String,
     val httpStatus: Int,
-    cause: Throwable? = null,
-) : RuntimeException(message, cause)
+) : RuntimeException(message)
 
 internal class NotionCredentialAlreadyExistsException(
     name: String,
-    cause: Throwable? = null,
-) : NotionPersistenceException("Notion credential '$name' already exists", 409, cause)
+) : NotionPersistenceException("Notion credential '$name' already exists", 409)
 
 internal class NotionCredentialNotFoundException(
     name: String,
@@ -24,11 +22,9 @@ internal class NotionCredentialStillInUseException(
 internal class NotionWorkspaceConnectionAlreadyExistsException(
     projectId: UUID,
     workspaceName: String,
-    cause: Throwable? = null,
 ) : NotionPersistenceException(
         "Notion source scope '$workspaceName' is already connected to project $projectId",
         409,
-        cause,
     )
 
 internal class NotionWorkspaceConnectionNotFoundException(
