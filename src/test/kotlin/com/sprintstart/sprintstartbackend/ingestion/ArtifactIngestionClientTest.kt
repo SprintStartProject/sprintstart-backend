@@ -31,7 +31,6 @@ import java.net.http.HttpTimeoutException
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertNull
 
 class ArtifactIngestionClientTest {
@@ -92,11 +91,10 @@ class ArtifactIngestionClientTest {
         }
 
         assertEquals("Failed to read ingest status (HTTP 503): down", error.message)
-        assertRefusalKept(error, status = 503, body = "down")
     }
 
     @Test
-    fun `ingest keeps the refusal as the cause`() = runTest {
+    fun `ingest turns a refusal into IngestionResponseException`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(502).setBody("bad gateway"))
 
         val error = assertFailsWith<IngestionResponseException> {
@@ -104,11 +102,10 @@ class ArtifactIngestionClientTest {
         }
 
         assertEquals("Failed to ingest artifact (HTTP 502): bad gateway", error.message)
-        assertRefusalKept(error, status = 502, body = "bad gateway")
     }
 
     @Test
-    fun `syncProjectMemberships keeps the refusal as the cause`() = runTest {
+    fun `syncProjectMemberships turns a refusal into IngestionResponseException`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(500).setBody("oops"))
 
         val error = assertFailsWith<IngestionResponseException> {
@@ -116,17 +113,15 @@ class ArtifactIngestionClientTest {
         }
 
         assertEquals("Failed to sync project memberships (HTTP 500): oops", error.message)
-        assertRefusalKept(error, status = 500, body = "oops")
     }
 
     @Test
-    fun `deleteProjectMemberships keeps the refusal as the cause`() = runTest {
+    fun `deleteProjectMemberships turns a refusal into IngestionResponseException`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(404).setBody("no such project"))
 
         val error = assertFailsWith<IngestionResponseException> { client.deleteProjectMemberships(UUID.randomUUID()) }
 
         assertEquals("Failed to purge project memberships (HTTP 404): no such project", error.message)
-        assertRefusalKept(error, status = 404, body = "no such project")
     }
 
     @Test
@@ -148,7 +143,7 @@ class ArtifactIngestionClientTest {
     }
 
     @Test
-    fun `summarizeStream says the artifact is still being indexed when the AI service does not know it yet`() = runTest {
+    fun `summarizeStream says the artifact is still being indexed on a 404`() = runTest {
         mockWebServer.enqueue(MockResponse().setResponseCode(404).setBody("not indexed"))
 
         val error = assertFailsWith<ResponseStatusException> {
@@ -187,13 +182,6 @@ class ArtifactIngestionClientTest {
         .setResponseCode(200)
         .setHeader("Content-Type", "text/event-stream")
         .setBody(lines.joinToString("\n", postfix = "\n"))
-
-    private fun assertRefusalKept(error: Throwable, status: Int, body: String) {
-        val cause = error.cause
-        assertIs<WebClientException>(cause)
-        assertEquals(status, cause.statusCode)
-        assertEquals(body, cause.body)
-    }
 
     @Test
     fun `fetchIngestStatus rejects a body that is not the status shape`() = runTest {

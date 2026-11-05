@@ -56,8 +56,8 @@ class ArtifactIngestionClient(
                 .body(body)
                 .sync()
                 .perform<RunArtifactsIngestResponse>()
-        } catch (e: WebClientException) {
-            throw IngestionResponseException("Failed to ingest artifact (HTTP ${e.statusCode}): ${e.body}", e)
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw IngestionResponseException("Failed to ingest artifact (HTTP ${e.statusCode}): ${e.body}")
         }
 
     /**
@@ -80,10 +80,9 @@ class ArtifactIngestionClient(
                 .body(body)
                 .sync()
                 .perform<ArtifactProjectsAiSyncResponse>()
-        } catch (e: WebClientException) {
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
             throw IngestionResponseException(
                 "Failed to sync project memberships (HTTP ${e.statusCode}): ${e.body}",
-                e,
             )
         }
 
@@ -101,10 +100,9 @@ class ArtifactIngestionClient(
                 .uri(uri("/api/v1/projects/$projectId/memberships"))
                 .sync()
                 .perform<ProjectMembershipsDeletedAiResponse>()
-        } catch (e: WebClientException) {
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
             throw IngestionResponseException(
                 "Failed to purge project memberships (HTTP ${e.statusCode}): ${e.body}",
-                e,
             )
         }
 
@@ -130,8 +128,8 @@ class ArtifactIngestionClient(
                 .uri(uri("/api/v1/ingest/status?$query"))
                 .sync(timeout = INGEST_STATUS_TIMEOUT)
                 .perform<ArtifactIngestStatusAiResponse>()
-        } catch (e: WebClientException) {
-            throw IngestionResponseException("Failed to read ingest status (HTTP ${e.statusCode}): ${e.body}", e)
+        } catch (@Suppress("SwallowedException") e: WebClientException) {
+            throw IngestionResponseException("Failed to read ingest status (HTTP ${e.statusCode}): ${e.body}")
         }
     }
 

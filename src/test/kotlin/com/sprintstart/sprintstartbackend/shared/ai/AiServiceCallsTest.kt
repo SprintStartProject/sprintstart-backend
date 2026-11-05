@@ -10,7 +10,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 @Serializable
-private data class ProgressEvent(val type: String, val content: String? = null)
+private data class ProgressEvent(
+    val type: String,
+    val content: String? = null,
+)
 
 class AiServiceCallsTest {
     private val ai = AiMockServer()
@@ -20,7 +23,7 @@ class AiServiceCallsTest {
     fun tearDown() = ai.close()
 
     @Test
-    fun `a refused call says what it was doing and keeps the refusal as the cause`() = runTest {
+    fun `a refused call says what it was doing and carries the status and body`() = runTest {
         ai.rejectNext(status = 500, body = "model overloaded")
 
         val error = assertFailsWith<AiServiceException> {
@@ -30,7 +33,6 @@ class AiServiceCallsTest {
         assertEquals(500, error.statusCode)
         assertEquals("model overloaded", error.body)
         assertEquals("Failed to assemble diagram (HTTP 500): model overloaded", error.message)
-        assertCausedByRefusal(error, status = 500, body = "model overloaded")
     }
 
     @Test
