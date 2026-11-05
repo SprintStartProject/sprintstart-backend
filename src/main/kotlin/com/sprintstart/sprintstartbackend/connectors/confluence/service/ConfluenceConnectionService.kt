@@ -191,16 +191,36 @@ internal class ConfluenceConnectionService(
         spaceId: String,
     ) = try {
         confluenceClient.getSpace(baseUrl, credentials, spaceId)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceAuthenticationException) {
-        throw ConfluenceConnectionConfigurationException("Confluence credentials were rejected", httpStatus = 401)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceAccessDeniedException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space access was denied", httpStatus = 403)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceResourceNotFoundException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space $spaceId was not found", httpStatus = 404)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceExternalServiceException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space validation failed", httpStatus = 502)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceInvalidResponseException) {
-        throw ConfluenceConnectionConfigurationException("Confluence returned invalid space metadata", httpStatus = 502)
+    } catch (exception: ConfluenceAuthenticationException) {
+        throw ConfluenceConnectionConfigurationException(
+            "Confluence credentials were rejected",
+            httpStatus = 401,
+            cause = exception,
+        )
+    } catch (exception: ConfluenceAccessDeniedException) {
+        throw ConfluenceConnectionConfigurationException(
+            "Confluence space access was denied",
+            httpStatus = 403,
+            cause = exception,
+        )
+    } catch (exception: ConfluenceResourceNotFoundException) {
+        throw ConfluenceConnectionConfigurationException(
+            "Confluence space $spaceId was not found",
+            httpStatus = 404,
+            cause = exception,
+        )
+    } catch (exception: ConfluenceExternalServiceException) {
+        throw ConfluenceConnectionConfigurationException(
+            "Confluence space validation failed",
+            httpStatus = 502,
+            cause = exception,
+        )
+    } catch (exception: ConfluenceInvalidResponseException) {
+        throw ConfluenceConnectionConfigurationException(
+            "Confluence returned invalid space metadata",
+            httpStatus = 502,
+            cause = exception,
+        )
     }
 }
 

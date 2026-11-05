@@ -47,8 +47,12 @@ internal class NotionWorkspaceConnectionPersistenceService(
         }
         val savedConnection = try {
             connectionRepository.saveAndFlush(connection)
-        } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
-            throw NotionWorkspaceConnectionAlreadyExistsException(connection.projectId, connection.workspaceName)
+        } catch (exception: DataIntegrityViolationException) {
+            throw NotionWorkspaceConnectionAlreadyExistsException(
+                connection.projectId,
+                connection.workspaceName,
+                exception,
+            )
         }
         return savedConnection.toResponse()
     }

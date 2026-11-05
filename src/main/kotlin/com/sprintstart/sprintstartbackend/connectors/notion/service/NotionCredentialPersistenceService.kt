@@ -49,8 +49,8 @@ internal class NotionCredentialPersistenceService(
                     tokenOwnerId = workspace.tokenOwnerId,
                 ),
             )
-        } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
-            throw NotionCredentialAlreadyExistsException(name)
+        } catch (exception: DataIntegrityViolationException) {
+            throw NotionCredentialAlreadyExistsException(name, exception)
         }
         return savedCredential.toResponse()
     }
@@ -121,8 +121,8 @@ internal class NotionCredentialPersistenceService(
                 createdAt = source.createdAt,
             ),
         )
-    } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
-        throw NotionCredentialAlreadyExistsException(newId.name)
+    } catch (exception: DataIntegrityViolationException) {
+        throw NotionCredentialAlreadyExistsException(newId.name, exception)
     }
 
     @Transactional
