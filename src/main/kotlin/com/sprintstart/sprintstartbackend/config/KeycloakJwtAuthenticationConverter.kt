@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.config
 
+import com.sprintstart.sprintstartbackend.user.external.security.KeycloakRoleMapper
 import org.springframework.core.convert.converter.Converter
 import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority

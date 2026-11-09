@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraArtifactMetadataWrapper
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueHistory
@@ -12,6 +11,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

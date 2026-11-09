@@ -4,9 +4,9 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.Bitb
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.util.UUID

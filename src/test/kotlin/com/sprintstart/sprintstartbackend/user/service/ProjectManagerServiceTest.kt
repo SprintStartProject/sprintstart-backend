@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment

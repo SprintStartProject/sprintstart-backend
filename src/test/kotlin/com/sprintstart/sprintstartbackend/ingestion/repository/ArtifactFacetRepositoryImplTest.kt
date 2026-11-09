@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

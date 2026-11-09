@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.FaqInsightsConfig
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqTrend
 import com.sprintstart.sprintstartbackend.insights.repository.FaqQuestionRepository
 import com.sprintstart.sprintstartbackend.insights.repository.projection.FaqGroupQuestionCount
+import com.sprintstart.sprintstartbackend.shared.config.FaqInsightsConfig
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Assertions.assertEquals

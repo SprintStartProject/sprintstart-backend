@@ -2,11 +2,11 @@ package com.sprintstart.sprintstartbackend.connectors.notion.service
 
 import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionBody
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionCodeBlockCommand
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageArtifactCommand
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageMetadataCommand
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionSectionCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionCodeBlockCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageArtifactCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageMetadataCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionSectionCommand
 import org.springframework.stereotype.Component
 import java.time.Instant
 import java.util.UUID

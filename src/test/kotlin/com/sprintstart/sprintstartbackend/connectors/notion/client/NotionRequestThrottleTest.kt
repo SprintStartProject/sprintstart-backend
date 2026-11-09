@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.client
 
-import com.sprintstart.sprintstartbackend.NotionThrottleConfig
+import com.sprintstart.sprintstartbackend.shared.config.NotionThrottleConfig
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay

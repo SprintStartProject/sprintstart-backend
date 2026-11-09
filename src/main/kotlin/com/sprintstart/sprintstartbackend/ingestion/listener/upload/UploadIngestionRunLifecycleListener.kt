@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.upload
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.UploadIngestionRunService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchDeletionFinishedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchFinishedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent

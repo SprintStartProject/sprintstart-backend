@@ -5,11 +5,11 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingCompleteEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingStartedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.JiraArtifactProviderService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 

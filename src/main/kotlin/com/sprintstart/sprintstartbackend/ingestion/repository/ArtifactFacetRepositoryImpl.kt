@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
@@ -9,6 +8,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactR
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.FacetCountResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.CompoundSelection

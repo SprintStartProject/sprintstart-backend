@@ -4,14 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.networknt.schema.JsonSchema
 import com.networknt.schema.JsonSchemaFactory
 import com.networknt.schema.SpecVersion
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentStreamEvent
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
-import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
-import com.sprintstart.sprintstartbackend.onboarding.service.ResolvedBuddyCitation
-import com.sprintstart.sprintstartbackend.onboarding.service.emitCitationsAndDone
-import com.sprintstart.sprintstartbackend.onboarding.service.endFailureWithErrorEvent
-import com.sprintstart.sprintstartbackend.onboarding.service.relayAgentTurn
-import com.sprintstart.sprintstartbackend.onboarding.service.toolUseEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyAgentStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEventType
+import com.sprintstart.sprintstartbackend.assistant.external.ResolvedBuddyCitation
+import com.sprintstart.sprintstartbackend.assistant.external.emitCitationsAndDone
+import com.sprintstart.sprintstartbackend.assistant.external.endFailureWithErrorEvent
+import com.sprintstart.sprintstartbackend.assistant.external.relayAgentTurn
+import com.sprintstart.sprintstartbackend.assistant.external.toolUseEvent
 import com.sprintstart.sprintstartbackend.shared.web.HttpClientFactory
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.flow
@@ -92,10 +92,10 @@ class StreamContractTest {
 
     /** Built inside private service methods today, so constructed here the way those methods do. */
     private fun representativeServiceEvents(): List<BuddyStreamEvent> = listOf(
-        BuddyStreamEvent(type = BuddyService.OPENING_ACTION, label = "Find me a task", question = "What next?"),
-        BuddyStreamEvent(type = BuddyService.RESET),
+        BuddyStreamEvent(type = BuddyStreamEventType.OPENING_ACTION, label = "Find me a task", question = "What next?"),
+        BuddyStreamEvent(type = BuddyStreamEventType.RESET),
         BuddyStreamEvent(
-            type = BuddyService.ACTION_PROPOSAL,
+            type = BuddyStreamEventType.ACTION_PROPOSAL,
             action = "dismiss_cards",
             label = "Dismiss 2 cards",
             cardIds = listOf(UUID.randomUUID().toString()),

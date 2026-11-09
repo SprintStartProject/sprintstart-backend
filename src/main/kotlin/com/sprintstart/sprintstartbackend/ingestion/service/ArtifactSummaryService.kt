@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactSummary
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactSummaryCitation
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactSummaryRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.ids.parseUuidOrNull
 import com.sprintstart.sprintstartbackend.upload.external.api.UploadApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.flow.Flow
@@ -223,20 +224,6 @@ internal class ArtifactSummaryService(
 
         throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact $artifactId not found")
     }
-
-    /**
-     * Attempts to parse the given string into a UUID.
-     * If the string is not a valid UUID, returns null.
-     *
-     * @param value the string representation of the UUID to be parsed.
-     * @return the parsed UUID object if the string is valid, or null if parsing fails.
-     */
-    private fun parseUuidOrNull(value: String): UUID? =
-        try {
-            UUID.fromString(value)
-        } catch (_: IllegalArgumentException) {
-            null
-        }
 
     private data class PendingCitation(
         val citedArtifactId: UUID,

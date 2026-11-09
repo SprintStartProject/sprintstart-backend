@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.AiGenerateSessionTitleResponse
+import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.AiGenerateSessionTitleResponse
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse

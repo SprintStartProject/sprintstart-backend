@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
@@ -313,7 +313,7 @@ interface ArtifactRepository :
      */
     @Query(
         "SELECT COUNT(a) FROM Artifact a " +
-            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.JIRA " +
+            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.shared.model.SourceSystem.JIRA " +
             "AND a.sourceUrl LIKE CONCAT(:instanceUrl, '/browse/%')",
     )
     fun countJiraArtifactsByInstanceUrl(
@@ -327,7 +327,7 @@ interface ArtifactRepository :
             FROM Artifact a
             JOIN a.projectIdsInternal p
             WHERE p = :projectId
-                AND a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.UPLOAD
+                AND a.sourceSystem = com.sprintstart.sprintstartbackend.shared.model.SourceSystem.UPLOAD
         """,
     )
     fun countUploadArtifactsByProjectId(
@@ -350,12 +350,12 @@ interface ArtifactRepository :
 private const val CONFLUENCE_ARTIFACT_COUNT_QUERY =
     "SELECT COUNT(a) FROM Artifact a " +
         "WHERE a.sourceSystem = " +
-        "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.CONFLUENCE " +
+        "com.sprintstart.sprintstartbackend.shared.model.SourceSystem.CONFLUENCE " +
         "AND a.sourceId LIKE CONCAT('confluence:', :connectionId, ':page:%')"
 
 private const val NOTION_ARTIFACT_COUNT_QUERY =
     "SELECT COUNT(a) FROM Artifact a " +
         "WHERE a.sourceSystem = " +
-        "com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.NOTION " +
+        "com.sprintstart.sprintstartbackend.shared.model.SourceSystem.NOTION " +
         "AND a.sourceId LIKE CONCAT('notion:', :connectionId, ':page:%') " +
         "AND a.projectIdsInternal IS NOT EMPTY"

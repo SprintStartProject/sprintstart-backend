@@ -1,0 +1,103 @@
+package com.sprintstart.sprintstartbackend.path.model.mapper
+
+import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingStep
+import com.sprintstart.sprintstartbackend.path.model.response.step.CreateOnboardingStepResponse
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepResponse
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepsResponse
+import com.sprintstart.sprintstartbackend.path.model.response.step.UpdateOnboardingStepResponse
+
+/**
+ * @param locked The step's derived availability (see [OnboardingAvailability]); defaults to
+ * unlocked for the admin-facing views that do not compute it.
+ */
+fun OnboardingStep.toGetAllResponse(locked: Boolean = false): GetOnboardingStepsResponse {
+    return GetOnboardingStepsResponse(
+        id = this.id,
+        phaseId = this.phase.id,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        type = this.type,
+        estimatedMinutes = this.estimatedMinutes,
+        isAiAssisted = this.aiAssisted,
+        origin = this.origin,
+        // Steps without an expected outcome store "", which must not become an empty bullet.
+        expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
+        status = this.status,
+        startedAt = this.startedAt,
+        completedAt = this.completedAt,
+        feedback = this.feedback.lastOrNull()?.toGetResponse(),
+        skip = this.skips.lastOrNull()?.toStepResponse(),
+        locked = locked,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+    )
+}
+
+fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
+    return GetOnboardingStepResponse(
+        id = this.id,
+        phaseId = this.phase.id,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        estimatedMinutes = this.estimatedMinutes,
+        type = this.type,
+        isAiAssisted = this.aiAssisted,
+        origin = this.origin,
+        // Steps without an expected outcome store "", which must not become an empty bullet.
+        expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
+        tasks = this.tasks.map { task -> task.toGetAllResponse() },
+        resources = this.resources.map { resource -> resource.toGetAllResponse() },
+        status = this.status,
+        startedAt = this.startedAt,
+        completedAt = this.completedAt,
+        feedback = this.feedback.lastOrNull()?.toGetResponse(),
+        skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+    )
+}
+
+fun OnboardingStep.toCreateResponse(): CreateOnboardingStepResponse {
+    return CreateOnboardingStepResponse(
+        id = this.id,
+        phaseId = this.phase.id,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        type = this.type,
+        estimatedMinutes = this.estimatedMinutes,
+        isAiAssisted = this.aiAssisted,
+        origin = this.origin,
+        expectedOutcome = this.expectedOutcome,
+        status = this.status,
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+    )
+}
+
+fun OnboardingStep.toUpdateResponse(): UpdateOnboardingStepResponse {
+    return UpdateOnboardingStepResponse(
+        id = this.id,
+        phaseId = this.phase.id,
+        position = this.position,
+        title = this.title,
+        description = this.description,
+        estimatedMinutes = this.estimatedMinutes,
+        isAiAssisted = this.aiAssisted,
+        origin = this.origin,
+        expectedOutcome = this.expectedOutcome,
+        status = this.status,
+        startedAt = this.startedAt,
+        completedAt = this.completedAt,
+        feedback = this.feedback.lastOrNull()?.toGetResponse(),
+        skip = this.skips.lastOrNull()?.toStepResponse(),
+        graphX = this.graphX,
+        graphY = this.graphY,
+        blockerIds = this.blockedBy.map { it.id }.toSet(),
+    )
+}

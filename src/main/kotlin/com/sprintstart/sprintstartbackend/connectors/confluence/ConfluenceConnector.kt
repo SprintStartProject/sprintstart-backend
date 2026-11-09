@@ -10,7 +10,6 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSo
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IProjectScopedSourcePatcher
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -23,7 +22,6 @@ internal class ConfluenceConnector(
     IProjectScopedSourcePatcher {
     override val id: String = "confluence"
     override val displayName: String = "Confluence Cloud Connector"
-    val sourceSystem: SourceSystem = SourceSystem.CONFLUENCE
 
     override fun getSources(): List<ConnectorSource> {
         return emptyList()

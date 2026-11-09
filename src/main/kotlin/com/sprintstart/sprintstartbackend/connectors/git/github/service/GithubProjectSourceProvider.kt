@@ -2,8 +2,8 @@ package com.sprintstart.sprintstartbackend.connectors.git.github.service
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceProvider
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceDto
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID

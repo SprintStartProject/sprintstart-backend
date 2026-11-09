@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto.command
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraArtifactMetadataWrapper
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
@@ -10,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraProject
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import java.time.Instant
 import java.util.UUID
 

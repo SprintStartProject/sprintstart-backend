@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.client
 
-import com.sprintstart.sprintstartbackend.ConfluenceRetryConfig
+import com.sprintstart.sprintstartbackend.shared.config.ConfluenceRetryConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat

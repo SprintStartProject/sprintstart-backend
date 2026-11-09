@@ -1,0 +1,282 @@
+package com.sprintstart.sprintstartbackend.assistant.external
+
+import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.assistant.external.boolean
+import com.sprintstart.sprintstartbackend.assistant.external.text
+import com.sprintstart.sprintstartbackend.assistant.external.textArray
+import com.sprintstart.sprintstartbackend.assistant.external.uuid
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import java.util.UUID
+
+/**
+ * DTOs for the AI service's `POST /api/v1/onboarding/buddy/agent` endpoint — the tool-using buddy.
+ *
+ * The AI service is a stateless reasoner: the backend carries the running [messages] list between
+ * calls and owns tool execution for tools only it can run ([backendTools]). ``search_docs`` is run
+ * AI-side; a backend tool comes back in [BuddyAgentResponse.pendingToolCalls] for the backend to
+ * execute and feed back as a `tool` message.
+ */
+@Serializable
+data class BuddyToolCallDto(
+    val id: String,
+    val name: String,
+    /** Opaque to the backend; carried back verbatim. */
+    val arguments: JsonObject = JsonObject(emptyMap()),
+) {
+    /** A text argument of a tool call, trimmed; empty when missing or not text. */
+    fun textArgument(name: String): String = arguments.text(name)
+
+    /** A UUID argument of a tool call; null when missing or not a UUID. */
+    fun uuidArgument(name: String): UUID? = arguments.uuid(name)
+
+    /** A boolean argument of a tool call; null when missing or neither `true` nor `false`. */
+    fun booleanArgument(name: String): Boolean? = arguments.boolean(name)
+
+    /** The text entries of an array argument, trimmed, with blanks dropped; empty when missing. */
+    fun textListArgument(name: String): List<String> = arguments.textArray(name)
+}
+
+@Serializable
+data class BuddyAgentMessageDto(
+    /** One of system, user, assistant or tool. */
+    val role: String,
+    val content: String = "",
+    @SerialName("tool_calls") val toolCalls: List<BuddyToolCallDto> = emptyList(),
+    @SerialName("tool_call_id") val toolCallId: String? = null,
+    /**
+     * The model's reasoning on an assistant turn, opaque to the backend and carried back verbatim.
+     *
+     * A provider with extended thinking on rejects a resumed conversation whose last tool-using
+     * assistant turn lost its signed thinking blocks, so the hop after a backend tool needs them.
+     * [reasoningDetails] are those structured blocks; [reasoning] is the plain-text form for a
+     * provider that returns no structured ones.
+     */
+    val reasoning: String? = null,
+    @SerialName("reasoning_details") val reasoningDetails: List<JsonObject> = emptyList(),
+) {
+    companion object {
+        const val ROLE_USER = "user"
+        const val ROLE_ASSISTANT = "assistant"
+        const val ROLE_TOOL = "tool"
+    }
+}
+
+@Serializable
+data class BuddyToolSpecDto(
+    val name: String,
+    val description: String,
+    /** The JSON schema of the tool's arguments. */
+    val parameters: JsonObject,
+)
+
+@Serializable
+data class BuddyAgentRequest(
+    val messages: List<BuddyAgentMessageDto>,
+    @SerialName("backend_tools") val backendTools: List<BuddyToolSpecDto> = emptyList(),
+    /**
+     * The session's running summary of everything older than [messages] — the conversation the
+     * window no longer carries. Sent on the first hop of a turn; after that the AI has folded it
+     * into the running [messages] list it returns, so it round-trips on its own.
+     */
+    @SerialName("prior_summary") val priorSummary: String? = null,
+    /**
+     * What one unit of this hire's accepted work is called, for the mentor's persona.
+     *
+     * Three structured fields rather than persona prose: the AI renders them into a fixed sentence
+     * skeleton, so the mentor stays one voice. Defaults to the engineering wording on both sides,
+     * so a caller that sends nothing still gets a coherent persona.
+     */
+    @SerialName("vocabulary") val vocabulary: BuddyVocabularyDto = BuddyVocabularyDto(),
+    /**
+     * The projects this hire is on, scoping what `search_docs` may retrieve.
+     *
+     * Several is ordinary — somebody onboarding on two projects should find material from both,
+     * and from neither of anybody else's. Material belonging to no project stays searchable
+     * either way, so nothing ingested before projects were carried disappears.
+     *
+     * Empty admits nothing: the AI service fails closed on an empty scope rather than searching the
+     * whole corpus. That is deliberate. An empty list is not evidence of intent — the same value
+     * comes back from a user record that has not synced, a membership lookup that returned nothing,
+     * and an account mid-provisioning — and treating it as "search everything" would turn a missing
+     * value into an authorization decision whose failure mode is showing one project's material to
+     * somebody on another. `BuddyService` therefore refuses the turn for a hire on no project
+     * instead of sending this empty.
+     */
+    @SerialName("project_ids") val projectIds: List<String> = emptyList(),
+    /**
+     * Whether the mentor may act this turn, or is only answering from the corpus.
+     *
+     * Sent as well as expressed through an empty [backendTools], because the two say different
+     * things. An empty tool list is a fact the model has to infer a reason for; this is the reason,
+     * and without it the persona offers to do things it currently cannot and the refusal reads as
+     * a bug rather than as a mode the hire chose.
+     */
+    @SerialName("capabilities_enabled") val capabilitiesEnabled: Boolean = true,
+    /**
+     * Whether the reader is a project's manager asking about that project's team.
+     *
+     * Sent on every hop for the same reason as [capabilitiesEnabled]: the persona is rebuilt on each
+     * one, and a hop that lost the mode would answer a manager as if they were a new hire.
+     */
+    @SerialName("team_mode") val teamMode: Boolean = false,
+    @SerialName("filters") val filters: BuddySessionFilters? = null,
+)
+
+/**
+ * The nouns and verb one track's accepted work is described with.
+ *
+ * [contributionNoun] is bare ("change", "ceremony") because it is always rendered next to
+ * [contributionVerbPast]; baking the verb into the noun produces "merged merged change" the moment
+ * a sentence needs both.
+ */
+@Serializable
+data class BuddyVocabularyDto(
+    @SerialName("contribution_noun") val contributionNoun: String = "change",
+    @SerialName("contribution_noun_plural") val contributionNounPlural: String = "changes",
+    @SerialName("contribution_verb_past") val contributionVerbPast: String = "merged",
+)
+
+@Serializable
+data class BuddyCitationDto(
+    @SerialName("artifact_id") val artifactId: String? = null,
+    @SerialName("start_line") val startLine: Int? = null,
+    @SerialName("start_page") val startPage: Int? = null,
+)
+
+/**
+ * DTOs for the AI service's `POST /api/v1/onboarding/buddy/open` endpoint.
+ *
+ * Opening a visit folds the previous visit ([recent]) into the mentor's durable [memory] and
+ * returns a warm, proactive greeting grounded in [state] (a plain-text snapshot
+ * of the hire's pull requests, tasks and competencies). Stateless like every AI endpoint: the
+ * backend supplies the prior memory and persists the returned one.
+ */
+@Serializable
+data class BuddyOpenRequest(
+    val memory: String? = null,
+    val recent: List<BuddyAgentMessageDto> = emptyList(),
+    val state: String = "",
+    /**
+     * Whether a project's manager is opening a team conversation. [state] is then the team's
+     * attention list rather than the reader's own onboarding, and the greeting must address a manager.
+     */
+    @SerialName("team_mode") val teamMode: Boolean = false,
+)
+
+/**
+ * Asks the AI service to fold [folded] into the mentor's durable memory note.
+ *
+ * Nobody is waiting on this call, which is the whole reason it is one. Folding on the agent
+ * hop instead puts the fold *before* the agent loop, so once a visit's active window outgrows
+ * [CONVERSATION_WINDOW], every further turn pays an extra serialized model call to compress one
+ * exchange ahead of the answer the hire is waiting for. Keep it off the answering path.
+ *
+ * The cursor is this side's: [folded] is exactly the slice to advance past once the fold succeeds.
+ */
+@Serializable
+data class BuddyCompactRequest(
+    @SerialName("prior_summary") val priorSummary: String? = null,
+    val folded: List<BuddyAgentMessageDto> = emptyList(),
+)
+
+/**
+ * The rewritten memory note.
+ *
+ * A failure arrives as a non-2xx, never as this carrying the note unchanged — the caller must
+ * be able to tell *nothing folded* from *folded to the same words*, because advancing the cursor
+ * past messages nothing summarized is the one way this design loses a transcript.
+ */
+@Serializable
+data class BuddyCompactResponse(
+    val memory: String,
+)
+
+@Serializable
+data class BuddyOpenActionDto(
+    val label: String,
+    val question: String,
+)
+
+/**
+ * One chunk of the AI service's streamed buddy open.
+ *
+ * The greeting is streamed and the memory note is not, and that asymmetry is the entire
+ * point. The note is up to 200 words the hire never sees, and while it was generated *first* — as
+ * the leading field of a strict-JSON reply — opening the buddy meant waiting for it before the
+ * first word addressed to the hire even existed. Greeting-first plus streaming removes that wait
+ * without a second model call.
+ *
+ * A `token` carries [content]; the terminal `done` carries [greeting], [memory] and any [action],
+ * which is what the backend persists. [greeting] is byte-identical to the concatenated tokens, so
+ * the message a hire watches arrive is the one stored for them to reload.
+ */
+@Serializable
+data class BuddyOpenStreamEvent(
+    val type: String,
+    val content: String? = null,
+    val greeting: String? = null,
+    val memory: String? = null,
+    val action: BuddyOpenActionDto? = null,
+    val message: String? = null,
+) {
+    companion object {
+        const val TOKEN = "token"
+        const val DONE = "done"
+    }
+}
+
+@Serializable
+data class BuddyAgentResponse(
+    /** True when [text] is the answer; false when [pendingToolCalls] must run first. */
+    val final: Boolean,
+    val text: String = "",
+    /** The whole running conversation, carried back verbatim on a resume. */
+    val messages: List<BuddyAgentMessageDto> = emptyList(),
+    @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
+    val citations: List<BuddyCitationDto> = emptyList(),
+    val reasoning: List<String> = emptyList(),
+)
+
+/**
+ * One chunk of the AI service's streamed agent turn (`POST /api/v1/onboarding/buddy/agent/stream`).
+ *
+ * A `reasoning` or `token` carries a fragment in [content]; a `tool_use` names the search the AI is
+ * about to run itself in [name]. The one terminal `result` carries the fields of [BuddyAgentResponse]
+ * and is what the backend acts on: its [text] is authoritative, and its [pendingToolCalls] are the
+ * tools only this side can run. A failure after the response has started arrives as an `error`
+ * carrying [message], because the status line has already been sent by then.
+ */
+@Serializable
+data class BuddyAgentStreamEvent(
+    val type: String,
+    val content: String? = null,
+    val name: String? = null,
+    val message: String? = null,
+    val final: Boolean = false,
+    val text: String = "",
+    val messages: List<BuddyAgentMessageDto> = emptyList(),
+    @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
+    val citations: List<BuddyCitationDto> = emptyList(),
+    val reasoning: List<String> = emptyList(),
+) {
+    /** The turn's outcome, for a `result` event. */
+    fun toResponse(): BuddyAgentResponse =
+        BuddyAgentResponse(
+            final = final,
+            text = text,
+            messages = messages,
+            pendingToolCalls = pendingToolCalls,
+            citations = citations,
+            reasoning = reasoning,
+        )
+
+    companion object {
+        const val REASONING = "reasoning"
+        const val TOKEN = "token"
+        const val TOOL_USE = "tool_use"
+        const val RESULT = "result"
+        const val ERROR = "error"
+    }
+}

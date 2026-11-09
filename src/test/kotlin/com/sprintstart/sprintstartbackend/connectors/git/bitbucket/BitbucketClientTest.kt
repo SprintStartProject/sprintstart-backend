@@ -1,13 +1,13 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
-import com.sprintstart.sprintstartbackend.AiConfig
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.BitbucketConfig
-import com.sprintstart.sprintstartbackend.CryptoConfig
-import com.sprintstart.sprintstartbackend.GithubConfig
-import com.sprintstart.sprintstartbackend.UploadConfig
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClient
+import com.sprintstart.sprintstartbackend.shared.config.AiConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.BitbucketConfig
+import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
+import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
+import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.runBlocking

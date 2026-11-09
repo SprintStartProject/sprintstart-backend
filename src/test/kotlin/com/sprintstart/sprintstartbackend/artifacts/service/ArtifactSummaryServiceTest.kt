@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.artifacts.service
 
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.ArtifactDto
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AiArtifactSummaryStreamMessage
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactSummary
@@ -10,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.ArtifactSum
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactSummaryRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactIngestionApiService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactSummaryService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import com.sprintstart.sprintstartbackend.upload.external.api.UploadApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every

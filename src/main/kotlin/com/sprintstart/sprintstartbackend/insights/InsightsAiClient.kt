@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.insights
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyResponse
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRequest
@@ -8,6 +7,7 @@ import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqGroupingRespons
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeGroupsRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeResponse
 import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import org.springframework.stereotype.Component

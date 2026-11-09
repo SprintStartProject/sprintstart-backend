@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component
  *
  * Existing databases may retain Hibernate-generated checks even when manual Flyway scripts are not
  * applied. Running these idempotent statements before ingestion keeps upgrades compatible with the
- * current [com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem] enum.
+ * current [com.sprintstart.sprintstartbackend.shared.model.SourceSystem] enum.
  */
 @Component
 internal class NotionSourceSystemConstraintRelaxer(

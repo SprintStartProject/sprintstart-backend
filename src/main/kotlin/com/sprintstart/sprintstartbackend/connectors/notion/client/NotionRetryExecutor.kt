@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.client
 
-import com.sprintstart.sprintstartbackend.NotionRetryConfig
+import com.sprintstart.sprintstartbackend.shared.config.NotionRetryConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext

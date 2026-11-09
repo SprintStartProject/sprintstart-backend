@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqTrend
 import com.sprintstart.sprintstartbackend.insights.repository.FaqQuestionRepository
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant

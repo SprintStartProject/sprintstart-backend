@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.client
 
-import com.sprintstart.sprintstartbackend.NotionThrottleConfig
+import com.sprintstart.sprintstartbackend.shared.config.NotionThrottleConfig
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex

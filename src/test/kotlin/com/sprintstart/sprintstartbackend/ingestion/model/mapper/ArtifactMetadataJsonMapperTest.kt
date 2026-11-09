@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataMember
@@ -18,6 +17,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueHistorySu
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraProject
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import tools.jackson.module.kotlin.jacksonObjectMapper

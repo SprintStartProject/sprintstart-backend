@@ -1,0 +1,25 @@
+package com.sprintstart.sprintstartbackend.path.model.entity
+
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.Id
+import jakarta.persistence.JoinColumn
+import jakarta.persistence.ManyToOne
+import jakarta.persistence.Table
+import java.util.UUID
+
+@Entity
+@Table(name = "onboarding_resources")
+class OnboardingResource(
+    @Id
+    val id: UUID = UUID.randomUUID(),
+    @ManyToOne
+    @JoinColumn(name = "step_id", nullable = false)
+    val step: OnboardingStep,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    var title: String,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    var description: String,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    var url: String,
+)

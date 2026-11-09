@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.architecture
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.declaration.KoClassDeclaration
 import com.lemonappdev.konsist.api.declaration.KoFunctionDeclaration
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -30,6 +31,37 @@ class CodeStructureTest {
             violations,
             "A controller calls one service; the service owns the repository.",
         )
+    }
+
+    /**
+     * Every module erases the user data it owns when a user is deleted. An entity outside the user
+     * module that holds a user id is covered when its repository is injected into a
+     * `*UserDeletedListener`; the user module deletes its own rows directly.
+     */
+    @Test
+    fun `every entity holding a user id is erased when the user is deleted`() {
+        val erasedRepositories = scope
+            .classes()
+            .filter { it.name.endsWith("UserDeletedListener") }
+            .flatMap { constructorTypes(it) }
+            .toSet()
+        val missing = scope
+            .classes()
+            .filter { it.hasAnnotationWithName("Entity") }
+            .filterNot {
+                it.packagee
+                    ?.name
+                    .orEmpty()
+                    .startsWith(USER_MODULE_PACKAGE)
+            }.filter { entity -> propertyNames(entity).any { it in USER_ID_PROPERTIES } }
+            .filterNot { it.name in KEPT_ON_USER_DELETION }
+            .filterNot { "${it.name}Repository" in erasedRepositories }
+            .map { it.name }
+
+        assertTrue(missing.isEmpty()) {
+            "Entities holding a user id that no *UserDeletedListener erases: $missing. Delete them in a " +
+                "listener for UserDeletedEvent, or add them to KEPT_ON_USER_DELETION with the reason."
+        }
     }
 
     @Test
@@ -71,6 +103,13 @@ class CodeStructureTest {
             "Wrap the id in a value class (`@JvmInline value class ProjectId(val value: UUID)`).",
         )
     }
+
+    private fun propertyNames(declaration: KoClassDeclaration): List<String> =
+        declaration.properties().map { it.name } +
+            declaration.primaryConstructor
+                ?.parameters
+                .orEmpty()
+                .map { it.name }
 
     private fun constructorTypes(declaration: KoClassDeclaration): List<String> =
         declaration.primaryConstructor
@@ -115,5 +154,12 @@ class CodeStructureTest {
         val BRANCH = Regex("""\bif\s*\(|\bwhen\s*[({]|\?:""")
         val STRING_LITERAL = Regex(""""(?:\\.|[^"\\])*"""")
         val RAW_ID_TYPES = setOf("UUID", "String")
+        const val USER_MODULE_PACKAGE = "com.sprintstart.sprintstartbackend.user"
+        val USER_ID_PROPERTIES = setOf("userId", "hireId", "uploaderId")
+
+        /** Entities that deliberately outlive the user their id names, with the reason. */
+        val KEPT_ON_USER_DELETION = mapOf(
+            "UploadedArtifact" to "uploaded documents are the team's knowledge base; the uploader stays as provenance",
+        )
     }
 }

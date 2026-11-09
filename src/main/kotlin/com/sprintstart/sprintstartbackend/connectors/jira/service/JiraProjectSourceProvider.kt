@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.service
 
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceProvider
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceDto
 import org.springframework.stereotype.Service
 import java.util.UUID
 

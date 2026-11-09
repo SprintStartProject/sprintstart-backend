@@ -96,7 +96,7 @@ interface ArtifactProjectRepository : Repository<Artifact, UUID> {
      */
     @Query(
         "SELECT a FROM Artifact a " +
-            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem.JIRA " +
+            "WHERE a.sourceSystem = com.sprintstart.sprintstartbackend.shared.model.SourceSystem.JIRA " +
             "AND a.sourceUrl LIKE CONCAT(:prefix, '%') ESCAPE '$LIKE_ESCAPE'",
     )
     fun findAllJiraArtifactsBySourceUrlStartingWith(

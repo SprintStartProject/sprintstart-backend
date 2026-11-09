@@ -26,5 +26,4 @@ ProjectIndustryApi.kt: ProjectIndustryApi.getOrEvaluateIndustry
 ProjectIndustryService.kt: ProjectIndustryService.getOrEvaluateIndustry
 ProjectRoleService.kt: ProjectRoleService.findOrCreateSkillByName
 ProjectRoleService.kt: ProjectRoleService.findOrCreateSkillForAccept
-SessionActivityService.kt: SessionActivityService.recordActivityAndReturnLongAbsence
 StarterWorkTaskProposalService.kt: StarterWorkTaskProposalService.reviveOrRefuse

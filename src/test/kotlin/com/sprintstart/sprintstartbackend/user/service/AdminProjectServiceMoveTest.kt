@@ -1,9 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceApi
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserMovedToProjectEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
@@ -39,10 +36,7 @@ class AdminProjectServiceMoveTest {
         userRepository = userRepository,
         assignmentRepository = assignmentRepository,
         projectSourceApi = mockk<ProjectSourceApi>(),
-        githubRepositoryApi = mockk<GithubRepositoryApi>(),
-        bitbucketRepositoryApi = mockk<BitbucketRepositoryApi>(),
         eventPublisher = eventPublisher,
-        jiraInstanceApi = mockk<JiraInstanceApi>(),
     )
 
     /**

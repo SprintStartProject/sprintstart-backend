@@ -1,0 +1,24 @@
+package com.sprintstart.sprintstartbackend.path.model.response.step
+
+import com.sprintstart.sprintstartbackend.blueprint.external.enums.StepType
+import com.sprintstart.sprintstartbackend.path.external.enums.StepOrigin
+import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
+import java.util.UUID
+
+data class CreateOnboardingStepResponse(
+    val id: UUID,
+    val phaseId: UUID,
+    val position: Int,
+    val title: String,
+    val description: String,
+    val type: StepType,
+    val estimatedMinutes: Int,
+    val isAiAssisted: Boolean,
+    val expectedOutcome: String,
+    val status: StepStatus,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
+    /** Who put this step on the path: generated, a PM, the hire, or their buddy. */
+    val origin: StepOrigin = StepOrigin.GENERATED,
+)

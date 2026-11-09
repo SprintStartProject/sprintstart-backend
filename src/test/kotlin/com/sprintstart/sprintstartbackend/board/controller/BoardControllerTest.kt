@@ -1,0 +1,327 @@
+package com.sprintstart.sprintstartbackend.board.controller
+
+import com.ninjasquad.springmockk.MockkBean
+import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.board.model.request.board.AuthoredCardRequest
+import com.sprintstart.sprintstartbackend.board.model.request.board.NoteCardRequest
+import com.sprintstart.sprintstartbackend.board.model.response.board.BoardCardResponse
+import com.sprintstart.sprintstartbackend.board.model.response.board.BoardResponse
+import com.sprintstart.sprintstartbackend.board.model.response.board.CurrentTaskContent
+import com.sprintstart.sprintstartbackend.board.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.board.model.response.board.PathStepContent
+import com.sprintstart.sprintstartbackend.board.service.BoardDiagramService
+import com.sprintstart.sprintstartbackend.board.service.BoardService
+import com.sprintstart.sprintstartbackend.config.SecurityConfig
+import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.OnboardingTaskId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
+import com.sprintstart.sprintstartbackend.user.external.UserApi
+import io.mockk.every
+import io.mockk.slot
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.web.server.ResponseStatusException
+import java.util.Optional
+import java.util.UUID
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+@WebMvcTest(BoardController::class)
+@Import(SecurityConfig::class)
+@AutoConfigureMockMvc
+class BoardControllerTest(
+    @Autowired private val mockMvc: MockMvc,
+) {
+    @MockkBean
+    private lateinit var boardService: BoardService
+
+    @MockkBean
+    private lateinit var boardDiagramService: BoardDiagramService
+
+    @MockkBean
+    private lateinit var userApi: UserApi
+
+    @MockkBean
+    private lateinit var jwtDecoder: JwtDecoder
+
+    private val authId = "test-auth-id"
+    private val userId = UUID.randomUUID()
+    private val projectId = UUID.randomUUID()
+
+    private fun jwtWithSubject(subject: String, vararg roles: String): JwtRequestPostProcessor =
+        jwt()
+            .jwt { jwt ->
+                jwt.subject(subject)
+                jwt.claim("realm_access", mapOf("roles" to roles.toList()))
+            }.authorities(roles.map { SimpleGrantedAuthority("ROLE_$it") })
+
+    private val userJwt = jwtWithSubject(authId, "USER")
+
+    private fun board() = BoardResponse(
+        boardId = UUID.randomUUID(),
+        projectId = projectId,
+        cards = listOf(
+            BoardCardResponse(
+                id = UUID.randomUUID(),
+                kind = BoardCardKind.CURRENT_TASK,
+                owner = BoardCardOwner.AI,
+                position = 0,
+                placedAt = null,
+                content = CurrentTaskContent(
+                    taskId = null,
+                    title = null,
+                    summary = null,
+                    url = null,
+                    closedAtSource = false,
+                ),
+            ),
+        ),
+    )
+
+    private fun noteCard() = BoardCardResponse(
+        id = UUID.randomUUID(),
+        kind = BoardCardKind.NOTE,
+        owner = BoardCardOwner.HIRE,
+        position = 2,
+        placedAt = null,
+        content = NoteContent(text = "deploys are on Thursdays"),
+    )
+
+    @Test
+    fun `getMyBoard returns the caller's board`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns board()
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/board").param("projectId", projectId.toString()).with(userJwt))
+            .andExpect(status().isOk)
+            // The card's kind must survive onto the wire as the content's discriminator, or a
+            // client cannot tell which card it is rendering.
+            .andExpect(jsonPath("$.cards[0].content.kind").value("CURRENT_TASK"))
+            .andExpect(jsonPath("$.cards[0].content.taskId").doesNotExist())
+    }
+
+    @Test
+    fun `getMyBoard is 404 for a project the caller is not on`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns null
+
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/board").param("projectId", projectId.toString()).with(userJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `dismissCard removes a card from the caller's own board`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.dismiss(UserId(userId), BoardCardId(cardId)) } returns true
+
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/board/cards/$cardId").with(userJwt))
+            .andExpect(status().isNoContent)
+    }
+
+    @Test
+    fun `dismissCard is 404 for a card that is not on a board of theirs`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.dismiss(UserId(userId), BoardCardId(cardId)) } returns false
+
+        // Same answer as a card that does not exist: a 403 would confirm the id is somebody's card.
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/board/cards/$cardId").with(userJwt))
+            .andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `dismissCard requires authentication`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/me/board/cards/${UUID.randomUUID()}"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `addCard takes a note and answers with the card`() {
+        val request = slot<AuthoredCardRequest>()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.addAuthoredCard(UserId(userId), ProjectId(projectId), capture(request)) } returns
+            noteCard()
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards")
+                    .param("projectId", projectId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"kind":"NOTE","text":"deploys are on Thursdays"}""")
+                    .with(userJwt),
+            ).andExpect(status().isCreated)
+            .andExpect(jsonPath("$.owner").value("HIRE"))
+            .andExpect(jsonPath("$.content.text").value("deploys are on Thursdays"))
+
+        // The wire kind has to pick the right request shape, or a note could arrive as a link.
+        assertTrue(request.captured is NoteCardRequest)
+    }
+
+    @Test
+    fun `addCard relays a refusal to keep a card that would say nothing`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.addAuthoredCard(any(), any(), any()) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "A note needs some text")
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards")
+                    .param("projectId", projectId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"kind":"NOTE","text":"   "}""")
+                    .with(userJwt),
+            ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `editCard replaces what one of the caller's cards says`() {
+        val cardId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { boardService.editAuthoredCard(UserId(userId), BoardCardId(cardId), any()) } returns noteCard()
+
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/$cardId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"kind":"NOTE","text":"deploys are on Thursdays"}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+    }
+
+    @Test
+    fun `tickPathStepTask ticks the task and returns the refreshed card`() {
+        val cardId = UUID.randomUUID()
+        val taskId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every {
+            boardService.tickPathStepTask(
+                UserId(userId),
+                BoardCardId(cardId),
+                OnboardingTaskId(taskId),
+                true,
+            )
+        } returns
+            PathStepContent(
+                stepId = UUID.randomUUID(),
+                phaseTitle = "Getting set up",
+                title = "Set up your laptop",
+                description = "Install the toolchain",
+                status = StepStatus.IN_PROGRESS,
+                isAiAssisted = true,
+                expectedOutcomes = listOf("A machine that builds"),
+                tasks = emptyList(),
+                resources = emptyList(),
+                reason = null,
+            )
+
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/$cardId/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}""")
+                    .with(userJwt),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.title").value("Set up your laptop"))
+            .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+    }
+
+    @Test
+    fun `tickPathStepTask is 404 for a card that is not on a board of theirs`() {
+        val cardId = UUID.randomUUID()
+        val taskId = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every {
+            boardService.tickPathStepTask(
+                UserId(userId),
+                BoardCardId(cardId),
+                OnboardingTaskId(taskId),
+                true,
+            )
+        } throws
+            ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
+
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/$cardId/tasks/$taskId")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}""")
+                    .with(userJwt),
+            ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `tickPathStepTask requires authentication`() {
+        mockMvc
+            .perform(
+                patch("/api/v1/onboarding/me/board/cards/${UUID.randomUUID()}/tasks/${UUID.randomUUID()}")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"done":true}"""),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `reorder sends the whole order`() {
+        val request = slot<List<BoardCardId>>()
+        val first = UUID.randomUUID()
+        val second = UUID.randomUUID()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every {
+            boardService.reorder(UserId(userId), ProjectId(projectId), capture(request))
+        } returns Unit
+
+        mockMvc
+            .perform(
+                put("/api/v1/onboarding/me/board/order")
+                    .param("projectId", projectId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"cardIds":["$first","$second"]}""")
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        assertEquals(listOf(BoardCardId(first), BoardCardId(second)), request.captured)
+    }
+
+    @Test
+    fun `authoring requires authentication`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/me/board/cards")
+                    .param("projectId", projectId.toString())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"kind":"NOTE","text":"hello"}"""),
+            ).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    fun `getMyBoard requires authentication`() {
+        mockMvc
+            .perform(get("/api/v1/onboarding/me/board").param("projectId", projectId.toString()))
+            .andExpect(status().isUnauthorized)
+    }
+}

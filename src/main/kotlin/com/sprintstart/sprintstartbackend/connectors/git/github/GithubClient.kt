@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.connectors.git.github
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.DiscoveredRepository
@@ -20,6 +19,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.git.github.util.GithubQueryLoader
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import org.slf4j.LoggerFactory

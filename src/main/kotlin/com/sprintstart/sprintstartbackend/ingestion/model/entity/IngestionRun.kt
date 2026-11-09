@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.entity
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import jakarta.persistence.Column
 import jakarta.persistence.ElementCollection
 import jakarta.persistence.Entity

@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.controller
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses

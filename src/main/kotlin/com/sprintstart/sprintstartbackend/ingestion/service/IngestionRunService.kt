@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.Bitb
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunPageResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.IngestionRunResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.PageMetadata
@@ -13,6 +12,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root

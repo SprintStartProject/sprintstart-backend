@@ -11,15 +11,16 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageVersion
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceStorageBody
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchCommand
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchResult
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactFailureStage
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ConfluenceStorageFormatParser
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ParsedConfluenceBody
-import com.sprintstart.sprintstartbackend.ingestion.external.ConfluenceArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactBatchCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactBatchResult
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipType
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -232,9 +233,7 @@ class ConfluencePageIngestionServiceTest {
             .failures
             .single()
             .stage
-        assertThat(persistedStage).isEqualTo(
-            com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactFailureStage.MAPPING,
-        )
+        assertThat(persistedStage).isEqualTo(ConfluenceArtifactFailureStage.MAPPING)
         assertThat(result.failures.single().stage).isEqualTo(ConfluenceIngestionFailureStage.MAPPING)
         assertThat(result.failures.single().message)
             .isEqualTo("Confluence page could not be mapped to an artifact")

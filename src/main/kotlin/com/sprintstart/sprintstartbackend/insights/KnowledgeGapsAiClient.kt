@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.insights
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiKnowledgeGapsRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiKnowledgeGapsResponse
 import com.sprintstart.sprintstartbackend.insights.model.exceptions.KnowledgeGapsAiException
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import org.springframework.stereotype.Component

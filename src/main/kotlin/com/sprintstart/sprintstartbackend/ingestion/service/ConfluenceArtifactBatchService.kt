@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactBatchCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactBatchResult
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceArtifactFailureStage
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluencePageArtifactFailure
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchCommand
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchResult
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactFailureStage
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactFailure
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 

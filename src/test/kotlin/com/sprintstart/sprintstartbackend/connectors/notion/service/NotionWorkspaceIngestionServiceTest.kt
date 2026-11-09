@@ -7,12 +7,12 @@ import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPare
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionClient
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionResourceNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionTokenIdentity
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteOutcome
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteResult
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionSyncedPage
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
-import com.sprintstart.sprintstartbackend.ingestion.external.NotionArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteOutcome
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteResult
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

@@ -1,6 +1,11 @@
 package com.sprintstart.sprintstartbackend.connectors.overview
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.AiConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.BitbucketConfig
+import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
+import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
+import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -24,18 +29,18 @@ class SourceClientTest {
         val webClient = WebClient(httpClient, jsonParser)
         val baseUrl = mockWebServer.url("/").toString().removeSuffix("/")
         val applicationConfig = ApplicationConfig(
-            ai = com.sprintstart.sprintstartbackend.AiConfig(baseUrl = baseUrl),
-            github = com.sprintstart.sprintstartbackend.GithubConfig(
+            ai = AiConfig(baseUrl = baseUrl),
+            github = GithubConfig(
                 baseUrl = "https://github.example.com",
             ),
-            bitbucket = com.sprintstart.sprintstartbackend.BitbucketConfig(
+            bitbucket = BitbucketConfig(
                 baseUrl = "https://api.bitbucket.org/2.0",
             ),
-            crypto = com.sprintstart.sprintstartbackend.CryptoConfig(
+            crypto = CryptoConfig(
                 masterKey = "test-master-key",
                 salt = "test-salt",
             ),
-            upload = com.sprintstart.sprintstartbackend.UploadConfig(
+            upload = UploadConfig(
                 directory = "/tmp/uploads",
                 maxFileSizeBytes = 100,
             ),

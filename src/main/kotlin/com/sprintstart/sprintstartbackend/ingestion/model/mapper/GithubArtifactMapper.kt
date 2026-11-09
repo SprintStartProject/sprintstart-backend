@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.issues.GithubIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.FileMetaDataResolver
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -17,6 +16,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubSourceUrlFactory.buildCommitUrl
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory.buildSourceId
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Component
 import java.time.Instant
 

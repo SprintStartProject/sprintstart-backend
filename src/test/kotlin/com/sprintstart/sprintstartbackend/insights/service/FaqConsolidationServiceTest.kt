@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.FaqInsightsConfig
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMerge
@@ -11,6 +10,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
 import com.sprintstart.sprintstartbackend.insights.model.exceptions.InsightsAiException
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
+import com.sprintstart.sprintstartbackend.shared.config.FaqInsightsConfig
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

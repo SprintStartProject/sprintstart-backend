@@ -4,8 +4,8 @@ import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactAiIndexStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactIngestStatusAiItem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactIngestStatusAiResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
-import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify

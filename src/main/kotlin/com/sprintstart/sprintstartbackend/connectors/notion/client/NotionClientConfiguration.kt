@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.client
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import kotlinx.coroutines.delay
 import org.springframework.context.annotation.Bean
