@@ -37,11 +37,12 @@ class ProjectIndustryAiClient(
                 .body(AiIndustryEvaluationRequest(projectId = projectId.toString()))
                 .sync()
                 .perform<AiIndustryEvaluationResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
+        } catch (e: WebClientException) {
             throw ProjectIndustryAiException(
                 statusCode = e.statusCode,
                 body = e.body,
                 message = "Failed to evaluate project industry (HTTP ${e.statusCode}): ${e.body}",
+                cause = e,
             )
         }
 

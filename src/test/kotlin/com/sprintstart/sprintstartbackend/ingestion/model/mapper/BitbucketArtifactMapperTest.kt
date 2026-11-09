@@ -243,6 +243,72 @@ class BitbucketArtifactMapperTest {
         assertThat(result.firstResponseAtSource).isNull()
     }
 
+    @Test
+    fun `toCommand attributes a comment to the name its author shows, then the nickname, then their role`() {
+        val result = mapper.toCommand(
+            prEvent(
+                authorId = "acc-1",
+                comments = listOf(
+                    comment(authorId = "acc-2", content = "named").copy(displayName = "Grace Hopper", nickname = "gh"),
+                    comment(authorId = "acc-2", content = "nick").copy(displayName = null, nickname = "gh"),
+                    comment(authorId = "acc-1", content = "mine").copy(displayName = null, nickname = null),
+                    comment(authorId = "acc-2", content = "theirs").copy(displayName = null, nickname = null),
+                ),
+            ),
+        )
+
+        assertThat(result.bodyText)
+            .isEqualTo("Grace Hopper: named\n\ngh: nick\n\nauthor: mine\n\nreviewer: theirs")
+    }
+
+    @Test
+    fun `toCommand counts an approval or a change request as a response but not another state`() {
+        val approved = participant(approved = true, state = null, participatedOn = "2026-03-04T00:00:00Z")
+        val requested =
+            participant(approved = false, state = "changes_requested", participatedOn = "2026-03-05T00:00:00Z")
+        val other = participant(approved = false, state = "approved", participatedOn = "2026-03-03T00:00:00Z")
+
+        val withApproval = mapper.toCommand(prEvent(participants = listOf(other, approved, requested)))
+        val withRequest = mapper.toCommand(prEvent(participants = listOf(other, requested)))
+        val withNeither = mapper.toCommand(prEvent(participants = listOf(other)))
+
+        assertThat(withApproval.firstResponseAtSource).isEqualTo(java.time.Instant.parse("2026-03-04T00:00:00Z"))
+        assertThat(withRequest.firstResponseAtSource).isEqualTo(java.time.Instant.parse("2026-03-05T00:00:00Z"))
+        assertThat(withNeither.firstResponseAtSource).isNull()
+    }
+
+    @Test
+    fun `toCommand takes the earliest comment from someone other than the author`() {
+        val result = mapper.toCommand(
+            prEvent(
+                authorId = "acc-1",
+                comments = listOf(
+                    comment(authorId = "acc-1", createdOn = "2026-03-02T01:00:00Z"),
+                    comment(authorId = "acc-3", createdOn = "2026-03-06T00:00:00Z"),
+                    comment(authorId = "acc-2", createdOn = "2026-03-04T00:00:00Z"),
+                ),
+            ),
+        )
+
+        assertThat(result.firstResponseAtSource).isEqualTo(java.time.Instant.parse("2026-03-04T00:00:00Z"))
+    }
+
+    @Test
+    fun `toCommand counts every reviewer asking for changes`() {
+        val result = mapper.toCommand(
+            prEvent(
+                authorId = "acc-1",
+                participants = listOf(
+                    participant(authorId = "acc-2", state = "changes_requested"),
+                    participant(authorId = "acc-3", state = "changes_requested"),
+                    participant(authorId = "acc-4", state = "approved"),
+                ),
+            ),
+        )
+
+        assertThat(result.changesRequestedCount).isEqualTo(2)
+    }
+
     private fun prEvent(
         authorId: String? = "acc-1",
         description: String? = null,

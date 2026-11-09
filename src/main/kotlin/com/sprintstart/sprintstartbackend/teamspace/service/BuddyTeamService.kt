@@ -3,14 +3,15 @@ package com.sprintstart.sprintstartbackend.teamspace.service
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyOpenRequest
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyOpeningStream
-import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import com.sprintstart.sprintstartbackend.assistant.external.OpeningConversation
 import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
 import com.sprintstart.sprintstartbackend.assistant.external.endFailureWithErrorEvent
 import com.sprintstart.sprintstartbackend.assistant.external.sinceLastOpening
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.BuddyMessageResponse
+import com.sprintstart.sprintstartbackend.shared.failure.afterFailure
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.teamspace.model.entity.BuddyTeamMessage
@@ -21,6 +22,7 @@ import com.sprintstart.sprintstartbackend.teamspace.repository.BuddyTeamMessageR
 import com.sprintstart.sprintstartbackend.teamspace.repository.BuddyTeamSessionRepository
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -94,8 +96,8 @@ class BuddyTeamService(
     /**
      * Sends the manager's message in team mode and streams the reply.
      *
-     * With [capabilitiesEnabled] false no tools are mounted. The [filters] are sent on every hop, because
-     * the AI service applies them on whichever hop the model searches.
+     * With [BuddyTurnOptions.capabilitiesEnabled] false no tools are mounted. The [BuddyTurnOptions.filters]
+     * are sent on every hop, because the AI service applies them on whichever hop the model searches.
      *
      * @throws ResponseStatusException 404 if the user does not exist; 403 if they do not manage the project.
      */
@@ -103,9 +105,7 @@ class BuddyTeamService(
         authId: String,
         projectId: UUID,
         content: String,
-        capabilitiesEnabled: Boolean = true,
-        filters: BuddySessionFilters? = null,
-        currentPage: String? = null,
+        options: BuddyTurnOptions = BuddyTurnOptions(),
     ): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
         val session = getOrCreateSession(userId, projectId)
@@ -114,9 +114,7 @@ class BuddyTeamService(
         val history = transcript.drop(session.summarizedCount).map { it.toAgentMessage() }
         val carriedOver = transcript.areasStillOpen()
 
-        buddyTeamMessageRepository.save(
-            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
-        )
+        saveUserMessage(session, content)
 
         return flow {
             val turn = TeamAgentTurn(
@@ -124,32 +122,38 @@ class BuddyTeamService(
                     userId = userId,
                     authId = authId,
                     projectId = projectId,
-                    currentPage = currentPage,
+                    currentPage = options.currentPage,
                 ),
-                capabilitiesEnabled = capabilitiesEnabled,
-                filters = filters,
+                capabilitiesEnabled = options.capabilitiesEnabled,
+                filters = options.filters,
                 priorSummary = session.summary,
                 messages = history + BuddyAgentMessageDto(role = BuddyAgentMessageDto.ROLE_USER, content = content),
                 areas = OpenAreas(carriedOver),
             )
-
-            try {
-                with(teamAgentLoop) { runTurn(turn) }
-            } catch (e: Exception) {
-                saveIncompleteReply(session, turn.emittedContent.toString(), turn.areas)
-                throw e
-            }
-
-            buddyTeamMessageRepository.save(
-                BuddyTeamMessage(
-                    session = session,
-                    role = BuddyMessageRole.ASSISTANT,
-                    content = turn.emittedContent.toString(),
-                    openedAreas = turn.areas.activeThisTurn.encoded(),
-                ),
-            )
+            relayTurn(session, turn)
             teamCompaction.foldInBackground(UserId(userId), ProjectId(projectId))
         }.endFailureWithErrorEvent()
+    }
+
+    private fun saveUserMessage(session: BuddyTeamSession, content: String) {
+        buddyTeamMessageRepository.save(
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.USER, content = content),
+        )
+    }
+
+    private suspend fun FlowCollector<BuddyStreamEvent>.relayTurn(session: BuddyTeamSession, turn: TeamAgentTurn) {
+        afterFailure(cleanup = { saveIncompleteReply(session, turn.emittedContent.toString(), turn.areas) }) {
+            with(teamAgentLoop) { runTurn(turn) }
+        }
+
+        buddyTeamMessageRepository.save(
+            BuddyTeamMessage(
+                session = session,
+                role = BuddyMessageRole.ASSISTANT,
+                content = turn.emittedContent.toString(),
+                openedAreas = turn.areas.activeThisTurn.encoded(),
+            ),
+        )
     }
 
     /** Keeps a turn that was stopped or failed mid-answer, so the manager's read shows what they saw. */

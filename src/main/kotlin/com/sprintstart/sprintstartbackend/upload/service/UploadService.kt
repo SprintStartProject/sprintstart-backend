@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.ArtifactUploadedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadArtifactOperationOutcome
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadArtifactStatus
@@ -8,7 +9,6 @@ import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.Uploa
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchFinishedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadFileDeletedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent
-import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadFailure
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadArtifactResponse
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.UploadListItemResponse
@@ -80,77 +80,40 @@ class UploadService(
         val uploaderId = resolveCurrentUserId(userApi, authId)
         requireProjectAccess(userApi, authId, projectId)
 
-        val transactionId = UUID.randomUUID()
+        val batch = UploadBatch(transaction = UUID.randomUUID(), project = projectId, uploader = uploaderId)
 
-        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId, projectId = projectId))
+        publisher.publishEvent(UploadStartedEvent(transactionId = batch.transaction, projectId = projectId))
 
-        val uploadedArtifacts = mutableSetOf<UploadedArtifact>()
-
-        val responses = mutableListOf<UploadArtifactResponse>()
-        val uploadArtifactOperationOutcomes = mutableSetOf<UploadArtifactOperationOutcome>()
-
-        val uploadedArtifactsByFilename = mutableMapOf<String, UploadedArtifact>()
-        val markdownArtifacts = mutableListOf<Pair<UploadedArtifact, String>>()
-
-        files.forEach { file ->
-            try {
-                val uploadResult = uploadSingle(
-                    file = file,
-                    uploaderId = uploaderId,
-                    transactionId = transactionId,
-                    projectId = projectId,
-                    outcomes = uploadArtifactOperationOutcomes,
-                )
-
-                responses.add(uploadResult.response)
-
-                uploadResult.artifact?.let { artifact ->
-                    uploadedArtifacts.add(artifact)
-                    uploadedArtifactsByFilename[artifact.filename] = artifact
-
-                    if (artifact.mime.contains("markdown")) {
-                        markdownArtifacts.add(artifact to String(file.bytes))
-                    }
-                }
-            } catch (
-                @Suppress("TooGenericExceptionCaught")
-                ex: Exception,
-            ) {
-                uploadArtifactOperationOutcomes.add(
-                    UploadArtifactOperationOutcome(
-                        id = null,
-                        filename = file.originalFilename ?: "unknown",
-                        status = UploadArtifactStatus.FAILED,
-                        error = ex.message,
-                    ),
-                )
-                responses.add(
-                    UploadArtifactResponse(
-                        id = null,
-                        filename = file.originalFilename ?: "unknown",
-                        status = "failed",
-                        error = ex.message,
-                    ),
-                )
-            }
-        }
+        files.forEach { file -> storeInto(batch, file) }
 
         val linkedImages = artifactLinkingService.linkMarkdownImages(
-            markdownArtifacts = markdownArtifacts,
-            uploadedArtifactsByFilename = uploadedArtifactsByFilename,
+            markdownArtifacts = batch.markdown,
+            uploadedArtifactsByFilename = batch.artifactsByFilename,
         )
 
         publisher.publishEvent(
             UploadBatchFinishedEvent(
-                transactionId = transactionId,
+                transactionId = batch.transaction,
                 uploaderId = uploaderId,
-                artifactsId = uploadedArtifacts.map { it.id }.toSet(),
+                artifactsId = batch.artifacts.map { it.id }.toSet(),
                 linkedImages = linkedImages.map { it.id }.toSet(),
-                uploadArtifactOperationOutcomes = uploadArtifactOperationOutcomes,
+                uploadArtifactOperationOutcomes = batch.outcomes,
             ),
         )
 
-        return responses
+        return batch.responses
+    }
+
+    /** Uploads one file into [batch]; a failure is recorded on the batch rather than aborting it. */
+    private fun storeInto(batch: UploadBatch, file: MultipartFile) {
+        try {
+            batch.record(file, uploadSingle(file, batch))
+        } catch (
+            @Suppress("TooGenericExceptionCaught")
+            ex: Exception,
+        ) {
+            batch.recordFailure(file, ex)
+        }
     }
 
     /**
@@ -208,130 +171,94 @@ class UploadService(
         val removerId = resolveCurrentUserId(userApi, authId)
         requireProjectAccess(userApi, authId, projectId)
 
-        val deleteArtifactOutcomes = mutableSetOf<UploadArtifactOperationOutcome>()
-        val deletedIds = mutableListOf<UUID>()
-        val failed = mutableListOf<DeleteUploadFailure>()
-        val transactionId = UUID.randomUUID()
+        val batch = DeletionBatch(transaction = UUID.randomUUID())
 
-        publisher.publishEvent(UploadStartedEvent(transactionId = transactionId, projectId = projectId))
+        publisher.publishEvent(UploadStartedEvent(transactionId = batch.transaction, projectId = projectId))
 
-        artifactIds.forEach { artifactId ->
-            val artifact = uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId)
-            if (artifact == null) {
-                val reason = "Artifact with id $artifactId not found."
-                deleteArtifactOutcomes.add(
-                    UploadArtifactOperationOutcome(
-                        id = artifactId,
-                        filename = "unknown",
-                        status = UploadArtifactStatus.FAILED,
-                        error = reason,
-                    ),
-                )
-                failed.add(DeleteUploadFailure(artifactId = artifactId, error = reason))
-                return@forEach
-            }
-
-            linkedImageRepository.deleteAllByMarkdownArtifactId(artifactId)
-            linkedImageRepository.deleteAllByImageArtifactId(artifactId)
-
-            try {
-                storageService.delete(artifact.storagePath)
-            } catch (e: Exception) {
-                deleteArtifactOutcomes.add(
-                    UploadArtifactOperationOutcome(
-                        id = artifactId,
-                        filename = artifact.filename,
-                        status = UploadArtifactStatus.FAILED,
-                        error = e.message,
-                    ),
-                )
-                logger.warn("Storage delete failed for artifact {}: {}", artifactId, e.message)
-                failed.add(DeleteUploadFailure(artifactId = artifactId, error = DELETE_FAILED_REASON))
-                return@forEach
-            }
-
-            publisher.publishEvent(
-                UploadFileDeletedEvent(
-                    transactionId = transactionId,
-                    uploadArtifactId = artifact.id,
-                ),
-            )
-            uploadedArtifactRepository.delete(artifact)
-            deletedIds.add(artifactId)
-        }
+        artifactIds.forEach { requested -> deleteOne(requested, projectId, batch) }
 
         publisher.publishEvent(
             UploadBatchDeletionFinishedEvent(
-                transactionId = transactionId,
+                transactionId = batch.transaction,
                 removerId = removerId,
-                deleteArtifactOutcomes = deleteArtifactOutcomes,
+                deleteArtifactOutcomes = batch.outcomes,
             ),
         )
 
-        return DeleteUploadsResponse(deletedIds = deletedIds, failed = failed)
+        return DeleteUploadsResponse(deletedIds = batch.deleted, failed = batch.failed)
+    }
+
+    private fun deleteOne(requested: UUID, project: UUID, batch: DeletionBatch) {
+        val artifact = uploadedArtifactRepository.findByIdAndProjectId(requested, project)
+            ?: return batch.notFound(requested)
+
+        linkedImageRepository.deleteAllByMarkdownArtifactId(requested)
+        linkedImageRepository.deleteAllByImageArtifactId(requested)
+
+        recovering(fallback = { e ->
+            logger.warn("Storage delete failed for artifact {}: {}", requested, e.message)
+            return batch.storageFailed(artifact, e, DELETE_FAILED_REASON)
+        }) {
+            storageService.delete(artifact.storagePath)
+        }
+
+        publisher.publishEvent(
+            UploadFileDeletedEvent(transactionId = batch.transaction, uploadArtifactId = artifact.id),
+        )
+        uploadedArtifactRepository.delete(artifact)
+        batch.deleted.add(requested)
     }
 
     /**
      * Uploads a single file and processes it for storage and validation.
      *
      * @param file The file to be uploaded.
-     * @param uploaderId The authenticated user recorded as the upload actor.
-     * @param projectId The project that owns the uploaded artifact.
-     * @param transactionId The upload batch transaction id.
-     * @param outcomes A mutable set used to track upload operation outcomes.
+     * @param batch The upload batch the file belongs to; its outcomes track what happened to the file.
      * @return The upload response and persisted artifact when one is available.
      */
-    private fun uploadSingle(
-        file: MultipartFile,
-        uploaderId: UUID,
-        projectId: UUID,
-        transactionId: UUID,
-        outcomes: MutableSet<UploadArtifactOperationOutcome>,
-    ): UploadResult {
+    private fun uploadSingle(file: MultipartFile, batch: UploadBatch): UploadResult {
         validationService.validate(file)
 
-        val bytes = file.bytes
-        val hash = sha256(bytes)
-
-        val existingArtifact = uploadedArtifactRepository.findByHashAndProjectId(hash, projectId)
-
-        if (existingArtifact != null) {
-            outcomes.add(
+        val hash = sha256(file.bytes)
+        val existing = uploadedArtifactRepository.findByHashAndProjectId(hash, batch.project)
+        if (existing != null) {
+            batch.outcomes.add(
                 UploadArtifactOperationOutcome(
-                    id = existingArtifact.id,
-                    filename = existingArtifact.filename,
+                    id = existing.id,
+                    filename = existing.filename,
                     status = UploadArtifactStatus.ALREADY_UPLOADED,
                 ),
             )
-            return UploadResult(
-                response = UploadArtifactResponse(
-                    id = existingArtifact.id,
-                    filename = existingArtifact.filename,
-                    status = "ok",
-                ),
-                artifact = existingArtifact,
-            )
+            return UploadResult(UploadArtifactResponse(existing.id, existing.filename, "ok"), existing)
         }
 
+        val artifact = storeNew(file, hash, batch)
+        batch.outcomes.add(
+            UploadArtifactOperationOutcome(
+                id = artifact.id,
+                filename = artifact.filename,
+                status = UploadArtifactStatus.STORED,
+            ),
+        )
+        return UploadResult(UploadArtifactResponse(artifact.id, artifact.filename, "ok"), artifact)
+    }
+
+    private fun storeNew(file: MultipartFile, hash: String, batch: UploadBatch): UploadedArtifact {
         val artifact = UploadedArtifact(
             filename = file.originalFilename ?: "unknown",
             hash = hash,
             mime = file.contentType ?: "application/octet-stream",
             storagePath = "",
-            uploaderId = uploaderId,
-            projectId = projectId,
+            uploaderId = batch.uploader,
+            projectId = batch.project,
         )
-
-        val storagePath = storageService.store(file = file, artifactId = artifact.id)
-
-        artifact.storagePath = storagePath
-
+        artifact.storagePath = storageService.store(file = file, artifactId = artifact.id)
         uploadedArtifactRepository.save(artifact)
 
         publisher.publishEvent(
             ArtifactUploadedEvent(
-                transactionId = transactionId,
-                projectId = projectId,
+                transactionId = batch.transaction,
+                projectId = batch.project,
                 artifactId = artifact.id,
                 filename = artifact.filename,
                 storagePath = artifact.storagePath,
@@ -341,21 +268,7 @@ class UploadService(
                 hash = artifact.hash,
             ),
         )
-        outcomes.add(
-            UploadArtifactOperationOutcome(
-                id = artifact.id,
-                filename = artifact.filename,
-                status = UploadArtifactStatus.STORED,
-            ),
-        )
-        return UploadResult(
-            response = UploadArtifactResponse(
-                id = artifact.id,
-                filename = artifact.filename,
-                status = "ok",
-            ),
-            artifact = artifact,
-        )
+        return artifact
     }
 }
 

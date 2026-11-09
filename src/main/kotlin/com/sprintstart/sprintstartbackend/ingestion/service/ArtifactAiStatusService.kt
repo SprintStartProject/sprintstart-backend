@@ -6,9 +6,8 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactA
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactAiStatusResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactIngestStatusAiItem
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -63,11 +62,8 @@ class ArtifactAiStatusService(
     }
 
     private suspend fun fetchStatuses(projectId: UUID, visibleIds: List<UUID>): ArtifactAiStatusResponse {
-        val aiItems = try {
-            artifactIngestionClient.fetchIngestStatus(visibleIds).items
-        } catch (e: Exception) {
-            // A cancelled request must stay cancelled; anything else means "AI not answering".
-            currentCoroutineContext().ensureActive()
+        // A cancelled request stays cancelled; anything else means "AI not answering".
+        val aiItems = recovering(fallback = { e ->
             logger.warn(
                 "AI status lookup for {} artifact(s) of project {} failed, reporting UNKNOWN: {}: {}",
                 visibleIds.size,
@@ -76,6 +72,8 @@ class ArtifactAiStatusService(
                 e.message,
             )
             null
+        }) {
+            artifactIngestionClient.fetchIngestStatus(visibleIds).items
         }
         if (aiItems == null) {
             return ArtifactAiStatusResponse(aiAvailable = false, items = visibleIds.map(::unknownItem))

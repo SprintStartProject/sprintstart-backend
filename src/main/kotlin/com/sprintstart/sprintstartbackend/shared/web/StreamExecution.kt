@@ -1,12 +1,16 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.future.await
+import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.stream.Stream
+import kotlin.streams.asSequence
 
 /**
  * Executes an SSE / chunked streaming HTTP request, exposing the response as a [Flow].
@@ -54,7 +58,6 @@ class StreamExecution internal constructor(
      * @param onChunkError Called when a chunk fails deserialization. Defaults to stderr logging.
      *   Return `true` to continue the stream, `false` to cancel it.
      */
-    @Suppress("CyclomaticComplexMethod")
     inline fun <reified T> perform(
         terminationMarkers: Set<String> = setOf("[DONE]"),
         crossinline onChunkError: (raw: String, error: Throwable) -> Boolean = { raw, err ->
@@ -62,19 +65,42 @@ class StreamExecution internal constructor(
             true // skip and continue by default
         },
     ): Flow<T> = flow {
-        val request = builder
-            .buildHttpRequest()
-            .let { original ->
-                if (original.headers().firstValue("Accept").isEmpty) {
-                    java.net.http.HttpRequest
-                        .newBuilder(original, { _, _ -> true })
-                        .header("Accept", "text/event-stream")
-                        .build()
-                } else {
-                    original
-                }
+        openLines().use { lineStream ->
+            val decode = { payload: String -> builder.jsonParser.decodeFromString<T>(payload) }
+            val onError = { raw: String, error: Throwable -> onChunkError(raw, error) }
+            for (raw in dataPayloads(lineStream, terminationMarkers)) {
+                if (!emitDecoded(raw, decode, onError)) break
             }
+        }
+    }.flowOn(Dispatchers.IO)
 
+    /** The payloads of the `data:` lines, up to the first termination marker. */
+    @PublishedApi
+    internal fun dataPayloads(lines: Stream<String>, terminationMarkers: Set<String>): Sequence<String> =
+        lines
+            .asSequence()
+            .filter { it.startsWith("data:") }
+            .map { it.removePrefix("data:").trim() }
+            .takeWhile { it !in terminationMarkers }
+
+    /** Emits the decoded [raw] chunk; false when [onChunkError] asked to stop after a malformed one. */
+    @PublishedApi
+    internal suspend fun <T> FlowCollector<T>.emitDecoded(
+        raw: String,
+        decode: (String) -> T,
+        onChunkError: (raw: String, error: Throwable) -> Boolean,
+    ): Boolean {
+        // A cancellation (e.g. a caller-imposed timeout, or `take(n)` completing) must abort the
+        // stream, not be mistaken for a malformed chunk; `recovering` rethrows it.
+        return recovering(fallback = { e -> onChunkError(raw, e) }) {
+            emit(decode(raw))
+            true
+        }
+    }
+
+    @PublishedApi
+    internal suspend fun openLines(): Stream<String> {
+        val request = withEventStreamAccept(builder.buildHttpRequest())
         val response = builder.httpClient
             .sendAsync(request, HttpResponse.BodyHandlers.ofLines())
             .await()
@@ -94,27 +120,14 @@ class StreamExecution internal constructor(
                     "${response.statusCode()}: $errorBody",
             )
         }
+        return response.body()
+    }
 
-        response.body().use { lineStream ->
-            @Suppress("LoopWithTooManyJumpStatements")
-            for (line in lineStream) {
-                if (!line.startsWith("data:")) continue
-
-                val raw = line.removePrefix("data:").trim()
-
-                if (raw in terminationMarkers) break
-
-                try {
-                    emit(builder.jsonParser.decodeFromString<T>(raw))
-                } catch (e: CancellationException) {
-                    // Cancellation (e.g. a caller-imposed timeout, or `take(n)` completing) must
-                    // abort the stream, not be mistaken for a malformed chunk and swallowed.
-                    throw e
-                } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-                    val shouldContinue = onChunkError(raw, e)
-                    if (!shouldContinue) break
-                }
-            }
-        }
-    }.flowOn(Dispatchers.IO)
+    private fun withEventStreamAccept(original: HttpRequest): HttpRequest {
+        if (!original.headers().firstValue("Accept").isEmpty) return original
+        return HttpRequest
+            .newBuilder(original, { _, _ -> true })
+            .header("Accept", "text/event-stream")
+            .build()
+    }
 }

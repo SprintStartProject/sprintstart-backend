@@ -172,6 +172,16 @@ class CompetencyPlacementService(
             )
         }
 
+        place(userId, competencyKey, level, existing)
+
+        return PlacementResult(
+            recorded = true,
+            message = "Noted — “${competency.label}” at ${level.word}. It's a starting point, not a " +
+                "verdict: your work here is what will move it.",
+        )
+    }
+
+    private fun place(user: UUID, competencyKey: String, level: ProficiencyLevel, existing: UserCompetencyState?) {
         if (existing != null) {
             // Monotonic, exactly as accepted work is: a second conversation may raise a placement,
             // never lower one.
@@ -181,19 +191,13 @@ class CompetencyPlacementService(
         } else {
             userCompetencyStateRepository.save(
                 UserCompetencyState(
-                    userId = userId,
+                    userId = user,
                     competencyKey = competencyKey,
                     level = level.rank,
                     source = CompetencySource.ASSESSED,
                 ),
             )
         }
-
-        return PlacementResult(
-            recorded = true,
-            message = "Noted — “${competency.label}” at ${level.word}. It's a starting point, not a " +
-                "verdict: your work here is what will move it.",
-        )
     }
 
     /**

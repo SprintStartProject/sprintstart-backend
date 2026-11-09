@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.notion
 import com.sprintstart.sprintstartbackend.connectors.notion.external.events.projects.NotionWorkspaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -27,18 +28,18 @@ internal class NotionPageProjectsListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: NotionWorkspaceConnectionDeletedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.applyProjectLink(
-                    ArtifactSourceRef.NotionConnection(event.connectionId),
-                    event.projectId,
-                    linked = false,
-                )
-            } catch (exception: Exception) {
+            recovering(fallback = { exception ->
                 logger.error(
                     "Failed to unlink project {} from pages of deleted Notion connection {}",
                     event.projectId,
                     event.connectionId,
                     exception,
+                )
+            }) {
+                artifactProjectService.applyProjectLink(
+                    ArtifactSourceRef.NotionConnection(event.connectionId),
+                    event.projectId,
+                    linked = false,
                 )
             }
         }

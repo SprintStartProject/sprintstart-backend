@@ -77,7 +77,6 @@ class OnboardingMetricsService(
 
     private fun timelineFor(member: ProjectMember, projectId: UUID): HireTimelineResponse {
         val now = clock.instant()
-        val login = member.githubLogin
 
         // No attributable identity means no contributions can be found — which is not the
         // same as having done nothing.
@@ -91,20 +90,13 @@ class OnboardingMetricsService(
 
         val goalClaimedAt = hireStarterWork.goalClaimedAt(UserId(member.userId), ProjectId(projectId))
 
-        val longestOpenWait = contributions
-            // Only a contribution still in flight is "waiting on somebody": an abandoned one is
-            // done, not stuck, even though it was never accepted.
-            .filter { it.firstResponseAt == null && it.isInFlight && it.openedAt != null }
-            .mapNotNull { it.openedAt }
-            .minOrNull()
-            ?.let { hoursBetween(it, now) }
-
+        val longestOpenWait = longestOpenWait(contributions, now)
         val stalledReason = stalledReason(member, contributions, goalClaimedAt, accepted, now)
 
         return HireTimelineResponse(
             userId = member.userId,
             displayName = member.displayName,
-            githubLogin = login,
+            githubLogin = member.githubLogin,
             joinedAt = member.joinedAt,
             firstTaskClaimedAt = goalClaimedAt,
             firstContributionOpenedAt = opened,
@@ -124,6 +116,19 @@ class OnboardingMetricsService(
             returnedContributionCount = contributions.count { it.returnedCount > 0 },
         )
     }
+
+    /**
+     * Hours the oldest unanswered contribution has been waiting.
+     *
+     * Only a contribution still in flight is "waiting on somebody": an abandoned one is done, not
+     * stuck, even though it was never accepted.
+     */
+    private fun longestOpenWait(contributions: List<Contribution>, now: Instant): Long? =
+        contributions
+            .filter { it.firstResponseAt == null && it.isInFlight && it.openedAt != null }
+            .mapNotNull { it.openedAt }
+            .minOrNull()
+            ?.let { hoursBetween(it, now) }
 
     /**
      * Why this hire is stuck, in the words a PM would use — or null if they are not.

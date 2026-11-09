@@ -2,6 +2,8 @@ package com.sprintstart.sprintstartbackend.board.service
 
 import com.sprintstart.sprintstartbackend.board.external.DiagramAiClient
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardKind
+import com.sprintstart.sprintstartbackend.board.external.model.DiagramEdgeSchema
+import com.sprintstart.sprintstartbackend.board.external.model.DiagramNodeSchema
 import com.sprintstart.sprintstartbackend.board.external.model.DiagramOutcome
 import com.sprintstart.sprintstartbackend.board.external.model.DiagramSchema
 import com.sprintstart.sprintstartbackend.board.model.entity.BoardDiagram
@@ -149,39 +151,7 @@ class BoardDiagramService(
         outcome: DiagramOutcome,
         schema: DiagramSchema,
     ): DiagramContent {
-        val payload = BoardDiagramPayload(
-            summary = schema.summary.takeIf { it.isNotBlank() },
-            nodes = schema.nodes.map { node ->
-                BoardDiagramNodePayload(
-                    id = node.id,
-                    label = node.label,
-                    kind = node.kind,
-                    summary = node.summary.takeIf { it.isNotBlank() },
-                    citations = node.citations.map {
-                        BoardDiagramCitationPayload(
-                            filename = it.filename,
-                            chunkId = it.chunkId,
-                            sourceUrl = it.sourceUrl,
-                        )
-                    },
-                )
-            },
-            edges = schema.edges.map {
-                BoardDiagramEdgePayload(
-                    fromId = it.fromId,
-                    toId = it.toId,
-                    kind = it.kind,
-                    label = it.label.takeIf { label -> label.isNotBlank() },
-                )
-            },
-            sources = schema.sources.map {
-                BoardDiagramSourcePayload(
-                    filename = it.filename,
-                    sourceUrl = it.sourceUrl,
-                    artifactType = it.artifactType,
-                )
-            },
-        )
+        val payload = schema.toPayload()
 
         // Replaced wholesale rather than merged: a picture is derived, holds no human edits, and
         // there is nothing a merge would protect.
@@ -274,3 +244,40 @@ class BoardDiagramService(
         val json = Json { ignoreUnknownKeys = true }
     }
 }
+
+private fun DiagramSchema.toPayload() =
+    BoardDiagramPayload(
+        summary = summary.takeIf { it.isNotBlank() },
+        nodes = nodes.map { it.toPayload() },
+        edges = edges.map { it.toPayload() },
+        sources = sources.map {
+            BoardDiagramSourcePayload(
+                filename = it.filename,
+                sourceUrl = it.sourceUrl,
+                artifactType = it.artifactType,
+            )
+        },
+    )
+
+private fun DiagramNodeSchema.toPayload() =
+    BoardDiagramNodePayload(
+        id = id,
+        label = label,
+        kind = kind,
+        summary = summary.takeIf { it.isNotBlank() },
+        citations = citations.map {
+            BoardDiagramCitationPayload(
+                filename = it.filename,
+                chunkId = it.chunkId,
+                sourceUrl = it.sourceUrl,
+            )
+        },
+    )
+
+private fun DiagramEdgeSchema.toPayload() =
+    BoardDiagramEdgePayload(
+        fromId = fromId,
+        toId = toId,
+        kind = kind,
+        label = label.takeIf { it.isNotBlank() },
+    )

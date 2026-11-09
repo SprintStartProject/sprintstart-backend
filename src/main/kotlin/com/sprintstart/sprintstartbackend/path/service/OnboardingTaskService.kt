@@ -1,7 +1,5 @@
 package com.sprintstart.sprintstartbackend.path.service
 
-import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
-import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingTask
 import com.sprintstart.sprintstartbackend.path.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.path.model.mapper.toGetAllResponse
@@ -22,8 +20,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
-import kotlin.collections.forEach
-import kotlin.ranges.contains
 
 /**
  * Manages onboarding tasks within a step.
@@ -31,13 +27,14 @@ import kotlin.ranges.contains
  * Tasks are ordered siblings under a step. Create, update, and delete operations
  * maintain contiguous positions by shifting neighboring tasks when necessary.
  */
-@Suppress("TooManyFunctions")
 @Service
 class OnboardingTaskService(
     private val onboardingTaskRepository: OnboardingTaskRepository,
     private val onboardingStepRepository: OnboardingStepRepository,
     private val userApi: UserApi,
 ) {
+    private val taskOrdering = TaskOrdering(onboardingTaskRepository)
+
 //  ========================== Methods for users ==========================
 
     /**
@@ -86,18 +83,7 @@ class OnboardingTaskService(
             .findByIdAndPhasePathUserId(stepId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found") }
 
-        shiftTasksRight(step, request)
-
-        val onboardingTask = OnboardingTask(
-            step = step,
-            position = request.position,
-            title = request.title,
-            description = request.description,
-        )
-
-        reopenStepIfFinished(step)
-
-        return onboardingTaskRepository.save(onboardingTask).toCreateResponse()
+        return onboardingTaskRepository.save(taskOrdering.insert(step, request)).toCreateResponse()
     }
 
     /**
@@ -148,12 +134,7 @@ class OnboardingTaskService(
             .findByIdAndStepPhasePathUserId(taskId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Step not found") }
 
-        shiftTasksBetween(task, request)
-
-        task.position = request.position
-        task.title = request.title
-        task.description = request.description
-        task.finished = request.finished
+        taskOrdering.update(task, request)
 
         return task.toUpdateResponse()
     }
@@ -216,18 +197,7 @@ class OnboardingTaskService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
-        shiftTasksRight(step, request)
-
-        val onboardingTask = OnboardingTask(
-            step = step,
-            position = request.position,
-            title = request.title,
-            description = request.description,
-        )
-
-        reopenStepIfFinished(step)
-
-        return onboardingTaskRepository.save(onboardingTask).toCreateResponse()
+        return onboardingTaskRepository.save(taskOrdering.insert(step, request)).toCreateResponse()
     }
 
     /**
@@ -264,12 +234,7 @@ class OnboardingTaskService(
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No task found with id: $taskId") }
 
-        shiftTasksBetween(task, request)
-
-        task.position = request.position
-        task.title = request.title
-        task.description = request.description
-        task.finished = request.finished
+        taskOrdering.update(task, request)
 
         return onboardingTaskRepository.save(task).toUpdateResponse()
     }
@@ -287,9 +252,7 @@ class OnboardingTaskService(
             .findById(taskId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No task found with id: $taskId") }
 
-        val tasksToShift = onboardingTaskRepository
-            .findAllByStepIdAndPositionGreaterThan(task.step.id, task.position)
-        tasksToShift.forEach { it.position -= 1 }
+        taskOrdering.closeGapBehind(task)
 
         onboardingTaskRepository.delete(task)
     }
@@ -317,104 +280,5 @@ class OnboardingTaskService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Task not found") }
 
         task.finished = finished
-    }
-
-//  ========================== Helper Methods ==========================
-
-    /**
-     * Reopens a completed step when new work is added to it.
-     *
-     * A step may only remain [StepStatus.FINISHED] while all of its tasks are done. Adding a
-     * new (unfinished) task therefore reverts a finished step back to [StepStatus.IN_PROGRESS]
-     * and clears its completion timestamp. This keeps the step's status consistent with its
-     * tasks — without it a step added to via the team-management view would stay "done" despite
-     * having open work, and there is no separate PM endpoint to reset another user's step status.
-     */
-    private fun reopenStepIfFinished(step: OnboardingStep) {
-        if (step.status == StepStatus.FINISHED) {
-            step.status = StepStatus.IN_PROGRESS
-            step.completedAt = null
-        }
-    }
-
-    /**
-     * Makes room for a new task at the requested position by shifting all existing
-     * tasks at that position or after it one position to the right.
-     *
-     * Valid positions are from `0` to `taskCount`, where `taskCount` means
-     * appending the new task at the end.
-     *
-     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
-     * position is outside the valid range.
-     */
-    private fun shiftTasksRight(
-        step: OnboardingStep,
-        request: CreateOnboardingTaskRequest,
-    ) {
-        val taskCount = onboardingTaskRepository.countByStepId(step.id)
-
-        if (request.position !in 0..taskCount) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Position must be between 0 and $taskCount",
-            )
-        }
-
-        val tasksToShift = onboardingTaskRepository
-            .findByStepIdAndPositionGreaterThanEqualOrderByPositionDesc(
-                step.id,
-                request.position,
-            )
-
-        tasksToShift.forEach { it.position += 1 }
-    }
-
-    /**
-     * Reorders tasks after an existing task is moved to a new position.
-     *
-     * When the task moves down, all tasks between the old and new position are
-     * shifted one position to the left. When the task moves up, all tasks between
-     * the new and old position are shifted one position to the right.
-     *
-     * Valid positions are from `0` to `taskCount - 1`, because the task already
-     * exists and can only be moved within the current list.
-     *
-     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
-     * position is outside the valid range.
-     */
-    private fun shiftTasksBetween(
-        task: OnboardingTask,
-        request: UpdateOnboardingTaskRequest,
-    ) {
-        val taskCount = onboardingTaskRepository.countByStepId(task.step.id)
-
-        if (request.position !in 0 until taskCount) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${taskCount - 1}")
-        }
-
-        val oldPosition = task.position
-        val newPosition = request.position
-
-        if (oldPosition < newPosition) {
-            val stepsToShift = onboardingTaskRepository
-                .findByStepIdAndPositionBetween(
-                    task.step.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            stepsToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            val stepsToShift = onboardingTaskRepository
-                .findByStepIdAndPositionBetween(
-                    task.step.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            stepsToShift.forEach { it.position += 1 }
-        }
     }
 }

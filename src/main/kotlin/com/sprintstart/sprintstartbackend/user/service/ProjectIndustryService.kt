@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryAiClient
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationResponse
@@ -8,7 +9,6 @@ import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -109,29 +109,13 @@ class ProjectIndustryService(
             return existingProject.industry
         }
 
-        return try {
+        return recovering(fallback = { e ->
+            logger.warn("Lazy industry evaluation failed for project {}: {}", projectId, e.message)
+            null
+        }) {
             val response = projectIndustryAiClient.evaluateIndustry(projectId)
             if (isEligibleConfidence(response.confidence) && response.industry.isNotBlank()) {
-                withContext(ioDispatcher) {
-                    txTemplate.execute {
-                        val project = projectRepository
-                            .findByIdForUpdate(projectId)
-                            .orElse(null) ?: return@execute null
-                        if (project.industryCustom) {
-                            return@execute project.industry
-                        }
-                        val shouldUpdate = project.industry.isNullOrBlank() ||
-                            isHigherConfidence(response.confidence, project.industryConfidence)
-                        if (shouldUpdate) {
-                            project.industry = response.industry
-                            project.industryConfidence = response.confidence
-                            projectRepository.save(project)
-                            response.industry
-                        } else {
-                            project.industry
-                        }
-                    }
-                }
+                persistLazily(projectId, response)
             } else {
                 logger.debug(
                     "Lazy industry evaluation for project {} discarded due to low confidence: {}",
@@ -140,11 +124,6 @@ class ProjectIndustryService(
                 )
                 null
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn("Lazy industry evaluation failed for project {}: {}", projectId, e.message)
-            null
         }
     }
 
@@ -157,7 +136,9 @@ class ProjectIndustryService(
      */
     @Tracked("Evaluating project industry automatically")
     override suspend fun evaluateIndustryAutomatically(projectId: UUID) {
-        try {
+        recovering(fallback = { e ->
+            logger.warn("Automatic industry evaluation failed for project {}: {}", projectId, e.message)
+        }) {
             val existingProject = withContext(ioDispatcher) { findProjectOrNull(projectId) } ?: run {
                 logger.warn("Cannot auto-evaluate industry for non-existent project {}", projectId)
                 return
@@ -181,48 +162,71 @@ class ProjectIndustryService(
                 return
             }
 
-            withContext(ioDispatcher) {
-                txTemplate.executeWithoutResult {
-                    val project = projectRepository
-                        .findByIdForUpdate(projectId)
-                        .orElse(null) ?: return@executeWithoutResult
-                    if (project.industryCustom) {
-                        logger.debug(
-                            "Auto industry evaluation for project {} aborted: " +
-                                "industry became custom during evaluation",
-                            projectId,
-                        )
-                        return@executeWithoutResult
-                    }
-                    val shouldUpdate = project.industry.isNullOrBlank() ||
-                        isHigherConfidence(response.confidence, project.industryConfidence)
-                    if (shouldUpdate) {
-                        logger.info(
-                            "Updating industry for project {} from '{}' ({}) to '{}' ({})",
-                            projectId,
-                            project.industry,
-                            project.industryConfidence,
-                            response.industry,
-                            response.confidence,
-                        )
-                        project.industry = response.industry
-                        project.industryConfidence = response.confidence
-                        projectRepository.save(project)
-                    } else {
-                        logger.debug(
-                            "Auto industry evaluation for project {} discarded by monotonicity: " +
-                                "stored confidence {} >= new {}",
-                            projectId,
-                            project.industryConfidence,
-                            response.confidence,
-                        )
-                    }
+            persistAutomatically(projectId, response)
+        }
+    }
+
+    private suspend fun persistLazily(target: UUID, response: AiIndustryEvaluationResponse): String? =
+        withContext(ioDispatcher) {
+            txTemplate.execute {
+                val project = projectRepository
+                    .findByIdForUpdate(target)
+                    .orElse(null) ?: return@execute null
+                if (project.industryCustom) {
+                    return@execute project.industry
+                }
+                val shouldUpdate = project.industry.isNullOrBlank() ||
+                    isHigherConfidence(response.confidence, project.industryConfidence)
+                if (shouldUpdate) {
+                    project.industry = response.industry
+                    project.industryConfidence = response.confidence
+                    projectRepository.save(project)
+                    response.industry
+                } else {
+                    project.industry
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn("Automatic industry evaluation failed for project {}: {}", projectId, e.message)
+        }
+
+    private suspend fun persistAutomatically(target: UUID, response: AiIndustryEvaluationResponse) {
+        withContext(ioDispatcher) {
+            txTemplate.executeWithoutResult {
+                val project = projectRepository
+                    .findByIdForUpdate(target)
+                    .orElse(null) ?: return@executeWithoutResult
+                adoptAutomatically(project, response)
+            }
+        }
+    }
+
+    private fun adoptAutomatically(project: Project, response: AiIndustryEvaluationResponse) {
+        if (project.industryCustom) {
+            logger.debug(
+                "Auto industry evaluation for project {} aborted: industry became custom during evaluation",
+                project.id,
+            )
+            return
+        }
+        if (project.industry.isNullOrBlank() || isHigherConfidence(response.confidence, project.industryConfidence)) {
+            logger.info(
+                "Updating industry for project {} from '{}' ({}) to '{}' ({})",
+                project.id,
+                project.industry,
+                project.industryConfidence,
+                response.industry,
+                response.confidence,
+            )
+            project.industry = response.industry
+            project.industryConfidence = response.confidence
+            projectRepository.save(project)
+        } else {
+            logger.debug(
+                "Auto industry evaluation for project {} discarded by monotonicity: " +
+                    "stored confidence {} >= new {}",
+                project.id,
+                project.industryConfidence,
+                response.confidence,
+            )
         }
     }
 
@@ -243,21 +247,6 @@ class ProjectIndustryService(
         return projectRepository.findById(id).orElse(null)
     }
 
-    private fun isEligibleConfidence(confidence: String?): Boolean {
-        return confidenceRank(confidence) >= 1
-    }
-
-    private fun isHigherConfidence(newConfidence: String?, existingConfidence: String?): Boolean {
-        return confidenceRank(newConfidence) > confidenceRank(existingConfidence)
-    }
-
-    private fun confidenceRank(confidence: String?): Int = when (confidence?.lowercase()) {
-        "high" -> 2
-        "medium" -> 1
-        "low" -> 0
-        else -> -1
-    }
-
     companion object {
         /**
          * Applies a manually-set industry to [project]: the confidence is cleared because it is
@@ -270,4 +259,19 @@ class ProjectIndustryService(
             project.industryConfidence = null
         }
     }
+}
+
+private fun isEligibleConfidence(confidence: String?): Boolean {
+    return confidenceRank(confidence) >= 1
+}
+
+private fun isHigherConfidence(newConfidence: String?, existingConfidence: String?): Boolean {
+    return confidenceRank(newConfidence) > confidenceRank(existingConfidence)
+}
+
+private fun confidenceRank(confidence: String?): Int = when (confidence?.lowercase()) {
+    "high" -> 2
+    "medium" -> 1
+    "low" -> 0
+    else -> -1
 }

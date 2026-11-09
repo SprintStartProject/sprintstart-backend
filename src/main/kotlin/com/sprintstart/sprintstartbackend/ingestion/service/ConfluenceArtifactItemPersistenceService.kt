@@ -86,47 +86,51 @@ internal class ConfluenceArtifactItemPersistenceService(
         existing.addProjectId(projectId)
     }
 
-    private fun metadataJson(command: ConfluencePageArtifactCommand): String {
+    private fun metadataJson(command: ConfluencePageArtifactCommand): String = metadataJsonMapper.toJson(
+        ConfluenceArtifactMetadata(
+            connectionId = command.metadata.connectionId.toString(),
+            tenantBaseUrl = command.metadata.tenantBaseUrl,
+            spaceId = command.metadata.spaceId,
+            spaceKey = command.metadata.spaceKey,
+            pageId = command.metadata.pageId,
+            versionNumber = command.metadata.versionNumber,
+            versionCreatedAt = command.metadata.versionCreatedAt.toString(),
+            parentId = command.metadata.parentId,
+            parentType = command.metadata.parentType,
+            webUiPath = command.metadata.webUiPath,
+            sections = command.metadata.sections.map { section ->
+                ArtifactSection(section.heading, section.level)
+            },
+            tables = command.metadata.tables,
+            codeBlocks = command.metadata.codeBlocks.map { block ->
+                ArtifactCodeBlock(block.language, block.code)
+            },
+            relationships = relationshipsOf(command),
+            sourceAcl = sourceAclJson(command),
+        ),
+    )
+
+    private fun relationshipsOf(command: ConfluencePageArtifactCommand): List<ArtifactRelationship> =
+        command.metadata.relationships
+            .distinct()
+            .sortedWith(compareBy({ relationship -> relationship.type.name }, { it.targetSourceArtifactId }))
+            .map { relationship ->
+                ArtifactRelationship(
+                    type = when (relationship.type) {
+                        ConfluenceRelationshipType.PARENT_OF -> ArtifactRelationshipType.PARENT_OF
+                        ConfluenceRelationshipType.CHILD_OF -> ArtifactRelationshipType.CHILD_OF
+                    },
+                    targetSourceArtifactId = relationship.targetSourceArtifactId,
+                )
+            }
+
+    private fun sourceAclJson(command: ConfluencePageArtifactCommand): String {
         val sourceAcl = command.metadata.sourceAcl
-        val aclJson = objectMapper.writeValueAsString(
+        return objectMapper.writeValueAsString(
             ConfluenceSourceAclPayload(
                 hasPageRestrictions = sourceAcl.userAccountIds.isNotEmpty() || sourceAcl.groupIds.isNotEmpty(),
                 users = sourceAcl.userAccountIds.distinct().sorted(),
                 groups = sourceAcl.groupIds.distinct().sorted(),
-            ),
-        )
-        return metadataJsonMapper.toJson(
-            ConfluenceArtifactMetadata(
-                connectionId = command.metadata.connectionId.toString(),
-                tenantBaseUrl = command.metadata.tenantBaseUrl,
-                spaceId = command.metadata.spaceId,
-                spaceKey = command.metadata.spaceKey,
-                pageId = command.metadata.pageId,
-                versionNumber = command.metadata.versionNumber,
-                versionCreatedAt = command.metadata.versionCreatedAt.toString(),
-                parentId = command.metadata.parentId,
-                parentType = command.metadata.parentType,
-                webUiPath = command.metadata.webUiPath,
-                sections = command.metadata.sections.map { section ->
-                    ArtifactSection(section.heading, section.level)
-                },
-                tables = command.metadata.tables,
-                codeBlocks = command.metadata.codeBlocks.map { block ->
-                    ArtifactCodeBlock(block.language, block.code)
-                },
-                relationships = command.metadata.relationships
-                    .distinct()
-                    .sortedWith(compareBy({ relationship -> relationship.type.name }, { it.targetSourceArtifactId }))
-                    .map { relationship ->
-                        ArtifactRelationship(
-                            type = when (relationship.type) {
-                                ConfluenceRelationshipType.PARENT_OF -> ArtifactRelationshipType.PARENT_OF
-                                ConfluenceRelationshipType.CHILD_OF -> ArtifactRelationshipType.CHILD_OF
-                            },
-                            targetSourceArtifactId = relationship.targetSourceArtifactId,
-                        )
-                    },
-                sourceAcl = aclJson,
             ),
         )
     }

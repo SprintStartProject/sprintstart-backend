@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.jira
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -33,19 +34,19 @@ internal class JiraInstanceProjectsListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: JiraInstanceProjectLinkChangedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.applyProjectLink(
-                    ArtifactSourceRef.JiraInstance(event.instanceUrl),
-                    event.projectId,
-                    event.linked,
-                )
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.error(
                     "Failed to propagate project {} ({}) for Jira instance {} to the AI index",
                     event.projectId,
                     if (event.linked) "linked" else "unlinked",
                     event.instanceUrl,
                     e,
+                )
+            }) {
+                artifactProjectService.applyProjectLink(
+                    ArtifactSourceRef.JiraInstance(event.instanceUrl),
+                    event.projectId,
+                    event.linked,
                 )
             }
         }

@@ -248,28 +248,22 @@ class BlueprintTaskService(
         }
 
         val oldPosition = task.position
-        var tasksToShift: MutableList<BlueprintTask> = mutableListOf()
-
-        if (oldPosition < newPosition) {
-            tasksToShift = blueprintTaskRepository
-                .findByBlueprintStepIdAndPositionBetween(
-                    task.blueprintStep.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            tasksToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            tasksToShift = blueprintTaskRepository
-                .findByBlueprintStepIdAndPositionBetween(
-                    task.blueprintStep.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            tasksToShift.forEach { it.position += 1 }
+        val tasksToShift: MutableList<BlueprintTask> = when {
+            oldPosition < newPosition ->
+                blueprintTaskRepository
+                    .findByBlueprintStepIdAndPositionBetween(
+                        task.blueprintStep.id,
+                        oldPosition + 1,
+                        newPosition,
+                    ).also { list -> list.forEach { it.position -= 1 } }
+            oldPosition > newPosition ->
+                blueprintTaskRepository
+                    .findByBlueprintStepIdAndPositionBetween(
+                        task.blueprintStep.id,
+                        newPosition,
+                        oldPosition - 1,
+                    ).also { list -> list.forEach { it.position += 1 } }
+            else -> mutableListOf()
         }
 
         return tasksToShift

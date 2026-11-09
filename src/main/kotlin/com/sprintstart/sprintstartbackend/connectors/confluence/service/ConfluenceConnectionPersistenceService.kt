@@ -35,8 +35,8 @@ internal class ConfluenceConnectionPersistenceService(
         rejectDuplicate(connection)
         val saved = try {
             connectionRepository.saveAndFlush(connection)
-        } catch (@Suppress("SwallowedException") exception: DataIntegrityViolationException) {
-            throw ConfluenceConnectionAlreadyExistsException(connection.projectId, connection.spaceId)
+        } catch (exception: DataIntegrityViolationException) {
+            throw ConfluenceConnectionAlreadyExistsException(connection.projectId, connection.spaceId, exception)
         }
         return saved.toResponse()
     }

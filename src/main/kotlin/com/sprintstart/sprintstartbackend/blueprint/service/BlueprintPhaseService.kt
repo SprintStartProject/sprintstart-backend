@@ -262,28 +262,22 @@ class BlueprintPhaseService(
         }
 
         val oldPosition = blueprintPhase.position
-        var phasesToShift: MutableList<BlueprintPhase> = mutableListOf()
-
-        if (oldPosition < newPosition) {
-            phasesToShift = blueprintPhaseRepository
-                .findAllByBlueprintPathIdAndPositionBetween(
-                    blueprintPhase.blueprintPath.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            phasesToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            phasesToShift = blueprintPhaseRepository
-                .findAllByBlueprintPathIdAndPositionBetween(
-                    blueprintPhase.blueprintPath.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            phasesToShift.forEach { it.position += 1 }
+        val phasesToShift: MutableList<BlueprintPhase> = when {
+            oldPosition < newPosition ->
+                blueprintPhaseRepository
+                    .findAllByBlueprintPathIdAndPositionBetween(
+                        blueprintPhase.blueprintPath.id,
+                        oldPosition + 1,
+                        newPosition,
+                    ).also { list -> list.forEach { it.position -= 1 } }
+            oldPosition > newPosition ->
+                blueprintPhaseRepository
+                    .findAllByBlueprintPathIdAndPositionBetween(
+                        blueprintPhase.blueprintPath.id,
+                        newPosition,
+                        oldPosition - 1,
+                    ).also { list -> list.forEach { it.position += 1 } }
+            else -> mutableListOf()
         }
 
         return phasesToShift

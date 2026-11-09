@@ -2,8 +2,12 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.service
 
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialApi
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceExternalServiceException
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceResourceNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceSpace
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.api.request.ConfigureConfluenceScheduleRequest
@@ -181,6 +185,35 @@ class ConfluenceConnectionServiceTest {
         assertThat(thrown.toString()).doesNotContain(plaintextToken, "Basic ", "fake-user@example.invalid")
         verify(exactly = 0) { connectionRepository.saveAndFlush(any()) }
         coVerify(exactly = 0) { ingestionService.ingest(any(), any()) }
+    }
+
+    @Test
+    fun `each way the space check can fail keeps what the client reported as the cause`() = runTest {
+        every { connectionRepository.existsByProjectIdAndBaseUrlAndSpaceId(any(), any(), any()) } returns false
+        every { atlassianCredentialApi.findSecret(authId, "team-token") } returns
+            AtlassianCredentialSecret(userEmail = "fake-user@example.invalid", apiToken = plaintextToken)
+        val context = "retrieving space 123"
+        val cases = listOf(
+            Triple<Exception, String, Int>(
+                ConfluenceAuthenticationException(context),
+                "Confluence credentials were rejected",
+                401,
+            ),
+            Triple(ConfluenceAccessDeniedException(context), "Confluence space access was denied", 403),
+            Triple(ConfluenceResourceNotFoundException(context), "Confluence space 123 was not found", 404),
+            Triple(ConfluenceExternalServiceException(503, context), "Confluence space validation failed", 502),
+            Triple(ConfluenceInvalidResponseException(context), "Confluence returned invalid space metadata", 502),
+        )
+
+        cases.forEach { (failure, message, status) ->
+            coEvery { confluenceClient.getSpace(any(), any(), any()) } throws failure
+
+            val thrown = runCatching { service.createConnection(authId, projectId, request()) }.exceptionOrNull()
+
+            assertThat(thrown).isInstanceOf(ConfluenceConnectionConfigurationException::class.java).hasMessage(message)
+            assertThat((thrown as ConfluenceConnectionConfigurationException).httpStatus).isEqualTo(status)
+            assertThat(thrown.cause).isSameAs(failure)
+        }
     }
 
     @Test

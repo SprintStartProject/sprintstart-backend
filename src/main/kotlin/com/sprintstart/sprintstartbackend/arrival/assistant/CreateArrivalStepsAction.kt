@@ -17,6 +17,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.text
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -119,50 +120,50 @@ class CreateArrivalStepsAction(
         val drafted = mutableListOf<DraftedStep>()
         for (entry in requested) {
             val key = normalizeKey(entry.text("key"))
-            if (!ArrivalAuthoringApi.KEY.matches(key)) {
-                return TeamActionDraft.Refused(
-                    "'${entry.text("key")}' is not a usable key. Keys are lower-case letters, digits, '-' " +
-                        "and '_', starting with a letter or digit.",
-                )
-            }
-            if (key in taken) {
-                return TeamActionDraft.Refused(
-                    "This project already has an arrival step '$key'. Offer an update to that one instead, " +
-                        "or choose a different key.",
-                )
-            }
-            if (drafted.any { it.key == key }) {
-                return TeamActionDraft.Refused("The same key '$key' appears twice in one batch.")
-            }
-            val title = entry.text("title")
-            if (title.isBlank()) {
-                return TeamActionDraft.Refused("The step '$key' has no title, and a step needs one.")
-            }
+            problemWith(entry, key, taken, drafted)?.let { return TeamActionDraft.Refused(it) }
             val requestedRigor = entry.text("settled_by").ifBlank { Rigor.DECLARED.name }
             val rigor = rigorOrNull(requestedRigor)
                 ?: return TeamActionDraft.Refused("'$requestedRigor' is not a way of settling a step. $RIGOR_VALUES")
-            drafted += DraftedStep(
-                key = key,
-                title = title,
-                description = entry.text("description").ifBlank { null },
-                href = entry.text("href").ifBlank { null },
-                rigor = effectiveRigor(key, rigor),
-                replaces = companyTitles[key],
-            )
+            drafted += draftedStep(entry, key, rigor, companyTitles[key])
         }
 
         return proposed(
             params = CreateArrivalStepsParams(
                 drafted.map { NewArrivalStepParams(it.key, it.title, it.description, it.href, it.rigor) },
             ),
-            label = if (drafted.size == 1) {
-                "Add arrival step: ${drafted.single().title.forLabel()}"
-            } else {
-                "Add ${drafted.size} arrival steps"
-            },
+            label = labelFor(drafted),
             preview = preview(drafted),
         )
     }
+
+    private fun draftedStep(entry: JsonObject, key: String, rigor: Rigor, replaces: String?) = DraftedStep(
+        key = key,
+        title = entry.text("title"),
+        description = entry.text("description").ifBlank { null },
+        href = entry.text("href").ifBlank { null },
+        rigor = effectiveRigor(key, rigor),
+        replaces = replaces,
+    )
+
+    private fun labelFor(drafted: List<DraftedStep>): String =
+        if (drafted.size == 1) {
+            "Add arrival step: ${drafted.single().title.forLabel()}"
+        } else {
+            "Add ${drafted.size} arrival steps"
+        }
+
+    private fun problemWith(entry: JsonObject, key: String, taken: Set<String>, drafted: List<DraftedStep>): String? =
+        when {
+            !ArrivalAuthoringApi.KEY.matches(key) ->
+                "'${entry.text("key")}' is not a usable key. Keys are lower-case letters, digits, '-' " +
+                    "and '_', starting with a letter or digit."
+            key in taken ->
+                "This project already has an arrival step '$key'. Offer an update to that one instead, " +
+                    "or choose a different key."
+            drafted.any { it.key == key } -> "The same key '$key' appears twice in one batch."
+            entry.text("title").isBlank() -> "The step '$key' has no title, and a step needs one."
+            else -> null
+        }
 
     private fun preview(drafted: List<DraftedStep>): String = buildString {
         appendLine(
@@ -174,20 +175,7 @@ class CreateArrivalStepsAction(
         )
         drafted.forEach { step ->
             appendLine()
-            appendLine("${step.title} [key: ${step.key}]")
-            step.description?.let { appendLine(it) }
-            step.href?.let { appendLine("Link: $it") }
-            append("Settled by ${settlementWords(step.rigor)}")
-            if (ArrivalDerivation.forStepKey(step.key) != null) {
-                append(" — the system checks this key itself, so it is observed whatever was asked for")
-            }
-            appendLine(".")
-            step.replaces?.let {
-                appendLine(
-                    "This takes the place of the company-wide step “$it” for everyone on this project — " +
-                        "they see this one instead.",
-                )
-            }
+            appendStep(step)
         }
         appendLine()
         append(
@@ -195,6 +183,23 @@ class CreateArrivalStepsAction(
                 "anybody working.",
         )
     }.trim()
+
+    private fun StringBuilder.appendStep(step: DraftedStep) {
+        appendLine("${step.title} [key: ${step.key}]")
+        step.description?.let { appendLine(it) }
+        step.href?.let { appendLine("Link: $it") }
+        append("Settled by ${settlementWords(step.rigor)}")
+        if (ArrivalDerivation.forStepKey(step.key) != null) {
+            append(" — the system checks this key itself, so it is observed whatever was asked for")
+        }
+        appendLine(".")
+        step.replaces?.let {
+            appendLine(
+                "This takes the place of the company-wide step “$it” for everyone on this project — " +
+                    "they see this one instead.",
+            )
+        }
+    }
 
     override fun recheckParams(params: CreateArrivalStepsParams, context: TeamToolContext): String? {
         val taken = arrivalSteps.authoredOn(ProjectId(context.projectId)).map { it.key }.toSet()

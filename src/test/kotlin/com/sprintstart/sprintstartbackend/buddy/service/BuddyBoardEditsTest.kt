@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.board.external.BoardReading
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardActor
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardOwner
+import com.sprintstart.sprintstartbackend.board.external.model.HireBoard
 import com.sprintstart.sprintstartbackend.board.model.entity.NotePayload
 import com.sprintstart.sprintstartbackend.board.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.board.model.request.board.ChecklistCardRequest
@@ -180,7 +181,7 @@ class BuddyBoardEditsTest {
     private fun assertNothingWritten() {
         verify(exactly = 0) { boardService.dismissForBuddy(any(), any(), any()) }
         verify(exactly = 0) { boardService.reorderForBuddy(any(), any(), any()) }
-        verify(exactly = 0) { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { boardService.editAuthoredCardForBuddy(any(), any(), any(), any()) }
         verify(exactly = 0) { boardService.addAuthoredCard(any(), any(), any(), any()) }
     }
 
@@ -522,8 +523,7 @@ class BuddyBoardEditsTest {
         val request = slot<AuthoredCardRequest>()
         verify {
             boardService.editAuthoredCardForBuddy(
-                UserId(userId),
-                project,
+                HireBoard(UserId(userId), project),
                 BoardCardId(noteId),
                 capture(request),
                 proposal.basedOn,
@@ -551,8 +551,7 @@ class BuddyBoardEditsTest {
         val request = slot<AuthoredCardRequest>()
         verify {
             boardService.editAuthoredCardForBuddy(
-                UserId(userId),
-                project,
+                HireBoard(UserId(userId), project),
                 BoardCardId(checklistId),
                 capture(request),
                 proposal.basedOn,
@@ -572,7 +571,7 @@ class BuddyBoardEditsTest {
     fun `a stale edit is refused by the service and comes back as the reason`() = runTest {
         asHireOnBoard()
         val proposal = proposeEdit("edit_checklist", editedChecklist("Run it locally", "Fix it"))
-        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) } throws
+        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any()) } throws
             ResponseStatusException(HttpStatus.CONFLICT, BoardCardVersion.CARD_CHANGED)
 
         val result = service.perform(
@@ -605,7 +604,7 @@ class BuddyBoardEditsTest {
     @Test
     fun `a confirm whose card has gone comes back as the reason`() = runTest {
         asHire()
-        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any(), any()) } throws
+        every { boardService.editAuthoredCardForBuddy(any(), any(), any(), any()) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "No such note on your board")
 
         val result = service.perform(HireActionRequest(action = "edit_note", cardId = noteId, noteText = "New"), jwt)

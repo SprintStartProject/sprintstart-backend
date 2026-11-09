@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
@@ -48,10 +49,10 @@ class FaqConsolidationService(
      */
     @Tracked("Enforcing the FAQ entry limit")
     suspend fun enforceGroupLimit(projectId: UUID) {
-        try {
-            mergeDuplicates(projectId)
-        } catch (e: Exception) {
+        recovering(fallback = { e ->
             logger.warn("FAQ consolidation failed for project {}", projectId, e)
+        }) {
+            mergeDuplicates(projectId)
         }
     }
 
@@ -80,21 +81,7 @@ class FaqConsolidationService(
             return
         }
 
-        txTemplate.executeWithoutResult { _ ->
-            val byId = faqGroupRepository
-                .findAllByProjectIdOrderByOccurrenceCountDesc(projectId)
-                .associateBy { it.id.toString() }
-
-            merges.forEach { merge ->
-                val target = byId[merge.into] ?: return@forEach
-                val sources = merge.sources.mapNotNull { byId[it] }
-                if (sources.isEmpty()) return@forEach
-
-                sources.forEach { source -> absorb(target, source) }
-                faqGroupRepository.save(target)
-                faqGroupRepository.deleteAll(sources)
-            }
-        }
+        applyMerges(projectId, merges)
 
         logger.info("Merged {} duplicate FAQ entry sets in project {}", merges.size, projectId)
     }
@@ -129,6 +116,24 @@ class FaqConsolidationService(
             if (knownDocuments.add(document.documentRef)) {
                 document.group = target
                 target.documents.add(document)
+            }
+        }
+    }
+
+    private fun applyMerges(project: UUID, merges: List<AiFaqMerge>) {
+        txTemplate.executeWithoutResult { _ ->
+            val byId = faqGroupRepository
+                .findAllByProjectIdOrderByOccurrenceCountDesc(project)
+                .associateBy { it.id.toString() }
+
+            merges.forEach { merge ->
+                val target = byId[merge.into] ?: return@forEach
+                val sources = merge.sources.mapNotNull { byId[it] }
+                if (sources.isEmpty()) return@forEach
+
+                sources.forEach { source -> absorb(target, source) }
+                faqGroupRepository.save(target)
+                faqGroupRepository.deleteAll(sources)
             }
         }
     }

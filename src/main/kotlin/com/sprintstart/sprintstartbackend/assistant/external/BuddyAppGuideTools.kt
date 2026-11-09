@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.assistant.external
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.assistant.service.AppGuide
+import com.sprintstart.sprintstartbackend.assistant.service.AppGuideHowTo
 import com.sprintstart.sprintstartbackend.assistant.service.AppGuidePage
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
@@ -77,14 +78,7 @@ class BuddyAppGuideTools(
                     "use that one — it opens the right tab):",
             )
             openable.forEach { page -> appendPage(page, role) }
-            if (elsewhere.isNotEmpty()) {
-                appendLine()
-                appendLine("Only somebody else can do these — say who to ask, never send them to the page:")
-                elsewhere.forEach { (page, howTo) ->
-                    val who = describeDoers(howTo.doers ?: page.roles)
-                    appendLine("- ${howTo.task}: $who, on ${page.name} (${howTo.steps})")
-                }
-            }
+            appendElsewhere(elsewhere)
             if (reader.blockedFromManagerPages()) {
                 appendLine()
                 appendLine(
@@ -92,10 +86,24 @@ class BuddyAppGuideTools(
                         "makes somebody a project's manager in Access Management → Projects.",
                 )
             }
-            appendLine()
-            appendLine("Anywhere in the app:")
-            appendLine("- ${AppGuide.PROJECT_SWITCHER}")
-            append("- ${AppGuide.BUDDY_EVERYWHERE}")
+            appendEverywhere()
+        }
+    }
+
+    private fun StringBuilder.appendEverywhere() {
+        appendLine()
+        appendLine("Anywhere in the app:")
+        appendLine("- ${AppGuide.PROJECT_SWITCHER}")
+        append("- ${AppGuide.BUDDY_EVERYWHERE}")
+    }
+
+    private fun StringBuilder.appendElsewhere(elsewhere: List<Pair<AppGuidePage, AppGuideHowTo>>) {
+        if (elsewhere.isEmpty()) return
+        appendLine()
+        appendLine("Only somebody else can do these — say who to ask, never send them to the page:")
+        elsewhere.forEach { (page, howTo) ->
+            val who = describeDoers(howTo.doers ?: page.roles)
+            appendLine("- ${howTo.task}: $who, on ${page.name} (${howTo.steps})")
         }
     }
 

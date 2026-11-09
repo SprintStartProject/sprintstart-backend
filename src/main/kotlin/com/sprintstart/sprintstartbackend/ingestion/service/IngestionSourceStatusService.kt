@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceIns
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourceInstanceDto
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceInstanceIngestionStatusResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
@@ -60,44 +61,7 @@ class IngestionSourceStatusService(
         val jiraStatuses = jiraInstanceApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val confluenceStatuses = confluenceConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
         val notionStatuses = notionConnectionApi.getSourceInstances(projectId).map { it.toStatusResponse() }
-        val uploadStatuses = if (projectId != null) {
-            val uploadCount = artifactRepository.countUploadArtifactsByProjectId(projectId)
-            val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(projectId)
-            if (uploadCount > 0 || lastRun != null) {
-                val connectionStatus = when (lastRun?.status) {
-                    IngestionRunStatus.FAILED -> "FAILED"
-                    IngestionRunStatus.RUNNING, IngestionRunStatus.CONNECTED -> "UPDATING"
-                    else -> "CONNECTED"
-                }
-                listOf(
-                    SourceInstanceIngestionStatusResponse(
-                        sourceSystem = SourceSystem.UPLOAD,
-                        sourceId = "Uploads",
-                        displayName = "Uploaded files",
-                        repositoryId = projectId,
-                        owner = null,
-                        name = null,
-                        sourceUrl = "",
-                        connectionStatus = connectionStatus,
-                        enabled = true,
-                        lastRunTime = lastRun?.startedAt,
-                        ingestedCount = lastRun?.ingestedCount ?: 0,
-                        updatedCount = lastRun?.updatedCount ?: 0,
-                        deletedCount = lastRun?.deletedCount ?: 0,
-                        failedCount = lastRun?.failedCount ?: 0,
-                        failedItems = lastRun?.failedItems.orEmpty(),
-                        artifactCount = uploadCount,
-                        lastCommitsSyncAt = null,
-                        lastIssuesSyncAt = null,
-                        lastPullRequestsSyncAt = null,
-                    ),
-                )
-            } else {
-                emptyList()
-            }
-        } else {
-            emptyList()
-        }
+        val uploadStatuses = uploadStatuses(projectId)
 
         return githubStatuses +
             bitbucketStatuses +
@@ -105,6 +69,51 @@ class IngestionSourceStatusService(
             confluenceStatuses +
             notionStatuses +
             uploadStatuses
+    }
+
+    private fun uploadStatuses(project: UUID?): List<SourceInstanceIngestionStatusResponse> {
+        if (project == null) return emptyList()
+
+        val uploadCount = artifactRepository.countUploadArtifactsByProjectId(project)
+        val lastRun = ingestionRunRepository.findFirstBySourceInstanceIdOrderByStartedAtDesc(project)
+        if (uploadCount == 0L && lastRun == null) return emptyList()
+
+        return uploadStatusOf(project, uploadCount, lastRun)
+    }
+
+    private fun uploadStatusOf(
+        project: UUID,
+        uploadCount: Long,
+        lastRun: IngestionRun?,
+    ): List<SourceInstanceIngestionStatusResponse> {
+        val connectionStatus = when (lastRun?.status) {
+            IngestionRunStatus.FAILED -> "FAILED"
+            IngestionRunStatus.RUNNING, IngestionRunStatus.CONNECTED -> "UPDATING"
+            else -> "CONNECTED"
+        }
+        return listOf(
+            SourceInstanceIngestionStatusResponse(
+                sourceSystem = SourceSystem.UPLOAD,
+                sourceId = "Uploads",
+                displayName = "Uploaded files",
+                repositoryId = project,
+                owner = null,
+                name = null,
+                sourceUrl = "",
+                connectionStatus = connectionStatus,
+                enabled = true,
+                lastRunTime = lastRun?.startedAt,
+                ingestedCount = lastRun?.ingestedCount ?: 0,
+                updatedCount = lastRun?.updatedCount ?: 0,
+                deletedCount = lastRun?.deletedCount ?: 0,
+                failedCount = lastRun?.failedCount ?: 0,
+                failedItems = lastRun?.failedItems.orEmpty(),
+                artifactCount = uploadCount,
+                lastCommitsSyncAt = null,
+                lastIssuesSyncAt = null,
+                lastPullRequestsSyncAt = null,
+            ),
+        )
     }
 
     private fun GithubSourceInstanceDto.toStatusResponse(): SourceInstanceIngestionStatusResponse {

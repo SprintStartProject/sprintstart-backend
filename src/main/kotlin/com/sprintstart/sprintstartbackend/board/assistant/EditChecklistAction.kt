@@ -67,15 +67,7 @@ class EditChecklistAction(
         }
 
         val dropped = droppedLines((card.content as? ChecklistContent)?.items?.map { it.text }.orEmpty(), items)
-        val preview = buildString {
-            append("Update your list “${BoardReading.nameOf(card)}” to the ${items.size} lines shown.")
-            if (dropped.isNotEmpty()) {
-                append(" Lines that would go: ")
-                append(dropped.joinToString("; ") { "“$it”" })
-                append(".")
-            }
-            append(" Lines that stay keep their ticks.")
-        }
+        val preview = previewOf(BoardReading.nameOf(card), items.size, dropped)
 
         return offer(
             context,
@@ -90,6 +82,16 @@ class EditChecklistAction(
                 preview = preview,
             ),
         )
+    }
+
+    private fun previewOf(name: String, lineCount: Int, dropped: List<String>): String = buildString {
+        append("Update your list “$name” to the $lineCount lines shown.")
+        if (dropped.isNotEmpty()) {
+            append(" Lines that would go: ")
+            append(dropped.joinToString("; ") { "“$it”" })
+            append(".")
+        }
+        append(" Lines that stay keep their ticks.")
     }
 
     /**

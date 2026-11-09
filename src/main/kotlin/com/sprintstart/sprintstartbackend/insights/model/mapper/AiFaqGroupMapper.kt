@@ -41,8 +41,17 @@ class AiFaqGroupMapper {
             lastAskedAt = askedAt.maxOrNull() ?: now,
         )
 
-        // One row per ask, not per sampled phrasing: every ask keeps its own timestamp for the trend and for
-        // "last asked". Rows for ids the sample did not cover carry no text.
+        group.addQuestions(aiGroup, askedAtByQuestionId, now)
+        group.addDocuments(aiGroup)
+
+        return group
+    }
+
+    /**
+     * One row per ask, not per sampled phrasing: every ask keeps its own timestamp for the trend and for
+     * "last asked". Rows for ids the sample did not cover carry no text.
+     */
+    private fun FaqGroup.addQuestions(aiGroup: AiFaqGroup, askedAtByQuestionId: Map<String, Instant>, now: Instant) {
         val sampleTexts = aiGroup.questions
             .flatMap { sample ->
                 sample.ids.map { it to sample.text }
@@ -50,28 +59,28 @@ class AiFaqGroupMapper {
         val questionIds = (aiGroup.questionIds + sampleTexts.keys).distinct()
 
         questionIds.forEach { questionId ->
-            group.questions.add(
+            questions.add(
                 FaqQuestion(
                     text = sampleTexts[questionId].orEmpty(),
                     askedAt = askedAtByQuestionId[questionId] ?: now,
                     sourceMessageId = parseUuidOrNull(questionId),
-                    group = group,
+                    group = this,
                 ),
             )
         }
+    }
 
+    private fun FaqGroup.addDocuments(aiGroup: AiFaqGroup) {
         aiGroup.documents.forEach { document ->
-            group.documents.add(
+            documents.add(
                 FaqDocument(
                     documentRef = document.id,
                     title = document.title,
                     source = document.source,
-                    group = group,
+                    group = this,
                 ),
             )
         }
-
-        return group
     }
 }
 

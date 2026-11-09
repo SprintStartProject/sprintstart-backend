@@ -68,19 +68,7 @@ class CompleteTaskAction(
                     "again — it only carries the checklist of the step they are on, and a line of some " +
                     "other step is not in front of you.",
             )
-        if (task.finished) {
-            return notProposed(
-                "“${task.title}” is already ticked off. Tell them it is already done rather than " +
-                    "offering it again.",
-            )
-        }
-        // The task route does not check locks; the page does, by never opening a locked step.
-        if (myPathTool.findStep(userId, task.stepId)?.locked == true) {
-            return notProposed(
-                "The step that “${task.title}” belongs to is locked, so nothing on its checklist can be " +
-                    "ticked yet. Say what the step is waiting on instead.",
-            )
-        }
+        refusalFor(userId, task)?.let { return notProposed(it) }
 
         return HireActionOutcome(
             toolResult = "Proposed to the hire: tick “${task.title}” off their checklist. They see a " +
@@ -93,6 +81,17 @@ class CompleteTaskAction(
                 onboardingTaskId = task.id,
             ),
         )
+    }
+
+    private fun refusalFor(userId: UUID, task: GetOnboardingTaskResponse): String? = when {
+        task.finished ->
+            "“${task.title}” is already ticked off. Tell them it is already done rather than " +
+                "offering it again."
+        // The task route does not check locks; the page does, by never opening a locked step.
+        myPathTool.findStep(userId, task.stepId)?.locked == true ->
+            "The step that “${task.title}” belongs to is locked, so nothing on its checklist can be " +
+                "ticked yet. Say what the step is waiting on instead."
+        else -> null
     }
 
     /**

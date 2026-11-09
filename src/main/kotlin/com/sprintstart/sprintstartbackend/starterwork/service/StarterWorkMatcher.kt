@@ -135,15 +135,38 @@ object StarterWorkMatcher {
      * @param task The task's features.
      * @param responsiveness The task repository's answering behaviour, or null when unknown.
      */
-    @Suppress("CyclomaticComplexMethod")
     fun score(
         profile: HireProfile,
         task: TaskFeatures,
         responsiveness: Responsiveness?,
     ): Score {
+        val matched = task.competencyKeys.intersect(profile.competencyKeys).sorted()
+        val reasons = positiveReasons(profile, task, matched)
+
+        val penalty = responsivenessPenalty(responsiveness)
+        val total = reasons.sumOf { it.first } -
+            penalty.first -
+            (if (task.reviewed) 0.0 else UNREVIEWED_PENALTY) -
+            (if (task.assigned) ASSIGNED_PENALTY else 0.0)
+
+        // Every signal owes a sentence, demotions included -- a score a hire cannot read is a
+        // number standing in for a reason.
+        val ordered = reasons.sortedByDescending { it.first }.map { it.second }.toMutableList()
+        penalty.second?.let { ordered += it }
+        if (!task.reviewed) ordered += "note: nobody has reviewed this task yet"
+        if (task.assigned) ordered += "note: somebody is already assigned to this one"
+
+        return Score(score = total, matchedCompetencyKeys = matched, reasons = ordered)
+    }
+
+    /** The signals that speak for a task, each with its weight and the sentence that explains it. */
+    private fun positiveReasons(
+        profile: HireProfile,
+        task: TaskFeatures,
+        matched: List<String>,
+    ): List<Pair<Double, String>> {
         val reasons = mutableListOf<Pair<Double, String>>()
 
-        val matched = task.competencyKeys.intersect(profile.competencyKeys).sorted()
         if (task.competencyKeys.isNotEmpty() && matched.isNotEmpty()) {
             val share = matched.size.toDouble() / task.competencyKeys.size
             reasons += COMPETENCY_WEIGHT * share to
@@ -166,29 +189,7 @@ object StarterWorkMatcher {
             reasons += LABEL_FAMILIARITY_WEIGHT to
                 "is labelled ${sharedLabels.joinToString(", ")}, like work you have done before"
         }
-
-        val penalty = responsivenessPenalty(responsiveness)
-        // Every signal owes a sentence, demotions included -- a score a hire cannot read is a
-        // number standing in for a reason.
-        val unreviewed = if (task.reviewed) {
-            null
-        } else {
-            "note: nobody has reviewed this task yet"
-        }
-
-        val assigned = if (task.assigned) "note: somebody is already assigned to this one" else null
-
-        val total = reasons.sumOf { it.first } -
-            penalty.first -
-            (if (task.reviewed) 0.0 else UNREVIEWED_PENALTY) -
-            (if (task.assigned) ASSIGNED_PENALTY else 0.0)
-
-        val ordered = reasons.sortedByDescending { it.first }.map { it.second }.toMutableList()
-        penalty.second?.let { ordered += it }
-        unreviewed?.let { ordered += it }
-        assigned?.let { ordered += it }
-
-        return Score(score = total, matchedCompetencyKeys = matched, reasons = ordered)
+        return reasons
     }
 
     /**

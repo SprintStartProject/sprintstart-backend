@@ -144,35 +144,7 @@ class GithubUpdatesService(
         applicationScope.launch {
             commitsService.verifyCommitSyncStatus(githubRepository, transactionId)
         }
-        applicationScope.launch {
-            issuesService.fetchAndIngestAllIssues(
-                githubRepository.id,
-                githubRepository.owner,
-                githubRepository.name,
-                transactionId,
-                false,
-                checkNotNull(githubRepository.snapshot).lastIssuesSyncAt,
-            )
-        }
-        applicationScope.launch {
-            pullRequestsService.fetchAndIngestAllPullRequests(
-                githubRepository.id,
-                githubRepository.owner,
-                githubRepository.name,
-                transactionId,
-                false,
-                checkNotNull(githubRepository.snapshot).lastPullRequestsSyncAt,
-            )
-        }
-        // Org metadata has no update management: this call aborts its fetch, which the ingestion run counts
-        // as success, so the run is unlocked.
-        applicationScope.launch {
-            githubOrgService.connectGithubOrgIfNecessary(
-                githubRepository.owner,
-                githubRepository.user.token,
-                transactionId,
-            )
-        }
+        launchTrackerFetches(githubRepository, transactionId, performUpdate = false)
     }
 
     /**
@@ -194,13 +166,31 @@ class GithubUpdatesService(
         applicationScope.launch {
             commitsService.fetchAndIngestCommits(githubRepository, transactionId)
         }
+        launchTrackerFetches(githubRepository, transactionId, performUpdate = true)
+
+        repoSnapshotRepository.updateSyncTimestamps(githubRepository.id, Instant.now())
+        githubRepository.connectionState = ConnectionState.UP_TO_DATE
+        repoConnectionRepository.save(githubRepository)
+    }
+
+    /**
+     * Launches the issue, pull request and organisation fetches of an update run.
+     *
+     * [performUpdate] is passed through to the issue and pull request fetches: false only checks
+     * whether there is anything to fetch.
+     */
+    private fun launchTrackerFetches(
+        githubRepository: GithubRepositoryConnection,
+        transaction: UUID,
+        performUpdate: Boolean,
+    ) {
         applicationScope.launch {
             issuesService.fetchAndIngestAllIssues(
                 githubRepository.id,
                 githubRepository.owner,
                 githubRepository.name,
-                transactionId,
-                true,
+                transaction,
+                performUpdate,
                 checkNotNull(githubRepository.snapshot).lastIssuesSyncAt,
             )
         }
@@ -209,8 +199,8 @@ class GithubUpdatesService(
                 githubRepository.id,
                 githubRepository.owner,
                 githubRepository.name,
-                transactionId,
-                true,
+                transaction,
+                performUpdate,
                 checkNotNull(githubRepository.snapshot).lastPullRequestsSyncAt,
             )
         }
@@ -220,12 +210,8 @@ class GithubUpdatesService(
             githubOrgService.connectGithubOrgIfNecessary(
                 githubRepository.owner,
                 githubRepository.user.token,
-                transactionId,
+                transaction,
             )
         }
-
-        repoSnapshotRepository.updateSyncTimestamps(githubRepository.id, Instant.now())
-        githubRepository.connectionState = ConnectionState.UP_TO_DATE
-        repoConnectionRepository.save(githubRepository)
     }
 }

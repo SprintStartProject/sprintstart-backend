@@ -118,3 +118,9 @@ value class FeedbackId(
 value class SourceId(
     val value: String,
 )
+
+/** One ingestion run, from the moment a connector starts it until it finishes or fails. */
+@JvmInline
+value class IngestionRunId(
+    val value: UUID,
+)

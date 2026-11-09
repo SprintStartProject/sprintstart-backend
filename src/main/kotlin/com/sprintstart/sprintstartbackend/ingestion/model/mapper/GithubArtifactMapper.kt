@@ -19,6 +19,7 @@ import com.sprintstart.sprintstartbackend.ingestion.util.sha256
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Component
 import java.time.Instant
+import java.util.UUID
 
 private const val GITHUB_COMMIT_MESSAGE_LENGTH = 72
 
@@ -62,18 +63,8 @@ class GithubArtifactMapper {
             artifactType = ArtifactType.COMMIT,
             title = event.msg.take(GITHUB_COMMIT_MESSAGE_LENGTH),
             bodyText = event.msg,
-            mime = null,
-            language = null,
             createdAtSource = event.date,
-            updatedAtSource = null,
-            hash = null,
-            metadata = GithubArtifactMetadata(
-                repositoryId = event.repositoryId,
-                repositoryFullName = buildRepositoryFullName(
-                    owner = event.repositoryOwner,
-                    name = event.repositoryName,
-                ),
-            ),
+            metadata = repositoryMetadata(event.repositoryId, event.repositoryOwner, event.repositoryName),
         )
     }
 
@@ -108,16 +99,8 @@ class GithubArtifactMapper {
             bodyText = event.content,
             mime = mime,
             language = language,
-            createdAtSource = null,
-            updatedAtSource = null,
             hash = hash,
-            metadata = GithubArtifactMetadata(
-                repositoryId = event.repositoryId,
-                repositoryFullName = buildRepositoryFullName(
-                    owner = event.repositoryOwner,
-                    name = event.repositoryName,
-                ),
-            ),
+            metadata = repositoryMetadata(event.repositoryId, event.repositoryOwner, event.repositoryName),
         )
     }
 
@@ -152,18 +135,9 @@ class GithubArtifactMapper {
             artifactType = ArtifactType.ISSUE,
             title = "Issue #${event.number} " + event.title,
             bodyText = event.body,
-            mime = null,
-            language = null,
             createdAtSource = Instant.parse(event.createdAt),
-            updatedAtSource = null,
             hash = hash,
-            metadata = GithubArtifactMetadata(
-                repositoryId = event.repositoryId,
-                repositoryFullName = buildRepositoryFullName(
-                    owner = event.repositoryOwner,
-                    name = event.repositoryName,
-                ),
-            ),
+            metadata = repositoryMetadata(event.repositoryId, event.repositoryOwner, event.repositoryName),
             state = event.state,
             labels = event.labels,
             authorLogin = event.author?.lowercase(),
@@ -191,18 +165,9 @@ class GithubArtifactMapper {
             artifactType = ArtifactType.PULL_REQUEST,
             title = "PR #${event.number} " + event.title,
             bodyText = event.body,
-            mime = null,
-            language = null,
             createdAtSource = Instant.parse(event.createdAt),
-            updatedAtSource = null,
             hash = null, // PRs are always re-ingested on updates
-            metadata = GithubArtifactMetadata(
-                repositoryId = event.repositoryId,
-                repositoryFullName = buildRepositoryFullName(
-                    owner = event.repositoryOwner,
-                    name = event.repositoryName,
-                ),
-            ),
+            metadata = repositoryMetadata(event.repositoryId, event.repositoryOwner, event.repositoryName),
             state = event.state,
             authorLogin = event.author?.lowercase(),
             mergedAtSource = event.mergedAt?.let(Instant::parse),
@@ -262,44 +227,34 @@ class GithubArtifactMapper {
             artifactType = ArtifactType.ORG_METADATA,
             title = event.name,
             bodyText = null,
-            mime = null,
-            language = null,
-            createdAtSource = null,
-            updatedAtSource = null,
-            hash = null,
-            metadata = GithubOrgMetadataArtifactMetadata(
-                login = event.login,
-                name = event.name,
-                description = event.description,
-                company = event.company,
-                blog = event.blog,
-                location = event.location,
-                email = event.email,
-                publicRepos = event.publicRepos,
-                privateRepos = event.privateRepos,
-                teams = event.teams?.map { team ->
-                    GithubOrgMetadataTeam(
-                        name = team.name,
-                        slug = team.slug,
-                        orgLogin = team.orgLogin,
-                        orgName = team.orgName,
-                        members = team.members.map { member ->
-                            GithubOrgMetadataTeamMember(
-                                login = member.login,
-                                name = member.name,
-                            )
-                        },
-                    )
-                },
-                members = event.members.map { member ->
-                    GithubOrgMetadataMember(
-                        login = member.login,
-                        url = member.url,
-                    )
-                },
-            ),
+            metadata = orgMetadata(event),
         )
     }
 
-    private fun buildRepositoryFullName(owner: String, name: String) = "$owner/$name"
+    private fun orgMetadata(event: GithubOrgMetadataFetchedEvent) = GithubOrgMetadataArtifactMetadata(
+        login = event.login,
+        name = event.name,
+        description = event.description,
+        company = event.company,
+        blog = event.blog,
+        location = event.location,
+        email = event.email,
+        publicRepos = event.publicRepos,
+        privateRepos = event.privateRepos,
+        teams = event.teams?.map { team ->
+            GithubOrgMetadataTeam(
+                name = team.name,
+                slug = team.slug,
+                orgLogin = team.orgLogin,
+                orgName = team.orgName,
+                members = team.members.map { member ->
+                    GithubOrgMetadataTeamMember(login = member.login, name = member.name)
+                },
+            )
+        },
+        members = event.members.map { member -> GithubOrgMetadataMember(login = member.login, url = member.url) },
+    )
+
+    private fun repositoryMetadata(repositoryId: UUID, owner: String, name: String) =
+        GithubArtifactMetadata(repositoryId = repositoryId, repositoryFullName = "$owner/$name")
 }

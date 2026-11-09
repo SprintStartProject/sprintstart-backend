@@ -10,4 +10,5 @@ class AiServiceException(
     val statusCode: Int,
     val body: String,
     message: String,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)

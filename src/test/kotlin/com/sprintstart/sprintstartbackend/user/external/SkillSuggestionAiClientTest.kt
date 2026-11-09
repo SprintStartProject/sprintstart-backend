@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
 import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
 import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
+import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import com.sprintstart.sprintstartbackend.user.external.model.SkillCatalogItemDto
 import com.sprintstart.sprintstartbackend.user.external.model.SkillSuggestionRequestDto
 import com.sprintstart.sprintstartbackend.user.model.exceptions.SkillSuggestionAiException
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.assertThrows
 import java.net.http.HttpClient
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SkillSuggestionAiClientTest {
@@ -132,5 +134,8 @@ class SkillSuggestionAiClientTest {
 
         assertEquals(503, ex.statusCode)
         assertTrue(ex.body.contains("LLM backend down"))
+        val cause = ex.cause
+        assertIs<WebClientException>(cause)
+        assertEquals(503, cause.statusCode)
     }
 }

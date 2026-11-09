@@ -5,7 +5,6 @@ import com.sprintstart.sprintstartbackend.path.model.response.path.GetOnboarding
 import com.sprintstart.sprintstartbackend.path.model.response.path.OnboardingSseEvent
 import com.sprintstart.sprintstartbackend.path.service.OnboardingGenerationRegistry
 import com.sprintstart.sprintstartbackend.path.service.OnboardingPathService
-import com.sprintstart.sprintstartbackend.path.service.OnboardingPersonalizationService
 import com.sprintstart.sprintstartbackend.path.service.onboardingProfileInProject
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.swagger.v3.oas.annotations.Operation
@@ -41,7 +40,6 @@ import java.util.UUID
 @Tag(name = "Onboarding - Paths", description = "Retrieve and delete onboarding paths at hierarchy depth 0")
 class OnboardingPathController(
     private val onboardingPathService: OnboardingPathService,
-    private val onboardingPersonalizationService: OnboardingPersonalizationService,
     private val userApi: UserApi,
 ) {
     /**
@@ -214,7 +212,6 @@ class OnboardingPathController(
     description = "Create onboarding paths from a specific project's blueprint",
 )
 class ProjectOnboardingPathController(
-    private val onboardingPersonalizationService: OnboardingPersonalizationService,
     private val onboardingGenerationRegistry: OnboardingGenerationRegistry,
     private val onboardingPathService: OnboardingPathService,
     private val userApi: UserApi,

@@ -14,7 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraIssue
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraIssueRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -126,19 +126,15 @@ internal class JiraIssueService(
         instance.status = ConnectionState.UPDATING
         instanceRepository.save(instance)
 
-        try {
+        reportingFailure(onFailure = {
+            instance.status = ConnectionState.FAILED
+            instanceRepository.save(instance)
+        }) {
             val newAndUpdatedIssues = fetchNewAndUpdatedIssues(instance.instanceUrl, transactionId)
 
             if (newAndUpdatedIssues.isNotEmpty()) {
                 processAndIngestIssues(instance, newAndUpdatedIssues, transactionId)
             }
-        } catch (e: CancellationException) {
-            // Never swallow cancellation: the update is abandoned, not failed.
-            throw e
-        } catch (e: Exception) {
-            instance.status = ConnectionState.FAILED
-            instanceRepository.save(instance)
-            throw e
         }
 
         instance.status = ConnectionState.UP_TO_DATE
@@ -192,13 +188,12 @@ internal class JiraIssueService(
         credentials: AtlassianCredentialSecret,
         jql: String,
         transactionId: UUID,
-    ): List<JiraIssueResponse>? = try {
-        jiraClient.searchIssues(instanceUrl, credentials, jql)
-    } catch (e: Exception) {
+    ): List<JiraIssueResponse>? = reportingFailure(onFailure = { e ->
         eventPublisher.publishEvent(
             JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instanceUrl),
         )
-        throw e
+    }) {
+        jiraClient.searchIssues(instanceUrl, credentials, jql)
     }
 
     /**
@@ -245,7 +240,11 @@ internal class JiraIssueService(
         issues: List<JiraIssueResponse>,
         transactionId: UUID,
     ) {
-        try {
+        reportingFailure(onFailure = { e ->
+            eventPublisher.publishEvent(
+                JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instance.instanceUrl),
+            )
+        }) {
             for (issue in issues) {
                 val issueEntity = JiraIssue(issue.id, instance)
                 issueRepository.save(issueEntity)
@@ -263,11 +262,6 @@ internal class JiraIssueService(
                     ),
                 )
             }
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                JiraResourceFetchingFailedEvent(transactionId, e.message ?: "Unknown error", instance.instanceUrl),
-            )
-            throw e
         }
     }
 

@@ -90,12 +90,7 @@ internal fun StringBuilder.appendQuestion(
     lastAnswer: String?,
 ) {
     val numbers = graph.numbers
-    val state = when (question.status) {
-        QuestionStatus.PASSED -> "passed"
-        QuestionStatus.RETRY -> "answered wrong before, still open"
-        QuestionStatus.LOCKED -> "LOCKED, cannot be answered yet"
-        QuestionStatus.OPEN -> "open"
-    }
+    val state = questionState(question.status)
     appendLine(
         "- #${numbers[question.id]} [$state] ${quoted(question.question)} (${question.type}) " +
             "[question_id: ${question.id}] [link: $QUESTION_LINK${question.id}]",
@@ -111,31 +106,7 @@ internal fun StringBuilder.appendQuestion(
         )
     }
     appendEdges(question.id, question.status == QuestionStatus.LOCKED, question.blockerIds, graph)
-    // A wrong answer is the clearest signal on the whole path that a step did not land. Teaching
-    // the material in the conversation comes first; a refresher step is for when what they
-    // missed is more than one explanation, so it is still there tomorrow.
-    if (question.status == QuestionStatus.RETRY) {
-        // What they actually said, so the tutoring can start from what did not land rather than
-        // from the whole of the material. Their own answer, never the correct one.
-        lastAnswer?.let {
-            appendLine(
-                "    · their last answer, which was not right: ${quoted(it)}. Start from what it " +
-                    "shows they understood and where it went wrong -- without saying what the " +
-                    "right answer is.",
-            )
-        }
-        // Placed before the question, so the refresher is what opens it, and after what the
-        // question waits on now -- or, when that is nothing, after where the hire is. The same
-        // inference the action applies, spelled out so the mentor passes both halves.
-        val waitsOn = PathStepPlacement.inferred(phase, emptySet(), setOf(question.id)).waitsOn.joinToString(", ")
-        appendLine(
-            "    · they got this wrong before, so the material behind it did not land. Go through it " +
-                "with them first. If what they missed is bigger than one explanation, offer " +
-                "add_path_step for one short refresher step in this phase [phase_id: ${phase.id}] " +
-                "that says what to revisit and where -- never the answer. Put it in front of this " +
-                "question: unlocks = [${question.id}], waits_on = [$waitsOn].",
-        )
-    }
+    if (question.status == QuestionStatus.RETRY) appendRetryAdvice(question, phase, lastAnswer)
 }
 
 /**
@@ -168,4 +139,46 @@ internal fun StringBuilder.appendEdges(
     }
     val opens = graph.opens[id].orEmpty().mapNotNull { next -> graph.numbers[next]?.let { "#$it" } }
     if (opens.isNotEmpty()) appendLine("    · opens: ${opens.joinToString(", ")}")
+}
+
+private fun questionState(status: QuestionStatus): String =
+    when (status) {
+        QuestionStatus.PASSED -> "passed"
+        QuestionStatus.RETRY -> "answered wrong before, still open"
+        QuestionStatus.LOCKED -> "LOCKED, cannot be answered yet"
+        QuestionStatus.OPEN -> "open"
+    }
+
+/**
+ * What the mentor is told about a question the hire got wrong.
+ *
+ * A wrong answer is the clearest signal on the whole path that a step did not land. Teaching the
+ * material in the conversation comes first; a refresher step is for when what they missed is more
+ * than one explanation, so it is still there tomorrow.
+ */
+private fun StringBuilder.appendRetryAdvice(
+    question: GetOnboardingQuestionForUserResponse,
+    phase: GetOnboardingPhaseForUserResponse,
+    lastAnswer: String?,
+) {
+    // What they actually said, so the tutoring can start from what did not land rather than
+    // from the whole of the material. Their own answer, never the correct one.
+    lastAnswer?.let {
+        appendLine(
+            "    · their last answer, which was not right: ${quoted(it)}. Start from what it " +
+                "shows they understood and where it went wrong -- without saying what the " +
+                "right answer is.",
+        )
+    }
+    // Placed before the question, so the refresher is what opens it, and after what the
+    // question waits on now -- or, when that is nothing, after where the hire is. The same
+    // inference the action applies, spelled out so the mentor passes both halves.
+    val waitsOn = PathStepPlacement.inferred(phase, emptySet(), setOf(question.id)).waitsOn.joinToString(", ")
+    appendLine(
+        "    · they got this wrong before, so the material behind it did not land. Go through it " +
+            "with them first. If what they missed is bigger than one explanation, offer " +
+            "add_path_step for one short refresher step in this phase [phase_id: ${phase.id}] " +
+            "that says what to revisit and where -- never the answer. Put it in front of this " +
+            "question: unlocks = [${question.id}], waits_on = [$waitsOn].",
+    )
 }

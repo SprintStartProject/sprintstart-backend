@@ -73,6 +73,14 @@ class MyPathToolTest {
     }
 
     @Test
+    fun `the read tool takes no arguments`() {
+        val parameters = tools.spec.parameters.toString()
+
+        assertThat(parameters).contains("\"type\":\"object\"")
+        assertThat(parameters).contains("\"properties\":{}")
+    }
+
+    @Test
     fun `the greeting says nothing at all about a path that does not exist`() {
         every { onboardingPathService.findPathForUserId(userId) } returns null
 

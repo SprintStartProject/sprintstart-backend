@@ -56,34 +56,7 @@ class RunArtifactsIngestionService(
      */
     @Tracked("Dispatching AI sync for run")
     suspend fun ingestRunArtifacts(runId: UUID) {
-        val request = withContext(ioDispatcher) {
-            readTxTemplate.execute { _ ->
-                val run = ingestionRunRepository
-                    .findWithAiSyncArtifactIdsById(runId)
-                    .getOrElse { throw IngestionRunNotFoundException(runId) }
-
-                val storedByThisRun = artifactRepository.findAllByIngestionRunId(runId)
-                // Artifacts an earlier run stored and this one changed point at that run, so the query above
-                // cannot see them.
-                val alreadyListed = storedByThisRun.mapTo(mutableSetOf()) { it.id }
-                val touchedAgain = artifactRepository.findAllById(
-                    run.artifactIdsToReingest.filterNot { it in alreadyListed },
-                )
-
-                val artifactsToIngest = storedByThisRun + touchedAgain
-                val artifactsToDeindex = run.artifactIdsToDeindex
-
-                if (artifactsToIngest.isEmpty() && artifactsToDeindex.isEmpty()) {
-                    logger.info("Run {} has nothing for AI to sync, skipping", runId)
-                    return@execute null
-                }
-
-                RunArtifactsAiSyncRequest(
-                    artifactsToIngest = artifactsToIngest.map { artifactAiMapper.toIngestRequest(it) },
-                    artifactsToDeindex = artifactsToDeindex,
-                )
-            }
-        } ?: return
+        val request = withContext(ioDispatcher) { readTxTemplate.execute { _ -> requestFor(runId) } } ?: return
 
         logger.info(
             "Dispatching AI sync for run {}: {} to ingest, {} to deindex",
@@ -94,6 +67,33 @@ class RunArtifactsIngestionService(
         val response = artifactIngestionClient.ingest(request)
         requireEveryEntrySucceeded(runId, response)
         logger.info("AI sync confirmed for run {}", runId)
+    }
+
+    private fun requestFor(target: UUID): RunArtifactsAiSyncRequest? {
+        val run = ingestionRunRepository
+            .findWithAiSyncArtifactIdsById(target)
+            .getOrElse { throw IngestionRunNotFoundException(target) }
+
+        val storedByThisRun = artifactRepository.findAllByIngestionRunId(target)
+        // Artifacts an earlier run stored and this one changed point at that run, so the query above
+        // cannot see them.
+        val alreadyListed = storedByThisRun.mapTo(mutableSetOf()) { it.id }
+        val touchedAgain = artifactRepository.findAllById(
+            run.artifactIdsToReingest.filterNot { it in alreadyListed },
+        )
+
+        val artifactsToIngest = storedByThisRun + touchedAgain
+        val artifactsToDeindex = run.artifactIdsToDeindex
+
+        if (artifactsToIngest.isEmpty() && artifactsToDeindex.isEmpty()) {
+            logger.info("Run {} has nothing for AI to sync, skipping", target)
+            return null
+        }
+
+        return RunArtifactsAiSyncRequest(
+            artifactsToIngest = artifactsToIngest.map { artifactAiMapper.toIngestRequest(it) },
+            artifactsToDeindex = artifactsToDeindex,
+        )
     }
 
     /**

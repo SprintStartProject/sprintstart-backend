@@ -23,6 +23,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanc
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -213,29 +214,10 @@ internal class JiraService(
             throw JiraInstanceUnavailableException(request.url)
         }
 
-        val projects = try {
-            jiraClient.searchProjects(request.url, credentials)
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                JiraInstanceConnectionInitiationFailedEvent(transactionId, e.message ?: "Unknown error", request.url),
-            )
-            throw e
-        }
-
+        val projects = searchProjects(request, credentials, transactionId)
         requireAccessibleProjects(projects, transactionId, request.url)
 
-        val projectKeys = projects.map { it.key }
-        val instance = JiraInstance(
-            instanceUrl = request.url,
-            displayName = request.displayName,
-            lastUpdate = Instant.now(),
-            projectIds = mutableSetOf(request.projectId),
-            jiraProjectKeys = projectKeys.toMutableSet(),
-            status = ConnectionState.UP_TO_DATE,
-            updateCredentialName = request.tokenName,
-            updateCredentialUserEmail = credentials.userEmail,
-            updateCredentialAuthId = authId,
-        )
+        val instance = newInstance(request, credentials, authId, projects.map { it.key })
         val config = JiraInstanceConfig(instance = instance)
         config.nextSyncAt = jiraInstanceConfigService.calculateNextSyncAt(config.schedule)
 
@@ -252,6 +234,18 @@ internal class JiraService(
         }
 
         return transactionId
+    }
+
+    private suspend fun searchProjects(
+        request: ConnectJiraInstanceRequest,
+        credentials: AtlassianCredentialSecret,
+        transaction: UUID,
+    ) = reportingFailure(onFailure = { e ->
+        eventPublisher.publishEvent(
+            JiraInstanceConnectionInitiationFailedEvent(transaction, e.message ?: "Unknown error", request.url),
+        )
+    }) {
+        jiraClient.searchProjects(request.url, credentials)
     }
 
     /**
@@ -303,3 +297,20 @@ internal class JiraService(
         throw JiraNoAccessibleProjectsException(url)
     }
 }
+
+private fun newInstance(
+    request: ConnectJiraInstanceRequest,
+    credentials: AtlassianCredentialSecret,
+    subject: String,
+    projectKeys: List<String>,
+) = JiraInstance(
+    instanceUrl = request.url,
+    displayName = request.displayName,
+    lastUpdate = Instant.now(),
+    projectIds = mutableSetOf(request.projectId),
+    jiraProjectKeys = projectKeys.toMutableSet(),
+    status = ConnectionState.UP_TO_DATE,
+    updateCredentialName = request.tokenName,
+    updateCredentialUserEmail = credentials.userEmail,
+    updateCredentialAuthId = subject,
+)

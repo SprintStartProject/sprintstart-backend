@@ -285,9 +285,7 @@ class BuddyController(
                 jwt.subject,
                 request.sessionId,
                 request.content,
-                request.capabilitiesEnabled,
-                request.filters,
-                request.currentPage,
+                request.turnOptions(),
             )
         } else {
             teamMode.send(AuthId(jwt.subject), ProjectId(teamProjectId), request)

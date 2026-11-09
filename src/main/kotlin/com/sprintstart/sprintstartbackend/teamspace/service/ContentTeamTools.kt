@@ -14,7 +14,10 @@ import com.sprintstart.sprintstartbackend.path.external.StepAuthoringApi
 import com.sprintstart.sprintstartbackend.path.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.path.external.model.PathElementKind
+import com.sprintstart.sprintstartbackend.path.model.response.path.GetOnboardingPathForUserResponse
+import com.sprintstart.sprintstartbackend.path.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.path.model.response.question.QuestionForAdminResponse
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.shared.ids.PhaseId
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import com.sprintstart.sprintstartbackend.shared.ids.StarterWorkTaskId
@@ -119,34 +122,39 @@ class ContentTeamTools(
         return buildString {
             appendLine("${owner.displayName}'s onboarding path:")
             scope.sharedNote(owner, projectId).takeIf { it.isNotEmpty() }?.let { appendLine(it) }
-            path.phases.sortedBy { it.position }.forEach { phase ->
-                appendLine()
-                appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]")
-                phase.description.takeIf { it.isNotBlank() }?.let { appendLine("  ${it.short()}") }
-                stepAuthoringApi.stepsOf(PhaseId(phase.id)).sortedBy { it.position }.forEach { step ->
-                    appendLine(
-                        "  Step ${step.position + 1}: ${step.title} [step_id: ${step.id}] — " +
-                            "${step.type.name.lowercase()}, ${step.estimatedMinutes} min, ${step.status.said()}",
-                    )
-                    step.description.takeIf { it.isNotBlank() }?.let { appendLine("    ${it.short()}") }
-                    step.tasks.sortedBy { it.position }.forEach { task ->
-                        appendLine("    - [${if (task.finished) "x" else " "}] ${task.title} [task_id: ${task.id}]")
-                    }
-                    step.resources.forEach { resource ->
-                        appendLine("    - link: ${resource.title} <${resource.url}> [resource_id: ${resource.id}]")
-                    }
-                }
-            }
-            if (path.generationIssues.isNotEmpty()) {
-                appendLine()
-                appendLine("Not shown to them, because generating them produced nothing usable:")
-                path.generationIssues.forEach {
-                    appendLine(
-                        "- ${it.title} [phase_id: ${it.phaseId}] (${it.status.name.lowercase().replace('_', ' ')})",
-                    )
-                }
-            }
+            path.phases.sortedBy { it.position }.forEach { appendPhase(it) }
+            appendGenerationIssues(path)
         }.trim()
+    }
+
+    private fun StringBuilder.appendPhase(phase: GetOnboardingPhaseForUserResponse) {
+        appendLine()
+        appendLine("Phase ${phase.position + 1}: ${phase.title} [phase_id: ${phase.id}]")
+        phase.description.takeIf { it.isNotBlank() }?.let { appendLine("  ${it.short()}") }
+        stepAuthoringApi.stepsOf(PhaseId(phase.id)).sortedBy { it.position }.forEach { appendStep(it) }
+    }
+
+    private fun StringBuilder.appendStep(step: GetOnboardingStepResponse) {
+        appendLine(
+            "  Step ${step.position + 1}: ${step.title} [step_id: ${step.id}] — " +
+                "${step.type.name.lowercase()}, ${step.estimatedMinutes} min, ${step.status.said()}",
+        )
+        step.description.takeIf { it.isNotBlank() }?.let { appendLine("    ${it.short()}") }
+        step.tasks.sortedBy { it.position }.forEach { task ->
+            appendLine("    - [${if (task.finished) "x" else " "}] ${task.title} [task_id: ${task.id}]")
+        }
+        step.resources.forEach { resource ->
+            appendLine("    - link: ${resource.title} <${resource.url}> [resource_id: ${resource.id}]")
+        }
+    }
+
+    private fun StringBuilder.appendGenerationIssues(path: GetOnboardingPathForUserResponse) {
+        if (path.generationIssues.isEmpty()) return
+        appendLine()
+        appendLine("Not shown to them, because generating them produced nothing usable:")
+        path.generationIssues.forEach {
+            appendLine("- ${it.title} [phase_id: ${it.phaseId}] (${it.status.name.lowercase().replace('_', ' ')})")
+        }
     }
 
     /** Requests to skip a step that nobody has answered, from members of this project only. */

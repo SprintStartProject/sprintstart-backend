@@ -53,25 +53,28 @@ internal suspend fun FlowCollector<BuddyStreamEvent>.relayAgentTurn(
                 emitToken(it, emittedContent)
             }
 
-            BuddyAgentStreamEvent.TOOL_USE ->
-                emit(toolUseEvent(event.name))
+            BuddyAgentStreamEvent.TOOL_USE -> emit(toolUseEvent(event.name))
 
             BuddyAgentStreamEvent.RESULT -> result = event.toResponse()
 
-            BuddyAgentStreamEvent.ERROR -> throw AiServiceException(
-                HttpStatus.SERVICE_UNAVAILABLE.value(),
-                event.message.orEmpty(),
-                "The AI service failed the buddy turn: ${event.message}",
-            )
+            BuddyAgentStreamEvent.ERROR -> throw turnFailed(event)
         }
     }
 
-    return result ?: throw AiServiceException(
-        HttpStatus.BAD_GATEWAY.value(),
-        "",
-        "The AI service ended the buddy turn without a result.",
-    )
+    return result ?: throw turnEndedWithoutResult()
 }
+
+private fun turnFailed(event: BuddyAgentStreamEvent) = AiServiceException(
+    HttpStatus.SERVICE_UNAVAILABLE.value(),
+    event.message.orEmpty(),
+    "The AI service failed the buddy turn: ${event.message}",
+)
+
+private fun turnEndedWithoutResult() = AiServiceException(
+    HttpStatus.BAD_GATEWAY.value(),
+    "",
+    "The AI service ended the buddy turn without a result.",
+)
 
 /**
  * Ends a turn that failed part-way with an `error` event instead of a broken connection.

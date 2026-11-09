@@ -313,6 +313,58 @@ class BitbucketPullRequestsServiceTest {
         }
     }
 
+    @Test
+    fun `carries participants and comments to the event, also when Bitbucket does not name their user`() = runTest {
+        val anonymous = PullRequest(
+            id = 8,
+            title = "Anonymous review",
+            state = "OPEN",
+            author = null,
+            createdOn = "2026-03-01T10:00:00Z",
+            updatedOn = "2026-03-02T10:00:00Z",
+            description = null,
+            closedOn = null,
+            mergeCommit = null,
+            participants = listOf(
+                BitbucketParticipant(role = "REVIEWER", approved = true, participatedOn = "2026-03-02T09:00:00Z"),
+                BitbucketParticipant(
+                    user = BitbucketAccount(accountId = "acc-2", nickname = "grace", displayName = "Grace Hopper"),
+                    role = "PARTICIPANT",
+                    state = "changes_requested",
+                ),
+            ),
+        )
+        val named = PullRequestComment(
+            id = 1,
+            createdOn = "2026-03-02T11:00:00Z",
+            updatedOn = "2026-03-02T12:00:00Z",
+            content = BitbucketCommentContent(raw = "looks fine"),
+            user = BitbucketAccount(accountId = "acc-2", nickname = "grace", displayName = "Grace Hopper"),
+        )
+        val nameless = PullRequestComment(id = 2, createdOn = "2026-03-02T13:00:00Z", deleted = true)
+        givenFetchSucceeds(pullRequests = listOf(anonymous), comments = listOf(named, nameless))
+
+        service.fetchAndIngestPullRequests(connection.id, transactionId)
+
+        val event = slot<BitbucketPullRequestFetchedEvent>()
+        verify { eventPublisher.publishEvent(capture(event)) }
+        val participants = event.captured.participants
+        assertThat(participants.map { it.authorId }).containsExactly(null, "acc-2")
+        assertThat(participants.map { it.nickname }).containsExactly(null, "grace")
+        assertThat(participants.map { it.displayName }).containsExactly(null, "Grace Hopper")
+        assertThat(participants.map { it.role }).containsExactly("REVIEWER", "PARTICIPANT")
+        assertThat(participants.map { it.approved }).containsExactly(true, false)
+        assertThat(participants.map { it.state }).containsExactly(null, "changes_requested")
+        val comments = event.captured.comments
+        assertThat(comments.map { it.content }).containsExactly("looks fine", null)
+        assertThat(comments.map { it.authorId }).containsExactly("acc-2", null)
+        assertThat(comments.map { it.nickname }).containsExactly("grace", null)
+        assertThat(comments.map { it.displayName }).containsExactly("Grace Hopper", null)
+        assertThat(comments.map { it.updatedOn }).containsExactly("2026-03-02T12:00:00Z", null)
+        assertThat(comments.map { it.deleted }).containsExactly(false, true)
+        assertThat(event.captured.sourceUrl).isEqualTo("Unknown")
+    }
+
     private fun pullRequest(id: Int = 7, url: String? = null) = PullRequest(
         id = id,
         title = "Add onboarding path",

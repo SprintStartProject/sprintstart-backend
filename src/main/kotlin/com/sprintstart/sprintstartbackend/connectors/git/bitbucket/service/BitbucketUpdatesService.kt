@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.inter
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -168,22 +169,7 @@ internal class BitbucketUpdatesService(
             ),
         )
 
-        try {
-            connectionStateService.markUpdating(connection.id)
-        } catch (e: Exception) {
-            // Accepted but never started: without this the run would sit open forever, because no
-            // collector is launched and so no per-collector terminal event will ever arrive.
-            eventPublisher.publishEvent(
-                BitbucketRepositoryUpdateFailedEvent(
-                    transactionId = transactionId,
-                    repositoryId = connection.id,
-                    workspace = connection.workspace,
-                    slug = connection.slug,
-                    reason = e.message ?: "Unknown error",
-                ),
-            )
-            throw e
-        }
+        startUpdating(connection, transactionId)
 
         applicationScope.launch {
             val collectors = buildCollectors(connection, transactionId)
@@ -191,6 +177,24 @@ internal class BitbucketUpdatesService(
         }
 
         return transactionId
+    }
+
+    private fun startUpdating(connection: BitbucketConnection, transaction: UUID) {
+        // Accepted but never started: without this the run would sit open forever, because no
+        // collector is launched and so no per-collector terminal event will ever arrive.
+        reportingFailure(onFailure = { e ->
+            eventPublisher.publishEvent(
+                BitbucketRepositoryUpdateFailedEvent(
+                    transactionId = transaction,
+                    repositoryId = connection.id,
+                    workspace = connection.workspace,
+                    slug = connection.slug,
+                    reason = e.message ?: "Unknown error",
+                ),
+            )
+        }) {
+            connectionStateService.markUpdating(connection.id)
+        }
     }
 
     /**

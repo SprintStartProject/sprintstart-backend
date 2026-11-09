@@ -39,37 +39,38 @@ class UploadArtifactProviderService(
      */
     @Transactional
     fun persistArtifact(command: UploadArtifactCommand) {
-        val runId = command.ingestionRunId
-        val projectId = command.projectId
-
-        var artifact = artifactRepository.findBySourceId(command.sourceId)
+        val artifact = artifactRepository.findBySourceId(command.sourceId)
         if (artifact != null) {
-            val linked = artifact.addProjectId(projectId)
-            val contentChanged = artifact.hash != command.hash
-            if (contentChanged) {
-                artifact.content = command.content
-                artifact.hash = command.hash
-                artifact.lastChangedAt = Instant.now()
-            }
-            if (linked || contentChanged) {
-                val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
-                    IngestionRunNotFoundException(command.ingestionRunId)
-                }
-                if (contentChanged) ingestionRun.updatedCount++
-                // Stored by an earlier run, so the AI sync would otherwise never see this change.
-                ingestionRun.artifactIdsToReingest.add(artifact.id)
-            }
-            return
+            updateExisting(artifact, command)
+        } else {
+            createNew(command)
         }
-        val ingestionRun = ingestionRunRepository.findByIdForUpdate(command.ingestionRunId).orElseThrow {
-            IngestionRunNotFoundException(command.ingestionRunId)
+    }
+
+    private fun updateExisting(artifact: Artifact, command: UploadArtifactCommand) {
+        val linked = artifact.addProjectId(command.projectId)
+        val contentChanged = artifact.hash != command.hash
+        if (contentChanged) {
+            artifact.content = command.content
+            artifact.hash = command.hash
+            artifact.lastChangedAt = Instant.now()
         }
+        if (linked || contentChanged) {
+            val ingestionRun = lockedRun(command.ingestionRunId)
+            if (contentChanged) ingestionRun.updatedCount++
+            // The artifact belongs to the run that stored it, so the AI sync would otherwise miss this change.
+            ingestionRun.artifactIdsToReingest.add(artifact.id)
+        }
+    }
+
+    private fun createNew(command: UploadArtifactCommand) {
+        val ingestionRun = lockedRun(command.ingestionRunId)
         val targetId = try {
             UUID.fromString(command.sourceId)
         } catch (_: IllegalArgumentException) {
             UUID.randomUUID()
         }
-        artifact = Artifact(
+        val artifact = Artifact(
             id = targetId,
             sourceSystem = command.sourceSystem,
             sourceId = command.sourceId,
@@ -79,7 +80,7 @@ class UploadArtifactProviderService(
             content = command.content,
             mime = command.mime,
             language = command.language,
-            projectIdsInternal = mutableSetOf(projectId),
+            projectIdsInternal = mutableSetOf(command.projectId),
             ingestionRun = ingestionRun,
             hash = command.hash,
             createdAtSource = null,
@@ -87,6 +88,10 @@ class UploadArtifactProviderService(
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
+    }
+
+    private fun lockedRun(run: UUID) = ingestionRunRepository.findByIdForUpdate(run).orElseThrow {
+        IngestionRunNotFoundException(run)
     }
 
     /**

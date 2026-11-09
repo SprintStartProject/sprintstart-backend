@@ -151,22 +151,23 @@ class PathElements(
 
     /** What removing [steps] removes beneath them, in words, or empty when it is nothing. */
     private fun containedIn(steps: List<OnboardingStep>, checks: Int, includeSteps: Boolean = true): String {
-        val parts = buildList {
-            if (includeSteps && steps.isNotEmpty()) add(counted(steps.size, "step"))
-            steps.sumOf { it.tasks.size }.takeIf { it > 0 }?.let { add(counted(it, "task")) }
-            steps.sumOf { it.resources.size }.takeIf { it > 0 }?.let { add(counted(it, "resource")) }
-            steps.sumOf { it.skips.size }.takeIf { it > 0 }?.let { add(counted(it, "skip request")) }
-            steps.sumOf { it.feedback.size }.takeIf { it > 0 }?.let {
-                add(counted(it, "piece of feedback", "pieces of feedback"))
-            }
-            if (checks > 0) add(counted(checks, "knowledge-check question"))
-        }
+        val parts = listOfNotNull(
+            counted(steps.size, "step").takeIf { includeSteps && steps.isNotEmpty() },
+            countedIfAny(steps.sumOf { it.tasks.size }, "task"),
+            countedIfAny(steps.sumOf { it.resources.size }, "resource"),
+            countedIfAny(steps.sumOf { it.skips.size }, "skip request"),
+            countedIfAny(steps.sumOf { it.feedback.size }, "piece of feedback", "pieces of feedback"),
+            countedIfAny(checks, "knowledge-check question"),
+        )
         return when (parts.size) {
             0 -> ""
             1 -> parts.single()
             else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
         }
     }
+
+    private fun countedIfAny(count: Int, singular: String, plural: String = "${singular}s"): String? =
+        counted(count, singular, plural).takeIf { count > 0 }
 
     private fun counted(count: Int, singular: String, plural: String = "${singular}s"): String =
         "$count ${if (count == 1) singular else plural}"

@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
 import com.sprintstart.sprintstartbackend.board.assistant.boardActionsOver
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardActor
+import com.sprintstart.sprintstartbackend.board.external.model.HireBoard
 import com.sprintstart.sprintstartbackend.board.model.request.board.AuthoredCardRequest
 import com.sprintstart.sprintstartbackend.board.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.board.model.request.board.NoteCardRequest
@@ -396,7 +397,7 @@ class BuddyBoardWritesTest {
 
         assertThat(outcome.proposal?.lineBefore).isEqualTo("Fix it")
         assertThat(outcome.proposal?.lineAfter).isEqualTo("Fix the redirect so it keeps the query string")
-        verify(exactly = 0) { boardService.rewordChecklistItem(any(), any(), any(), any(), any()) }
+        verify(exactly = 0) { boardService.rewordChecklistItem(any(), any(), any(), any()) }
     }
 
     @Test
@@ -414,7 +415,12 @@ class BuddyBoardWritesTest {
         onOneProject()
         val cardId = UUID.randomUUID()
         every {
-            boardService.rewordChecklistItem(UserId(userId), project, BoardCardId(cardId), "Fix it", "Fix the redirect")
+            boardService.rewordChecklistItem(
+                HireBoard(UserId(userId), project),
+                BoardCardId(cardId),
+                "Fix it",
+                "Fix the redirect",
+            )
         } returns true
 
         val result = service.perform(
@@ -436,7 +442,7 @@ class BuddyBoardWritesTest {
     fun `an ambiguous or missing line comes back as nothing changed`() = runTest {
         asHire()
         onOneProject()
-        every { boardService.rewordChecklistItem(any(), any(), any(), any(), any()) } returns false
+        every { boardService.rewordChecklistItem(any(), any(), any(), any()) } returns false
 
         val result = service.perform(
             HireActionRequest(

@@ -370,6 +370,118 @@ class ArrivalStepServiceTest {
         verify(exactly = 0) { arrivalStepStateRepository.deleteAll(any()) }
     }
 
+    @Test
+    fun `deleting a definition removes it from its scope`() {
+        val existing = step("badge")
+        every { arrivalStepRepository.findByKeyAndProjectIdIsNull("badge") } returns existing
+        every { arrivalStepRepository.delete(existing) } returns Unit
+
+        service.delete("badge", null)
+
+        verify(exactly = 1) { arrivalStepRepository.delete(existing) }
+    }
+
+    @Test
+    fun `deleting a step that is not in the scope is a 404`() {
+        every { arrivalStepRepository.findByKeyAndProjectId("badge", projectId) } returns null
+
+        val error = assertThrows(ResponseStatusException::class.java) { service.delete("badge", projectId) }
+
+        assertEquals(HttpStatus.NOT_FOUND, error.statusCode)
+    }
+
+    @Test
+    fun `an update changes only what it names and trims it`() {
+        val existing = step("vpn", title = "VPN", position = 3)
+        existing.href = "https://old"
+        every { arrivalStepRepository.findByKeyAndProjectIdIsNull("vpn") } returns existing
+        every { arrivalStepRepository.save(existing) } returns existing
+
+        val updated = service.update("vpn", null, "  Company VPN ", " Set it up ", "  ", 1, Rigor.OBSERVED)
+
+        assertEquals("Company VPN", updated.title)
+        assertEquals("Set it up", updated.description)
+        assertNull(updated.href, "a blank link clears it")
+        assertEquals(1, updated.position)
+        assertEquals(Rigor.OBSERVED, updated.settledBy)
+    }
+
+    @Test
+    fun `an update that names nothing leaves the step as it was`() {
+        val existing = step("vpn", title = "VPN", position = 3)
+        existing.href = "https://old"
+        every { arrivalStepRepository.findByKeyAndProjectIdIsNull("vpn") } returns existing
+        every { arrivalStepRepository.save(existing) } returns existing
+
+        val updated = service.update("vpn", null, null, null, null, null, null)
+
+        assertEquals("VPN", updated.title)
+        assertEquals("https://old", updated.href)
+        assertEquals(3, updated.position)
+        assertEquals(Rigor.DECLARED, updated.settledBy)
+    }
+
+    @Test
+    fun `an update to a blank title is rejected`() {
+        every { arrivalStepRepository.findByKeyAndProjectIdIsNull("vpn") } returns step("vpn")
+
+        val error = assertThrows(ResponseStatusException::class.java) {
+            service.update("vpn", null, "  ", null, null, null, null)
+        }
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.statusCode)
+    }
+
+    @Test
+    fun `reordering numbers the steps in the order given`() {
+        val vpn = step("vpn", position = 0)
+        val badge = step("badge", position = 1)
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(vpn, badge)
+        every { arrivalStepRepository.saveAll(any<Iterable<ArrivalStep>>()) } answers {
+            firstArg<Iterable<ArrivalStep>>().toList()
+        }
+
+        val ordered = service.reorder(projectId, listOf("badge", "vpn"))
+
+        assertEquals(listOf("badge", "vpn"), ordered.map { it.key })
+        assertEquals(0, badge.position)
+        assertEquals(1, vpn.position)
+    }
+
+    @Test
+    fun `reordering with a key that is not in the scope is a 404`() {
+        every { arrivalStepRepository.findAllByProjectIdInOrderByPositionAsc(listOf(projectId)) } returns
+            listOf(step("vpn"))
+
+        val error = assertThrows(ResponseStatusException::class.java) {
+            service.reorder(projectId, listOf("vpn", "ghost"))
+        }
+
+        assertEquals(HttpStatus.NOT_FOUND, error.statusCode)
+    }
+
+    @Test
+    fun `the caller's steps are resolved from their auth id`() {
+        every { arrivalStepRepository.findAllByProjectIdIsNullOrderByPositionAsc() } returns listOf(step("vpn"))
+
+        assertEquals(listOf("vpn"), service.forCaller("auth-subject").map { it.step.key })
+    }
+
+    @Test
+    fun `an unknown caller is a 404`() {
+        every { userApi.getUserIdByAuthId("ghost") } returns Optional.empty()
+
+        val error = assertThrows(ResponseStatusException::class.java) { service.forCaller("ghost") }
+
+        assertEquals(HttpStatus.NOT_FOUND, error.statusCode)
+    }
+
+    @Test
+    fun `a hire's projects are the ones they are on`() {
+        assertEquals(listOf(projectId), service.projectsFor(hireId))
+    }
+
     /**
      * A reader of one project must see the company steps that apply there, even when another of
      * the hire's projects overrides one of them. Filtering [ArrivalStepService.forHire] down to one

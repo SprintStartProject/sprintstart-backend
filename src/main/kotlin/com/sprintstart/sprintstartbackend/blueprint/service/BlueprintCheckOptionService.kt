@@ -252,28 +252,22 @@ class BlueprintCheckOptionService(
         }
 
         val oldPosition = option.position
-        var optionsToShift: MutableList<BlueprintCheckOption> = mutableListOf()
-
-        if (oldPosition < newPosition) {
-            optionsToShift = blueprintCheckOptionRepository
-                .findAllByBlueprintCheckQuestionIdAndPositionBetween(
-                    option.blueprintCheckQuestion.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            optionsToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            optionsToShift = blueprintCheckOptionRepository
-                .findAllByBlueprintCheckQuestionIdAndPositionBetween(
-                    option.blueprintCheckQuestion.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            optionsToShift.forEach { it.position += 1 }
+        val optionsToShift: MutableList<BlueprintCheckOption> = when {
+            oldPosition < newPosition ->
+                blueprintCheckOptionRepository
+                    .findAllByBlueprintCheckQuestionIdAndPositionBetween(
+                        option.blueprintCheckQuestion.id,
+                        oldPosition + 1,
+                        newPosition,
+                    ).also { list -> list.forEach { it.position -= 1 } }
+            oldPosition > newPosition ->
+                blueprintCheckOptionRepository
+                    .findAllByBlueprintCheckQuestionIdAndPositionBetween(
+                        option.blueprintCheckQuestion.id,
+                        newPosition,
+                        oldPosition - 1,
+                    ).also { list -> list.forEach { it.position += 1 } }
+            else -> mutableListOf()
         }
 
         return optionsToShift

@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -43,13 +44,13 @@ class IngestionEventListener(
         event: RunFinishedEvent,
     ) {
         applicationScope.launch {
-            try {
+            recovering(fallback = { e ->
+                logger.error("AI sync failed for ingestion run {}", event.runId, e)
+                ingestionRunLifeCycleService.markAiSyncFailed(event.runId, e.message)
+            }) {
                 runArtifactsIngestionService.ingestRunArtifacts(event.runId)
                 ingestionRunLifeCycleService.markAiSyncSucceeded(event.runId)
                 announceIndexed(event.runId)
-            } catch (e: Exception) {
-                logger.error("AI sync failed for ingestion run {}", event.runId, e)
-                ingestionRunLifeCycleService.markAiSyncFailed(event.runId, e.message)
             }
         }
     }
@@ -80,7 +81,9 @@ class IngestionEventListener(
      * failed because a downstream notification did not go out would misreport the run.
      */
     private fun announceIndexed(runId: UUID) {
-        try {
+        recovering(fallback = { e ->
+            logger.warn("Could not announce indexed artifacts for ingestion run {}", runId, e)
+        }) {
             // A run reaches the AI index by two routes: the artifacts it stored (by `ingestion_run_id`) and
             // the artifacts an earlier run stored that this one changed (`artifactIdsToReingest`). An
             // incremental run is usually all of the second kind.
@@ -93,8 +96,6 @@ class IngestionEventListener(
 
             if (projectIds.isEmpty()) return
             publisher.publishEvent(ArtifactsIndexedEvent(runId = runId, projectIds = projectIds))
-        } catch (e: Exception) {
-            logger.warn("Could not announce indexed artifacts for ingestion run {}", runId, e)
         }
     }
 }

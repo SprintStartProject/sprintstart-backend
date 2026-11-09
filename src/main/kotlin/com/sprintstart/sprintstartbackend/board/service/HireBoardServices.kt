@@ -41,7 +41,7 @@ class HireBoardActionsService(
     private val boardService: BoardService,
 ) : HireBoardActionsApi {
     override fun place(board: HireBoard, kind: BoardCardKind, subject: String?): PlacementOutcome =
-        boardService.place(board.userId, board.projectId, kind, subject)
+        boardService.place(board, kind, subject)
 
     override fun addCard(board: HireBoard, request: AuthoredCardRequest): BoardCardResponse =
         boardService.addAuthoredCard(board.userId, board.projectId, request, by = BoardActor.BUDDY)
@@ -52,7 +52,7 @@ class HireBoardActionsService(
         request: AuthoredCardRequest,
         basedOn: String?,
     ): BoardCardResponse =
-        boardService.editAuthoredCardForBuddy(board.userId, board.projectId, cardId, request, basedOn)
+        boardService.editAuthoredCardForBuddy(board, cardId, request, basedOn)
 
     override fun dismiss(board: HireBoard, cardIds: List<BoardCardId>): Int =
         boardService.dismissForBuddy(board.userId, board.projectId, cardIds)
@@ -67,5 +67,5 @@ class HireBoardActionsService(
         boardService.tickChecklistItems(board.userId, board.projectId, cardId, lines)
 
     override fun rewordChecklistItem(board: HireBoard, cardId: BoardCardId, before: String, after: String): Boolean =
-        boardService.rewordChecklistItem(board.userId, board.projectId, cardId, before, after)
+        boardService.rewordChecklistItem(board, cardId, before, after)
 }

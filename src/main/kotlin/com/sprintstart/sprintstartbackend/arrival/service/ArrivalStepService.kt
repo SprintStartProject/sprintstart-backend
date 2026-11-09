@@ -13,30 +13,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
-import java.time.Instant
 import java.util.UUID
-
-/**
- * One arrival step as it applies to one hire: the shared definition, plus whether they have settled
- * it.
- *
- * [settledAt] and [rigor] are null together and mean "not settled yet", which is a normal state on
- * day one rather than missing data.
- */
-data class ResolvedArrivalStep(
-    val step: ArrivalStep,
-    val settledAt: Instant?,
-    val rigor: Rigor?,
-    /**
-     * The name of the project this step is scoped to; null for a company-wide step.
-     *
-     * The client groups under this name, so it must be a name rather than an id — a hire's
-     * list is a union across their projects, and the same title can appear once per project.
-     */
-    val projectName: String? = null,
-) {
-    val settled: Boolean get() = settledAt != null
-}
 
 /**
  * Owns arrival steps: what they are, who they apply to, and what a given hire has settled.
@@ -347,12 +324,8 @@ class ArrivalStepService(
         val steps = listForAuthoring(projectId).associateBy { it.key }
 
         orderedKeys.forEachIndexed { index, key ->
-            val step =
-                steps[key]
-                    ?: throw ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "No arrival step '$key' in this scope",
-                    )
+            val step = steps[key]
+                ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No arrival step '$key' in this scope")
             step.position = index
         }
 
@@ -369,9 +342,7 @@ class ArrivalStepService(
      * @throws ResponseStatusException 404 when no such step exists in that scope.
      */
     @Transactional
-    fun delete(key: String, projectId: UUID?) {
-        arrivalStepRepository.delete(findOrThrow(key, projectId))
-    }
+    fun delete(key: String, projectId: UUID?) = arrivalStepRepository.delete(findOrThrow(key, projectId))
 
     private fun findOrThrow(key: String, projectId: UUID?): ArrivalStep {
         val step =
@@ -394,10 +365,7 @@ class ArrivalStepService(
             }
 
         if (taken) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "An arrival step '$key' already exists in this scope",
-            )
+            throw ResponseStatusException(HttpStatus.CONFLICT, "An arrival step '$key' already exists in this scope")
         }
     }
 
@@ -405,10 +373,8 @@ class ArrivalStepService(
         val normalized = key.trim().lowercase()
 
         if (!ArrivalAuthoringApi.KEY.matches(normalized)) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "'$key' is not a valid arrival step key (lower-case letters, digits, '-' and '_')",
-            )
+            val rule = "lower-case letters, digits, '-' and '_'"
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "'$key' is not a valid arrival step key ($rule)")
         }
 
         return normalized
@@ -420,9 +386,7 @@ class ArrivalStepService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
     /** Every project this hire belongs to. Exposed for [ArrivalEvidenceService]'s derivations. */
-    fun projectsFor(userId: UUID): List<UUID> = projectIdsFor(userId)
-
-    private fun projectIdsFor(userId: UUID): List<UUID> = projectNamesFor(userId).keys.toList()
+    fun projectsFor(userId: UUID): List<UUID> = projectNamesFor(userId).keys.toList()
 
     /** This hire's projects by id, with the names their steps are grouped under. */
     private fun projectNamesFor(userId: UUID): Map<UUID, String> =

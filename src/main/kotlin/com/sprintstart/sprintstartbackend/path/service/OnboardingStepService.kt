@@ -4,7 +4,6 @@ import com.sprintstart.sprintstartbackend.path.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.path.external.enums.SkipStatus
 import com.sprintstart.sprintstartbackend.path.external.enums.StepOrigin
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
-import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingPhase
 import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingStep
 import com.sprintstart.sprintstartbackend.path.model.mapper.toCreateResponse
 import com.sprintstart.sprintstartbackend.path.model.mapper.toGetAllResponse
@@ -41,6 +40,8 @@ class OnboardingStepService(
     private val onboardingCompletionService: OnboardingCompletionService,
     private val userApi: UserApi,
 ) {
+    private val ordering = StepOrdering(onboardingStepRepository)
+
 //  ========================== Methods for users ==========================
 
     /**
@@ -54,9 +55,7 @@ class OnboardingStepService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving all steps for an onboarding phase")
     fun getOnboardingStepsForMe(authId: String, phaseId: UUID): List<GetOnboardingStepsResponse> {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+        val userId = resolveUserId(authId)
 
         return onboardingStepRepository
             .findAllByPhaseIdAndPhasePathUserId(phaseId, userId)
@@ -86,9 +85,7 @@ class OnboardingStepService(
         // is theirs; the buddy passes [StepOrigin.BUDDY] when it is a confirmed proposal.
         origin: StepOrigin = StepOrigin.HIRE,
     ): CreateOnboardingStepResponse {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+        val userId = resolveUserId(authId)
 
         val phase = onboardingPhaseRepository
             .findByIdAndPathUserId(phaseId, userId)
@@ -101,7 +98,7 @@ class OnboardingStepService(
             phase.generationStatus = GenerationStatus.GENERATED
         }
 
-        shiftStepsRight(phase, request)
+        ordering.shiftStepsRight(phase, request)
 
         val onboardingStep = OnboardingStep(
             phase = phase,
@@ -130,13 +127,7 @@ class OnboardingStepService(
     @Transactional
     @Tracked("Retrieving an onboarding step")
     fun getOnboardingStepForMe(authId: String, stepId: UUID): GetOnboardingStepResponse {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
-
-        val step = onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+        val (_, step) = ownStep(authId, stepId)
 
         return step.toGetResponse()
     }
@@ -161,13 +152,7 @@ class OnboardingStepService(
         authId: String,
         stepId: UUID,
     ): UpdateOnboardingStepResponse {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
-
-        val step = onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+        val (_, step) = ownStep(authId, stepId)
 
         if (step.status == StepStatus.FINISHED || step.status == StepStatus.SKIPPED) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be started")
@@ -202,22 +187,11 @@ class OnboardingStepService(
         stepId: UUID,
         request: UpdateOnboardingStepRequest,
     ): UpdateOnboardingStepResponse {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+        val (_, step) = ownStep(authId, stepId)
 
-        val step = onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+        ordering.shiftStepsBetween(step, request)
 
-        shiftStepsBetween(step, request)
-
-        step.position = request.position
-        step.title = request.title
-        step.description = request.description
-        step.type = request.type
-        step.estimatedMinutes = request.estimatedMinutes
-        step.expectedOutcome = request.expectedOutcome
+        step.updateFrom(request)
 
         return step.toUpdateResponse()
     }
@@ -243,13 +217,7 @@ class OnboardingStepService(
         authId: String,
         stepId: UUID,
     ): UpdateOnboardingStepResponse {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
-
-        val step = onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+        val (userId, step) = ownStep(authId, stepId)
 
         if (step.status != StepStatus.WAITING && step.status != StepStatus.IN_PROGRESS) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A finished or skipped step can't be completed")
@@ -285,20 +253,8 @@ class OnboardingStepService(
     @Transactional
     @Tracked("Deleting an onboarding step")
     fun deleteOnboardingStepForMe(authId: String, stepId: UUID) {
-        val userId = userApi
-            .getUserIdByAuthId(authId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
-
-        val step = onboardingStepRepository
-            .findByIdAndPhasePathUserId(stepId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found") }
-
-        val stepsToShift = onboardingStepRepository
-            .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
-        stepsToShift.forEach { it.position -= 1 }
-
-        bridgeOverInGraph(step)
-        onboardingStepRepository.delete(step)
+        val (_, step) = ownStep(authId, stepId)
+        ordering.remove(step)
     }
 
 //  ========================== Methods for admins ==========================
@@ -338,7 +294,7 @@ class OnboardingStepService(
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
 
-        shiftStepsRight(phase, request)
+        ordering.shiftStepsRight(phase, request)
 
         val onboardingStep = OnboardingStep(
             phase = phase,
@@ -367,10 +323,7 @@ class OnboardingStepService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving an onboarding step")
     fun getOnboardingStepById(stepId: UUID): GetOnboardingStepResponse {
-        return onboardingStepRepository
-            .findById(stepId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
-            .toGetResponse()
+        return requireStep(stepId).toGetResponse()
     }
 
     /**
@@ -387,18 +340,11 @@ class OnboardingStepService(
     @Transactional
     @Tracked("Updating an onboarding step")
     fun updateOnboardingStepById(stepId: UUID, request: UpdateOnboardingStepRequest): UpdateOnboardingStepResponse {
-        val step = onboardingStepRepository
-            .findById(stepId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
+        val step = requireStep(stepId)
 
-        shiftStepsBetween(step, request)
+        ordering.shiftStepsBetween(step, request)
 
-        step.position = request.position
-        step.title = request.title
-        step.description = request.description
-        step.type = request.type
-        step.estimatedMinutes = request.estimatedMinutes
-        step.expectedOutcome = request.expectedOutcome
+        step.updateFrom(request)
 
         return step.toUpdateResponse()
     }
@@ -412,127 +358,36 @@ class OnboardingStepService(
     @Transactional
     @Tracked("Deleting an onboarding step")
     fun deleteOnboardingStepById(stepId: UUID) {
-        val step = onboardingStepRepository
-            .findById(stepId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
-
-        val stepsToShift = onboardingStepRepository
-            .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
-        stepsToShift.forEach { it.position -= 1 }
-
-        bridgeOverInGraph(step)
-        onboardingStepRepository.delete(step)
+        ordering.remove(requireStep(stepId))
     }
 
 //  ========================== Helper Methods ==========================
 
-    /**
-     * Takes a step out of its phase's dependency graph before it is deleted, joining up what it sat
-     * between.
-     *
-     * Blocker edges are a many-to-many between subgraph nodes, and deleting a step removes only the
-     * rows it owns -- the ones saying what *it* waits on. The rows saying what waits on *it* belong to
-     * the other nodes and outlived it: the delete failed on the join table, or the items after it
-     * stayed locked behind a step nobody could finish any more. PMs add and delete steps right in the
-     * graph, and a hire can delete the ones they add with their buddy, so this is not a corner case.
-     *
-     * Bridged rather than only cut: for A -> X -> B, deleting X leaves A -> B, so B still opens after
-     * what it opened after before X was put in the way -- instead of suddenly opening at once.
-     */
-    private fun bridgeOverInGraph(step: OnboardingStep) {
-        val phase = step.phase
-        val dependents = (phase.steps + phase.checkQuestions)
-            .filter { node -> node.id != step.id && node.blockedBy.any { it.id == step.id } }
-        dependents.forEach { node ->
-            node.blockedBy.removeIf { it.id == step.id }
-            node.blockedBy += step.blockedBy.filter { it.id != node.id }
-        }
-        step.blockedBy.clear()
-        // Loading the siblings above put the step's phase collection in play, and that collection
-        // cascades: while it still holds the step, Hibernate quietly un-schedules the delete at flush,
-        // and the request "succeeds" with the step still there. Out of the collection, orphan removal
-        // and the delete agree.
-        phase.steps.removeIf { it.id == step.id }
+    private fun resolveUserId(authSubject: String): UUID =
+        userApi
+            .getUserIdByAuthId(authSubject)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+    /** The caller's id and the step of theirs the request names; anybody else's step does not exist for them. */
+    private fun ownStep(authSubject: String, target: UUID): Pair<UUID, OnboardingStep> {
+        val userId = resolveUserId(authSubject)
+        val step = onboardingStepRepository
+            .findByIdAndPhasePathUserId(target, userId)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $target") }
+        return userId to step
     }
 
-    /**
-     * Makes room for a new step at the requested position by shifting all existing
-     * steps at that position or after it one position to the right.
-     *
-     * Valid positions are from `0` to `stepCount`, where `stepCount` means
-     * appending the new step at the end.
-     *
-     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
-     * position is outside the valid range.
-     */
-    private fun shiftStepsRight(
-        phase: OnboardingPhase,
-        request: CreateOnboardingStepRequest,
-    ) {
-        val stepCount = onboardingStepRepository.countByPhaseId(phase.id)
+    private fun requireStep(target: UUID): OnboardingStep =
+        onboardingStepRepository
+            .findById(target)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $target") }
 
-        if (request.position !in 0..stepCount) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Position must be between 0 and $stepCount",
-            )
-        }
-
-        val stepsToShift = onboardingStepRepository
-            .findByPhaseIdAndPositionGreaterThanEqualOrderByPositionDesc(
-                phase.id,
-                request.position,
-            )
-
-        stepsToShift.forEach { it.position += 1 }
-    }
-
-    /**
-     * Reorders steps after an existing step is moved to a new position.
-     *
-     * When the step moves down, all steps between the old and new position are
-     * shifted one position to the left. When the step moves up, all steps between
-     * the new and old position are shifted one position to the right.
-     *
-     * Valid positions are from `0` to `stepCount - 1`, because the step already
-     * exists and can only be moved within the current list.
-     *
-     * @throws ResponseStatusException with `400 BAD_REQUEST` if the requested
-     * position is outside the valid range.
-     */
-    private fun shiftStepsBetween(
-        step: OnboardingStep,
-        request: UpdateOnboardingStepRequest,
-    ) {
-        val stepCount = onboardingStepRepository.countByPhaseId(step.phase.id)
-
-        if (request.position !in 0 until stepCount) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Position must be between 0 and ${stepCount - 1}")
-        }
-
-        val oldPosition = step.position
-        val newPosition = request.position
-
-        if (oldPosition < newPosition) {
-            val stepsToShift = onboardingStepRepository
-                .findByPhaseIdAndPositionBetween(
-                    step.phase.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            stepsToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            val stepsToShift = onboardingStepRepository
-                .findByPhaseIdAndPositionBetween(
-                    step.phase.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            stepsToShift.forEach { it.position += 1 }
-        }
+    private fun OnboardingStep.updateFrom(request: UpdateOnboardingStepRequest) {
+        position = request.position
+        title = request.title
+        description = request.description
+        type = request.type
+        estimatedMinutes = request.estimatedMinutes
+        expectedOutcome = request.expectedOutcome
     }
 }

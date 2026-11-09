@@ -17,6 +17,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEventType
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import com.sprintstart.sprintstartbackend.assistant.external.FALLBACK_REPLY
 import com.sprintstart.sprintstartbackend.assistant.external.MAX_AGENT_STEPS
 import com.sprintstart.sprintstartbackend.assistant.external.ResolvedArtifact
@@ -253,7 +254,7 @@ class BuddyTeamServiceTest {
         )
         every { buddyTeamTools.execute(any(), any(), any()) } returns "Sam is waiting."
 
-        service.sendMessageForMe(authId, projectId, "who is stuck?", filters = filters).toList()
+        service.sendMessageForMe(authId, projectId, "who is stuck?", BuddyTurnOptions(filters = filters)).toList()
 
         assertThat(requests).hasSize(2)
         assertThat(requests).allMatch { it.filters === filters }
@@ -821,7 +822,13 @@ class BuddyTeamServiceTest {
             agentAiClient.buddyAgentTurnStream(capture(requests))
         } returnsStream finalReply("From the docs.")
 
-        service.sendMessageForMe(authId, projectId, "how do we deploy?", capabilitiesEnabled = false).toList()
+        service
+            .sendMessageForMe(
+                authId,
+                projectId,
+                "how do we deploy?",
+                BuddyTurnOptions(capabilitiesEnabled = false),
+            ).toList()
 
         assertThat(requests.single().backendTools).isEmpty()
         assertThat(requests.single().capabilitiesEnabled).isFalse()

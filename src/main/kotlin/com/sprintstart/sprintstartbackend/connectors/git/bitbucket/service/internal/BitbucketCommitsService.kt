@@ -10,7 +10,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.Bitbuck
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,19 +54,14 @@ internal class BitbucketCommitsService(
 
         publishStarted(connection, transactionId)
 
-        val outcome = try {
+        val outcome = reportingFailure(onFailure = { e ->
+            publishFailed(connection, transactionId, e.message ?: "Unknown error")
+        }) {
             ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(connection),
                 sinceRevision = connection.lastCommitsSyncedSha,
                 sink = BitbucketCommitSink(eventPublisher, connection, transactionId, provider.descriptor.sourceUrls),
             )
-        } catch (e: CancellationException) {
-            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
-            // happened.
-            throw e
-        } catch (e: Exception) {
-            publishFailed(connection, transactionId, e.message ?: "Unknown error")
-            throw e
         }
 
         withContext(ioDispatcher) {

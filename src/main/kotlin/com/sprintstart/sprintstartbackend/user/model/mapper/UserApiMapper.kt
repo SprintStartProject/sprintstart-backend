@@ -4,8 +4,10 @@ import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectRoleDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserSkillDto
+import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectRole
 import com.sprintstart.sprintstartbackend.user.model.entity.User
+import com.sprintstart.sprintstartbackend.user.model.entity.UserSkillAssessment
 
 /**
  * Every role this person holds, across all their project memberships.
@@ -26,27 +28,14 @@ fun User.toUserApiDto(): UserDto {
         lastname = this.lastname,
         avatarUrl = this.avatarUrl,
         profileIcon = this.profileIcon,
-        projects = this.projects
-            .map {
-                ProjectDto(
-                    projectId = it.id,
-                    name = it.name,
-                    description = it.description,
-                )
-            }.toSet(),
-        projectRoles = this.allProjectRoles().map { role ->
-            ProjectRoleDto(
-                roleId = role.id,
-                name = role.name,
-                description = role.description,
-            )
-        },
-        skills = this.skillAssessments.map { assessment ->
-            UserSkillDto(
-                skillId = assessment.skill.id,
-                name = assessment.skill.name,
-                level = assessment.level.name,
-            )
-        },
+        projects = this.projects.map { it.toApiDto() }.toSet(),
+        projectRoles = this.allProjectRoles().map { it.toApiDto() },
+        skills = this.skillAssessments.map { it.toApiDto() },
     )
 }
+
+private fun Project.toApiDto() = ProjectDto(projectId = id, name = name, description = description)
+
+private fun ProjectRole.toApiDto() = ProjectRoleDto(roleId = id, name = name, description = description)
+
+private fun UserSkillAssessment.toApiDto() = UserSkillDto(skillId = skill.id, name = skill.name, level = level.name)

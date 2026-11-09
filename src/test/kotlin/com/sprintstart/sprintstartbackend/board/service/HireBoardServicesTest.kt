@@ -51,19 +51,20 @@ class HireBoardServicesTest {
         val note = NoteCardRequest(text = "Ask about the deploy freeze")
         val cards = listOf(card)
         val lines = listOf("Read the runbook")
-        every { boardService.place(user, project, BoardCardKind.DIAGRAM, "billing") } returns PlacementOutcome.PLACED
+        every { boardService.place(HireBoard(user, project), BoardCardKind.DIAGRAM, "billing") } returns
+            PlacementOutcome.PLACED
         every { boardService.addAuthoredCard(user, project, note, BoardActor.BUDDY) } returns mockk()
-        every { boardService.editAuthoredCardForBuddy(user, project, card, note, "v1") } returns mockk()
+        every { boardService.editAuthoredCardForBuddy(HireBoard(user, project), card, note, "v1") } returns mockk()
         every { boardService.dismissForBuddy(user, project, cards) } returns 1
         every { boardService.reorderForBuddy(user, project, cards) } returns 2
         every { boardService.appendChecklistItems(user, project, card, lines) } returns mockk()
         every { boardService.tickChecklistItems(user, project, card, lines) } returns 3
-        every { boardService.rewordChecklistItem(user, project, card, "Read", "Skim") } returns true
+        every { boardService.rewordChecklistItem(HireBoard(user, project), card, "Read", "Skim") } returns true
 
         assertEquals(PlacementOutcome.PLACED, actions.place(board, BoardCardKind.DIAGRAM, "billing"))
         assertSame(boardService.addAuthoredCard(user, project, note, BoardActor.BUDDY), actions.addCard(board, note))
         assertSame(
-            boardService.editAuthoredCardForBuddy(user, project, card, note, "v1"),
+            boardService.editAuthoredCardForBuddy(HireBoard(user, project), card, note, "v1"),
             actions.editCard(board, card, note, "v1"),
         )
         assertEquals(1, actions.dismiss(board, cards))

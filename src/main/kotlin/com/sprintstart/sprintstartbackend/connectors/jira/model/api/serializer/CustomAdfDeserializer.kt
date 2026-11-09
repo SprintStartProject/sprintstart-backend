@@ -91,27 +91,25 @@ object CustomAdfDeserializer : KSerializer<String> {
     private fun extractTextValue(element: JsonElement, sb: StringBuilder) {
         when (element) {
             is JsonObject -> {
-                if (element["type"]?.jsonPrimitive?.content == "text") {
-                    element["text"]?.jsonPrimitive?.content?.let { sb.append(it) }
-                }
-
-                val type = element["type"]?.jsonPrimitive?.content
-                if (type in setOf("paragraph", "listItem", "heading")) {
-                    if (sb.isNotEmpty() && !sb.endsWith("\n")) {
-                        sb.append("\n")
-                    }
-                }
-
+                appendNode(element, sb)
                 element["content"]?.let { extractTextValue(it, sb) }
             }
 
-            is JsonArray -> {
-                element.forEach { extractTextValue(it, sb) }
-            }
+            is JsonArray -> element.forEach { extractTextValue(it, sb) }
 
-            else -> {
-                Unit
-            }
+            else -> Unit
+        }
+    }
+
+    private fun appendNode(node: JsonObject, sb: StringBuilder) {
+        val type = node["type"]?.jsonPrimitive?.content
+        if (type == "text") {
+            node["text"]?.jsonPrimitive?.content?.let { sb.append(it) }
+        }
+        if (type in BLOCK_TYPES && sb.isNotEmpty() && !sb.endsWith("\n")) {
+            sb.append("\n")
         }
     }
 }
+
+private val BLOCK_TYPES = setOf("paragraph", "listItem", "heading")

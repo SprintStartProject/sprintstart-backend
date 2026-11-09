@@ -136,14 +136,13 @@ class IngestionRunService(
         )
     }
 
-    private fun buildProjectPredicate(
+    private fun sourceMatches(
         root: Root<IngestionRun>,
         cb: CriteriaBuilder,
-        projectId: UUID,
-        projectSources: ProjectSources?,
-    ): Predicate {
-        val sources = projectSources ?: resolveProjectSources(projectId)
-        val matches = buildList {
+        project: UUID,
+        sources: ProjectSources,
+    ): List<Predicate> =
+        buildList {
             if (sources.repositoryIds.isNotEmpty()) {
                 add(sourceInstanceIdPredicate(root, cb, SourceSystem.GITHUB, sources.repositoryIds))
             }
@@ -167,10 +166,19 @@ class IngestionRunService(
             add(
                 cb.and(
                     cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD),
-                    cb.equal(root.get<UUID>("sourceInstanceId"), projectId),
+                    cb.equal(root.get<UUID>("sourceInstanceId"), project),
                 ),
             )
         }
+
+    private fun buildProjectPredicate(
+        root: Root<IngestionRun>,
+        cb: CriteriaBuilder,
+        projectId: UUID,
+        projectSources: ProjectSources?,
+    ): Predicate {
+        val sources = projectSources ?: resolveProjectSources(projectId)
+        val matches = sourceMatches(root, cb, projectId, sources)
         return when (matches.size) {
             0 -> cb.disjunction()
             1 -> matches.single()

@@ -13,11 +13,9 @@ import com.sprintstart.sprintstartbackend.board.model.request.board.LinkCardRequ
 import com.sprintstart.sprintstartbackend.board.model.response.board.BoardCardResponse
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
-import java.util.UUID
 
 /**
  * The fewest lines that count as a list worth keeping.
@@ -179,14 +177,7 @@ internal fun HireBoardApi.namedCards(call: BuddyToolCallDto, board: HireBoard): 
                 "was proposed. Propose fewer cards at a time.",
         )
     }
-    val parsed = named.map { entry ->
-        (entry as? JsonPrimitive)
-            ?.takeIf { it.isString }
-            ?.content
-            ?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-    }
+    val parsed = named.map { it.asCardId() }
     if (parsed.any { it == null }) {
         return Found.Refused(
             "${parsed.count { it == null }} of those ids are not card ids, so nothing was proposed. " +
@@ -196,16 +187,5 @@ internal fun HireBoardApi.namedCards(call: BuddyToolCallDto, board: HireBoard): 
     val ids = parsed.filterNotNull().distinct()
 
     val byId = cardsOn(board).orEmpty().associateBy { it.id }
-    val cards = ids.mapNotNull { byId[it] }
-    return when {
-        cards.isEmpty() -> Found.Refused(
-            "None of those ids are cards on the hire's board. Read read_board again and pass " +
-                "the ids it gives.",
-        )
-        cards.size < ids.size -> Found.Refused(
-            "${ids.size - cards.size} of those ids are not on the hire's board, so nothing was " +
-                "proposed. Read read_board again and pass only the ids it gives.",
-        )
-        else -> Found.Ok(cards)
-    }
+    return onBoard(ids, ids.mapNotNull { byId[it] })
 }

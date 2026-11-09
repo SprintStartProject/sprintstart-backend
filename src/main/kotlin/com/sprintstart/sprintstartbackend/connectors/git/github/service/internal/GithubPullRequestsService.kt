@@ -11,11 +11,14 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchStartedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewNode
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewThreadNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,82 +55,56 @@ class GithubPullRequestsService(
         performUpdate: Boolean = true,
         since: Instant? = null,
     ) {
-        eventPublisher.publishEvent(
-            GithubPullRequestsFetchStartedEvent(
-                transactionId,
-                repositoryOwner,
-                repositoryName,
-            ),
-        )
+        eventPublisher.publishEvent(GithubPullRequestsFetchStartedEvent(transactionId, repositoryOwner, repositoryName))
 
         var githubRepository: GithubRepositoryConnection? = null
 
-        val pullRequests = runCatching {
-            githubRepository = withContext(ioDispatcher) {
-                repoConnectionRepository.findById(githubRepositoryId).orElseThrow {
-                    RepositoryNotFoundException(repositoryOwner, repositoryName)
-                }
-            }
+        val pullRequests = reportingFailure(transactionId, repositoryOwner, repositoryName) {
+            githubRepository = loadRepository(githubRepositoryId, repositoryOwner, repositoryName)
 
-            if (since == null) {
-                githubClient.fetchAllPullRequests(githubRepository)
-            } else {
-                githubClient.fetchAllPullRequests(githubRepository, since.toString())
-            }
-        }.onFailure {
-            eventPublisher.publishEvent(
-                GithubPullRequestsFetchFailedEvent(
-                    transactionId,
-                    repositoryOwner,
-                    repositoryName,
-                    it.message ?: "Unknown error",
-                ),
-            )
-            throw it
-        }.getOrNull() ?: return
+            githubClient.fetchAllPullRequests(githubRepository, since?.toString())
+        }
 
         // Publishing a fetched pull request runs the persistence listener synchronously, so a failure
         // while storing one surfaces here. It has to end the phase with a terminal event: the
         // ingestion run is only finalized once every phase has closed.
-        try {
+        reportingFailure(onFailure = { e ->
+            publishFailure(transactionId, repositoryOwner, repositoryName, e)
+        }) {
             if (performUpdate) {
                 pullRequests.forEach { pr ->
                     eventPublisher.publishEvent(
                         pr.asFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
                     )
                 }
-            } else {
-                if (githubRepository != null && pullRequests.isNotEmpty()) {
-                    githubRepository.connectionState = ConnectionState.OUT_OF_DATE
-
-                    withContext(ioDispatcher) {
-                        repoConnectionRepository.save(githubRepository)
-                    }
-                }
+            } else if (githubRepository != null && pullRequests.isNotEmpty()) {
+                markOutOfDate(githubRepository)
             }
-        } catch (e: CancellationException) {
-            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
-            // happened.
-            throw e
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                GithubPullRequestsFetchFailedEvent(
-                    transactionId,
-                    repositoryOwner,
-                    repositoryName,
-                    e.message ?: "Unknown error",
-                ),
-            )
-            throw e
         }
 
         eventPublisher.publishEvent(
-            GithubPullRequestsFetchCompletedEvent(
-                transactionId,
-                repositoryOwner,
-                repositoryName,
-            ),
+            GithubPullRequestsFetchCompletedEvent(transactionId, repositoryOwner, repositoryName),
         )
+    }
+
+    private suspend fun loadRepository(repository: UUID, owner: String, name: String): GithubRepositoryConnection =
+        withContext(ioDispatcher) {
+            repoConnectionRepository.findById(repository).orElseThrow { RepositoryNotFoundException(owner, name) }
+        }
+
+    /** Runs [block], and ends the phase with a failure event before rethrowing when it fails. */
+    private inline fun <T> reportingFailure(transaction: UUID, owner: String, name: String, block: () -> T): T =
+        runCatching(block).onFailure { publishFailure(transaction, owner, name, it) }.getOrThrow()
+
+    private fun publishFailure(transaction: UUID, owner: String, name: String, error: Throwable) {
+        eventPublisher.publishEvent(
+            GithubPullRequestsFetchFailedEvent(transaction, owner, name, error.message ?: "Unknown error"),
+        )
+    }
+
+    private suspend fun markOutOfDate(repository: GithubRepositoryConnection) {
+        repository.connectionState = ConnectionState.OUT_OF_DATE
+        withContext(ioDispatcher) { repoConnectionRepository.save(repository) }
     }
 
     /**
@@ -166,32 +143,18 @@ class GithubPullRequestsService(
             url = this.url,
             author = this.author?.login,
             labels = this.labels?.nodes?.map { it.name },
-            reviews = this.reviews?.nodes?.map {
-                GithubPullRequestReview(
-                    it.body,
-                    it.state,
-                    it.author?.login,
-                    it.submittedAt,
-                )
-            },
-            comments = this.comments?.nodes?.map {
-                GithubPullRequestComment(
-                    it.body,
-                    it.author?.login,
-                    it.createdAt,
-                )
-            },
-            reviewThreads = this.reviewThreads?.nodes?.map { reviewThread ->
-                GithubPullRequestReviewThread(
-                    reviewThread.comments?.nodes.orEmpty().map {
-                        GithubPullRequestReviewThreadComment(
-                            it.body,
-                            it.author?.login,
-                            it.path,
-                        )
-                    },
-                )
-            },
+            reviews = this.reviews?.nodes?.map { it.toEventReview() },
+            comments = this.comments?.nodes?.map { it.toEventComment() },
+            reviewThreads = this.reviewThreads?.nodes?.map { it.toEventThread() },
         )
     }
 }
+
+private fun ReviewNode.toEventReview() = GithubPullRequestReview(body, state, author?.login, submittedAt)
+
+private fun CommentNode.toEventComment() = GithubPullRequestComment(body, author?.login, createdAt)
+
+private fun ReviewThreadNode.toEventThread() =
+    GithubPullRequestReviewThread(
+        comments?.nodes.orEmpty().map { GithubPullRequestReviewThreadComment(it.body, it.author?.login, it.path) },
+    )

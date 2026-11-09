@@ -11,7 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Issue
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,6 +27,17 @@ class GithubIssuesService(
     private val eventPublisher: ApplicationEventPublisher,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    private fun publishFailure(transaction: UUID, owner: String, name: String, error: Throwable) {
+        eventPublisher.publishEvent(
+            GithubIssuesFetchFailedEvent(transaction, owner, name, error.message ?: "Unknown error"),
+        )
+    }
+
+    private suspend fun markOutOfDate(repository: GithubRepositoryConnection) {
+        repository.connectionState = ConnectionState.OUT_OF_DATE
+        withContext(ioDispatcher) { repoConnectionRepository.save(repository) }
+    }
+
     /**
      * Fetches and ingests **all** issues of a given GitHub repository.
      *
@@ -57,56 +68,27 @@ class GithubIssuesService(
                 repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
             }
 
-            if (since == null) {
-                githubClient.fetchIssues(githubRepository)
-            } else {
-                githubClient.fetchIssues(githubRepository, since.toString())
-            }
+            githubClient.fetchIssues(githubRepository, since?.toString())
         }.onFailure {
-            eventPublisher.publishEvent(
-                GithubIssuesFetchFailedEvent(
-                    transactionId,
-                    repositoryOwner,
-                    repositoryName,
-                    it.message ?: "Unknown error",
-                ),
-            )
+            publishFailure(transactionId, repositoryOwner, repositoryName, it)
             throw it
         }.getOrNull() ?: return
 
         // Publishing a fetched issue runs the persistence listener synchronously, so a failure while
         // storing one issue surfaces here. It has to end the phase with a terminal event: the
         // ingestion run is only finalized once every phase has closed.
-        try {
+        reportingFailure(onFailure = { e ->
+            publishFailure(transactionId, repositoryOwner, repositoryName, e)
+        }) {
             if (performUpdate) {
                 issues.forEach { issue ->
                     eventPublisher.publishEvent(
                         issue.toFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
                     )
                 }
-            } else {
-                if (githubRepository != null && issues.isNotEmpty()) {
-                    githubRepository.connectionState = ConnectionState.OUT_OF_DATE
-
-                    withContext(ioDispatcher) {
-                        repoConnectionRepository.save(githubRepository)
-                    }
-                }
+            } else if (githubRepository != null && issues.isNotEmpty()) {
+                markOutOfDate(githubRepository)
             }
-        } catch (e: CancellationException) {
-            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
-            // happened.
-            throw e
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                GithubIssuesFetchFailedEvent(
-                    transactionId,
-                    repositoryOwner,
-                    repositoryName,
-                    e.message ?: "Unknown error",
-                ),
-            )
-            throw e
         }
 
         eventPublisher.publishEvent(GithubIssuesFetchCompletedEvent(transactionId, repositoryOwner, repositoryName))

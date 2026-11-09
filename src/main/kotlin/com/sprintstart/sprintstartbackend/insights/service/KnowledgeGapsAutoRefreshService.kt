@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.insights.service
 
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -63,17 +64,19 @@ class KnowledgeGapsAutoRefreshService(
 
     private suspend fun refresh(projectId: UUID) {
         try {
-            val result = knowledgeGapsService.refreshKnowledgeGaps(projectId)
-            logger.info(
-                "Rescanned knowledge gaps for project {} after ingestion, {} of {} components have gaps",
-                projectId,
-                result.gapCount,
-                result.componentCount,
-            )
-        } catch (e: Exception) {
             // A failed rescan leaves the previous gaps in place, which is the right outcome:
             // the panel keeps showing the last known truth rather than emptying out.
-            logger.warn("Automatic knowledge-gaps rescan failed for project {}", projectId, e)
+            recovering(fallback = { e ->
+                logger.warn("Automatic knowledge-gaps rescan failed for project {}", projectId, e)
+            }) {
+                val result = knowledgeGapsService.refreshKnowledgeGaps(projectId)
+                logger.info(
+                    "Rescanned knowledge gaps for project {} after ingestion, {} of {} components have gaps",
+                    projectId,
+                    result.gapCount,
+                    result.componentCount,
+                )
+            }
         } finally {
             refreshTracker.markKnowledgeGapsIdle(projectId)
         }

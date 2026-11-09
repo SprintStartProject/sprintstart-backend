@@ -44,10 +44,14 @@ class BlueprintSeeder(
             return
         }
 
-        val logger = LoggerFactory.getLogger(BlueprintSeeder::class.java)
+        LoggerFactory.getLogger(BlueprintSeeder::class.java).info("Seeding base blueprint path")
 
-        logger.info("Seeding base blueprint path")
+        val path = newPath()
+        wireBlockers(path.blueprintPhases.associateBy { it.title })
+        blueprintPathRepository.save(path)
+    }
 
+    private fun newPath(): BlueprintPath {
         val path = BlueprintPath(
             blueprintKey = UUID.randomUUID(),
             title = "Seeded Blueprint",
@@ -69,9 +73,10 @@ class BlueprintSeeder(
                 ),
             )
         }
+        return path
+    }
 
-        val phasesByTitle = path.blueprintPhases.associateBy { it.title }
-
+    private fun wireBlockers(phasesByTitle: Map<String, BlueprintPhase>) {
         fun blockedBy(title: String, vararg blockers: String) {
             val phase = requireNotNull(phasesByTitle[title]) { "Seed phase '$title' is missing" }
             blockers.forEach { blocker ->
@@ -97,7 +102,5 @@ class BlueprintSeeder(
         blockedBy("Guidelines", "Deployment", "Release Planning")
         blockedBy("Role-Specific Onboarding Task 1", "Guidelines", "Requirements & Epics")
         blockedBy("Role-Specific Onboarding Task 2", "Guidelines", "Requirements & Epics")
-
-        blueprintPathRepository.save(path)
     }
 }

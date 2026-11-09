@@ -142,8 +142,7 @@ internal class ConfluenceClient(
         credentials: ConfluenceClientCredentials,
         pageId: String,
     ): ConfluencePageRestrictions {
-        val usersById = linkedMapOf<String, ConfluenceRestrictedUser>()
-        val groupsById = linkedMapOf<String, ConfluenceRestrictedGroup>()
+        val restrictions = RestrictionsCollector()
         var start = 0
         var hasMore: Boolean
         val requestContext = "retrieving read restrictions for page $pageId"
@@ -159,21 +158,13 @@ internal class ConfluenceClient(
                 requestedLimit = CONFLUENCE_RESTRICTION_PAGE_LIMIT,
                 requestContext = requestContext,
             )
-            response.restrictions.user.results.forEach { user ->
-                usersById[user.accountId] = ConfluenceRestrictedUser(user.accountId)
-            }
-            response.restrictions.group.results.forEach { group ->
-                groupsById[group.id] = ConfluenceRestrictedGroup(group.id)
-            }
+            restrictions.add(response)
 
             hasMore = pageMetadata.hasMore
             start = pageMetadata.nextStart
         } while (hasMore)
 
-        return ConfluencePageRestrictions(
-            users = usersById.values.toList(),
-            groups = groupsById.values.toList(),
-        )
+        return restrictions.toRestrictions()
     }
 
     private suspend inline fun <reified T> performGet(
@@ -205,4 +196,24 @@ internal class ConfluenceClient(
             message = CONFLUENCE_RESTRICTIONS_RETRY_EXHAUSTED_MESSAGE,
         )
     }
+}
+
+/** Gathers the users and groups restricted on a page across the pages of a restrictions response. */
+private class RestrictionsCollector {
+    private val usersById = linkedMapOf<String, ConfluenceRestrictedUser>()
+    private val groupsById = linkedMapOf<String, ConfluenceRestrictedGroup>()
+
+    fun add(response: ConfluenceRestrictionsResponse) {
+        response.restrictions.user.results.forEach { user ->
+            usersById[user.accountId] = ConfluenceRestrictedUser(user.accountId)
+        }
+        response.restrictions.group.results.forEach { group ->
+            groupsById[group.id] = ConfluenceRestrictedGroup(group.id)
+        }
+    }
+
+    fun toRestrictions() = ConfluencePageRestrictions(
+        users = usersById.values.toList(),
+        groups = groupsById.values.toList(),
+    )
 }

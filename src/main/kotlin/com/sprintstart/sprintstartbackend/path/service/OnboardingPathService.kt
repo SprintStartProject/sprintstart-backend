@@ -1,13 +1,8 @@
 package com.sprintstart.sprintstartbackend.path.service
 
 import com.sprintstart.sprintstartbackend.blueprint.external.BlueprintApi
-import com.sprintstart.sprintstartbackend.path.model.entity.OnboardingPath
 import com.sprintstart.sprintstartbackend.path.model.mapper.toGetForUserResponse
-import com.sprintstart.sprintstartbackend.path.model.response.path.CurrentPhaseDto
-import com.sprintstart.sprintstartbackend.path.model.response.path.CurrentStepDto
 import com.sprintstart.sprintstartbackend.path.model.response.path.GetOnboardingPathForUserResponse
-import com.sprintstart.sprintstartbackend.path.model.response.path.SkillDto
-import com.sprintstart.sprintstartbackend.path.model.response.path.SkipRequestDto
 import com.sprintstart.sprintstartbackend.path.model.response.path.TeamOverviewUserDto
 import com.sprintstart.sprintstartbackend.path.model.response.phase.GetOnboardingPhaseForUserResponse
 import com.sprintstart.sprintstartbackend.path.repository.OnboardingPathRepository
@@ -15,7 +10,6 @@ import com.sprintstart.sprintstartbackend.path.repository.QuestionAttemptReposit
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.ids.BlueprintId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
@@ -40,6 +34,8 @@ class OnboardingPathService(
     private val onboardingPositionReader: OnboardingPositionReader,
     private val blueprintApi: BlueprintApi,
 ) {
+    private val teamOverview = TeamOverviewBuilder(onboardingPositionReader)
+
     /**
      * Where an existing path came from.
      *
@@ -308,7 +304,7 @@ class OnboardingPathService(
         val paths = onboardingPathRepository.findByUserIdIn(userIds).associateBy { it.userId }
 
         val dtos = users.map { user ->
-            buildTeamOverviewUserDto(user, paths[user.id])
+            teamOverview.build(user, paths[user.id])
         }
 
         val sortedDtos = when (sortBy) {
@@ -350,80 +346,6 @@ class OnboardingPathService(
             ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "User not found")
         val path = onboardingPathRepository.findOnboardingPathByUserId(userDto.id).orElse(null)
 
-        return buildTeamOverviewUserDto(userDto, path)
-    }
-
-    /**
-     * Builds a TeamOverviewUserDto from a UserDto and an optional OnboardingPath.
-     *
-     * @param userDto The user DTO.
-     * @param path The user's onboarding path.
-     * @return The built TeamOverviewUserDto.
-     */
-    private fun buildTeamOverviewUserDto(
-        userDto: UserDto,
-        path: OnboardingPath?,
-    ): TeamOverviewUserDto {
-        var progressPercentage = 0.0
-        var currentPhase: String? = null
-        var currentStepDto: CurrentStepDto? = null
-
-        if (path != null) {
-            // Both derivations come from [OnboardingPositionReader] rather than living here: the
-            // escalation inbox needs the same two answers, and "which step is this person on" told
-            // two different ways is worse than not telling it at all.
-            progressPercentage = onboardingPositionReader.progressOf(path)
-
-            onboardingPositionReader.activeStepIn(path)?.let { active ->
-                currentPhase = active.phase.title
-
-                // Stays here: reviewing a skip needs the step entity, which is this service's
-                // business rather than the reader's.
-                val skipReq = active.step.skips.lastOrNull()?.let { req ->
-                    SkipRequestDto(
-                        id = req.id.toString(),
-                        stepId = req.step.id.toString(),
-                        reason = req.reason,
-                        status = req.status.name,
-                        reviewComment = req.reviewComment,
-                        reviewedAt = req.resolvedAt,
-                    )
-                }
-
-                currentStepDto = CurrentStepDto(
-                    id = active.step.id.toString(),
-                    title = active.step.title,
-                    startedAt = active.step.startedAt,
-                    skip = skipReq,
-                )
-            }
-        }
-
-        val currentPhaseDto = currentPhase?.let {
-            CurrentPhaseDto(title = it)
-        }
-
-        val userSkills = userDto.skills.map { skill ->
-            SkillDto(
-                id = skill.skillId.toString(),
-                name = skill.name,
-                roleId = null,
-                level = skill.level,
-            )
-        }
-
-        return TeamOverviewUserDto(
-            userId = userDto.id.toString(),
-            firstname = userDto.firstname,
-            lastname = userDto.lastname,
-            profileIcon = userDto.profileIcon,
-            projectIds = userDto.projects,
-            roles = userDto.projectRoles,
-            skills = userSkills,
-            progressPercentage = progressPercentage,
-            currentPhase = currentPhaseDto,
-            currentStep = currentStepDto,
-            hasFeedback = false,
-        )
+        return teamOverview.build(userDto, path)
     }
 }

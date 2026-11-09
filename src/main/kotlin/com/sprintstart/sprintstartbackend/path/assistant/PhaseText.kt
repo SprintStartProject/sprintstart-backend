@@ -40,13 +40,7 @@ internal fun StringBuilder.appendCurrentPhase(
             "[phase_id: ${phase.id}] [link: $PHASE_LINK${phase.id}]",
     )
     phase.description.takeIf { it.isNotBlank() }?.let { appendLine("What it is for: $it") }
-    if (phase.locked) {
-        val waiting = phase.blockerIds.mapNotNull { id -> phases.firstOrNull { it.id == id } }
-        appendLine(
-            "This whole phase is locked, so nothing in it can be started yet. It waits on: " +
-                waiting.joinToString(", ") { quoted(it.title) }.ifBlank { "an earlier phase" },
-        )
-    }
+    if (phase.locked) appendLockedNote(phase, phases)
 
     val steps = phase.steps.sortedBy { it.position }
     val questions = phase.questions.sortedBy { it.position }
@@ -71,14 +65,32 @@ internal fun StringBuilder.appendCurrentPhase(
         if (steps.size > ITEMS_SHOWN) appendLine("- and ${steps.size - ITEMS_SHOWN} more")
     }
 
-    if (questions.isNotEmpty()) {
-        appendLine(
-            "Knowledge questions. They count like steps, so a phase whose steps are done and " +
-                "whose questions are unanswered is still the phase they are standing in:",
-        )
-        questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, graph, lastAnswers[it.id]) }
-        if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
-    }
+    if (questions.isNotEmpty()) appendQuestions(questions, phase, graph, lastAnswers)
+}
+
+private fun StringBuilder.appendLockedNote(
+    phase: GetOnboardingPhaseForUserResponse,
+    phases: List<GetOnboardingPhaseForUserResponse>,
+) {
+    val waiting = phase.blockerIds.mapNotNull { id -> phases.firstOrNull { it.id == id } }
+    appendLine(
+        "This whole phase is locked, so nothing in it can be started yet. It waits on: " +
+            waiting.joinToString(", ") { quoted(it.title) }.ifBlank { "an earlier phase" },
+    )
+}
+
+private fun StringBuilder.appendQuestions(
+    questions: List<GetOnboardingQuestionForUserResponse>,
+    phase: GetOnboardingPhaseForUserResponse,
+    graph: PhaseGraph,
+    lastAnswers: Map<UUID, String>,
+) {
+    appendLine(
+        "Knowledge questions. They count like steps, so a phase whose steps are done and " +
+            "whose questions are unanswered is still the phase they are standing in:",
+    )
+    questions.take(ITEMS_SHOWN).forEach { appendQuestion(it, phase, graph, lastAnswers[it.id]) }
+    if (questions.size > ITEMS_SHOWN) appendLine("- and ${questions.size - ITEMS_SHOWN} more")
 }
 
 /**

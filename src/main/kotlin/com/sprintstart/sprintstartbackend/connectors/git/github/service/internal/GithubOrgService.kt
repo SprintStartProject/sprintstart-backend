@@ -113,26 +113,16 @@ class GithubOrgService(
             email = metadata.email,
             publicRepos = metadata.publicRepos,
             privateRepos = metadata.privateRepos,
-            teams = teams.map { team ->
-                GithubOrgMetadataTeam(
-                    name = team.name,
-                    slug = team.slug,
-                    orgLogin = team.organization.login,
-                    orgName = team.organization.name,
-                    members = team.members.nodes.map { member ->
-                        GithubOrgMetadataTeamMember(
-                            login = member.login,
-                            name = member.name,
-                        )
-                    },
-                )
-            },
-            members = orgMembers.members.map { member ->
-                GithubOrgMetadataMember(
-                    login = member.login,
-                    url = member.url,
-                )
-            },
+            teams = teams.map { it.toEventTeam() },
+            members = orgMembers.members.map { GithubOrgMetadataMember(login = it.login, url = it.url) },
         )
     }
 }
+
+private fun Team.toEventTeam() = GithubOrgMetadataTeam(
+    name = name,
+    slug = slug,
+    orgLogin = organization.login,
+    orgName = organization.name,
+    members = members.nodes.map { GithubOrgMetadataTeamMember(login = it.login, name = it.name) },
+)

@@ -1,6 +1,10 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.ArtifactUploadedEvent
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadArtifactStatus
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchDeletionFinishedEvent
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadBatchFinishedEvent
+import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadFileDeletedEvent
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.UploadStartedEvent
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadFailure
 import com.sprintstart.sprintstartbackend.upload.model.dto.response.DeleteUploadsResponse
@@ -18,6 +22,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.web.server.ResponseStatusException
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Optional
 import java.util.UUID
@@ -199,6 +204,138 @@ class UploadServiceTest {
                 },
             )
         }
+    }
+
+    @Test
+    fun `upload announces what it stored, with the content hash, and links the markdown it saw`() {
+        val savedArtifact = slot<UploadedArtifact>()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { validationService.validate(file) } returns Unit
+        every { uploadedArtifactRepository.findByHashAndProjectId(any(), projectId) } returns null
+        every { storageService.store(file, any()) } returns "uploads/guide.md"
+        every { uploadedArtifactRepository.save(capture(savedArtifact)) } answers { savedArtifact.captured }
+        val markdown = slot<List<Pair<UploadedArtifact, String>>>()
+        val byFilename = slot<Map<String, UploadedArtifact>>()
+        every { artifactLinkingService.linkMarkdownImages(capture(markdown), capture(byFilename)) } returns emptySet()
+
+        service.upload(authId, listOf(file), projectId)
+
+        val expectedHash = sha256Hex("# hello")
+        val stored = savedArtifact.captured
+        assertEquals(expectedHash, stored.hash)
+        assertEquals("uploads/guide.md", stored.storagePath)
+        assertEquals(listOf(stored to "# hello"), markdown.captured)
+        assertEquals(mapOf("guide.md" to stored), byFilename.captured)
+
+        val uploaded = slot<ArtifactUploadedEvent>()
+        val finished = slot<UploadBatchFinishedEvent>()
+        verify { publisher.publishEvent(capture(uploaded)) }
+        verify { publisher.publishEvent(capture(finished)) }
+        assertEquals(stored.id, uploaded.captured.artifactId)
+        assertEquals(projectId, uploaded.captured.projectId)
+        assertEquals(userId, uploaded.captured.uploaderId)
+        assertEquals("uploads/guide.md", uploaded.captured.storagePath)
+        assertEquals(expectedHash, uploaded.captured.hash)
+        assertEquals("text/markdown", uploaded.captured.mime)
+        assertEquals(userId, finished.captured.uploaderId)
+        assertEquals(setOf(stored.id), finished.captured.artifactsId)
+        assertEquals(
+            listOf(UploadArtifactStatus.STORED to stored.id),
+            finished.captured.uploadArtifactOperationOutcomes.map { it.status to it.id },
+        )
+    }
+
+    private fun sha256Hex(text: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    @Test
+    fun `upload reports a file that is already there as already uploaded`() {
+        val existing = artifact()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { validationService.validate(file) } returns Unit
+        every { uploadedArtifactRepository.findByHashAndProjectId(any(), projectId) } returns existing
+        every { artifactLinkingService.linkMarkdownImages(any(), any()) } returns emptySet()
+
+        service.upload(authId, listOf(file), projectId)
+
+        val finished = slot<UploadBatchFinishedEvent>()
+        verify { publisher.publishEvent(capture(finished)) }
+        assertEquals(
+            listOf(UploadArtifactStatus.ALREADY_UPLOADED to artifactId),
+            finished.captured.uploadArtifactOperationOutcomes.map { it.status to it.id },
+        )
+    }
+
+    @Test
+    fun `upload records a rejected file as failed and carries on with the next one`() {
+        val bad = MockMultipartFile("files", "bad.exe", "application/x-msdownload", "MZ".toByteArray())
+        val saved = slot<UploadedArtifact>()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { validationService.validate(bad) } throws IllegalArgumentException("not allowed")
+        every { validationService.validate(file) } returns Unit
+        every { uploadedArtifactRepository.findByHashAndProjectId(any(), projectId) } returns null
+        every { storageService.store(file, any()) } returns "uploads/guide.md"
+        every { uploadedArtifactRepository.save(capture(saved)) } answers { saved.captured }
+        every { artifactLinkingService.linkMarkdownImages(any(), any()) } returns emptySet()
+
+        val result = service.upload(authId, listOf(bad, file), projectId)
+
+        assertEquals(listOf("failed", "ok"), result.map { it.status })
+        assertEquals("not allowed", result.first().error)
+        assertEquals("bad.exe", result.first().filename)
+        val finished = slot<UploadBatchFinishedEvent>()
+        verify { publisher.publishEvent(capture(finished)) }
+        val outcomes = finished.captured.uploadArtifactOperationOutcomes
+        val statuses = outcomes.map { it.status }.toSet()
+        assertEquals(setOf(UploadArtifactStatus.FAILED, UploadArtifactStatus.STORED), statuses)
+    }
+
+    @Test
+    fun `upload for a user without a local projection is a 404`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.empty()
+
+        val ex = assertFailsWith<ResponseStatusException> { service.upload(authId, listOf(file), projectId) }
+
+        assertEquals(HttpStatus.NOT_FOUND, ex.statusCode)
+    }
+
+    @Test
+    fun `deleteUpload unlinks the images, announces the deletion and the batch`() {
+        val artifact = artifact()
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) } returns artifact
+        every { storageService.delete("uploads/guide.md") } returns Unit
+        every { uploadedArtifactRepository.delete(artifact) } returns Unit
+
+        service.deleteUpload(authId, setOf(artifactId), projectId)
+
+        verify(exactly = 1) { linkedImageRepository.deleteAllByMarkdownArtifactId(artifactId) }
+        verify(exactly = 1) { linkedImageRepository.deleteAllByImageArtifactId(artifactId) }
+        verify(exactly = 1) {
+            publisher.publishEvent(match<UploadFileDeletedEvent> { it.uploadArtifactId == artifactId })
+        }
+        verify(exactly = 1) { publisher.publishEvent(match<UploadStartedEvent> { it.projectId == projectId }) }
+        verify(exactly = 1) {
+            publisher.publishEvent(match<UploadBatchDeletionFinishedEvent> { it.removerId == userId })
+        }
+    }
+
+    @Test
+    fun `deleteUpload leaves the images and the row alone when the artifact is not in the project`() {
+        every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
+        every { userApi.userHasAccessToProject(authId, projectId) } returns true
+        every { uploadedArtifactRepository.findByIdAndProjectId(artifactId, projectId) } returns null
+
+        service.deleteUpload(authId, setOf(artifactId), projectId)
+
+        verify(exactly = 0) { linkedImageRepository.deleteAllByMarkdownArtifactId(any()) }
+        verify(exactly = 0) { publisher.publishEvent(ofType<UploadFileDeletedEvent>()) }
     }
 
     private fun artifact(

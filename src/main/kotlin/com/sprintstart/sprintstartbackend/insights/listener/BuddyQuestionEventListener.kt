@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.insights.listener
 
 import com.sprintstart.sprintstartbackend.insights.service.FaqLiveUpdateService
 import com.sprintstart.sprintstartbackend.knowledge.external.event.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -29,15 +30,15 @@ class BuddyQuestionEventListener(
     @EventListener
     fun handleQuestionAsked(event: QuestionAskedEvent) {
         applicationScope.launch {
-            try {
-                faqLiveUpdateService.onQuestionAsked(event)
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.warn(
                     "Could not file question from message {} into the FAQ of project {}",
                     event.messageId,
                     event.projectId,
                     e,
                 )
+            }) {
+                faqLiveUpdateService.onQuestionAsked(event)
             }
         }
     }

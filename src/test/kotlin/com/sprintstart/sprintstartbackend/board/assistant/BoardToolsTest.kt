@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.board.external.enums.HighlightColor
 import com.sprintstart.sprintstartbackend.board.external.enums.PlacementOutcome
 import com.sprintstart.sprintstartbackend.board.external.model.BoardStructurePayload
 import com.sprintstart.sprintstartbackend.board.external.model.CardMarkPayload
+import com.sprintstart.sprintstartbackend.board.external.model.HireBoard
 import com.sprintstart.sprintstartbackend.board.model.response.board.BoardCardResponse
 import com.sprintstart.sprintstartbackend.board.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.board.model.response.board.BoardStructureResponse
@@ -107,8 +108,7 @@ class BoardToolsTest {
     fun `a diagram carries the question the mentor chose`() {
         every {
             boardService.place(
-                UserId(userId),
-                ProjectId(projectId),
+                HireBoard(UserId(userId), ProjectId(projectId)),
                 BoardCardKind.DIAGRAM,
                 "how auth flows here",
             )
@@ -122,8 +122,7 @@ class BoardToolsTest {
         assertThat(result).contains("Placed")
         verify {
             boardService.place(
-                UserId(userId),
-                ProjectId(projectId),
+                HireBoard(UserId(userId), ProjectId(projectId)),
                 BoardCardKind.DIAGRAM,
                 "how auth flows here",
             )
@@ -132,7 +131,13 @@ class BoardToolsTest {
 
     @Test
     fun `a diagram with no subject comes back as a sentence, not silence`() {
-        every { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.DIAGRAM, null) } returns
+        every {
+            boardService.place(
+                HireBoard(UserId(userId), ProjectId(projectId)),
+                BoardCardKind.DIAGRAM,
+                null,
+            )
+        } returns
             PlacementOutcome.NEEDS_A_SUBJECT
 
         val result = tools.execute(placeCall("DIAGRAM"), userId)
@@ -158,7 +163,11 @@ class BoardToolsTest {
     @Test
     fun `a path step card carries the step title the mentor chose`() {
         every {
-            boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.PATH_STEP, "Set up your laptop")
+            boardService.place(
+                HireBoard(UserId(userId), ProjectId(projectId)),
+                BoardCardKind.PATH_STEP,
+                "Set up your laptop",
+            )
         } returns
             PlacementOutcome.PLACED
 
@@ -167,8 +176,7 @@ class BoardToolsTest {
         assertThat(result).contains("Placed")
         verify {
             boardService.place(
-                UserId(userId),
-                ProjectId(projectId),
+                HireBoard(UserId(userId), ProjectId(projectId)),
                 BoardCardKind.PATH_STEP,
                 "Set up your laptop",
             )
@@ -179,8 +187,7 @@ class BoardToolsTest {
     fun `an unknown step title lists the hire's real steps back`() {
         every {
             boardService.place(
-                UserId(userId),
-                ProjectId(projectId),
+                HireBoard(UserId(userId), ProjectId(projectId)),
                 BoardCardKind.PATH_STEP,
                 "Deploy pipeline",
             )
@@ -198,7 +205,11 @@ class BoardToolsTest {
     @Test
     fun `a long path's step titles are capped and the cut is said`() {
         every {
-            boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.PATH_STEP, "Deploy pipeline")
+            boardService.place(
+                HireBoard(UserId(userId), ProjectId(projectId)),
+                BoardCardKind.PATH_STEP,
+                "Deploy pipeline",
+            )
         } returns PlacementOutcome.NO_SUCH_STEP
         every { pathStepReader.titlesFor(userId) } returns (1..LIST_LIMIT + 1).map { "Step $it" }
 
@@ -211,7 +222,11 @@ class BoardToolsTest {
     @Test
     fun `a hire with no path is told there is no step to place`() {
         every {
-            boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.PATH_STEP, "Deploy pipeline")
+            boardService.place(
+                HireBoard(UserId(userId), ProjectId(projectId)),
+                BoardCardKind.PATH_STEP,
+                "Deploy pipeline",
+            )
         } returns PlacementOutcome.NO_SUCH_STEP
         every { pathStepReader.titlesFor(userId) } returns emptyList()
 
@@ -232,19 +247,24 @@ class BoardToolsTest {
 
     @Test
     fun `places a card and tells the mentor it will stay there`() {
-        every { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.SUGGESTED_TASKS) } returns
+        every {
+            boardService.place(
+                HireBoard(UserId(userId), ProjectId(projectId)),
+                BoardCardKind.SUGGESTED_TASKS,
+            )
+        } returns
             PlacementOutcome.PLACED
 
         val result = tools.execute(placeCall("SUGGESTED_TASKS"), userId)
 
         assertThat(result).contains("Placed")
         assertThat(result).contains("Apollo")
-        verify { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.SUGGESTED_TASKS) }
+        verify { boardService.place(HireBoard(UserId(userId), ProjectId(projectId)), BoardCardKind.SUGGESTED_TASKS) }
     }
 
     @Test
     fun `a card already there is not reported as newly added`() {
-        every { boardService.place(any(), any(), any()) } returns
+        every { boardService.place(any(), any()) } returns
             PlacementOutcome.ALREADY_THERE
 
         // The distinction matters: a mentor that cannot tell "added" from "was already there" will
@@ -255,7 +275,7 @@ class BoardToolsTest {
 
     @Test
     fun `a dismissed card comes back as a refusal the mentor is told not to retry`() {
-        every { boardService.place(any(), any(), any()) } returns
+        every { boardService.place(any(), any()) } returns
             PlacementOutcome.DISMISSED_BY_HIRE
 
         val result = tools.execute(placeCall("SUGGESTED_TASKS"), userId)
@@ -271,7 +291,7 @@ class BoardToolsTest {
         // Offering a baseline kind would only let the model take credit for a card that was there
         // anyway.
         assertThat(result).contains("not a card I can place")
-        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+        verify(exactly = 0) { boardService.place(any(), any()) }
     }
 
     @Test
@@ -280,7 +300,7 @@ class BoardToolsTest {
 
         assertThat(result).contains("CURRENT_TASK")
         assertThat(result).contains("SUGGESTED_TASKS")
-        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+        verify(exactly = 0) { boardService.place(any(), any()) }
     }
 
     @Test
@@ -290,7 +310,7 @@ class BoardToolsTest {
         )
 
         assertThat(tools.execute(placeCall("CURRENT_TASK"), userId)).contains("Ask which one")
-        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+        verify(exactly = 0) { boardService.place(any(), any()) }
     }
 
     @Test
@@ -298,7 +318,7 @@ class BoardToolsTest {
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
 
         assertThat(tools.execute(placeCall("CURRENT_TASK"), userId)).contains("not on a project")
-        verify(exactly = 0) { boardService.place(any(), any(), any()) }
+        verify(exactly = 0) { boardService.place(any(), any()) }
     }
 
     /**
