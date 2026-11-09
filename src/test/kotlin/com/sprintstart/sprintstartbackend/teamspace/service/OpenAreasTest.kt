@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

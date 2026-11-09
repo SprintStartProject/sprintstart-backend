@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
@@ -60,10 +61,10 @@ internal class NotionArtifactItemPersistenceService(
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun recordFailure(runId: UUID, sourceId: String, sourceUrl: String?, reason: String) {
+    fun recordFailure(runId: UUID, sourceId: SourceId, sourceUrl: String?, reason: String) {
         val run = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow { IngestionRunNotFoundException(runId) }
         run.failedCount++
-        run.failedItems.add(FailedArtifact(sourceId, ArtifactType.PAGE, sourceUrl, reason))
+        run.failedItems.add(FailedArtifact(sourceId.value, ArtifactType.PAGE, sourceUrl, reason))
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

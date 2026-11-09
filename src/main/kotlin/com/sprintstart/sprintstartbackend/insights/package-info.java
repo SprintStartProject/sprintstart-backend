@@ -9,7 +9,7 @@
                 "user :: api", "user :: api-events", "ingestion :: api", "ingestion :: ingestion.events",
                 "knowledge :: api", "knowledge :: api-events",
                 "arrival :: api", "arrival :: api-model", "arrival :: api-enums",
-                "starterwork :: api"
+                "starterwork :: api", "assistant :: api"
         }
 )
 package com.sprintstart.sprintstartbackend.insights;

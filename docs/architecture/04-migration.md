@@ -81,16 +81,17 @@ moves into the `assistant` kernel instead of behind a Buddy API
 pieces in #252, compaction in #253. `buddy/service` is no longer a named interface. With that, `assistant` uses the platform (user, ingestion, upload) and
 sits in L1 rather than L0.
 
-Not yet declared: `shared`, `user`, `connectors`, `config` (the composition root) and `health`.
-They depend on nothing above them today, but nothing enforces it.
+Every module now declares its allowed dependencies (#254): `shared` and `health` none, `user` →
+`shared`, `connectors` and `upload` → `user` and `shared`, `config` → `user`'s API. `ModuleBoundariesTest`
+therefore checks the whole application against the layering, not only the feature modules.
 
 ### Stage D: decisions that need the new structure
 
 | Item | Note |
 |---|---|
-| Tool SPI ([ADR-proposed-004](../adrs-proposed/adr-proposed-004-assistant-kernel-and-tool-spi.md)) | Features contribute their tools and actions from `<feature>/assistant/`. This replaces the hand-written routers and absorbs ADR-proposed-001 option 2. |
+| Tool SPI ([ADR-proposed-004](../adrs-proposed/adr-proposed-004-assistant-kernel-and-tool-spi.md)) | Features contribute their tools and actions from `<feature>/assistant/`. This replaces the hand-written routers and absorbs ADR-proposed-001 option 2. Started in #256: `HireTool` (spec, mount condition, snapshot, chip, `@Order` from `HireToolOrder`) for the hire's read tools, with `arrival` the first feature to contribute one. #257 moves the rest of the hire's read tools to their features (`insights`, `starterwork`, `board`, `knowledge`, `arrival`, and the kernel's app guide); #258 moves the path tool and its prose to `path/assistant` (a named interface the Buddy's path actions use until they move too). #259 splits the board's two tools into `PlaceCardTool` and `ReadBoardTool` in `board/assistant`, so every hire read tool is contributed by its feature and `BuddyToolExecutor` only mounts, snapshots and dispatches. #260 moves team mode's registry into the kernel (`TeamArea`, `TeamToolContext`, `TeamAreaTools`, `TeamActionHandler`, `TypedTeamAction`, the stored-params codec and the tool-schema helpers), and `arrival` contributes its team tools and actions first. #261 moves the starter-work area to `starterwork/assistant`, the knowledge area to `knowledge/assistant`, and the FAQ and gap refreshes to `insights/assistant`. Team mode keeps the areas that cannot move: the content area (its scope reads path and starter work, and path may not depend on starter work) and the members area (`user` sits below the kernel). #262 adds `HireAction` for the hire's actions: `propose`/`perform` with a PERSON or PROJECT scope the Buddy resolves, the flat proposal/request wire format kept as kernel types (`HireActionProposal`, `HireActionRequest`, `HireActionOutcome`) so the frontend is untouched, and `starterwork` contributes `open_orientation`, `claim_goal` and `record_assessment` first. #263 moves the five path actions to `path/assistant` as PERSON-scoped beans mounted only for a hire with a path, which retires the temporary `path :: assistant` interface. #264 moves the eleven board writes and edits to `board/assistant`, one PROJECT-scoped bean each, with the caps, card lookups and the offered-not-done promise shared in `BoardActionSupport`. #265 finishes the hire side: `flag_to_pm` moves to `knowledge/assistant`, `request_attestation` to `arrival/assistant`, and `set_github_login` becomes a PERSON-scoped bean in the Buddy itself (`user` sits below the kernel, so it cannot live there). `BuddyActionType` is gone and `BuddyActionService` only mounts the beans and puts the project gate in front. **Hire side of the tool SPI: done.** |
 | `@ApplicationModuleListener` for AI-calling and sync listeners | Needs Modulith's event publication table, i.e. a schema change. |
-| Versioned schema migrations | `ddl-auto: update` and the startup fixers are replaced by Flyway (or Liquibase). Needs its own ADR. |
+| Versioned schema migrations | Not planned (decided 2026-10-21): the schema stays on `ddl-auto: update`. |
 | Second split of `blueprint` / `path` | Decide from the measured sizes after stage C. |
 | Per-module configuration | Split `ApplicationConfig` into one `@ConfigurationProperties` class per module. |
 

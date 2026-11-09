@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredP
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.RepositoryResponsiveness
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.TaskSourceArtifact
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import java.time.Instant
 import java.util.UUID
 
@@ -92,7 +93,7 @@ interface ArtifactIngestionApi {
      * @param sourceId The backend's stable identifier, e.g. `github:org/repo:ISSUE:123`.
      * @return The artifact's own text, or null when nothing with that source id is ingested.
      */
-    fun getTaskSource(sourceId: String): TaskSourceArtifact?
+    fun getTaskSource(sourceId: SourceId): TaskSourceArtifact?
 
     /**
      * Every open tracker issue in a project, whoever it belongs to.
@@ -114,7 +115,7 @@ interface ArtifactIngestionApi {
      * issue — a pull request is not work to hand a newcomer, and silently accepting one would put
      * it in the pool under an issue's name.
      */
-    fun getIssue(sourceId: String): IngestedIssue?
+    fun getIssue(sourceId: SourceId): IngestedIssue?
 
     /**
      * Batch variant of [getIssue], for a caller holding a set of rows to compare against the

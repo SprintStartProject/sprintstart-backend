@@ -1,7 +1,15 @@
 package com.sprintstart.sprintstartbackend.buddy.service
 
+import com.sprintstart.sprintstartbackend.arrival.assistant.ArrivalStepsTool
+import com.sprintstart.sprintstartbackend.arrival.assistant.TeammatesTool
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyAppGuideTools
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.board.assistant.OpenPullRequestsTool
+import com.sprintstart.sprintstartbackend.insights.assistant.MyMetricsTool
+import com.sprintstart.sprintstartbackend.knowledge.assistant.CanonicalAnswersTool
+import com.sprintstart.sprintstartbackend.path.assistant.MyPathTool
+import com.sprintstart.sprintstartbackend.starterwork.assistant.MyCompetenciesTool
+import com.sprintstart.sprintstartbackend.starterwork.assistant.SuggestedTasksTool
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
@@ -15,7 +23,20 @@ class BuddySuggestionServiceTest {
     private val buddyToolExecutor: BuddyToolExecutor = mockk()
     private val userApi: UserApi = mockk()
 
-    private val service = BuddySuggestionService(buddyToolExecutor, userApi)
+    private val service = BuddySuggestionService(
+        buddyToolExecutor,
+        userApi,
+        listOf(
+            MyPathTool(mockk()),
+            ArrivalStepsTool(mockk()),
+            MyMetricsTool(mockk(), mockk()),
+            MyCompetenciesTool(mockk()),
+            OpenPullRequestsTool(mockk(), mockk()),
+            SuggestedTasksTool(mockk(), mockk()),
+            TeammatesTool(mockk(), mockk()),
+            BuddyAppGuideTools(mockk()),
+        ),
+    )
 
     private val userId = UUID.randomUUID()
     private val authId = "auth-1"
@@ -29,8 +50,8 @@ class BuddySuggestionServiceTest {
     @Test
     fun `offers a chip for each mounted tool it has wording for`() {
         mounted(
-            BuddyToolExecutor.GET_MY_METRICS,
-            BuddyToolExecutor.GET_SUGGESTED_TASKS,
+            MyMetricsTool.GET_MY_METRICS,
+            SuggestedTasksTool.GET_SUGGESTED_TASKS,
         )
 
         assertThat(service.forHire(userId).map { it.label })
@@ -39,12 +60,12 @@ class BuddySuggestionServiceTest {
 
     @Test
     fun `offers the path chip only for a hire who has an onboarding path`() {
-        mounted(BuddyToolExecutor.GET_MY_METRICS)
+        mounted(MyMetricsTool.GET_MY_METRICS)
         assertThat(service.forHire(userId).map { it.label }).doesNotContain("Where am I on my path?")
 
         // The read tool is mounted only for a hire who has a path, so the chip inherits that gate --
         // nobody is offered a doorway into a plan they have not got.
-        mounted(BuddyPathTools.READ_MY_PATH, BuddyToolExecutor.GET_MY_METRICS)
+        mounted(MyPathTool.READ_MY_PATH, MyMetricsTool.GET_MY_METRICS)
         assertThat(service.forHire(userId).map { it.label }).contains("Where am I on my path?")
     }
 
@@ -62,9 +83,9 @@ class BuddySuggestionServiceTest {
     @Test
     fun `does not offer the pull-request chip when the tool is not mounted`() {
         mounted(
-            BuddyToolExecutor.GET_MY_METRICS,
-            BuddyToolExecutor.GET_MY_COMPETENCIES,
-            BuddyToolExecutor.GET_SUGGESTED_TASKS,
+            MyMetricsTool.GET_MY_METRICS,
+            MyCompetenciesTool.GET_MY_COMPETENCIES,
+            SuggestedTasksTool.GET_SUGGESTED_TASKS,
         )
 
         assertThat(service.forHire(userId).map { it.label }).doesNotContain("Is my PR stuck?")
@@ -72,7 +93,7 @@ class BuddySuggestionServiceTest {
 
     @Test
     fun `offers the pull-request chip when the tool is mounted`() {
-        mounted(BuddyToolExecutor.GET_MY_OPEN_PULL_REQUESTS)
+        mounted(OpenPullRequestsTool.GET_MY_OPEN_PULL_REQUESTS)
 
         assertThat(service.forHire(userId))
             .singleElement()
@@ -87,11 +108,11 @@ class BuddySuggestionServiceTest {
     @Test
     fun `no chip a non-developer sees mentions developer work`() {
         mounted(
-            BuddyToolExecutor.GET_ARRIVAL_STEPS,
-            BuddyToolExecutor.GET_MY_METRICS,
-            BuddyToolExecutor.GET_MY_COMPETENCIES,
-            BuddyToolExecutor.GET_SUGGESTED_TASKS,
-            BuddyToolExecutor.GET_TEAMMATES,
+            ArrivalStepsTool.GET_ARRIVAL_STEPS,
+            MyMetricsTool.GET_MY_METRICS,
+            MyCompetenciesTool.GET_MY_COMPETENCIES,
+            SuggestedTasksTool.GET_SUGGESTED_TASKS,
+            TeammatesTool.GET_TEAMMATES,
         )
 
         val words = listOf("pull request", "pr ", "merge", "commit", "clone", "repository", "branch", "code")
@@ -113,10 +134,10 @@ class BuddySuggestionServiceTest {
     @Test
     fun `keeps the order the tools are mounted in`() {
         mounted(
-            BuddyPathTools.READ_MY_PATH,
-            BuddyToolExecutor.GET_ARRIVAL_STEPS,
-            BuddyToolExecutor.GET_MY_METRICS,
-            BuddyToolExecutor.GET_SUGGESTED_TASKS,
+            MyPathTool.READ_MY_PATH,
+            ArrivalStepsTool.GET_ARRIVAL_STEPS,
+            MyMetricsTool.GET_MY_METRICS,
+            SuggestedTasksTool.GET_SUGGESTED_TASKS,
         )
 
         assertThat(service.forHire(userId).map { it.label }).containsExactly(
@@ -130,7 +151,7 @@ class BuddySuggestionServiceTest {
     /** "How is my onboarding going?" belongs to the path; the metrics chip must not ask it. */
     @Test
     fun `the metrics chip asks about work, not onboarding`() {
-        mounted(BuddyToolExecutor.GET_MY_METRICS)
+        mounted(MyMetricsTool.GET_MY_METRICS)
 
         assertThat(service.forHire(userId)).singleElement().satisfies({
             assertThat((it.label + " " + it.question).lowercase()).doesNotContain("onboarding")
@@ -144,7 +165,7 @@ class BuddySuggestionServiceTest {
      */
     @Test
     fun `ignores mounted tools with no chip of their own`() {
-        mounted(BuddyToolExecutor.SEARCH_CANONICAL_ANSWERS, "place_card")
+        mounted(CanonicalAnswersTool.SEARCH_CANONICAL_ANSWERS, "place_card")
 
         assertThat(service.forHire(userId)).isEmpty()
     }
@@ -152,7 +173,7 @@ class BuddySuggestionServiceTest {
     @Test
     fun `resolves the caller before reading their tools`() {
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        mounted(BuddyToolExecutor.GET_SUGGESTED_TASKS)
+        mounted(SuggestedTasksTool.GET_SUGGESTED_TASKS)
 
         assertThat(service.forMe(authId).map { it.label }).containsExactly("Anything I can pick up?")
     }

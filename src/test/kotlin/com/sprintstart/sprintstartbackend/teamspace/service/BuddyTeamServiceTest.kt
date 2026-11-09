@@ -20,6 +20,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.assistant.external.FALLBACK_REPLY
 import com.sprintstart.sprintstartbackend.assistant.external.MAX_AGENT_STEPS
 import com.sprintstart.sprintstartbackend.assistant.external.ResolvedArtifact
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.buddy.service.reasoning
 import com.sprintstart.sprintstartbackend.buddy.service.result

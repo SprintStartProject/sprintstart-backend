@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.starterwork.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.StarterWorkAiClient
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.CandidatePoolState
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
@@ -357,14 +358,14 @@ class StarterWorkTaskProposalService(
      */
     @Transactional
     fun promoteCandidate(request: PromoteStarterWorkCandidateRequest): StarterWorkTaskProposalResponse {
-        val sourceId = request.sourceId.trim()
+        val sourceId = SourceId(request.sourceId.trim())
         val issue = loadPromotableIssue(sourceId)
         val title = titleOf(sourceId, issue)
         reviveOrRefuse(sourceId, request)?.let { return it.toResponse() }
 
         val proposal = starterWorkTaskProposalRepository.save(
             StarterWorkTaskProposal(
-                sourceId = sourceId,
+                sourceId = sourceId.value,
                 title = title,
                 summary = request.summary?.trim()?.takeIf { it.isNotBlank() },
                 // Nothing judged this issue, so there is no rationale to state.
@@ -380,7 +381,7 @@ class StarterWorkTaskProposalService(
     }
 
     /** The ingested issue, if there is one and it is still work somebody could be handed. */
-    private fun loadPromotableIssue(sourceId: String): IngestedIssue {
+    private fun loadPromotableIssue(sourceId: SourceId): IngestedIssue {
         val issue = artifactIngestionApi.getIssue(sourceId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
@@ -396,7 +397,7 @@ class StarterWorkTaskProposalService(
         return issue
     }
 
-    private fun titleOf(sourceId: String, issue: IngestedIssue): String =
+    private fun titleOf(sourceId: SourceId, issue: IngestedIssue): String =
         issue.title?.takeIf { it.isNotBlank() }
             ?: throw ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
@@ -426,10 +427,10 @@ class StarterWorkTaskProposalService(
      * @return the revived proposal, or null when the issue has no proposal at all.
      */
     private fun reviveOrRefuse(
-        sourceId: String,
+        sourceId: SourceId,
         request: PromoteStarterWorkCandidateRequest,
     ): StarterWorkTaskProposal? {
-        val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId) ?: return null
+        val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId.value) ?: return null
         return when (existing.status) {
             ProposalStatus.STALE -> {
                 existing.status = ProposalStatus.LIVE
@@ -575,7 +576,7 @@ class StarterWorkTaskProposalService(
      * than inventing one.
      */
     private fun featuresOf(proposal: StarterWorkTaskProposal): StarterWorkMatcher.TaskFeatures {
-        val source = artifactIngestionApi.getTaskSource(proposal.sourceId)
+        val source = artifactIngestionApi.getTaskSource(SourceId(proposal.sourceId))
         val labels = source
             ?.labels
             .orEmpty()
@@ -585,7 +586,7 @@ class StarterWorkTaskProposalService(
             competencyKeys = proposal.competencyKeys.toSet(),
             taskType = TaskType.fromLabels(labels),
             labels = labels,
-            repositoryFullName = repositoryOf(proposal.sourceId),
+            repositoryFullName = repositoryOf(SourceId(proposal.sourceId)),
             reviewed = proposal.reviewed,
             // Only a definite yes demotes; unknown is not "free". Written by
             // StarterWorkPoolReconciler, so ranking the pool stays one read per task.
@@ -599,8 +600,8 @@ class StarterWorkTaskProposalService(
      * Source ids are built by `SourceIdFactory` as `github:owner/name:TYPE:number`, so the
      * repository is already in the identifier and needs no extra lookup.
      */
-    private fun repositoryOf(sourceId: String): String? =
-        sourceId.split(':').getOrNull(1)?.takeIf { it.contains('/') }
+    private fun repositoryOf(sourceId: SourceId): String? =
+        with(sourceId.value) { split(':').getOrNull(1)?.takeIf { it.contains('/') } }
 
     companion object {
         // Matches the AI service's operation name and the frontend consumer's switch.

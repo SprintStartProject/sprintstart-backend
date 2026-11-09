@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyOpeningStream
 import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.assistant.external.OpeningConversation
+import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
 import com.sprintstart.sprintstartbackend.assistant.external.endFailureWithErrorEvent
 import com.sprintstart.sprintstartbackend.assistant.external.sinceLastOpening
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole

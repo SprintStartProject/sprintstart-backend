@@ -2,8 +2,8 @@ package com.sprintstart.sprintstartbackend.buddy.controller
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
 import com.sprintstart.sprintstartbackend.buddy.external.TeamModeConversation
-import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.CreateSessionRequest
 import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.SendBuddyMessageRequest
 import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.BuddyMessageResponse
@@ -298,7 +298,7 @@ class BuddyController(
         summary = "Confirm a buddy-proposed action",
         description = "Runs an action the buddy proposed, on the hire's explicit confirmation — for example " +
             "claim a task, open the task packet, tick off a step of their path, flag a question to the PM, or " +
-            "keep, extend, tick or reword a checklist on the hire's board. The full set is `BuddyActionType`. " +
+            "keep, extend, tick or reword a checklist on the hire's board. The full set is the `HireAction` beans. " +
             "The action is re-scoped to the caller server-side. Returns a single line to relay; a handled " +
             "failure is `ok = false`, not an error.",
     )
@@ -315,7 +315,7 @@ class BuddyController(
     suspend fun performAction(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @Valid @RequestBody request: BuddyActionRequest,
+        @Valid @RequestBody request: HireActionRequest,
     ): BuddyActionResponse = buddyActionService.perform(request, jwt)
 
     @Operation(

@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.N
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Service
 import java.util.UUID
@@ -38,7 +39,7 @@ internal class NotionArtifactIngestionApiService(
         runLifeCycleService.finishRun(runId, successfulItemCount)
     }
 
-    override fun recordPageFailure(runId: UUID, sourceId: String, sourceUrl: String?, reason: String) {
+    override fun recordPageFailure(runId: UUID, sourceId: SourceId, sourceUrl: String?, reason: String) {
         itemPersistenceService.recordFailure(runId, sourceId, sourceUrl, reason)
     }
 

@@ -216,7 +216,7 @@ data class CardOriginPayload(
  * into the note's own text as `==like this==`, and there is nothing to repeat here. Making it
  * required would have left a client two ways to say the same thing: fail the whole arrangement over
  * one note-mark, or send `""` and have the buddy quote the empty string back as highlighted words.
- * Nothing reads a blank one: `BuddyBoardTools` leaves it out.
+ * Nothing reads a blank one: `ReadBoardTool` leaves it out.
  */
 @Serializable
 data class CardMarkPayload(

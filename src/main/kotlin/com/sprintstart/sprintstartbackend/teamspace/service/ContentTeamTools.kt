@@ -2,6 +2,12 @@ package com.sprintstart.sprintstartbackend.teamspace.service
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
+import com.sprintstart.sprintstartbackend.assistant.external.TeamAreaTools
+import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
+import com.sprintstart.sprintstartbackend.assistant.external.ToolField
+import com.sprintstart.sprintstartbackend.assistant.external.stringFields
+import com.sprintstart.sprintstartbackend.assistant.external.toolFields
 import com.sprintstart.sprintstartbackend.path.external.PathReviewApi
 import com.sprintstart.sprintstartbackend.path.external.PhaseAuthoringApi
 import com.sprintstart.sprintstartbackend.path.external.StepAuthoringApi

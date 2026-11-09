@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.starterwork.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.shared.ai.AiServiceException
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.OrientationAiClient
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationOrigin
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationStep
@@ -437,7 +438,7 @@ class TaskOrientationService(
 
         // The task's own words, not the one-line summary mining wrote about it -- when the issue it
         // was mined from is still ingested.
-        val source = artifactIngestionApi.getTaskSource(proposal.sourceId)
+        val source = artifactIngestionApi.getTaskSource(SourceId(proposal.sourceId))
         val cached = taskOrientationPacketRepository.findByTaskProposalIdAndProjectId(proposal.id, projectId)
 
         return TaskContext(

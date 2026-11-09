@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedI
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.RepositoryResponsiveness
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.TaskSourceArtifact
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.StarterWorkAiClient
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.CandidatePoolState
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.CompetencyKind
@@ -482,7 +483,8 @@ class StarterWorkTaskProposalServiceTest {
     inner class PromoteCandidate {
         @Test
         fun `lands live and reviewed, taking its title and link from the ingested issue`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", title = "Fix the typo")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns
+                ingestedIssue("i:1", title = "Fix the typo")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns null
             val saved = slot<StarterWorkTaskProposal>()
             every { starterWorkTaskProposalRepository.save(capture(saved)) } answers { saved.captured }
@@ -512,7 +514,7 @@ class StarterWorkTaskProposalServiceTest {
                 status = ProposalStatus.STALE,
                 reviewed = false,
             )
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
             every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
 
@@ -530,7 +532,7 @@ class StarterWorkTaskProposalServiceTest {
                 status = ProposalStatus.STALE,
                 competencyKeys = mutableListOf("mined"),
             )
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
             every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
 
@@ -560,7 +562,7 @@ class StarterWorkTaskProposalServiceTest {
                 status = ProposalStatus.STALE,
                 competencyKeys = mutableListOf("mined"),
             )
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns stale
             every { starterWorkTaskProposalRepository.save(any<StarterWorkTaskProposal>()) } answers { firstArg() }
 
@@ -577,7 +579,8 @@ class StarterWorkTaskProposalServiceTest {
          */
         @Test
         fun `carries only the promoter's own note, never the issue body`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", body = "the issue body")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns
+                ingestedIssue("i:1", body = "the issue body")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns null
             val saved = slot<StarterWorkTaskProposal>()
             every { starterWorkTaskProposalRepository.save(capture(saved)) } answers { saved.captured }
@@ -594,7 +597,7 @@ class StarterWorkTaskProposalServiceTest {
          */
         @Test
         fun `accepts an issue somebody else is assigned`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", hasAssignee = true)
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1", hasAssignee = true)
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns null
             every { starterWorkTaskProposalRepository.save(any()) } answers { firstArg() }
 
@@ -605,7 +608,7 @@ class StarterWorkTaskProposalServiceTest {
 
         @Test
         fun `404s when nothing with that source id is ingested`() {
-            every { artifactIngestionApi.getIssue("i:404") } returns null
+            every { artifactIngestionApi.getIssue(SourceId("i:404")) } returns null
 
             val ex = assertThrows<ResponseStatusException> {
                 service.promoteCandidate(PromoteStarterWorkCandidateRequest("i:404"))
@@ -617,7 +620,7 @@ class StarterWorkTaskProposalServiceTest {
 
         @Test
         fun `409s rather than writing a second row for an issue already in the pool`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns
                 StarterWorkTaskProposal(sourceId = "i:1", title = "already here", status = ProposalStatus.LIVE)
 
@@ -637,7 +640,7 @@ class StarterWorkTaskProposalServiceTest {
          */
         @Test
         fun `refuses to revive an issue somebody removed from the pool`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1")
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns
                 StarterWorkTaskProposal(sourceId = "i:1", title = "removed", status = ProposalStatus.REJECTED)
 
@@ -652,7 +655,7 @@ class StarterWorkTaskProposalServiceTest {
 
         @Test
         fun `refuses an issue that is closed at its source`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", state = "CLOSED")
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1", state = "CLOSED")
 
             val ex = assertThrows<ResponseStatusException> {
                 service.promoteCandidate(PromoteStarterWorkCandidateRequest("i:1"))
@@ -668,7 +671,7 @@ class StarterWorkTaskProposalServiceTest {
          */
         @Test
         fun `accepts an issue whose state was never captured`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", state = null)
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1", state = null)
             every { starterWorkTaskProposalRepository.findBySourceId("i:1") } returns null
             every { starterWorkTaskProposalRepository.save(any()) } answers { firstArg() }
 
@@ -679,7 +682,7 @@ class StarterWorkTaskProposalServiceTest {
 
         @Test
         fun `400s when the ingested issue has no title`() {
-            every { artifactIngestionApi.getIssue("i:1") } returns ingestedIssue("i:1", title = null)
+            every { artifactIngestionApi.getIssue(SourceId("i:1")) } returns ingestedIssue("i:1", title = null)
 
             val ex = assertThrows<ResponseStatusException> {
                 service.promoteCandidate(PromoteStarterWorkCandidateRequest("i:1"))
@@ -821,9 +824,9 @@ class StarterWorkTaskProposalServiceTest {
                     signals = mutableMapOf("repo:acme/api" to 6, "label:bug" to 4),
                 )
             every { artifactIngestionApi.getRepositoryResponsiveness(projectId) } returns emptyList()
-            every { artifactIngestionApi.getTaskSource("github:acme/api:ISSUE:1") } returns
+            every { artifactIngestionApi.getTaskSource(SourceId("github:acme/api:ISSUE:1")) } returns
                 TaskSourceArtifact(title = null, body = null, labels = listOf("bug"), sourceUrl = null)
-            every { artifactIngestionApi.getTaskSource("github:acme/web:ISSUE:2") } returns
+            every { artifactIngestionApi.getTaskSource(SourceId("github:acme/web:ISSUE:2")) } returns
                 TaskSourceArtifact(title = null, body = null, labels = listOf("feature"), sourceUrl = null)
             every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
                 listOf(
@@ -843,9 +846,9 @@ class StarterWorkTaskProposalServiceTest {
             every { userCompetencyStateRepository.findAllByUserId(userId) } returns emptyList()
             every { githubHistoryPriorService.getPrior(userId) } returns null
             every { artifactIngestionApi.getRepositoryResponsiveness(projectId) } returns emptyList()
-            every { artifactIngestionApi.getTaskSource("github:acme/api:ISSUE:1") } returns
+            every { artifactIngestionApi.getTaskSource(SourceId("github:acme/api:ISSUE:1")) } returns
                 TaskSourceArtifact(title = null, body = null, labels = listOf("refactor"), sourceUrl = null)
-            every { artifactIngestionApi.getTaskSource("github:acme/api:ISSUE:2") } returns
+            every { artifactIngestionApi.getTaskSource(SourceId("github:acme/api:ISSUE:2")) } returns
                 TaskSourceArtifact(title = null, body = null, labels = listOf("documentation"), sourceUrl = null)
             every { starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE) } returns
                 listOf(

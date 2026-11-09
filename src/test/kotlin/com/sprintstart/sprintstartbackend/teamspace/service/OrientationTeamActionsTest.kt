@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyProposalRisk
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationOrigin
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationStep
 import com.sprintstart.sprintstartbackend.starterwork.model.request.orientation.AuthorOrientationRequest

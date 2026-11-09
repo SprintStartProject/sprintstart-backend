@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.buddy.service
 
-import com.sprintstart.sprintstartbackend.assistant.external.BuddyAppGuideTools
+import com.sprintstart.sprintstartbackend.assistant.external.HireTool
 import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.BuddySuggestionResponse
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.stereotype.Service
@@ -32,7 +32,14 @@ import java.util.UUID
 class BuddySuggestionService(
     private val buddyToolExecutor: BuddyToolExecutor,
     private val userApi: UserApi,
+    hireTools: List<HireTool>,
 ) {
+    /** The chips the features' own tools bring, by tool name. */
+    private val toolChips: Map<String, BuddySuggestionResponse> = hireTools
+        .mapNotNull { tool ->
+            tool.suggestion?.let { tool.spec.name to BuddySuggestionResponse(it.label, it.question) }
+        }.toMap()
+
     /** The chips for the caller behind [authId], or none when the auth id resolves to no user. */
     fun forMe(authId: String): List<BuddySuggestionResponse> =
         userApi
@@ -41,72 +48,11 @@ class BuddySuggestionService(
             .orElse(emptyList())
 
     /**
-     * The chips this hire should see, in mounted order.
+     * The chips this hire should see, in mounted order: each mounted tool's own chip, if it has one.
      *
-     * A tool with no entry in the catalog contributes nothing, so adding a tool never silently adds
-     * a chip — the wording for a hire is a separate decision from what the mentor can read.
+     * A tool without a chip contributes nothing, so adding a tool never silently adds a chip — the
+     * wording for a hire is a separate decision from what the mentor can read.
      */
     fun forHire(userId: UUID): List<BuddySuggestionResponse> =
-        buddyToolExecutor.toolSpecs(userId).mapNotNull { CATALOG[it.name] }
-
-    private companion object {
-        /**
-         * Tool name → the chip offered for it.
-         *
-         * Wording may only assume what the chip's own gate guarantees. A chip is offered exactly
-         * when its tool is mounted, so a chip whose tool mounts for everybody must be true of a
-         * designer, a Scrum Master and a developer alike — no "clone", "repository", "commit" or
-         * "pull request" in it. `BuddySuggestionServiceTest` greps for exactly that vocabulary.
-         *
-         * The label is what the chip says; the question is what lands in the composer. They differ
-         * only in length — a chip is a doorway, and one that promised something other than the
-         * question it writes would be putting words in the hire's mouth.
-         */
-        val CATALOG: Map<String, BuddySuggestionResponse> = mapOf(
-            // Mounted only for a hire with a path. Asks where they are rather than for the plan: the plan is
-            // a page they already have.
-            BuddyPathTools.READ_MY_PATH to BuddySuggestionResponse(
-                label = "Where am I on my path?",
-                question = "Where am I in my onboarding path, and what should I do next?",
-            ),
-            BuddyToolExecutor.GET_ARRIVAL_STEPS to BuddySuggestionResponse(
-                label = "What do I still need?",
-                question = "What do I still need to get set up?",
-            ),
-            // Asks for the pool and nothing else, so the mentor does not read it as the path's question.
-            BuddyToolExecutor.GET_SUGGESTED_TASKS to BuddySuggestionResponse(
-                label = "Anything I can pick up?",
-                question = "Is there something in the work pool I could pick up?",
-            ),
-            BuddyToolExecutor.GET_MY_OPEN_PULL_REQUESTS to BuddySuggestionResponse(
-                label = "Is my PR stuck?",
-                question = "Are any of my pull requests stuck waiting on a review?",
-            ),
-            // About their work, not their onboarding: the metrics are contributions and reviews, and a
-            // chip asking how onboarding is going would send that question here instead of to the
-            // path, which is the one that can answer it.
-            BuddyToolExecutor.GET_MY_METRICS to BuddySuggestionResponse(
-                label = "How's my work going?",
-                question = "How is my work going so far — is anything waiting on someone?",
-            ),
-            // Names the competency ledger, so it cannot be mistaken for the path chip.
-            BuddyToolExecutor.GET_MY_COMPETENCIES to BuddySuggestionResponse(
-                label = "What have I shown?",
-                question = "What have I shown so far — where does my ledger stand?",
-            ),
-            // Mounted with attestation, so it is only offered where somebody could actually be
-            // asked. The chip stops at naming people: whether that ends in request_attestation is
-            // the mentor's call and the hire's confirmation, not the chip's.
-            BuddyToolExecutor.GET_TEAMMATES to BuddySuggestionResponse(
-                label = "Who's on my team?",
-                question = "Who else is on my project?",
-            ),
-            // Last, because it is about the app rather than the hire's onboarding. "This page" is
-            // the one the chip was pressed on: the client sends it with the message.
-            BuddyAppGuideTools.GET_APP_GUIDE to BuddySuggestionResponse(
-                label = "What can I do here?",
-                question = "What can I do on this page?",
-            ),
-        )
-    }
+        buddyToolExecutor.toolSpecs(userId).mapNotNull { toolChips[it.name] }
 }

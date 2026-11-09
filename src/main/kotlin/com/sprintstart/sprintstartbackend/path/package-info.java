@@ -5,7 +5,7 @@
 @ApplicationModule(
         allowedDependencies = {
                 "shared :: shared", "shared :: ids", "shared :: ai", "shared :: annotations", "shared :: config",
-                "blueprint :: api", "blueprint :: api-enums", "user :: api", "user :: api-events"
+                "blueprint :: api", "blueprint :: api-enums", "user :: api", "user :: api-events", "assistant :: api"
         }
 )
 package com.sprintstart.sprintstartbackend.path;

@@ -4,9 +4,9 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
 import com.sprintstart.sprintstartbackend.buddy.controller.BuddyController
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
-import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.BuddyActionRequest
 import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.SendBuddyMessageRequest
 import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.buddy.model.response.buddy.BuddySuggestionResponse
@@ -570,7 +570,7 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(userJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
+                    .content(objectMapper.writeValueAsString(HireActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 
@@ -588,7 +588,7 @@ class BuddyControllerTest(
                 post("/api/v1/onboarding/me/buddy/actions")
                     .with(noUserRoleJwt)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(BuddyActionRequest(action = "claim_goal"))),
+                    .content(objectMapper.writeValueAsString(HireActionRequest(action = "claim_goal"))),
             ).andExpect(request().asyncStarted())
             .andReturn()
 

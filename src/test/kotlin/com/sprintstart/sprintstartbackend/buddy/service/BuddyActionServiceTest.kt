@@ -1,14 +1,19 @@
 package com.sprintstart.sprintstartbackend.buddy.service
 
+import com.sprintstart.sprintstartbackend.arrival.assistant.RequestAttestationAction
 import com.sprintstart.sprintstartbackend.arrival.service.AttestationService
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
-import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
+import com.sprintstart.sprintstartbackend.board.assistant.boardActionsOver
 import com.sprintstart.sprintstartbackend.board.service.BoardService
-import com.sprintstart.sprintstartbackend.board.service.HireBoardActionsService
-import com.sprintstart.sprintstartbackend.board.service.hireBoardOver
-import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.BuddyActionRequest
+import com.sprintstart.sprintstartbackend.knowledge.assistant.FlagToPmAction
 import com.sprintstart.sprintstartbackend.knowledge.service.HireKnowledgeService
 import com.sprintstart.sprintstartbackend.knowledge.service.KnowledgeBaseService
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
+import com.sprintstart.sprintstartbackend.starterwork.assistant.ClaimGoalAction
+import com.sprintstart.sprintstartbackend.starterwork.assistant.OpenOrientationAction
+import com.sprintstart.sprintstartbackend.starterwork.assistant.RecordAssessmentAction
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.GoalClaimant
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProficiencyLevel
 import com.sprintstart.sprintstartbackend.starterwork.external.model.PlacementResult
@@ -50,28 +55,23 @@ class BuddyActionServiceTest {
     private val boardService: BoardService = mockk(relaxed = true)
     private val competencyPlacementService: CompetencyPlacementService = mockk()
 
-    // The path half of the buddy, which owns its own three actions. These cases are about the
-    // project-scoped ones; `BuddyPathActionTest` covers the other half against the real component.
-    // Answers "not mine" for every action here, which is what these cases are: the path component
-    // is asked first for every proposal and every confirm, so a mock that could not say no would
-    // make every case below a stubbing error.
-    private val buddyPathActions: BuddyPathActions = mockk {
-        every { handles(any()) } returns false
-    }
+    private val hireStarterWork = hireStarterWorkOver(
+        taskOrientationService = taskOrientationService,
+        competencyPlacementService = competencyPlacementService,
+    )
+    private val hireStarterWorkActions = hireStarterWorkActionsOver(userGoalService, competencyPlacementService)
+
+    // The starter-work actions are the real ones over the same mocks, so these cases still cover them.
     private val service = BuddyActionService(
-        hireStarterWorkOver(
-            taskOrientationService = taskOrientationService,
-            competencyPlacementService = competencyPlacementService,
-        ),
-        HireKnowledgeService(knowledgeBaseService),
-        hireStarterWorkActionsOver(userGoalService, competencyPlacementService),
         userApi,
-        attestationService,
-        buddyPathActions,
-        BuddyBoardWriteActions(
-            HireBoardActionsService(boardService),
-            BuddyBoardEditActions(hireBoardOver(boardService), HireBoardActionsService(boardService)),
-        ),
+        listOf(
+            FlagToPmAction(HireKnowledgeService(knowledgeBaseService)),
+            RequestAttestationAction(attestationService),
+            SetGithubLoginAction(userApi),
+            OpenOrientationAction(hireStarterWork),
+            ClaimGoalAction(hireStarterWorkActions),
+            RecordAssessmentAction(hireStarterWork, hireStarterWorkActions),
+        ) + boardActionsOver(boardService),
     )
 
     private val userId = UUID.randomUUID()
@@ -110,9 +110,7 @@ class BuddyActionServiceTest {
     // -- specs / dispatch -------------------------------------------------------------------------
 
     @Test
-    fun `exposes the project-scoped action tools, and no path action without a path`() {
-        every { buddyPathActions.specs(userId) } returns emptyList()
-
+    fun `exposes the project-scoped action tools`() {
         assertThat(service.actionSpecs(userId).map { it.name }).containsExactlyInAnyOrder(
             "flag_to_pm",
             "open_orientation",
@@ -135,18 +133,8 @@ class BuddyActionServiceTest {
     }
 
     @Test
-    fun `mounts whatever path actions the path component offers for this hire`() {
-        every { buddyPathActions.specs(userId) } returns listOf(
-            BuddyToolSpecDto(name = "complete_step", description = "", parameters = buildJsonObject { }),
-        )
-
-        assertThat(service.actionSpecs(userId).map { it.name }).contains("complete_step")
-    }
-
-    @Test
     fun `tells the mentor that a hire asking to flag something is reason enough`() {
         // "Last resort" alone had the mentor refuse an explicit "flag this to my PM".
-        every { buddyPathActions.specs(userId) } returns emptyList()
         val flag = service.actionSpecs(userId).single { it.name == "flag_to_pm" }
 
         assertThat(flag.description).contains("the hire ASKS you to flag")
@@ -215,7 +203,6 @@ class BuddyActionServiceTest {
     @Test
     fun `every board write can say what it cannot do for a hire on no project`() {
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
-        every { buddyPathActions.specs(userId) } returns emptyList()
         val boardWrites = service.actionSpecs(userId).map { it.name }.filter { name ->
             name.contains("checklist") ||
                 name.contains("card") ||
@@ -356,7 +343,7 @@ class BuddyActionServiceTest {
             PlacementResult(recorded = true, message = "Noted — “Kotlin”.")
 
         val result = service.perform(
-            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "intermediate"),
+            HireActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "intermediate"),
             jwt,
         )
 
@@ -371,7 +358,7 @@ class BuddyActionServiceTest {
             PlacementResult(recorded = true, message = "Noted.")
 
         val result = service.perform(
-            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "beginner"),
+            HireActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "beginner"),
             jwt,
         )
 
@@ -386,8 +373,9 @@ class BuddyActionServiceTest {
      */
     @Test
     fun `a confirmed level the scale does not have never reaches the ledger`() = runTest {
+        asHire()
         val result = service.perform(
-            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "godlike"),
+            HireActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "godlike"),
             jwt,
         )
 
@@ -405,7 +393,7 @@ class BuddyActionServiceTest {
             )
 
         val result = service.perform(
-            BuddyActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "expert"),
+            HireActionRequest(action = "record_assessment", competencyKey = "kotlin", level = "expert"),
             jwt,
         )
 
@@ -428,7 +416,7 @@ class BuddyActionServiceTest {
         asHire()
         every { userApi.setGithubLogin(userId, "OctoCat") } returns "octocat"
 
-        val result = service.perform(BuddyActionRequest(action = "set_github_login", githubLogin = "OctoCat"), jwt)
+        val result = service.perform(HireActionRequest(action = "set_github_login", githubLogin = "OctoCat"), jwt)
 
         assertThat(result.ok).isTrue()
         // Reported as stored, not as typed: GithubLoginService lower-cases it, and telling the hire
@@ -446,7 +434,7 @@ class BuddyActionServiceTest {
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
         every { userApi.setGithubLogin(userId, "octocat") } returns "octocat"
 
-        val result = service.perform(BuddyActionRequest(action = "set_github_login", githubLogin = "octocat"), jwt)
+        val result = service.perform(HireActionRequest(action = "set_github_login", githubLogin = "octocat"), jwt)
 
         assertThat(result.ok).isTrue()
     }
@@ -461,7 +449,7 @@ class BuddyActionServiceTest {
         every { userApi.setGithubLogin(userId, "octocat") } throws
             ResponseStatusException(HttpStatus.CONFLICT, "GitHub account 'octocat' is already linked to another user")
 
-        val result = service.perform(BuddyActionRequest(action = "set_github_login", githubLogin = "octocat"), jwt)
+        val result = service.perform(HireActionRequest(action = "set_github_login", githubLogin = "octocat"), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("already linked to another user")
@@ -537,7 +525,7 @@ class BuddyActionServiceTest {
         onOneProject()
 
         val result = service.perform(
-            BuddyActionRequest(action = "flag_to_pm", question = "How do we deploy?"),
+            HireActionRequest(action = "flag_to_pm", question = "How do we deploy?"),
             jwt,
         )
 
@@ -546,11 +534,61 @@ class BuddyActionServiceTest {
     }
 
     @Test
+    fun `confirming an attestation files it for the hire on their project`() = runTest {
+        asHire()
+        onOneProject()
+        val attesterId = UUID.randomUUID()
+        every {
+            attestationService.requestAttestation(
+                UserId(userId),
+                ProjectId(projectId),
+                "Ran the retro",
+                UserId(attesterId),
+            )
+        } returns "Ran the retro"
+
+        val result = service.perform(
+            HireActionRequest(action = "request_attestation", title = "Ran the retro", attesterId = attesterId),
+            jwt,
+        )
+
+        assertThat(result.ok).isTrue()
+        assertThat(result.message).contains("“Ran the retro”")
+    }
+
+    @Test
+    fun `an attestation the arrival rules refuse comes back as their sentence`() = runTest {
+        asHire()
+        onOneProject()
+        every { attestationService.requestAttestation(any(), any(), any(), any()) } throws
+            ResponseStatusException(HttpStatus.BAD_REQUEST, "You can't confirm your own work.")
+
+        val result = service.perform(
+            HireActionRequest(action = "request_attestation", title = "Ran the retro", attesterId = userId),
+            jwt,
+        )
+
+        assertThat(result.ok).isFalse()
+        assertThat(result.message).isEqualTo("You can't confirm your own work.")
+    }
+
+    @Test
+    fun `an attestation confirm missing its attester files nothing`() = runTest {
+        asHire()
+        onOneProject()
+
+        val result = service.perform(HireActionRequest(action = "request_attestation", title = "Ran the retro"), jwt)
+
+        assertThat(result.ok).isFalse()
+        verify(exactly = 0) { attestationService.requestAttestation(any(), any(), any(), any()) }
+    }
+
+    @Test
     fun `flagging to the PM with no question never escalates`() = runTest {
         asHire()
         onOneProject()
 
-        val result = service.perform(BuddyActionRequest(action = "flag_to_pm", question = "  "), jwt)
+        val result = service.perform(HireActionRequest(action = "flag_to_pm", question = "  "), jwt)
 
         assertThat(result.ok).isFalse()
         verify(exactly = 0) { knowledgeBaseService.escalate(any(), any(), any()) }
@@ -568,7 +606,7 @@ class BuddyActionServiceTest {
             reason = null,
         )
 
-        val result = service.perform(BuddyActionRequest(action = "open_orientation"), jwt)
+        val result = service.perform(HireActionRequest(action = "open_orientation"), jwt)
 
         assertThat(result.ok).isTrue()
         assertThat(result.message).contains("Fix the login redirect")
@@ -586,7 +624,7 @@ class BuddyActionServiceTest {
             reason = "You have no current task yet",
         )
 
-        val result = service.perform(BuddyActionRequest(action = "open_orientation"), jwt)
+        val result = service.perform(HireActionRequest(action = "open_orientation"), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("no current task")
@@ -596,7 +634,7 @@ class BuddyActionServiceTest {
     fun `an unrecognised action is a handled failure, not an error`() = runTest {
         asHire()
 
-        val result = service.perform(BuddyActionRequest(action = "launch_rockets"), jwt)
+        val result = service.perform(HireActionRequest(action = "launch_rockets"), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("isn't recognised")
@@ -614,7 +652,7 @@ class BuddyActionServiceTest {
             sourceUrl = null,
         )
 
-        val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)
+        val result = service.perform(HireActionRequest(action = "claim_goal", taskId = taskId), jwt)
 
         assertThat(result.ok).isTrue()
         assertThat(result.message).contains("Fix the login redirect")
@@ -632,7 +670,7 @@ class BuddyActionServiceTest {
             sourceUrl = null,
         )
 
-        val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)
+        val result = service.perform(HireActionRequest(action = "claim_goal", taskId = taskId), jwt)
 
         // The pinning itself happens in `UserGoalService.claimForMe` (tested there); the buddy
         // only has to tell the hire where to find it.
@@ -647,7 +685,7 @@ class BuddyActionServiceTest {
         every { userGoalService.claimForMe(authId, projectId, taskId, GoalClaimant.BUDDY) } throws
             ResponseStatusException(HttpStatus.CONFLICT, "only a live task can be claimed as a goal")
 
-        val result = service.perform(BuddyActionRequest(action = "claim_goal", taskId = taskId), jwt)
+        val result = service.perform(HireActionRequest(action = "claim_goal", taskId = taskId), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("live")
@@ -660,7 +698,7 @@ class BuddyActionServiceTest {
         coEvery { taskOrientationService.getForHire(userId, projectId) } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "You are not a member of that project.")
 
-        val result = service.perform(BuddyActionRequest(action = "open_orientation"), jwt)
+        val result = service.perform(HireActionRequest(action = "open_orientation"), jwt)
 
         assertThat(result.ok).isFalse()
         assertThat(result.message).contains("not a member")

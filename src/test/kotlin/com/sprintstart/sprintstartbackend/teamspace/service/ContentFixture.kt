@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionDraft
+import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.path.external.model.PathElement
 import com.sprintstart.sprintstartbackend.path.external.model.PathElementKind
@@ -9,6 +11,7 @@ import com.sprintstart.sprintstartbackend.path.service.OnboardingPathService
 import com.sprintstart.sprintstartbackend.path.service.OnboardingSkipService
 import com.sprintstart.sprintstartbackend.path.service.PathElements
 import com.sprintstart.sprintstartbackend.path.service.PathReviewService
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.starterwork.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.starterwork.service.StarterWorkPool
@@ -107,7 +110,7 @@ internal class ContentFixture {
     fun task(linked: Boolean = true, title: String = "Fix the typo"): StarterWorkTaskProposal {
         val task = StarterWorkTaskProposal(sourceId = "github:acme/app:ISSUE:${UUID.randomUUID()}", title = title)
         every { proposals.findById(task.id) } returns Optional.of(task)
-        every { starterWorkScope.covers(task.sourceId, projectId) } returns linked
+        every { starterWorkScope.covers(SourceId(task.sourceId), projectId) } returns linked
         return task
     }
 

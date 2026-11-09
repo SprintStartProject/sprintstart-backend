@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionHandler
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.serialization.json.JsonObject

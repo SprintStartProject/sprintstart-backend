@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.starterwork.service
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.model.GITHUB_SOURCE_PREFIX
 import com.sprintstart.sprintstartbackend.starterwork.external.model.GithubRepositoryName
 import com.sprintstart.sprintstartbackend.starterwork.external.model.githubRepositoryOf
@@ -27,7 +28,7 @@ class StarterWorkScope(
 ) {
     /** Whether the task or issue [sourceId] names belongs to [projectId]. */
     @Transactional(readOnly = true)
-    fun covers(sourceId: String, projectId: UUID): Boolean {
+    fun covers(sourceId: SourceId, projectId: UUID): Boolean {
         val repository = githubRepositoryOf(sourceId) ?: return false
         return projectId in projectsOf(repository)
     }
@@ -37,7 +38,7 @@ class StarterWorkScope(
     fun <T> onProject(items: List<T>, projectId: UUID, sourceIdOf: (T) -> String): List<T> {
         val covered = mutableMapOf<GithubRepositoryName, Boolean>()
         return items.filter { item ->
-            val repository = githubRepositoryOf(sourceIdOf(item)) ?: return@filter false
+            val repository = githubRepositoryOf(SourceId(sourceIdOf(item))) ?: return@filter false
             covered.getOrPut(repository) { projectId in projectsOf(repository) }
         }
     }
@@ -60,7 +61,7 @@ class StarterWorkScope(
         val visible = mutableMapOf<GithubRepositoryName, Boolean>()
         return items.filter { item ->
             val sourceId = sourceIdOf(item)
-            val repository = githubRepositoryOf(sourceId)
+            val repository = githubRepositoryOf(SourceId(sourceId))
                 ?: return@filter !sourceId.startsWith(GITHUB_SOURCE_PREFIX)
             visible.getOrPut(repository) { projectId in projectsOf(repository) }
         }

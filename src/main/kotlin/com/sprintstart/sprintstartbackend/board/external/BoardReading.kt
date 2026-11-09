@@ -52,7 +52,7 @@ object BoardReading {
      * it could not otherwise name. The hire's own cards carry their words as well: a note cannot be
      * rewritten by somebody who cannot see what it says now.
      *
-     * Built here rather than in `BuddyBoardTools.readBoard` so that function gains no branch: it
+     * Built here rather than in `ReadBoardTool.readBoard` so that function gains no branch: it
      * is already at detekt's complexity ceiling, and a board read is exactly the kind of function
      * that grows a condition per release until nobody can follow it.
      */
