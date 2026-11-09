@@ -42,8 +42,8 @@ class InsightsAiClient(
                 .body(request)
                 .sync()
                 .perform<AiFaqGroupingResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw InsightsAiException("Failed to group FAQ questions (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw InsightsAiException("Failed to group FAQ questions (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     /**
@@ -62,8 +62,8 @@ class InsightsAiClient(
                 .body(request)
                 .sync()
                 .perform<AiFaqClassifyResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw InsightsAiException("Failed to classify FAQ question (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw InsightsAiException("Failed to classify FAQ question (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     /**
@@ -79,8 +79,8 @@ class InsightsAiClient(
                 .body(request)
                 .sync()
                 .perform<AiFaqMergeResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw InsightsAiException("Failed to merge FAQ groups (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw InsightsAiException("Failed to merge FAQ groups (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

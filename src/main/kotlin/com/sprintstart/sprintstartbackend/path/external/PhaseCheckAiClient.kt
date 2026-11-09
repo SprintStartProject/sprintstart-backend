@@ -41,9 +41,9 @@ class PhaseCheckAiClient(
                 .sync()
                 .perform<GradeAnswersResponse>()
                 .results
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
+        } catch (e: WebClientException) {
             val msg = "Failed to grade short-text answers (HTTP ${e.statusCode}): ${e.body}"
-            throw AiServiceException(e.statusCode, e.body, msg)
+            throw AiServiceException(e.statusCode, e.body, msg, e)
         }
 
     /** Builds an absolute URI for [path] against the configured AI service base URL. */
