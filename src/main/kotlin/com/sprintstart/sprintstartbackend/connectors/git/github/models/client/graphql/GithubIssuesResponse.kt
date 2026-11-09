@@ -23,7 +23,11 @@ data class GithubIssuesResponse(
     )
 
     override val results: List<Issue>
-        get() = data?.repository?.issues?.nodes ?: emptyList()
+        get() = data
+            ?.repository
+            ?.issues
+            ?.nodes
+            .orEmpty()
 
     override val hasNextPage: Boolean
         get() = data

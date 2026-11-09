@@ -1,0 +1,386 @@
+{
+  "$id": "https://sprintstart.dev/contracts/buddy-stream-events.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Server-sent events of POST /api/v1/onboarding/me/buddy/messages and /open/stream. One branch per event type, discriminated by `type`. Owned by sprintstart-backend; sprintstart-frontend keeps a copy.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "type": {
+          "const": "token"
+        }
+      },
+      "required": [
+        "type",
+        "content"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "reasoning": {
+          "type": "string"
+        },
+        "type": {
+          "const": "reasoning"
+        }
+      },
+      "required": [
+        "type",
+        "reasoning"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "tool"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "tool_use"
+        }
+      },
+      "required": [
+        "type",
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "source_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start_page": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "citation"
+        }
+      },
+      "required": [
+        "type",
+        "artifact_id",
+        "filename"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "answer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attester_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "based_on": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "card_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "card_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "card_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "checklist_items": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "checklist_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "competency_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "github_login": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "level": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "link_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "link_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "onboarding_task_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "option_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "phase_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "proposal_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "question": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "question_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "STANDARD",
+            "DESTRUCTIVE",
+            "BULK",
+            null
+          ]
+        },
+        "step_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "action_proposal"
+        },
+        "unlocks_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "waits_on_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "action",
+        "label"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "type": {
+          "const": "opening_action"
+        }
+      },
+      "required": [
+        "type",
+        "label",
+        "question"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "reset"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "done"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "type": {
+          "const": "error"
+        }
+      },
+      "required": [
+        "type",
+        "message"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Buddy stream event (sprintstart-backend -> sprintstart-frontend)"
+}

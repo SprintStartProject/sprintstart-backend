@@ -37,7 +37,7 @@ internal class BitbucketScheduledExecutor(
         dueConfigs.forEach { config ->
             if (config.autoUpdate) {
                 scheduledExecutor.launch("Updating Bitbucket repository '${config.id}'") {
-                    updateService.updateRepository(config.id!!)
+                    updateService.updateRepository(checkNotNull(config.id) { "A stored repository config has an id" })
                 }
             }
 

@@ -64,8 +64,8 @@ class BuddyCompactionService(
                 label = "user $userId",
                 find = { buddySessionRepository.findByIdAndUserId(sessionId, userId) },
                 findById = { buddySessionRepository.findById(it).orElse(null) },
-                transcript = { sessionId ->
-                    buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(sessionId).map { it.toAgentMessage() }
+                transcript = { id ->
+                    buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(id).map { it.toAgentMessage() }
                 },
                 save = { buddySessionRepository.save(it) },
             ),

@@ -6,6 +6,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.request.board.Authore
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.ChecklistCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.NoteCardRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.BuddyActionRequest
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -51,6 +54,7 @@ class BuddyBoardWriteActionsTest {
 
     private val userId = UUID.randomUUID()
     private val projectId = UUID.randomUUID()
+    private val project = ProjectId(projectId)
     private val authId = "auth|hire"
     private val jwt: Jwt = mockk<Jwt>().also { every { it.subject } returns authId }
 
@@ -131,7 +135,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request), BoardActor.BUDDY) }
+        verify { boardService.addAuthoredCard(UserId(userId), project, capture(request), BoardActor.BUDDY) }
         val checklist = request.captured as ChecklistCardRequest
         assertThat(checklist.title).isEqualTo("Getting started")
         assertThat(checklist.items.map { it.text })
@@ -223,7 +227,14 @@ class BuddyBoardWriteActionsTest {
         )
 
         assertThat(result.ok).isTrue()
-        verify { boardService.appendChecklistItems(userId, projectId, cardId, listOf("Write the test")) }
+        verify {
+            boardService.appendChecklistItems(
+                UserId(userId),
+                project,
+                BoardCardId(cardId),
+                listOf("Write the test"),
+            )
+        }
     }
 
     /** A card that is not theirs, or not a checklist: a sentence, not a failed confirm. */
@@ -279,7 +290,7 @@ class BuddyBoardWriteActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request), BoardActor.BUDDY) }
+        verify { boardService.addAuthoredCard(UserId(userId), project, capture(request), BoardActor.BUDDY) }
         assertThat((request.captured as NoteCardRequest).text).isEqualTo(text)
     }
 
@@ -320,7 +331,14 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.tickChecklistItems(userId, projectId, cardId, listOf("Reproduce it locally")) } returns 1
+        every {
+            boardService.tickChecklistItems(
+                UserId(userId),
+                project,
+                BoardCardId(cardId),
+                listOf("Reproduce it locally"),
+            )
+        } returns 1
 
         val result = service.perform(
             BuddyActionRequest(
@@ -401,7 +419,9 @@ class BuddyBoardWriteActionsTest {
         asHire()
         onOneProject()
         val cardId = UUID.randomUUID()
-        every { boardService.rewordChecklistItem(userId, projectId, cardId, "Fix it", "Fix the redirect") } returns true
+        every {
+            boardService.rewordChecklistItem(UserId(userId), project, BoardCardId(cardId), "Fix it", "Fix the redirect")
+        } returns true
 
         val result = service.perform(
             BuddyActionRequest(

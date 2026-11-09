@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Checkl
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.LinkContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * A fingerprint of the words on an authored card, for telling that it is still the card a buddy
@@ -44,5 +45,5 @@ internal object BoardCardVersion {
         MessageDigest
             .getInstance("SHA-256")
             .digest(words.joinToString("\u0000").toByteArray())
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") { "%02x".format(Locale.ROOT, it) }
 }

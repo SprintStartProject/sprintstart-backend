@@ -62,10 +62,8 @@ class BuddySuggestionService(
          * question it writes would be putting words in the hire's mouth.
          */
         val CATALOG: Map<String, BuddySuggestionResponse> = mapOf(
-            // Mounted only for a hire who has an onboarding path, so the chip can talk about one
-            // without checking. Asks where they are rather than for the plan: the mentor answers
-            // with the phase they are standing in and one next thing, which is what a hire looking
-            // at an empty composer actually wants -- the plan itself is a page they already have.
+            // Mounted only for a hire with a path. Asks where they are rather than for the plan: the plan is
+            // a page they already have.
             BuddyPathTools.READ_MY_PATH to BuddySuggestionResponse(
                 label = "Where am I on my path?",
                 question = "Where am I in my onboarding path, and what should I do next?",
@@ -74,9 +72,7 @@ class BuddySuggestionService(
                 label = "What do I still need?",
                 question = "What do I still need to get set up?",
             ),
-            // "What should I work on?" was a coin toss next to the path chip, and the mentor
-            // read it as the path's question -- which is how a hire with work sitting in the pool
-            // got told there was nothing for them. This one asks for the pool and nothing else.
+            // Asks for the pool and nothing else, so the mentor does not read it as the path's question.
             BuddyToolExecutor.GET_SUGGESTED_TASKS to BuddySuggestionResponse(
                 label = "Anything I can pick up?",
                 question = "Is there something in the work pool I could pick up?",
@@ -92,9 +88,7 @@ class BuddySuggestionService(
                 label = "How's my work going?",
                 question = "How is my work going so far — is anything waiting on someone?",
             ),
-            // Not "Where do I stand?" any more. Next to the path chip that reads "Where am I on my
-            // path?" the two were a coin toss, and they lead to different halves of the product: this
-            // one is the competency ledger, that one is the plan. The chips have to say which.
+            // Names the competency ledger, so it cannot be mistaken for the path chip.
             BuddyToolExecutor.GET_MY_COMPETENCIES to BuddySuggestionResponse(
                 label = "What have I shown?",
                 question = "What have I shown so far — where does my ledger stand?",

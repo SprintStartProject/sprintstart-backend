@@ -295,7 +295,7 @@ class AssignProjectRoleAction(
         val member = projectMembershipApi.memberOn(params.memberId, context.projectId)
             ?: return LEFT_SINCE
         return "They were given “${params.roleName}” on this project since, so nothing was changed."
-            .takeIf { projectRoleApi.rolesHeldOn(member.userId, context.projectId).any { it.id == params.roleId } }
+            .takeIf { _ -> projectRoleApi.rolesHeldOn(member.userId, context.projectId).any { it.id == params.roleId } }
     }
 
     override suspend fun performParams(params: ProjectRoleParams, context: TeamToolContext): String {
@@ -357,7 +357,13 @@ class UnassignProjectRoleAction(
         val member = projectMembershipApi.memberOn(params.memberId, context.projectId)
             ?: return LEFT_SINCE
         return "“${params.roleName}” is already off them on this project, so nothing was changed."
-            .takeIf { projectRoleApi.rolesHeldOn(member.userId, context.projectId).none { it.id == params.roleId } }
+            .takeIf { _ ->
+                projectRoleApi
+                    .rolesHeldOn(
+                        member.userId,
+                        context.projectId,
+                    ).none { it.id == params.roleId }
+            }
     }
 
     override suspend fun performParams(params: ProjectRoleParams, context: TeamToolContext): String {

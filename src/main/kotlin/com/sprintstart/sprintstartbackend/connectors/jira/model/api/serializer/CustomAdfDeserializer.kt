@@ -70,7 +70,7 @@ object CustomAdfDeserializer : KSerializer<String> {
      */
     override fun deserialize(decoder: Decoder): String {
         val jsonDecoder = decoder as? JsonDecoder
-            ?: throw IllegalStateException("CustomAdfDeserializer only supports JsonDecoder")
+            ?: error("CustomAdfDeserializer only supports JsonDecoder")
         val element = jsonDecoder.decodeJsonElement()
         val sb = StringBuilder()
         extractTextValue(element, sb)

@@ -10,6 +10,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardC
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -81,7 +83,14 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `a diagram carries the question the mentor chose`() {
-        every { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, "how auth flows here") } returns
+        every {
+            boardService.place(
+                UserId(userId),
+                ProjectId(projectId),
+                BoardCardKind.DIAGRAM,
+                "how auth flows here",
+            )
+        } returns
             BoardService.PlacementOutcome.PLACED
 
         val result = tools.execute(placeCall("DIAGRAM", "how auth flows here"), userId)
@@ -89,12 +98,19 @@ class BuddyBoardToolsTest {
         // The one argument any kind takes beyond its kind: the model chooses the question, and the
         // picture is still derived from the project's own material.
         assertThat(result).contains("Placed")
-        verify { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, "how auth flows here") }
+        verify {
+            boardService.place(
+                UserId(userId),
+                ProjectId(projectId),
+                BoardCardKind.DIAGRAM,
+                "how auth flows here",
+            )
+        }
     }
 
     @Test
     fun `a diagram with no subject comes back as a sentence, not silence`() {
-        every { boardService.place(userId, projectId, BoardCardKind.DIAGRAM, null) } returns
+        every { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.DIAGRAM, null) } returns
             BoardService.PlacementOutcome.NEEDS_A_SUBJECT
 
         val result = tools.execute(placeCall("DIAGRAM"), userId)
@@ -119,18 +135,34 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `a path step card carries the step title the mentor chose`() {
-        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") } returns
+        every {
+            boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.PATH_STEP, "Set up your laptop")
+        } returns
             BoardService.PlacementOutcome.PLACED
 
         val result = tools.execute(placeCall("PATH_STEP", "Set up your laptop"), userId)
 
         assertThat(result).contains("Placed")
-        verify { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Set up your laptop") }
+        verify {
+            boardService.place(
+                UserId(userId),
+                ProjectId(projectId),
+                BoardCardKind.PATH_STEP,
+                "Set up your laptop",
+            )
+        }
     }
 
     @Test
     fun `an unknown step title lists the hire's real steps back`() {
-        every { boardService.place(userId, projectId, BoardCardKind.PATH_STEP, "Deploy pipeline") } returns
+        every {
+            boardService.place(
+                UserId(userId),
+                ProjectId(projectId),
+                BoardCardKind.PATH_STEP,
+                "Deploy pipeline",
+            )
+        } returns
             BoardService.PlacementOutcome.NO_SUCH_STEP
         every { pathStepReader.titlesFor(userId) } returns listOf("Set up your laptop", "Meet your team")
 
@@ -143,14 +175,14 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `places a card and tells the mentor it will stay there`() {
-        every { boardService.place(userId, projectId, BoardCardKind.SUGGESTED_TASKS) } returns
+        every { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.SUGGESTED_TASKS) } returns
             BoardService.PlacementOutcome.PLACED
 
         val result = tools.execute(placeCall("SUGGESTED_TASKS"), userId)
 
         assertThat(result).contains("Placed")
         assertThat(result).contains("Apollo")
-        verify { boardService.place(userId, projectId, BoardCardKind.SUGGESTED_TASKS) }
+        verify { boardService.place(UserId(userId), ProjectId(projectId), BoardCardKind.SUGGESTED_TASKS) }
     }
 
     @Test
@@ -224,14 +256,14 @@ class BuddyBoardToolsTest {
     fun `the read names what is pinned and what carries a highlight`() {
         val kept = UUID.randomUUID()
         val marked = UUID.randomUUID()
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns
+        every { boardService.hasBoard(UserId(userId), ProjectId(projectId)) } returns true
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns
             BoardResponse(
                 boardId = UUID.randomUUID(),
                 projectId = projectId,
                 cards = listOf(note(kept, "Set up the VPN"), note(marked, "Deploys are on Thursdays")),
             )
-        every { boardStructureService.read(userId, projectId) } returns
+        every { boardStructureService.read(UserId(userId), ProjectId(projectId)) } returns
             BoardStructureResponse(
                 BoardStructurePayload(
                     pinnedCardIds = listOf(kept.toString()),
@@ -278,7 +310,7 @@ class BuddyBoardToolsTest {
 
     @Test
     fun `a board the hire has never opened is not brought into existence by a read`() {
-        every { boardService.hasBoard(userId, projectId) } returns false
+        every { boardService.hasBoard(UserId(userId), ProjectId(projectId)) } returns false
 
         val result = tools.execute(readCall(), userId)
 
@@ -292,9 +324,9 @@ class BuddyBoardToolsTest {
     fun `neither the pins nor the highlights let a client decide how long the read is`() {
         val cards = (1..50).map { note(UUID.randomUUID(), "Card-%03d".format(it)) }
         val first = cards.first()
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns boardOf(cards)
-        every { boardStructureService.read(userId, projectId) } returns
+        every { boardService.hasBoard(UserId(userId), ProjectId(projectId)) } returns true
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns boardOf(cards)
+        every { boardStructureService.read(UserId(userId), ProjectId(projectId)) } returns
             BoardStructureResponse(
                 BoardStructurePayload(
                     pinnedCardIds = List(5_000) { first.id.toString() },
@@ -320,9 +352,9 @@ class BuddyBoardToolsTest {
     @Test
     fun `a highlight that carries only a colour is left out rather than quoted as nothing`() {
         val card = note(UUID.randomUUID(), "Set up the VPN")
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns boardOf(listOf(card))
-        every { boardStructureService.read(userId, projectId) } returns
+        every { boardService.hasBoard(UserId(userId), ProjectId(projectId)) } returns true
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns boardOf(listOf(card))
+        every { boardStructureService.read(UserId(userId), ProjectId(projectId)) } returns
             BoardStructureResponse(
                 BoardStructurePayload(
                     marks = mapOf(card.id.toString() to listOf(CardMarkPayload(color = HighlightColor.GREEN))),

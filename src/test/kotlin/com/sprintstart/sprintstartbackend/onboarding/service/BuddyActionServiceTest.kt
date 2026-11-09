@@ -474,6 +474,44 @@ class BuddyActionServiceTest {
         assertThat(outcome.toolResult).contains("task_id")
     }
 
+    @Test
+    fun `does not propose an attestation without a title`() {
+        onOneProject()
+
+        val outcome = service.propose(
+            call("request_attestation", mapOf("title" to "  ", "attester_id" to UUID.randomUUID().toString())),
+            userId,
+        )
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("No title was provided")
+    }
+
+    @Test
+    fun `does not propose an attestation without an attester`() {
+        onOneProject()
+
+        val outcome = service.propose(call("request_attestation", mapOf("title" to "Ran the retro")), userId)
+
+        assertThat(outcome.proposal).isNull()
+        assertThat(outcome.toolResult).contains("get_teammates")
+    }
+
+    @Test
+    fun `carries the work and the attester through an attestation proposal`() {
+        onOneProject()
+        val attesterId = UUID.randomUUID()
+
+        val outcome = service.propose(
+            call("request_attestation", mapOf("title" to " Ran the retro ", "attester_id" to attesterId.toString())),
+            userId,
+        )
+
+        assertThat(outcome.proposal?.action).isEqualTo("request_attestation")
+        assertThat(outcome.proposal?.title).isEqualTo("Ran the retro")
+        assertThat(outcome.proposal?.attesterId).isEqualTo(attesterId.toString())
+    }
+
     // -- perform (the confirm round-trip) ---------------------------------------------------------
 
     @Test

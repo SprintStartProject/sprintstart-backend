@@ -18,12 +18,12 @@ data class BuddyStreamEvent(
     @SerialName("start_line") val startLine: Int? = null,
     @SerialName("start_page") val startPage: Int? = null,
     val message: String? = null,
-    // Set only on an `action_proposal` event: the buddy is offering to *do* something, gated on the
-    // hire's confirmation. [action] is the tool name the confirm endpoint expects, [label] the
-    // button text, [question] the composed text carried through for the flag-to-PM action.
-    // [taskId] is the confirm payload of the goal-claim action — the client echoes it back
-    // verbatim, so the concrete target of an action is the one the buddy proposed, never one the
-    // client picked.
+    /**
+     * Set only on an `action_proposal` event, an action gated on the hire's confirmation: [action] is the
+     * tool name the confirm endpoint expects, [label] the button text, [question] the text for the flag-to-PM
+     * action, and [taskId] the goal-claim target, echoed back verbatim so the target is always the one the
+     * buddy proposed.
+     */
     val action: String? = null,
     val label: String? = null,
     val question: String? = null,

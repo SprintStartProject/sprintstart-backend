@@ -1,0 +1,1 @@
+{"type": "action_proposal", "action": "dismiss_cards", "label": "Dismiss 2 cards", "proposal_id": "0b7c1f3e-2d4a-4e8b-9c6d-5a3f2e1d0c9b", "risk": "BULK", "card_ids": ["c1", "c2"], "card_names": ["Read the handbook", "Set up the VPN"]}

@@ -45,8 +45,6 @@ import java.util.UUID
 class OnboardingResourceController(
     val onboardingResourceService: OnboardingResourceService,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Returns all resources for one step in the authenticated user's onboarding path.
      *
@@ -231,8 +229,6 @@ class OnboardingResourceController(
     ) {
         onboardingResourceService.deleteOnboardingResourceForMe(jwt.subject, resourceId)
     }
-
-//  ========================== Endpoints for admins ==========================
 
     /**
      * Returns all resources attached to a specific step.

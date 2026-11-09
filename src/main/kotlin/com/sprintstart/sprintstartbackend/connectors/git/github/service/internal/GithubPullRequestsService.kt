@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.exception
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -28,6 +29,7 @@ class GithubPullRequestsService(
     private val repoConnectionRepository: GithubRepositoryConnectionRepository,
     private val githubClient: GithubClient,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Fetches and ingests **all** pull requests of a given GitHub repository.
@@ -61,7 +63,7 @@ class GithubPullRequestsService(
         var githubRepository: GithubRepositoryConnection? = null
 
         val pullRequests = runCatching {
-            githubRepository = withContext(Dispatchers.IO) {
+            githubRepository = withContext(ioDispatcher) {
                 repoConnectionRepository.findById(githubRepositoryId).orElseThrow {
                     RepositoryNotFoundException(repositoryOwner, repositoryName)
                 }
@@ -98,14 +100,14 @@ class GithubPullRequestsService(
                 if (githubRepository != null && pullRequests.isNotEmpty()) {
                     githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         repoConnectionRepository.save(githubRepository)
                     }
                 }
             }
         } catch (e: CancellationException) {
-            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
-            // terminal failure here would report a fetch that did not happen.
+            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
+            // happened.
             throw e
         } catch (e: Exception) {
             eventPublisher.publishEvent(
@@ -181,13 +183,13 @@ class GithubPullRequestsService(
             },
             reviewThreads = this.reviewThreads?.nodes?.map { reviewThread ->
                 GithubPullRequestReviewThread(
-                    reviewThread.comments?.nodes?.map {
+                    reviewThread.comments?.nodes.orEmpty().map {
                         GithubPullRequestReviewThreadComment(
                             it.body,
                             it.author?.login,
                             it.path,
                         )
-                    } ?: emptyList(),
+                    },
                 )
             },
         )

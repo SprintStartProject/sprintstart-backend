@@ -28,6 +28,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.inter
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -60,6 +61,7 @@ internal class BitbucketConnectionService(
     private val connectionStateService: BitbucketConnectionStateService,
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Returns all 'sources' of the Bitbucket connector. A source in this context is a Bitbucket repository.
@@ -229,7 +231,7 @@ internal class BitbucketConnectionService(
         )
 
         val slugs = discoveredRepositories.repositories.map { it.slug }
-        val alreadyConnected = withContext(Dispatchers.IO) {
+        val alreadyConnected = withContext(ioDispatcher) {
             connectionRepository.findAllByWorkspaceAndSlugIn(request.workspace, slugs)
         }
 
@@ -253,7 +255,7 @@ internal class BitbucketConnectionService(
         request: ConnectBitbucketRepositoryRequest,
         transactionId: UUID,
     ): UUID {
-        val alreadyConnected = withContext(Dispatchers.IO) {
+        val alreadyConnected = withContext(ioDispatcher) {
             connectionRepository.findWithProjectIdsByWorkspaceAndSlug(request.workspace, request.slug)
         }
         if (alreadyConnected != null) {
@@ -290,16 +292,15 @@ internal class BitbucketConnectionService(
             nextSyncAt = BitbucketRepositoryConfigService.calculateNextSyncAt(schedule)
         }
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             connectionRepository.save(connection)
             configRepository.save(config)
         }
 
         connectionStateService.markUpdating(connection.id)
 
-        // Launched collectors, finalized like an update: the connection reads UPDATING while its
-        // first ingest runs and settles to UP_TO_DATE or FAILED after, instead of sitting on the
-        // default it was stored with through the ingest and any failure.
+        // The collectors finalize like an update, so the connection reads UPDATING during its first ingest
+        // and settles to UP_TO_DATE or FAILED.
         val collectors = listOf(
             applicationScope.async {
                 fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)

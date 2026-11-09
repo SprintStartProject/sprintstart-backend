@@ -217,13 +217,13 @@ class IngestionRunService(
  * frontend while the entity stays abstract across connectors.
  */
 internal fun IngestionRun.toResponse(): IngestionRunResponse {
-    val isGithub = sourceSystem == SourceSystem.GITHUB && sourceInstanceRef != null
+    val repository = sourceInstanceRef.takeIf { sourceSystem == SourceSystem.GITHUB }
     return IngestionRunResponse(
         runId = id,
         sourceSystem = sourceSystem,
         sourceId = sourceInstanceRef,
-        owner = if (isGithub) sourceInstanceRef!!.substringBefore("/") else null,
-        name = if (isGithub) sourceInstanceRef!!.substringAfter("/") else null,
+        owner = repository?.substringBefore("/"),
+        name = repository?.substringAfter("/"),
         repositoryId = sourceInstanceId,
         startedAt = startedAt,
         finishedAt = finishedAt,

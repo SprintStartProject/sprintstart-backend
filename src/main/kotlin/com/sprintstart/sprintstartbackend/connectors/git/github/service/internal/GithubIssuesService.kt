@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -24,6 +25,7 @@ class GithubIssuesService(
     private val repoConnectionRepository: GithubRepositoryConnectionRepository,
     private val githubClient: GithubClient,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Fetches and ingests **all** issues of a given GitHub repository.
@@ -51,7 +53,7 @@ class GithubIssuesService(
         var githubRepository: GithubRepositoryConnection? = null
 
         val issues = runCatching {
-            githubRepository = withContext(Dispatchers.IO) {
+            githubRepository = withContext(ioDispatcher) {
                 repoConnectionRepository.findById(githubRepositoryId).orElseThrow()
             }
 
@@ -86,14 +88,14 @@ class GithubIssuesService(
                 if (githubRepository != null && issues.isNotEmpty()) {
                     githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         repoConnectionRepository.save(githubRepository)
                     }
                 }
             }
         } catch (e: CancellationException) {
-            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
-            // terminal failure here would report a fetch that did not happen.
+            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
+            // happened.
             throw e
         } catch (e: Exception) {
             eventPublisher.publishEvent(
@@ -129,15 +131,15 @@ class GithubIssuesService(
             closedAt = this.closedAt,
             url = this.url,
             author = this.author?.login,
-            labels = this.labels?.nodes?.map { it.name } ?: emptyList(),
-            assignees = this.assignees?.nodes?.map { it.login } ?: emptyList(),
-            comments = this.comments?.nodes?.map { node ->
+            labels = labels?.nodes.orEmpty().map { it.name },
+            assignees = assignees?.nodes.orEmpty().map { it.login },
+            comments = comments?.nodes.orEmpty().map { node ->
                 GithubIssueComment(
                     body = node.body,
                     author = node.author?.login,
                     createdAt = node.createdAt,
                 )
-            } ?: emptyList(),
+            },
         )
     }
 }

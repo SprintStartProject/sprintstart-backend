@@ -121,9 +121,7 @@ object BoardReading {
             is NoteContent -> firstLine(content.text)
             is LinkContent -> content.label?.takeIf { it.isNotBlank() } ?: content.url
             is ChecklistContent -> content.title?.takeIf { it.isNotBlank() } ?: "a checklist"
-            // The live kinds have no title of their own: their name is what they are. The enum's
-            // own word is turned into a phrase rather than shown as `OPEN_PULL_REQUESTS`, which is
-            // a thing to decode rather than to read.
+            // The live kinds have no title of their own: the enum's word is turned into a phrase.
             else -> {
                 val word = card.kind.name
                 word.lowercase().replace('_', ' ')

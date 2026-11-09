@@ -351,7 +351,6 @@ class BlueprintPathService(
 
         path.status = BlueprintStatus.ARCHIVED
 
-        // find and delet any draft
         blueprintAccessService
             .findDraftForAuthorizedBlueprintKey(scope, blueprintKey)
             ?.let { blueprintPathRepository.delete(it) }

@@ -26,7 +26,6 @@ import org.springframework.stereotype.Component
 import java.net.URI
 import java.util.UUID
 
-// One method per AI-service endpoint.
 @Suppress("TooManyFunctions")
 @Component
 class OnboardingAiClient(

@@ -44,8 +44,6 @@ class OnboardingPathController(
     private val onboardingPersonalizationService: OnboardingPersonalizationService,
     private val userApi: UserApi,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Returns the authenticated user's onboarding path.
      *
@@ -125,8 +123,6 @@ class OnboardingPathController(
         }
         onboardingPathService.deleteOnboardingPathForMe(jwt.subject)
     }
-
-    //  ========================== Endpoints for admins ==========================
 
     /**
      * Returns the onboarding path for a specific user.

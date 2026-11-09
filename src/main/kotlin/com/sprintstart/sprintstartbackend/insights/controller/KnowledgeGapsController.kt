@@ -90,12 +90,8 @@ class KnowledgeGapsController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/mine")
-    // Every permission group named, because this endpoint is open to all of them on purpose:
-    // ownership decides what comes back, not role, and a manager owns components too.
-    // `hasRole('USER')` — what the rest of the codebase writes for "any signed-in user" — would
-    // pass here as well, but only because `user` is a realm default role and so reaches every
-    // token through the `default-roles-<realm>` composite. Naming the groups says what is meant
-    // without leaning on that realm config staying as it is.
+    // Every permission group named: ownership decides what comes back, not role. `hasRole('USER')` would pass
+    // too, but only through the realm's default-role composite.
     @PreAuthorize(
         "hasAnyRole('USER', 'PM', 'HR', 'ADMIN') and " +
             "@projectAuth.canAccessProject(authentication, #projectId)",
@@ -180,9 +176,7 @@ class KnowledgeGapsController(
     @PreAuthorize(
         "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
     )
-    // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
-    // It does not reach the service: component ownership is keyed by component name alone and is
-    // not yet project-partitioned, so two projects sharing a component name share its owners.
+    // Component ownership is keyed by component name alone, so two projects sharing a name share its owners.
     @Suppress("UnusedParameter")
     fun getComponentOwners(
         @RequestParam projectId: UUID,
@@ -211,9 +205,7 @@ class KnowledgeGapsController(
     @PreAuthorize(
         "hasAnyRole('ADMIN', 'PM') and @projectAuth.canAccessProject(authentication, #projectId)",
     )
-    // `projectId` is referenced by the @PreAuthorize expression above, which detekt cannot see.
-    // It does not reach the service: component ownership is keyed by component name alone and is
-    // not yet project-partitioned, so two projects sharing a component name share its owners.
+    // Component ownership is keyed by component name alone, so two projects sharing a name share its owners.
     @Suppress("UnusedParameter")
     fun setComponentOwners(
         @RequestParam projectId: UUID,

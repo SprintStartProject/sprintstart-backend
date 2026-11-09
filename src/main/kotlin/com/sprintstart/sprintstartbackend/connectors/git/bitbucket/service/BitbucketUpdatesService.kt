@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.inter
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,7 @@ internal class BitbucketUpdatesService(
     private val userApi: UserApi,
     private val applicationScope: CoroutineScope,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Updates every enabled connected repository the caller may reach, and returns one transaction
@@ -105,7 +107,7 @@ internal class BitbucketUpdatesService(
      * @throws BitbucketRepositoryNotEnabledException if the repository's source is disabled.
      */
     suspend fun updateRepository(repositoryId: UUID): UUID {
-        val connection = withContext(Dispatchers.IO) {
+        val connection = withContext(ioDispatcher) {
             connectionRepository.findById(repositoryId)
         }.orElseThrow { BitbucketRepositoryNotConnectedException(repositoryId) }
 
@@ -127,7 +129,7 @@ internal class BitbucketUpdatesService(
      * @throws BitbucketRepositoryNotEnabledException if the repository's source is disabled.
      */
     suspend fun updateRepository(authId: String, repositoryId: UUID): UUID {
-        val connection = withContext(Dispatchers.IO) {
+        val connection = withContext(ioDispatcher) {
             connectionRepository.findWithProjectIdsById(repositoryId)
         } ?: throw BitbucketRepositoryConnectionNotFoundException(repositoryId)
 

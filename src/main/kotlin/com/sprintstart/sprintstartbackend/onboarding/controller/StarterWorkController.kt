@@ -48,16 +48,12 @@ import java.util.UUID
     name = "Onboarding - Starter Work",
     description = "Review AI-mined starter-work task proposals and rank them by hire fit",
 )
-// One method per endpoint; the pool is reached three ways (mined, hand-written, picked from the
-// corpus) and read by two audiences, which is what the count reflects.
 @Suppress("TooManyFunctions")
 class StarterWorkController(
     private val starterWorkTaskProposalService: StarterWorkTaskProposalService,
     private val starterWorkPoolReconciler: StarterWorkPoolReconciler,
     private val userGoalService: UserGoalService,
 ) {
-//  ========================== Endpoints for admins ==========================
-
     /**
      * Triggers AI starter-work mining over the ingested corpus's open tracker issues.
      *
@@ -372,8 +368,6 @@ class StarterWorkController(
         @PathVariable id: UUID,
         @RequestBody(required = false) request: RejectProposalRequest?,
     ): StarterWorkTaskProposalResponse = starterWorkTaskProposalService.reject(id, request?.reason)
-
-//  ========================== Endpoints for users (/me/...) ==========================
 
     /**
      * Ranks the live starter-work pool by fit against the authenticated user's competencies.

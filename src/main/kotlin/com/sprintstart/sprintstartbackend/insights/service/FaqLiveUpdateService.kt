@@ -50,10 +50,8 @@ class FaqLiveUpdateService(
     // @Transactional cannot be used here, the methods are suspend.
     private val txTemplate = TransactionTemplate(transactionManager)
 
-    // Two questions asked at the same time in one project would otherwise be classified against
-    // the same snapshot and could each open an entry for the same question, or both trip the
-    // ceiling and run two merge passes over the same rows. Per project rather than global, so one
-    // busy project cannot stall another's updates.
+    // Locked per project: two questions classified against one snapshot could each open an entry for the same
+    // question or run two merges, and one busy project must not stall another.
     private val projectLocks = ConcurrentHashMap<UUID, Mutex>()
 
     private val faqConfig get() = applicationConfig.insights.faq
@@ -69,9 +67,7 @@ class FaqLiveUpdateService(
         if (!faqConfig.liveUpdates) return
 
         projectLocks.computeIfAbsent(event.projectId) { Mutex() }.withLock {
-            // Events can be redelivered; counting the same message twice would inflate whichever
-            // group it lands in and quietly corrupt the frequency ranking the whole panel is
-            // ordered by.
+            // Events can be redelivered; counting a message twice would skew the frequency ranking.
             if (faqQuestionRepository.existsBySourceMessageId(event.messageId)) {
                 logger.debug("Question from message {} is already filed, skipping", event.messageId)
                 return
@@ -91,12 +87,8 @@ class FaqLiveUpdateService(
                 return
             }
 
-            // Only a new entry can make a merge possible. When the question joined an existing
-            // one the entry set is unchanged since the last attempt — same titles, same
-            // representative questions — and only the counts moved, which decide *which* entry
-            // survives a merge, never *whether* one exists. Retrying would ask the same model the
-            // same thing about the same data. Without this guard a project sitting one entry over
-            // the ceiling with nothing mergeable paid for that answer on every single message.
+            // Only a new entry can make a merge possible; when the question joined an existing one, retrying
+            // would ask the model the same thing about the same entries.
             if (apply(event, classification)) {
                 faqConsolidationService.enforceGroupLimit(event.projectId)
             }
@@ -117,10 +109,8 @@ class FaqLiveUpdateService(
     private fun apply(event: QuestionAskedEvent, classification: AiFaqClassifyResponse): Boolean {
         val matchedId = classification.groupId?.let(::parseUuidOrNull)
 
-        return txTemplate.execute {
-            // Re-read rather than reuse the snapshot: it was loaded outside this transaction and
-            // before an AI call that can take seconds, so its entities are detached and its counts
-            // may already be stale.
+        return txTemplate.execute { _ ->
+            // Re-read: the snapshot is detached and may be stale after the AI call.
             val matched = matchedId
                 ?.let { faqGroupRepository.findByIdAndProjectId(it, event.projectId).orElse(null) }
 
@@ -146,7 +136,7 @@ class FaqLiveUpdateService(
             matched == null
             // Defaults to "nothing new": a transaction that never ran cannot have opened an entry,
             // and claiming otherwise would trigger a pointless merge attempt.
-        } ?: false
+        }
     }
 
     private fun newGroup(event: QuestionAskedEvent, classification: AiFaqClassifyResponse): FaqGroup {

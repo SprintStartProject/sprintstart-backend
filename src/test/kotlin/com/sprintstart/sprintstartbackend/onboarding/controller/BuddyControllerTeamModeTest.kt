@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFi
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.SendBuddyMessageRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
+import com.sprintstart.sprintstartbackend.onboarding.service.BuddyOpeningService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyTeamService
@@ -56,6 +57,9 @@ class BuddyControllerTeamModeTest(
 
     @MockkBean
     private lateinit var buddyTeamService: BuddyTeamService
+
+    @MockkBean
+    private lateinit var buddyOpeningService: BuddyOpeningService
 
     @MockkBean
     private lateinit var buddyActionService: BuddyActionService
@@ -125,7 +129,7 @@ class BuddyControllerTeamModeTest(
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
         coVerify { buddyTeamService.streamOpenForMe(authId, projectId) }
-        coVerify(exactly = 0) { buddyService.streamOpenForMe(any(), null) }
+        coVerify(exactly = 0) { buddyOpeningService.streamOpenForMe(any(), null) }
     }
 
     @Test

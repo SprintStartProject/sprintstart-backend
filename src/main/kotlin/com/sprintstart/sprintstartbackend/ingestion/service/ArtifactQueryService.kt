@@ -98,8 +98,7 @@ class ArtifactQueryService(
     ): ArtifactPageResponse {
         requireValidDateWindow(criteria)
         ensureAccessToProject(authId, projectId)
-        // Unsorted on purpose: the criteria repository owns ORDER BY (see ArtifactSort) and
-        // would ignore a Pageable sort, so passing one here would only suggest otherwise.
+        // Unsorted: the criteria repository owns ORDER BY and ignores a Pageable sort.
         val pageable = PageRequest.of(page - 1, size)
 
         val result: Page<ArtifactResponse> =
@@ -156,9 +155,7 @@ class ArtifactQueryService(
         authId: String,
     ): ArtifactResponse {
         ensureAccessToProject(authId, projectId)
-        // A projection, not the entity: opening a deep link needs metadata only, and
-        // `Artifact.content` is an eagerly fetched TEXT column (see
-        // ArtifactFacetRepositoryImpl.artifactProjection).
+        // A projection: `Artifact.content` is an eagerly fetched TEXT column.
         return artifactRepository.findProjectArtifactById(projectId, artifactId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,

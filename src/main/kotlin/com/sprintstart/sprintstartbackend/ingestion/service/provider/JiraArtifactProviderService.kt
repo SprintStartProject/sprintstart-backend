@@ -44,25 +44,18 @@ class JiraArtifactProviderService(
         val existing = artifactRepository.findBySourceId(command.issueId)
         if (existing != null) {
             val linked = existing.addProjectIds(command.projectIds)
-            // Jira issues carry no content hash, so the stored fields are compared directly rather
-            // than overwritten blindly: a re-import that changed nothing must not count as an
-            // update, move `lastChangedAt`, or pay to embed the issue again.
+            // Jira issues carry no content hash, so the fields are compared: a re-import that changed nothing
+            // must not count as an update or be embedded again.
             val contentChanged = existing.title != command.summary || existing.content != command.description
             if (contentChanged) {
                 existing.title = command.summary
                 existing.content = command.description
                 existing.lastChangedAt = Instant.now()
             }
-            // Refreshed unconditionally, like GitHub's: a ticket moving to Done shifts no text, so
-            // gating this on the content check above would leave finished work in the starter-work
-            // pool until somebody happened to edit its description.
+            // State and assignee refresh unconditionally: neither moves any text, and both decide whether the
+            // AI service still offers the issue as starter work.
             val state = command.toState()
-            // Refreshed with the state, and for the same reason: a ticket being picked up or
-            // handed back moves no text either, and starter work that somebody has since taken
-            // must stop being offered.
             val hasAssignee = command.toHasAssignee()
-            // Both travel in the AI payload, and it is the AI service that does the offering, so
-            // the re-index has to follow them and not only the text.
             val trackingChanged = existing.state != state || existing.hasAssignee != hasAssignee
             existing.state = state
             existing.hasAssignee = hasAssignee

@@ -125,10 +125,8 @@ class ArrivalStepService(
         // A project-scoped definition wins the key.
         val projectKeys = projectSteps.map { it.key }.toSet()
 
-        // Ordered by scope, not by position across scopes: positions are assigned *within* a
-        // scope, so sorting the union by them ranks numbers that were never comparable.
-        // Within a scope position still decides; across scopes, company first, then projects by
-        // name, so the order is stable rather than dependent on however the ids came back.
+        // Ordered by scope, then position: positions are only comparable within a scope. Company first, then
+        // projects by name, so the order is stable.
         val ordered =
             companySteps.filterNot { it.key in projectKeys } +
                 projectSteps.sortedWith(
@@ -167,10 +165,8 @@ class ArrivalStepService(
                     "No arrival step '$key' applies to this user",
                 )
 
-        // `selfConfirmable` is not a synonym for `settledBy`. Some derived steps are still the
-        // hire's to claim -- "my machine builds" is observable but never refutable. Others are not:
-        // the GitHub check is definitive when it answers, and letting somebody tick it would let
-        // them declare away the fact their credit depends on.
+        // `selfConfirmable` is not `settledBy`: some derived steps are still the hire's to claim, but a
+        // definitive check such as GitHub's must not be ticked away.
         if (!resolved.step.selfConfirmable) {
             throw ResponseStatusException(
                 HttpStatus.BAD_REQUEST,

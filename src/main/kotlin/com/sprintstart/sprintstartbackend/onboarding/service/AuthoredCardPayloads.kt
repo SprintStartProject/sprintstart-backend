@@ -21,13 +21,9 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
-// What a note, link or checklist stores, and the rules for reading and writing it.
-//
-// Pure functions over the payload and nothing else — no repository, no membership — pulled out of
-// [BoardService] so that the service holds the decisions about *who* may change a card and this
-// file holds what a change to one *is*. The hire's own edits and the buddy's go through the same
-// functions here, which is what keeps "the buddy may do what the hire can" from growing a second
-// set of rules about what a valid card looks like.
+// What a note, link or checklist stores, and the rules for reading and writing it. Pure functions:
+// [BoardService] decides who may change a card, this file what a change is, for the hire's and the buddy's
+// edits alike.
 
 /** Lenient on unknown keys so a payload written by a newer version still reads back. */
 internal val boardPayloadJson = Json { ignoreUnknownKeys = true }

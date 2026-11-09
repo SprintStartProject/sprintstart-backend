@@ -31,8 +31,6 @@ import java.util.UUID
  * the owning onboarding path. Admin-scoped operations address a user directly by UUID.
  */
 @Service
-// One function per way a path is read or replaced (hire, buddy, PM, team overview); splitting
-// them across classes would scatter the access rules they share.
 @Suppress("TooManyFunctions")
 class OnboardingPathService(
     private val onboardingPathRepository: OnboardingPathRepository,
@@ -50,8 +48,6 @@ class OnboardingPathService(
     data class PathOrigin(
         val builtFromProjectId: UUID?,
     )
-
-//  ========================== Methods for users ==========================
 
     /**
      * Returns the onboarding path for the authenticated user.
@@ -234,8 +230,6 @@ class OnboardingPathService(
                     .firstOrNull { it.id == phaseId && it.generationStatus.isHiddenFromUser() }
                     ?.toGetForUserResponse()
             }.orElse(null)
-
-//  ========================== Methods for admins ==========================
 
     /**
      * Returns one user's onboarding path, for a PM, HR or admin looking at it.

@@ -2,7 +2,6 @@ package com.sprintstart.sprintstartbackend.connectors.git.github.models.client.g
 
 import kotlinx.serialization.Serializable
 
-// Used for your initial Issues query
 @Serializable
 data class Issue(
     val number: Int,
@@ -19,7 +18,6 @@ data class Issue(
     val comments: CommentsConnection?,
 )
 
-// Used for Step 1 of the new PR architecture
 @Serializable
 data class PrNode(
     val number: Int,
@@ -27,8 +25,6 @@ data class PrNode(
     val title: String,
 )
 
-// Used for Step 2 (and your original query).
-// Notice how it uses the Connection classes defined above to match the JSON shape.
 @Serializable
 data class PullRequest(
     val number: Int,
@@ -58,7 +54,6 @@ data class AssigneesCollection(
     val nodes: List<GithubActor>?,
 )
 
-// --- Labels ---
 @Serializable
 data class LabelNode(
     val name: String,
@@ -69,13 +64,11 @@ data class LabelsConnection(
     val nodes: List<LabelNode>,
 )
 
-// --- Reviews ---
 @Serializable
 data class ReviewNode(
     val body: String?,
     val state: String,
-    // When the review was submitted. Load-bearing for onboarding instrumentation: "how long did
-    // this hire wait for a response" is the human-loop metric, and it cannot be derived without it.
+    /** When the review was submitted; needed to measure how long a hire waited for a response. */
     val submittedAt: String? = null,
     val author: GithubActor?,
 )
@@ -85,7 +78,6 @@ data class ReviewsConnection(
     val nodes: List<ReviewNode>?,
 )
 
-// --- Comments ---
 @Serializable
 data class CommentNode(
     val body: String,
@@ -98,7 +90,6 @@ data class CommentsConnection(
     val nodes: List<CommentNode>?,
 )
 
-// --- Threads (Deeply nested) ---
 @Serializable
 data class ThreadCommentNode(
     val body: String,
@@ -121,13 +112,11 @@ data class ReviewThreadsConnection(
     val nodes: List<ReviewThreadNode>?,
 )
 
-// --- Status checks (CI) ---
 @Serializable
 data class StatusCheckRollup(
     val state: String,
 )
 
-// --- Changed files ---
 @Serializable
 data class PullRequestFileNode(
     val path: String,
@@ -138,7 +127,6 @@ data class PullRequestFilesConnection(
     val nodes: List<PullRequestFileNode>?,
 )
 
-// --- Commits ---
 @Serializable
 data class CommitMessage(
     val message: String,

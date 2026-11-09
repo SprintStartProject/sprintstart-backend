@@ -77,8 +77,7 @@ class BitbucketIngestionRunService(
             .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
 
-        // Gated on the phase not having closed yet: the same failure can be reported twice, and an
-        // ungated second report would finish the run twice, firing the AI sync a second time.
+        // A failure can be reported twice; finishing the run twice would start the AI sync twice.
         if (!run.finishedTypes.add(finishedType)) {
             return
         }

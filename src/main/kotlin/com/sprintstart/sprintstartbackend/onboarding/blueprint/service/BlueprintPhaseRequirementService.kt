@@ -126,8 +126,6 @@ class BlueprintPhaseRequirementService(
         )
     }
 
-    // Helper methods
-
     private fun validateRevision(
         phase: BlueprintPhase,
         revision: Long,

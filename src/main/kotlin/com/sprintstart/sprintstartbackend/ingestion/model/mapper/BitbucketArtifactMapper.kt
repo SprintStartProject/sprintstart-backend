@@ -197,8 +197,7 @@ class BitbucketArtifactMapper {
                 workspace = event.workspace,
                 slug = event.slug,
             ),
-            // Bitbucket spells its merged state "MERGED", the same word GitHub's state uses, so the
-            // value travels unchanged; "merged without a recorded response" keeps meaning unanswered.
+            // Bitbucket's "MERGED" is GitHub's word too, so the state passes through unchanged.
             state = event.state,
             mergedAtSource = event.mergeCommitHash?.let { parseOrNull(event.closedOn) },
             firstResponseAtSource = firstResponseAt(event),

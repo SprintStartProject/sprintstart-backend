@@ -237,8 +237,6 @@ class BlueprintCheckQuestionService(
         )
     }
 
-    // Helper Methods
-
     private fun validateRevision(
         question: BlueprintCheckQuestion,
         revision: Long,

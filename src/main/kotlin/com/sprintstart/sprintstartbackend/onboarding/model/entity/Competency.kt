@@ -34,7 +34,7 @@ class Competency(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     var kind: CompetencyKind,
-    // Optional pointer to the repository artifact this competency is grounded in (e.g. a path or module).
+    /** The repository artifact this competency is grounded in (e.g. a path or module), if any. */
     @Column(nullable = true)
     var repoRef: String? = null,
     /**

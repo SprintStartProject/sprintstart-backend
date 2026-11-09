@@ -16,9 +16,9 @@ data class SubmitQuestionAttemptResponse(
     val correctOptionIds: List<UUID> = emptyList(),
     val correctAnswer: String? = null,
     val explanation: String? = null,
-    // AI-generated feedback for short-text answers; null for multiple choice.
+    /** AI feedback on a short-text answer; null for multiple choice. */
     val feedback: String? = null,
     val status: QuestionStatus,
-    // True when this attempt completed the entire onboarding journey.
+    /** True when this attempt completed the whole onboarding journey. */
     val onboardingCompleted: Boolean = false,
 )

@@ -11,8 +11,6 @@ data class UserDto(
     val profileIcon: String?,
     val projects: Set<ProjectDto>,
     val projectRoles: List<ProjectRoleDto>,
-    // Defaulted so callers written against the newer model need not restate it; the real mapper
-    // always populates it from the user's assessments.
     val skills: List<UserSkillDto> = emptyList(),
 )
 

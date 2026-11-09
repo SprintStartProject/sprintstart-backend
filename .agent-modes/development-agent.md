@@ -23,8 +23,8 @@ Implement the requested change while preserving the existing architecture, codin
 * Do not change public API contracts unless the ticket explicitly requires it.
 * Add or update tests when behavior changes.
 * Prefer small, focused changes.
-* Do not perform unrelated cleanup or refactoring.
-* Reuse existing patterns before introducing new ones.
+* Do not perform unrelated cleanup. Extracting code you would otherwise copy is related work, not cleanup.
+* Reuse existing code by calling it or extracting it — never by copying it and adapting the copy.
 * Keep changes understandable for future agents and developers.
 * If an implementation decision is unclear, risky, or not specified by the planning brief, ask for clarification before continuing.
 * If multiple valid approaches exist, briefly explain the options and ask which one should be used.

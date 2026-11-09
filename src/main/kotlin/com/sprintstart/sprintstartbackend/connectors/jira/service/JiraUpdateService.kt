@@ -34,9 +34,8 @@ internal class JiraUpdateService(
         eventPublisher.publishEvent(JiraInstanceUpdateStartedEvent(transactionId, instanceUrl))
 
         val instance = try {
-            // Fetch the lazy project-key/project-id collections eagerly: the update runs on a
-            // background coroutine without a Hibernate session, so a detached instance with
-            // uninitialized collections would crash it with LazyInitializationException.
+            // The collections are fetched eagerly: the update runs on a background coroutine without a
+            // Hibernate session.
             instanceRepository.findByInstanceUrlWithCollections(instanceUrl)
                 ?: throw JiraInstanceNotConnectedException(instanceUrl)
         } catch (e: Exception) {

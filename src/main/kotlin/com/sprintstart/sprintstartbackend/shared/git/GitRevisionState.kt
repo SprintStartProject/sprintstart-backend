@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -26,6 +27,7 @@ import java.nio.file.Path
 class GitRevisionState(
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Resolves the commit currently checked out at [repositoryPath].
@@ -35,7 +37,7 @@ class GitRevisionState(
      * @throws RuntimeException if the path is not a usable Git repository.
      */
     suspend fun currentRevision(repositoryPath: Path): String =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner.exec(repositoryPath, onDiskOperations.gitRevParse()).trim()
         }
 
@@ -51,7 +53,7 @@ class GitRevisionState(
      * @return `true` when the revision is known to the clone.
      */
     suspend fun knowsRevision(repositoryPath: Path, revision: String): Boolean =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             try {
                 gitRunner.exec(repositoryPath, onDiskOperations.gitRevisionExists(revision))
                 true
@@ -73,7 +75,7 @@ class GitRevisionState(
      */
     suspend fun isUpToDate(repositoryPath: Path): Boolean {
         val localRevision = currentRevision(repositoryPath)
-        val remoteRevision = withContext(Dispatchers.IO) {
+        val remoteRevision = withContext(ioDispatcher) {
             gitRunner
                 .exec(repositoryPath, onDiskOperations.gitLsRemote())
                 .trim()
@@ -93,7 +95,7 @@ class GitRevisionState(
      * @throws RuntimeException if the fetch or the reset fails.
      */
     suspend fun updateLocal(repositoryPath: Path): String {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner.exec(repositoryPath, onDiskOperations.gitFetch())
             gitRunner.exec(repositoryPath, onDiskOperations.gitResetHard())
         }

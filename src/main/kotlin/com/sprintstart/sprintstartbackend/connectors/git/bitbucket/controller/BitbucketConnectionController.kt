@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.responses.ApiResponses
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
@@ -48,6 +49,7 @@ internal class BitbucketConnectionController(
     private val projectService: BitbucketRepositoryProjectService,
     private val visibilityService: BitbucketRepositoryVisibilityService,
     private val updatesService: BitbucketUpdatesService,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Connects one Bitbucket repository using a credential of the authenticated user.
@@ -233,7 +235,7 @@ internal class BitbucketConnectionController(
     ): ResponseEntity<BitbucketRepositoryProjectLinkResponse> {
         visibilityService.requireCallerCanSeeConnection(jwt.subject, repositoryId)
 
-        val projectIds = withContext(Dispatchers.IO) {
+        val projectIds = withContext(ioDispatcher) {
             projectService.addProjectToRepository(jwt.subject, repositoryId, projectId)
         }
         return ResponseEntity.ok(BitbucketRepositoryProjectLinkResponse(repositoryId, projectIds))
@@ -272,7 +274,7 @@ internal class BitbucketConnectionController(
         @PathVariable repositoryId: UUID,
         @PathVariable projectId: UUID,
     ): ResponseEntity<BitbucketRepositoryProjectLinkResponse> {
-        val projectIds = withContext(Dispatchers.IO) {
+        val projectIds = withContext(ioDispatcher) {
             projectService.removeProjectFromRepository(jwt.subject, repositoryId, projectId)
         }
         return ResponseEntity.ok(BitbucketRepositoryProjectLinkResponse(repositoryId, projectIds))

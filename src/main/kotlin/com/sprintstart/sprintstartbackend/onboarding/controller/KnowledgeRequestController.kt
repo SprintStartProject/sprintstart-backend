@@ -72,10 +72,8 @@ class KnowledgeRequestController(
     )
     @ResponseStatus(HttpStatus.OK)
     @GetMapping("/knowledge-requests")
-    // Project-scoped, not merely role-scoped. The role alone let any PM or HR user read any
-    // project's queue by passing its id, which mattered less while the payload was a question and a
-    // bare UUID -- it now carries the asker's name and how far through onboarding they are. Every
-    // other project-scoped read in the codebase pairs the role with this predicate.
+    // Project-scoped, not merely role-scoped: the payload carries the asker's name and how far through
+    // onboarding they are.
     @PreAuthorize(
         "hasAnyRole('PM', 'HR', 'ADMIN') and @projectAuth.canAccessProject(authentication, #projectId)",
     )

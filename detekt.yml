@@ -1,3 +1,8 @@
+# Size and complexity limits apply to production code only.
+# Existing violations live in detekt-baseline.xml (detekt) and detekt-baseline-main.xml
+# (detektMain, with type resolution), which may only shrink. Loosening anything here needs
+# the `quality-exception` label.
+
 style:
   LoopWithTooManyJumpStatements:
     active: false
@@ -8,10 +13,33 @@ style:
 
 complexity:
   LongMethod:
-    active: false
+    active: true
+    excludes: &tests ['**/test/**']
+    allowedLines: 30
+  LongParameterList:
+    active: true
+    excludes: *tests
+    allowedFunctionParameters: 4
+    allowedConstructorParameters: 8
+  CyclomaticComplexMethod:
+    active: true
+    excludes: *tests
+    allowedComplexity: 10
+  CognitiveComplexMethod:
+    active: true
+    excludes: *tests
+    allowedComplexity: 15
+  NestedBlockDepth:
+    active: true
+    excludes: *tests
+    allowedDepth: 3
+  LargeClass:
+    active: true
+    excludes: *tests
+    allowedLines: 400
 
 exceptions:
   TooGenericExceptionCaught:
-    active: false
+    active: true
   TooGenericExceptionThrown:
-    active: false
+    active: true

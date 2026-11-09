@@ -133,7 +133,7 @@ class GithubRepositoryConfigService(
         val dueConfigs = configRepository.findAllDue(now)
 
         return dueConfigs.map {
-            githubRepoRepository.findById(it.id!!).orElseThrow {
+            githubRepoRepository.findById(checkNotNull(it.id) { "A stored repository config has an id" }).orElseThrow {
                 RepositoryNotFoundException("", "", "Repository with id ${it.id} not found")
             }
         }

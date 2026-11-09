@@ -12,8 +12,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.question.Que
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForAdminResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.question.QuestionOptionForUserResponse
 
-//  ========================== Response mappers ==========================
-
 fun PhaseCheckQuestion.toForUserResponse(status: QuestionStatus): GetOnboardingQuestionForUserResponse {
     return GetOnboardingQuestionForUserResponse(
         id = this.id,

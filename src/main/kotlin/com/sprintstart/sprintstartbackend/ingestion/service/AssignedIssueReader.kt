@@ -31,10 +31,10 @@ class AssignedIssueReader(
         const val STATUS_FIELD = "status"
         const val ASSIGNEE_FIELD = "assignee"
 
-        // Jira's own category key for "finished", independent of whatever a team called the
-        // status itself -- one board's "Done" is another's "Shipped" or "Akzeptiert". The key
-        // rather than the category name, which Jira localizes; case-insensitive matching keeps
-        // rows ingested before that change, whose metadata holds the name, reading the same.
+        /**
+         * Jira's category key for finished work, independent of what a team named the status and of the
+         * category name Jira localizes.
+         */
         const val DONE_CATEGORY = "done"
     }
 
@@ -65,9 +65,8 @@ class AssignedIssueReader(
             openedAt = openedAt,
             firstResponseAt = firstResponseAt(history, assigneeDisplayName, openedAt),
             acceptedAt = accepting?.createdAt,
-            // The accepting move is excluded rather than filtered out inside the walk: it is also
-            // somebody else moving the issue out of a status the hire put it in, and counting the
-            // acceptance as a send-back would mean no tracked issue could ever have a clean run.
+            // The accepting move is excluded: it is also somebody moving the issue out of the hire's status,
+            // and counting it as a send-back would deny every tracked issue a clean run.
             returnedCount = returnedCount(statusChanges.filterNot { it === accepting }, assigneeDisplayName),
             key = metadata.issueKey,
             title = artifact.title,

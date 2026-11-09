@@ -217,8 +217,6 @@ class BlueprintPhaseService(
         return DeleteBlueprintPhaseResponse(updatedPhases.map { it.toUpdateGraphNodeResponse() })
     }
 
-//  ========================== Helper Methods ==========================
-
     private fun validateRevision(
         phase: BlueprintPhase,
         revision: Long,

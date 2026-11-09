@@ -118,7 +118,7 @@ private fun unknownId(question: UpdateQuestionRequest, current: List<QuestionFor
             "and use its ids, or leave the id out for a new question."
     val known = existing.options.map { it.id }.toSet()
     return "Question $number has an option id that is not one of that question's options."
-        .takeIf { question.options.any { it.id != null && it.id !in known } }
+        .takeIf { _ -> question.options.any { it.id != null && it.id !in known } }
 }
 
 private fun readChecks(list: JsonArray, current: List<QuestionForAdminResponse>): Checks {

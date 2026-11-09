@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.repository.Githu
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileChange
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitSourceUrls
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -32,6 +33,7 @@ internal class GithubFileSink(
     private val connection: GithubRepositoryConnection,
     private val transactionId: UUID,
     private val sourceUrls: GitSourceUrls,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : GitFileSink {
     override suspend fun onBatch(changes: List<GitFileChange>) {
         changes.forEach(::publishChange)
@@ -39,7 +41,7 @@ internal class GithubFileSink(
         val snapshots = changes.mapNotNull(::toSnapshot)
         if (snapshots.isEmpty()) return
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             fileSnapshotRepository.saveAll(snapshots)
         }
     }

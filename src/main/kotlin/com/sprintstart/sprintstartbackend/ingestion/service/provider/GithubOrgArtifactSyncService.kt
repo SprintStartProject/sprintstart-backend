@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactP
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -32,6 +33,7 @@ class GithubOrgArtifactSyncService(
     private val githubRepositoryApi: GithubRepositoryApi,
     private val artifactIngestionClient: ArtifactIngestionClient,
     transactionManager: PlatformTransactionManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
     private val transactionTemplate = TransactionTemplate(transactionManager)
@@ -46,7 +48,7 @@ class GithubOrgArtifactSyncService(
      */
     @Tracked("Reconciling GitHub org artifact project memberships")
     suspend fun syncOrgArtifact(owner: String) {
-        val (artifactId, targetProjectIds) = withContext(Dispatchers.IO) {
+        val (artifactId, targetProjectIds) = withContext(ioDispatcher) {
             transactionTemplate.execute {
                 val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, owner)
                     ?: return@execute null
@@ -89,7 +91,7 @@ class GithubOrgArtifactSyncService(
 
         throw IngestionResponseException(
             "Org artifact for $owner was updated locally but kept its old membership in the AI index" +
-                (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" } ?: ""),
+                (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" }.orEmpty()),
         )
     }
 }

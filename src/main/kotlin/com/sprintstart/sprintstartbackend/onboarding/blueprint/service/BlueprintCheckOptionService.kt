@@ -207,8 +207,6 @@ class BlueprintCheckOptionService(
         blueprintCheckOptionRepository.delete(option)
     }
 
-    // Helper Methods
-
     private fun validateRevision(
         option: BlueprintCheckOption,
         revision: Long,

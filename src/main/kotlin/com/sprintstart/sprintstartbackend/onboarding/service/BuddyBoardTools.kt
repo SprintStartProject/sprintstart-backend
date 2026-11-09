@@ -6,6 +6,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCal
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructurePayload
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardCardResponse
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -68,7 +70,7 @@ class BuddyBoardTools(
      * worked.
      */
     fun execute(call: BuddyToolCallDto, userId: UUID): String =
-        if (call.name == READ_BOARD) readBoard(userId) else placeCard(call, userId)
+        if (call.name == READ_BOARD) readBoard(UserId(userId)) else placeCard(call, UserId(userId))
 
     /**
      * What is on the hire's board right now, as sentences.
@@ -80,7 +82,7 @@ class BuddyBoardTools(
      * Everything is capped. A mentor that reads out fourteen card titles has turned a conversation
      * into a listing, and the hire already has the listing: it is the page they are looking at.
      */
-    private fun readBoard(userId: UUID): String {
+    private fun readBoard(userId: UserId): String {
         val project = when (val choice = soleProject(userId)) {
             is ProjectChoice.Refused -> return choice.reason
             is ProjectChoice.One -> choice
@@ -96,8 +98,7 @@ class BuddyBoardTools(
 
         val board = boardService.getBoard(userId, project.projectId)
             ?: return "The hire is not a member of that project, so there is no board to read."
-        val structure = boardStructureService.read(userId, project.projectId)?.structure
-            ?: BoardStructurePayload()
+        val structure = boardStructureService.read(userId, project.projectId)?.structure ?: BoardStructurePayload()
         val cards = board.cards
 
         if (cards.isEmpty()) {
@@ -145,16 +146,11 @@ class BuddyBoardTools(
                     "something else.",
             )
 
-            // Inline rather than appenders of their own: this class is one function away from
-            // detekt's ceiling on how many it may have, and these two are a condition and a line
-            // each where the lists below are a dozen.
             if (pinned.isNotEmpty()) {
                 append(NEWLINE + NEWLINE)
                 append("Kept at the top of their board, which is them saying these matter now: ")
                 append(pinned.take(LIST_LIMIT).joinToString(", ") { BoardReading.nameOf(it) })
-                if (pinned.size > LIST_LIMIT) {
-                    append(", and more")
-                }
+                if (pinned.size > LIST_LIMIT) append(", and more")
             }
 
             appendActionable(actionable, structure)
@@ -172,10 +168,6 @@ class BuddyBoardTools(
                 }
             }
 
-            // One call rather than a condition and a loop: `readBoard` is at detekt's ceiling on
-            // how much deciding one function may do, and it earned that ceiling honestly — a board
-            // read is the kind of function that grows a branch per release. See
-            // `BoardReading.cardsSection` for why ids appear in that section and nowhere else.
             append(BoardReading.cardsSection(cards, LIST_LIMIT))
 
             append(NEWLINE + NEWLINE)
@@ -236,16 +228,16 @@ class BuddyBoardTools(
      * one somebody meant is how a card lands on the wrong board — or, for a read, how the mentor
      * describes a board the hire is not looking at.
      */
-    private fun soleProject(userId: UUID): ProjectChoice {
+    private fun soleProject(userId: UserId): ProjectChoice {
         val projects = userApi
-            .getUsersByIds(listOf(userId))
+            .getUsersByIds(listOf(userId.value))
             .firstOrNull()
             ?.projects
             .orEmpty()
 
         return when (projects.size) {
             0 -> ProjectChoice.Refused("The hire is not on a project yet, so there is no board.")
-            1 -> ProjectChoice.One(projects.first().projectId, projects.first().name)
+            1 -> ProjectChoice.One(ProjectId(projects.first().projectId), projects.first().name)
             else -> ProjectChoice.Refused(
                 "The hire is onboarding on more than one project. Ask which one before saying " +
                     "anything about their board.",
@@ -255,7 +247,7 @@ class BuddyBoardTools(
 
     private sealed interface ProjectChoice {
         data class One(
-            val projectId: UUID,
+            val projectId: ProjectId,
             val name: String,
         ) : ProjectChoice
 
@@ -264,7 +256,7 @@ class BuddyBoardTools(
         ) : ProjectChoice
     }
 
-    private fun placeCard(call: BuddyToolCallDto, userId: UUID): String {
+    private fun placeCard(call: BuddyToolCallDto, userId: UserId): String {
         val kind = call.kindArg()
             ?: return "That is not a card I can place. The kinds are: ${placeableKindNames()}."
 
@@ -301,8 +293,8 @@ class BuddyBoardTools(
      * Capped at [LIST_LIMIT] for the reason every other list here is: a mentor reading out every
      * step on a long path has turned a conversation into a listing.
      */
-    private fun noSuchStepMessage(userId: UUID): String {
-        val titles = pathStepReader.titlesFor(userId)
+    private fun noSuchStepMessage(userId: UserId): String {
+        val titles = pathStepReader.titlesFor(userId.value)
         if (titles.isEmpty()) {
             return "The hire has no path yet, so there is no step to put on their board."
         }

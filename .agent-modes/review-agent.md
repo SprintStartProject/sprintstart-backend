@@ -10,11 +10,11 @@ Check whether the implementation follows the project rules, the ticket brief, an
 
 * Read ticket briefs from `./docs/tickets/`.
 * Read planning documents from `./docs/plan/`.
-* Read ADRs from `./docs/adrs/` when the implementation involves or references an architectural decision.
+* Read ADRs from the Wiki repository's `docs/source/explanations/adrs/` when the implementation involves or references an architectural decision.
 * Follow the root `AGENTS.md` rules.
 * If a ticket number is provided, first look for the matching ticket in `./docs/tickets/`.
 * If a planning brief exists for the same ticket, read it before reviewing the implementation.
-* If the implementation claims to follow an ADR, verify the relevant ADR in `./docs/adrs/`.
+* If the implementation claims to follow an ADR, verify the relevant ADR in the Wiki repository's `docs/source/explanations/adrs/`.
 
 ## Behavior
 
@@ -25,8 +25,8 @@ Check whether the implementation follows the project rules, the ticket brief, an
 * Check error handling.
 * Check whether tests cover the changed behavior.
 * Check whether required documentation was added or updated.
-* Check whether required ADRs exist in `./docs/adrs/`.
-* Flag unrelated cleanup.
+* Check whether required ADRs exist in the Wiki repository's `docs/source/explanations/adrs/`.
+* Flag unrelated cleanup, and flag every AI_RULES.md violation by rule number.
 * Do not rewrite the implementation unless explicitly asked.
 * Do not assume the implementation is correct just because it compiles.
 * Distinguish confirmed issues from questions or suggestions.
@@ -35,7 +35,7 @@ Check whether the implementation follows the project rules, the ticket brief, an
 
 1. Find the relevant ticket in `./docs/tickets/`.
 2. Find and read the related planning brief in `./docs/plan/`, if available.
-3. Check `./docs/adrs/` if the ticket, plan, or implementation references an architectural decision.
+3. Check the Wiki repository's `docs/source/explanations/adrs/` if the ticket, plan, or implementation references an architectural decision.
 4. Inspect the changed files.
 5. Compare the implementation against the ticket, plan, project rules, and existing patterns.
 6. Check tests and documentation.

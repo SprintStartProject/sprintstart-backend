@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.SourceIdFactory
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -37,12 +38,12 @@ class ArtifactProjectService(
     private val artifactProjectRepository: ArtifactProjectRepository,
     private val artifactIngestionClient: ArtifactIngestionClient,
     transactionManager: PlatformTransactionManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    // The AI call must not run inside the transaction that changes the mapping, and `@Transactional`
-    // does not apply to suspend functions, so the database work is wrapped explicitly -- the same
-    // way RunArtifactsIngestionService does it.
+    // The AI call must not run inside the transaction that changes the mapping, and `@Transactional` does not
+    // apply to suspend functions.
     private val transactionTemplate = TransactionTemplate(transactionManager)
 
     /**
@@ -62,7 +63,7 @@ class ArtifactProjectService(
      */
     @Tracked("Propagating a source's project link to its artifacts")
     suspend fun applyProjectLink(source: ArtifactSourceRef, projectId: UUID, linked: Boolean) {
-        val memberships = withContext(Dispatchers.IO) {
+        val memberships = withContext(ioDispatcher) {
             transactionTemplate.execute {
                 findArtifactsOf(source)
                     .onEach { artifact ->
@@ -113,7 +114,8 @@ class ArtifactProjectService(
         is ArtifactSourceRef.BitbucketWorkspace -> {
             artifactProjectRepository
                 .findBySourceId(buildBitbucketWorkspaceSourceId(source.workspace))
-                ?.let(::listOf) ?: emptyList()
+                ?.let(::listOf)
+                .orEmpty()
         }
 
         is ArtifactSourceRef.JiraInstance -> {
@@ -142,17 +144,13 @@ class ArtifactProjectService(
      */
     @Tracked("Purging a deleted project from the artifact store")
     suspend fun purgeProject(projectId: UUID) {
-        // The AI service goes first, and deliberately so. `artifact_projects` is the only remaining
-        // record of which artifacts carried this project -- the project row itself is already gone,
-        // since `AdminProjectService` publishes its event after commit. Deleting the links first
-        // and then failing the AI call would leave the markers on every chunk with nothing left to
-        // reconstruct the purge from. This way a failure throws before anything local is lost, and
-        // the operation stays repeatable.
+        // The AI service goes first: `artifact_projects` is the last record of which artifacts carried the
+        // deleted project, so a failed call must leave it intact for a retry.
         val response = artifactIngestionClient.deleteProjectMemberships(projectId)
 
-        val removedLinks = withContext(Dispatchers.IO) {
+        val removedLinks = withContext(ioDispatcher) {
             transactionTemplate.execute { artifactProjectRepository.deleteProjectLinks(projectId) }
-        } ?: 0
+        }
 
         logger.info(
             "Purged deleted project {}: {} artifact link(s) locally, {} chunk(s) in the AI index",
@@ -181,7 +179,7 @@ class ArtifactProjectService(
         throw IngestionResponseException(
             "Project $projectId was stored for $source but ${failed.size} artifact(s) " +
                 "kept their old membership in the AI index" +
-                (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" } ?: ""),
+                (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" }.orEmpty()),
         )
     }
 }

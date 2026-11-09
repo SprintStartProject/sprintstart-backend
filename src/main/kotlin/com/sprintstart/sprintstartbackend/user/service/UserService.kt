@@ -77,10 +77,8 @@ class UserService(
             savedUser
         }
 
-        // Keycloak is authoritative for permission groups. Without this the local
-        // projection only ever tracks roles that arrived via a REALM_ROLE_MAPPING
-        // event, so a user created any other way (realm import, admin console while
-        // the backend was down) stays USER forever and loses every PM/HR/admin route.
+        // Keycloak is authoritative for permission groups; a user created outside a role-mapping event would
+        // otherwise stay USER forever.
         if (tokenRoles.isNotEmpty() && tokenRoles != user.roles) {
             user.roles.retainAll(tokenRoles)
             user.roles.addAll(tokenRoles)

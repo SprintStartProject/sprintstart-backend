@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.ArrivalStepState
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginVerification
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.http.HttpStatus
@@ -39,6 +40,7 @@ class ArrivalEvidenceService(
     private val githubUserApi: GithubUserApi,
     private val userApi: UserApi,
     transactionManager: PlatformTransactionManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
@@ -70,7 +72,7 @@ class ArrivalEvidenceService(
     suspend fun refresh(userId: UUID): List<ResolvedArrivalStep> {
         val pending =
             readTxTemplate
-                .execute {
+                .execute { _ ->
                     arrivalStepService
                         .forHire(userId)
                         .filterNot { it.settled }
@@ -83,8 +85,8 @@ class ArrivalEvidenceService(
 
         val observed = pending.filter { observes(userId, it) }
 
-        return withContext(Dispatchers.IO) {
-            txTemplate.execute {
+        return withContext(ioDispatcher) {
+            txTemplate.execute { _ ->
                 observed.forEach { settle(userId, it) }
                 arrivalStepService.forHire(userId)
             }
@@ -114,7 +116,7 @@ class ArrivalEvidenceService(
         // telling somebody their perfectly good username does not exist is worse than saying nothing.
         val exists = githubUserApi.userExistsInGithub(login) ?: return false
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             txTemplate.execute {
                 userApi.recordGithubLoginVerification(
                     userId,
@@ -141,7 +143,7 @@ class ArrivalEvidenceService(
 
                 member != null && contributionService.forHire(member, projectId).isNotEmpty()
             }
-        } ?: false
+        }
 
     /**
      * Records that the system saw this step done. Idempotent, and never overwrites.

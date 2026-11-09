@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitAll
@@ -29,6 +30,7 @@ import java.util.UUID
 @Service
 internal class BitbucketConnectionStateService(
     private val connectionRepository: BitbucketConnectionRepository,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Persists `UPDATING` for the connection before its collectors start.
@@ -82,12 +84,12 @@ internal class BitbucketConnectionStateService(
      * @param state The state to persist.
      */
     private suspend fun persistState(repositoryId: UUID, state: ConnectionState) {
-        val exists = withContext(Dispatchers.IO) {
+        val exists = withContext(ioDispatcher) {
             connectionRepository.existsById(repositoryId)
         }
         if (!exists) return
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             connectionRepository.updateConnectionState(repositoryId, state)
         }
     }

@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.util
 
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * Computes a SHA-256 digest for raw artifact content.
@@ -15,6 +16,6 @@ fun ByteArray.sha256(): String {
     return digest
         .digest(this)
         .joinToString("") {
-            "%02x".format(it)
+            "%02x".format(Locale.ROOT, it)
         }
 }

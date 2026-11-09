@@ -58,8 +58,6 @@ class OnboardingStepController(
     val onboardingStepService: OnboardingStepService,
     val onboardingPathService: OnboardingPathService,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Returns all steps for one phase in the authenticated user's onboarding path.
      *
@@ -342,8 +340,6 @@ class OnboardingStepController(
     ) {
         onboardingStepService.deleteOnboardingStepForMe(jwt.subject, stepId)
     }
-
-//  ========================== Endpoints for admins (/users/{userId}/path/phases/...) ==========================
 
     /**
      * Returns all steps belonging to a specific phase, including their direct tasks and resources.

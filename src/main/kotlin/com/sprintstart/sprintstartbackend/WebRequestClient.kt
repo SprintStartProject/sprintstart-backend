@@ -121,7 +121,6 @@ open class WebRequestClient {
                 .newBuilder()
                 .uri(uri)
 
-            // Set up the body publisher if a payload exists
             val bodyPublisher = if (payload != null) {
                 requestBuilder.header("Content-Type", "application/json")
                 HttpRequest.BodyPublishers.ofString(payload)
@@ -129,7 +128,6 @@ open class WebRequestClient {
                 HttpRequest.BodyPublishers.noBody()
             }
 
-            // Inject the HTTP method
             requestBuilder.method(method.uppercase(), bodyPublisher)
 
             val request = requestBuilder.build()

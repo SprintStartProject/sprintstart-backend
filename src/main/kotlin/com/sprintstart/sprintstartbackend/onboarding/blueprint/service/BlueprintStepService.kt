@@ -220,8 +220,6 @@ class BlueprintStepService(
         return DeleteBlueprintStepResponse(updatedSteps.map { it.toUpdateSubGraphNodeResponse() })
     }
 
-    // Helper Methods
-
     private fun validateRevision(
         step: BlueprintStep,
         revision: Long,

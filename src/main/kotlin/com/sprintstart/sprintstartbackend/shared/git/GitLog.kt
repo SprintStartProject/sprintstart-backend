@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -24,6 +25,7 @@ import java.time.Instant
 class GitLog(
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Reads the commits of a clone, newest first.
@@ -36,7 +38,7 @@ class GitLog(
      * @throws RuntimeException if [sinceRevision] is not a revision of this clone.
      */
     suspend fun commits(repositoryPath: Path, sinceRevision: String?): List<GitCommit> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner
                 .exec(repositoryPath, onDiskOperations.gitLog(sinceRevision))
                 .lineSequence()

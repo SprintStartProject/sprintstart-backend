@@ -35,12 +35,14 @@ class Artifact(
     var title: String?,
     @Column(columnDefinition = "TEXT")
     var content: String?,
-    // Mutable because a connector can change how it represents a source
     var mime: String?,
     val language: String?,
-    // Whether an issue is still open at its source: `"OPEN"` / `"CLOSED"`, null for anything that is not an issue.
+    /**
+     * Whether an issue is still open at its source (`"OPEN"` / `"CLOSED"`); null for anything that is not an
+     * issue.
+     */
     var state: String? = null,
-    // Whether somebody at the source is already assigned to this issue — null means we do not know.
+    /** Whether somebody at the source is assigned to this issue; null when unknown. */
     @Column(name = "has_assignee")
     var hasAssignee: Boolean? = null,
     @Column(nullable = false, columnDefinition = "TEXT")
@@ -57,10 +59,8 @@ class Artifact(
         ],
     )
     @Column(name = "project_id", nullable = false)
-    // Add companion obj to Artifact to have Artifact.create
-    // to keep internal state hidden
     private val projectIdsInternal: MutableSet<UUID> = mutableSetOf(),
-    // GitHub issue labels (e.g. "good first issue"); empty for non-issue artifact types.
+    /** The issue's labels at its source (e.g. "good first issue"); empty for other types. */
     @ElementCollection
     @CollectionTable(
         name = "artifact_labels",
@@ -74,10 +74,10 @@ class Artifact(
     var updatedAtSource: Instant?,
     @Column(name = "ingested_at", nullable = false)
     val ingestedAt: Instant = Instant.now(),
-    // When ingestion last saw this artifact's content actually change. Null while it still matches
-    // what was first imported. Deliberately our own observation rather than a timestamp from the
-    // source: not every connector reports one, and `ingestedAt` cannot carry it -- that is the
-    // first-import time, which `findFirstIngestedAt` depends on staying put.
+    /**
+     * When ingestion last saw the content change; null while it still matches the first import. Observed here
+     * because not every connector reports one, and `ingestedAt` must stay the first-import time.
+     */
     @Column(name = "last_changed_at")
     var lastChangedAt: Instant? = null,
     @ManyToOne(fetch = FetchType.LAZY)
@@ -95,7 +95,7 @@ class Artifact(
      */
     @Column(name = "author_login", nullable = true)
     var authorLogin: String? = null,
-    // When a pull request was merged at the source; null for anything unmerged or not a PR.
+    /** When a pull request was merged at its source; null for anything unmerged or not a pull request. */
     @Column(name = "merged_at_source")
     var mergedAtSource: Instant? = null,
     /**

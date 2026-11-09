@@ -28,8 +28,6 @@ import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-// The pattern to match connector ids. Matches all strings,
-// that are lowercase, don't contain spaces, `-` is allowed.
 private const val ID_PATTERN = "^[a-z0-9-]+$"
 
 @Validated
@@ -40,7 +38,6 @@ class ConnectorController(
     connectors: List<IConnector>,
     private val connectorConfigurationService: ConnectorConfigurationService,
 ) {
-    // Verify all connector ids are truly unique on bean init
     init {
         val duplicates = connectors.groupBy { it.id }.filterValues { it.size > 1 }.keys
         require(duplicates.isEmpty()) { "Duplicate connector IDs detected: $duplicates" }

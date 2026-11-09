@@ -18,7 +18,7 @@ internal data class GetBitbucketRepositoryConfigResponse(
         /** Maps a stored config to its API response, reading the coordinates from its connection. */
         internal fun of(config: BitbucketRepositoryConfig): GetBitbucketRepositoryConfigResponse =
             GetBitbucketRepositoryConfigResponse(
-                id = config.id!!,
+                id = checkNotNull(config.id) { "A stored repository config has an id" },
                 workspace = config.repository.workspace,
                 slug = config.repository.slug,
                 autoUpdate = config.autoUpdate,

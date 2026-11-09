@@ -14,6 +14,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteCo
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardDiagramService
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardService
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.OnboardingTaskId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.slot
@@ -106,7 +110,7 @@ class BoardControllerTest(
     @Test
     fun `getMyBoard returns the caller's board`() {
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.getBoard(userId, projectId) } returns board()
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns board()
 
         mockMvc
             .perform(get("/api/v1/onboarding/me/board").param("projectId", projectId.toString()).with(userJwt))
@@ -120,7 +124,7 @@ class BoardControllerTest(
     @Test
     fun `getMyBoard is 404 for a project the caller is not on`() {
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.getBoard(userId, projectId) } returns null
+        every { boardService.getBoard(UserId(userId), ProjectId(projectId)) } returns null
 
         mockMvc
             .perform(get("/api/v1/onboarding/me/board").param("projectId", projectId.toString()).with(userJwt))
@@ -131,7 +135,7 @@ class BoardControllerTest(
     fun `dismissCard removes a card from the caller's own board`() {
         val cardId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.dismiss(userId, cardId) } returns true
+        every { boardService.dismiss(UserId(userId), BoardCardId(cardId)) } returns true
 
         mockMvc
             .perform(delete("/api/v1/onboarding/me/board/cards/$cardId").with(userJwt))
@@ -142,7 +146,7 @@ class BoardControllerTest(
     fun `dismissCard is 404 for a card that is not on a board of theirs`() {
         val cardId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.dismiss(userId, cardId) } returns false
+        every { boardService.dismiss(UserId(userId), BoardCardId(cardId)) } returns false
 
         // Same answer as a card that does not exist: a 403 would confirm the id is somebody's card.
         mockMvc
@@ -161,7 +165,7 @@ class BoardControllerTest(
     fun `addCard takes a note and answers with the card`() {
         val request = slot<AuthoredCardRequest>()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.addAuthoredCard(eq(userId), eq(projectId), capture(request)) } returns
+        every { boardService.addAuthoredCard(UserId(userId), ProjectId(projectId), capture(request)) } returns
             noteCard()
 
         mockMvc
@@ -199,7 +203,7 @@ class BoardControllerTest(
     fun `editCard replaces what one of the caller's cards says`() {
         val cardId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.editAuthoredCard(eq(userId), eq(cardId), any()) } returns noteCard()
+        every { boardService.editAuthoredCard(UserId(userId), BoardCardId(cardId), any()) } returns noteCard()
 
         mockMvc
             .perform(
@@ -215,7 +219,14 @@ class BoardControllerTest(
         val cardId = UUID.randomUUID()
         val taskId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.tickPathStepTask(userId, cardId, taskId, true) } returns
+        every {
+            boardService.tickPathStepTask(
+                UserId(userId),
+                BoardCardId(cardId),
+                OnboardingTaskId(taskId),
+                true,
+            )
+        } returns
             PathStepContent(
                 stepId = UUID.randomUUID(),
                 phaseTitle = "Getting set up",
@@ -245,7 +256,14 @@ class BoardControllerTest(
         val cardId = UUID.randomUUID()
         val taskId = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.tickPathStepTask(userId, cardId, taskId, true) } throws
+        every {
+            boardService.tickPathStepTask(
+                UserId(userId),
+                BoardCardId(cardId),
+                OnboardingTaskId(taskId),
+                true,
+            )
+        } throws
             ResponseStatusException(HttpStatus.NOT_FOUND, "No such card on your board")
 
         mockMvc
@@ -269,11 +287,13 @@ class BoardControllerTest(
 
     @Test
     fun `reorder sends the whole order`() {
-        val request = slot<List<UUID>>()
+        val request = slot<List<BoardCardId>>()
         val first = UUID.randomUUID()
         val second = UUID.randomUUID()
         every { userApi.getUserIdByAuthId(authId) } returns Optional.of(userId)
-        every { boardService.reorder(eq(userId), eq(projectId), capture(request)) } returns Unit
+        every {
+            boardService.reorder(UserId(userId), ProjectId(projectId), capture(request))
+        } returns Unit
 
         mockMvc
             .perform(
@@ -284,7 +304,7 @@ class BoardControllerTest(
                     .with(userJwt),
             ).andExpect(status().isNoContent)
 
-        assertEquals(listOf(first, second), request.captured)
+        assertEquals(listOf(BoardCardId(first), BoardCardId(second)), request.captured)
     }
 
     @Test

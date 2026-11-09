@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.config
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,7 +41,16 @@ import org.springframework.context.annotation.Configuration
  */
 @Configuration
 class CoroutineConfig {
+    /**
+     * Where blocking work runs: JDBC, HTTP clients, git and files.
+     *
+     * The one place the dispatcher is chosen; services take it as a constructor parameter, so a test can
+     * hand them its own.
+     */
     @Bean
-    fun applicationScope(): CoroutineScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    fun ioDispatcher(): CoroutineDispatcher = Dispatchers.IO
+
+    @Bean
+    fun applicationScope(ioDispatcher: CoroutineDispatcher): CoroutineScope =
+        CoroutineScope(SupervisorJob() + ioDispatcher)
 }

@@ -101,9 +101,8 @@ class UserDeletedListener(
     private fun eraseBoards(userId: UUID) {
         val boardIds = boardRepository.findAllByUserId(userId).map { it.id }
         boardIds.forEach { boardCardRepository.deleteAllByBoardId(it) }
-        // The arrangement goes with the board it describes. It is not a stray preference: it holds
-        // what this person called the parts of their board and which sentences they marked, which
-        // is as much a description of them as the cards it arranges.
+        // The arrangement holds what this person named the parts of their board and which sentences they
+        // marked, so it goes with the board.
         if (boardIds.isNotEmpty()) boardStructureRepository.deleteAllByBoardIdIn(boardIds)
         boardRepository.deleteAllByUserId(userId)
     }

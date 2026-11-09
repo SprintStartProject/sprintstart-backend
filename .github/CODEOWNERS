@@ -1,0 +1,16 @@
+# What decides how strictly this repository is checked needs the approval of a
+# code owner, who is somebody other than the author. Replace the team with a dedicated quality team
+# if the project creates one.
+/AI_RULES.md                     @SprintStartProject/backend
+/AGENTS.md                       @SprintStartProject/backend
+/.agent-modes/                   @SprintStartProject/backend
+/.claude/                        @SprintStartProject/backend
+/.github/                        @SprintStartProject/backend
+/scripts/quality/                @SprintStartProject/backend
+/scripts/ai-guard/               @SprintStartProject/backend
+/detekt.yml                      @SprintStartProject/backend
+/detekt-baseline.xml             @SprintStartProject/backend
+/detekt-baseline-main.xml        @SprintStartProject/backend
+/quality-metrics.properties      @SprintStartProject/backend
+/src/test/resources/architecture/ @SprintStartProject/backend
+/contracts/                      @SprintStartProject/backend

@@ -131,12 +131,8 @@ class UserApiService(
             }
 
             if (!roleIds.isNullOrEmpty()) {
-                // Roles are scoped to the project membership, so this travels through the
-                // assignment: "holds one of these roles on *some* project". That is the question a
-                // user search asks — narrowing it to a project would need a project to narrow to,
-                // which this filter does not take. Combining it with `projectIds` still works, but
-                // the two are independent: they can match via different projects, which is the
-                // pre-existing behaviour of two separate joins.
+                // Roles belong to a project membership, so this matches users holding one of the roles on
+                // some project; combined with `projectIds`, the two may match via different projects.
                 val roleJoin = root
                     .join<User, ProjectUserAssignment>("projectAssignments", JoinType.INNER)
                     .join<ProjectUserAssignment, ProjectRole>("projectRoles", JoinType.INNER)
@@ -148,7 +144,6 @@ class UserApiService(
                 predicates.add(projectJoin.get<UUID>("id").`in`(projectIds))
             }
 
-            // query.distinct(true) because join might return multiple rows for the same user
             query.distinct(true)
 
             if (predicates.isEmpty()) null else cb.and(*predicates.toTypedArray())
@@ -226,10 +221,8 @@ class UserApiService(
         val user = userRepository.findById(userId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with id: $userId")
         }
-        // Delegated rather than reimplemented: GithubLoginService owns normalisation, the syntax
-        // and uniqueness rules, and the rule that changing the login discards the verification
-        // verdict about the old one. SELF_DECLARED because the hire said it themselves -- being
-        // told it in conversation is not a PM confirming it.
+        // SELF_DECLARED: the hire said it themselves. GithubLoginService owns normalisation, the rules and
+        // dropping the old verdict.
         githubLoginService.apply(user, githubLogin, GithubLoginSource.SELF_DECLARED)
         return userRepository.save(user).githubLogin.orEmpty()
     }
@@ -286,9 +279,7 @@ class UserApiService(
             return Optional.empty()
         }
 
-        // Equality, not `like`: a Specification rather than a finder keeps this off the repository
-        // interface, but the point is the predicate — an exact match on either identifier, so no
-        // prefix, suffix or wildcard a caller types can widen it into a search.
+        // An exact match on either identifier, so nothing a caller types can widen it into a search.
         val exactly = Specification<User> { root, _, cb ->
             cb.or(
                 cb.equal(cb.lower(root.get("email")), needle.lowercase()),

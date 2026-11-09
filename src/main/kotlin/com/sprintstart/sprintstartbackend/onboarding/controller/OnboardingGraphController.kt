@@ -39,8 +39,6 @@ class OnboardingGraphController(
     private val onboardingGraphService: OnboardingGraphService,
     private val onboardingStepPlacementService: OnboardingStepPlacementService,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Stores canvas positions for the phases of the caller's own path.
      *
@@ -87,8 +85,6 @@ class OnboardingGraphController(
     ) {
         onboardingGraphService.arrangePhaseForMe(jwt.subject, phaseId, request)
     }
-
-//  ========================== Endpoints for PM, HR and admins ==========================
 
     /**
      * Stores canvas positions for the phases of a user's path.

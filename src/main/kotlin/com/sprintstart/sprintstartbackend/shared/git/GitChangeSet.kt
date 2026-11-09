@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -19,6 +20,7 @@ import java.nio.file.Path
 class GitChangeSet(
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Lists the repository-relative paths that changed between two revisions.
@@ -34,7 +36,7 @@ class GitChangeSet(
         fromRevision: String,
         toRevision: String,
     ): List<String> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner
                 .exec(repositoryPath, onDiskOperations.gitDiffCmp(fromRevision, toRevision))
                 .split(NUL)

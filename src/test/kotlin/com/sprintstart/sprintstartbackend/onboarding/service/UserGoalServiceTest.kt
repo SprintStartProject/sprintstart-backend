@@ -7,6 +7,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.StarterWorkTas
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.UserGoal
 import com.sprintstart.sprintstartbackend.onboarding.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.UserGoalRepository
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.every
 import io.mockk.mockk
@@ -110,7 +112,14 @@ class UserGoalServiceTest {
 
             // `placeOrRevive`, not `place`: a card the hire dismissed back when it had nothing on it
             // has to come back once they grab something.
-            verify { boardService.placeOrRevive(userId, projectId, BoardCardKind.CURRENT_TASK, BoardActor.HIRE) }
+            verify {
+                boardService.placeOrRevive(
+                    UserId(userId),
+                    ProjectId(projectId),
+                    BoardCardKind.CURRENT_TASK,
+                    BoardActor.HIRE,
+                )
+            }
         }
 
         @Test

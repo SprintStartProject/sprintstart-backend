@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClie
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -35,6 +36,7 @@ internal class BitbucketRepositoryVisibilityService(
     private val connectionRepository: BitbucketConnectionRepository,
     private val credentialApi: AtlassianCredentialApi,
     private val bitbucketClient: BitbucketClient,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Checks visibility of the repository behind a connection, with any credential the caller has
@@ -53,13 +55,13 @@ internal class BitbucketRepositoryVisibilityService(
      */
     @Tracked("Checking caller visibility of a connected Bitbucket repository")
     suspend fun requireCallerCanSeeConnection(authId: String, repositoryId: UUID) {
-        val connection = withContext(Dispatchers.IO) {
+        val connection = withContext(ioDispatcher) {
             connectionRepository.findById(repositoryId)
         }.orElseThrow {
             BitbucketRepositoryConnectionNotFoundException(repositoryId)
         }
 
-        val credentials = withContext(Dispatchers.IO) {
+        val credentials = withContext(ioDispatcher) {
             credentialApi.findAllSecretsByAuthId(authId)
         }
         val visible = credentials.any { credential ->

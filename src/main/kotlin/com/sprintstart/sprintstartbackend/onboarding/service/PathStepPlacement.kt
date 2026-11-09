@@ -140,7 +140,7 @@ internal class PathStepPlacement(
             phase.steps.firstOrNull { it.status == StepStatus.IN_PROGRESS }?.id
                 ?: phase.steps
                     .filter { it.status == StepStatus.FINISHED && it.completedAt != null }
-                    .maxByOrNull { it.completedAt!! }
+                    .maxByOrNull { checkNotNull(it.completedAt) }
                     ?.id
     }
 }

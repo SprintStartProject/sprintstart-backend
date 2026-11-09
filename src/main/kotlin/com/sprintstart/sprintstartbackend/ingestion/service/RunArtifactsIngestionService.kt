@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepositor
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -24,7 +25,7 @@ import kotlin.jvm.optionals.getOrElse
  *
  * The service builds one batch containing newly stored run artifacts and artifact ids that were
  * deleted during the same run and must be removed from the AI index. Database reads stay on
- * [Dispatchers.IO]; the HTTP call happens after the request is built.
+ * the IO dispatcher; the HTTP call happens after the request is built.
  */
 @Service
 class RunArtifactsIngestionService(
@@ -33,15 +34,12 @@ class RunArtifactsIngestionService(
     private val artifactAiMapper: ArtifactAiMapper,
     private val artifactIngestionClient: ArtifactIngestionClient,
     transactionManager: PlatformTransactionManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    // The reads below run on a fire-and-forget coroutine after the ingestion run''s own
-    // transaction has already committed, so there is no session bound to this thread.
-    // `Artifact.projectIds` is a lazy @ElementCollection, and reading it for the AI payload
-    // therefore threw LazyInitializationException — which failed the whole sync and left the
-    // AI index empty. @Transactional does not apply to suspend functions, so the reads are
-    // wrapped explicitly, the same way BlueprintService does it.
+    // These reads run after the run's transaction committed, so they open their own: `Artifact.projectIds` is
+    // lazy, and `@Transactional` does not apply to suspend functions.
     private val readTxTemplate =
         TransactionTemplate(transactionManager).apply { isReadOnly = true }
 
@@ -49,7 +47,7 @@ class RunArtifactsIngestionService(
      * Loads the run output, skips empty runs, and dispatches the batched ingest/deindex request.
      *
      * Empty runs are intentionally ignored because there is nothing for the AI layer to index or
-     * remove. Repository reads are executed on [Dispatchers.IO] before the outbound HTTP call.
+     * remove. Repository reads are executed on the IO dispatcher before the outbound HTTP call.
      *
      * @param runId The completed ingestion run whose artifacts should be synced to AI.
      * @throws IngestionRunNotFoundException when the run id does not exist.
@@ -58,16 +56,15 @@ class RunArtifactsIngestionService(
      */
     @Tracked("Dispatching AI sync for run")
     suspend fun ingestRunArtifacts(runId: UUID) {
-        val request = withContext(Dispatchers.IO) {
-            readTxTemplate.execute {
+        val request = withContext(ioDispatcher) {
+            readTxTemplate.execute { _ ->
                 val run = ingestionRunRepository
                     .findWithAiSyncArtifactIdsById(runId)
                     .getOrElse { throw IngestionRunNotFoundException(runId) }
 
                 val storedByThisRun = artifactRepository.findAllByIngestionRunId(runId)
-                // Artifacts an earlier run stored and this one changed keep pointing at that
-                // earlier run, so the query above cannot see them. Without them a content update
-                // or a newly linked project would never reach the index.
+                // Artifacts an earlier run stored and this one changed point at that run, so the query above
+                // cannot see them.
                 val alreadyListed = storedByThisRun.mapTo(mutableSetOf()) { it.id }
                 val touchedAgain = artifactRepository.findAllById(
                     run.artifactIdsToReingest.filterNot { it in alreadyListed },
@@ -122,7 +119,7 @@ class RunArtifactsIngestionService(
             "AI sync for run $runId did not fully apply: " +
                 "${failedArtifacts.size} artifact(s) failed to index, " +
                 "${failedDeindexes.size} failed to be removed" +
-                (firstReason?.let { " (first reported cause: $it)" } ?: ""),
+                (firstReason?.let { " (first reported cause: $it)" }.orEmpty()),
         )
     }
 }

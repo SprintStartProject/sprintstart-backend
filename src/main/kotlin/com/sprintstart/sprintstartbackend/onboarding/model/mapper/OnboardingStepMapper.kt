@@ -21,8 +21,7 @@ fun OnboardingStep.toGetAllResponse(locked: Boolean = false): GetOnboardingSteps
         estimatedMinutes = this.estimatedMinutes,
         isAiAssisted = this.aiAssisted,
         origin = this.origin,
-        // A step with no expected outcome -- one a hire or their buddy added -- stores "", and a
-        // list holding "" rendered as an empty "Expected outcomes" bullet on the step page.
+        // Steps without an expected outcome store "", which must not become an empty bullet.
         expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
         status = this.status,
         startedAt = this.startedAt,
@@ -47,8 +46,7 @@ fun OnboardingStep.toGetResponse(): GetOnboardingStepResponse {
         type = this.type,
         isAiAssisted = this.aiAssisted,
         origin = this.origin,
-        // A step with no expected outcome -- one a hire or their buddy added -- stores "", and a
-        // list holding "" rendered as an empty "Expected outcomes" bullet on the step page.
+        // Steps without an expected outcome store "", which must not become an empty bullet.
         expectedOutcomes = listOf(this.expectedOutcome).filter { it.isNotBlank() },
         tasks = this.tasks.map { task -> task.toGetAllResponse() },
         resources = this.resources.map { resource -> resource.toGetAllResponse() },

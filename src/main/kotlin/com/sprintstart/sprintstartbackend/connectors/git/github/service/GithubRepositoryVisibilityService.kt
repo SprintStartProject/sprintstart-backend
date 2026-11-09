@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.repository.Githu
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubUserRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.UserApi
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -43,6 +44,7 @@ class GithubRepositoryVisibilityService(
     private val repoConnectionRepository: GithubRepositoryConnectionRepository,
     private val githubClient: GithubClient,
     private val userApi: UserApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Checks visibility with the one PAT the caller named.
@@ -60,7 +62,7 @@ class GithubRepositoryVisibilityService(
     @Tracked("Checking caller visibility of a GitHub repository")
     suspend fun requireCallerCanSeeRepository(authId: String, tokenName: String, owner: String, name: String) {
         val userId = userApi.getUserIdByAuthId(authId).orElseThrow { UserWithAuthIdNotFoundException(authId) }
-        val user = withContext(Dispatchers.IO) {
+        val user = withContext(ioDispatcher) {
             githubUserRepository.findById(GithubUserPat(authId = authId, name = tokenName))
         }.orElseThrow {
             GithubUserPatNotFoundException(tokenName, userId.toString())
@@ -92,15 +94,15 @@ class GithubRepositoryVisibilityService(
      */
     @Tracked("Checking caller visibility of a connected GitHub repository")
     suspend fun requireCallerCanSeeConnection(authId: String, repositoryId: UUID) {
-        val connection = withContext(Dispatchers.IO) {
+        val connection = withContext(ioDispatcher) {
             repoConnectionRepository.findById(repositoryId)
         }.orElseThrow {
             connectionNotFound(repositoryId)
         }
 
-        val patNames = withContext(Dispatchers.IO) { githubUserRepository.findAllByAuthId(authId) }
+        val patNames = withContext(ioDispatcher) { githubUserRepository.findAllByAuthId(authId) }
         val visible = patNames.any { patName ->
-            val user = withContext(Dispatchers.IO) {
+            val user = withContext(ioDispatcher) {
                 githubUserRepository.findById(GithubUserPat(authId = authId, name = patName))
             }.orElse(null)
             user != null && canSee(user, connection.owner, connection.name)

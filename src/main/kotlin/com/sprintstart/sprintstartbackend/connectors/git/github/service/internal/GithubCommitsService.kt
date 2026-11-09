@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngin
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -35,6 +36,7 @@ class GithubCommitsService(
     private val coordinatesFactory: GithubRepositoryCoordinatesFactory,
     private val ingestionEngine: GitIngestionEngine,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Fetches and ingests the commits of a connected GitHub repository.
@@ -62,15 +64,15 @@ class GithubCommitsService(
                 sinceRevision = githubRepository.lastCommitsSyncedSha,
                 sink = GithubCommitSink(eventPublisher, githubRepository, transactionId),
             )
-            // Inside the try so that a failed cursor write still ends the run with a terminal
-            // event. Only the cursor column is written: saving the whole connection would carry
-            // this copy's stale file cursor and snapshot into the row.
-            withContext(Dispatchers.IO) {
+            // Inside the try, so a failed cursor write still ends the run with a terminal event. Only the
+            // cursor column is written; saving the whole connection would carry this copy's stale file
+            // cursor.
+            withContext(ioDispatcher) {
                 repoConnectionRepository.updateCommitsCursor(githubRepository.id, ingested.revision)
             }
         } catch (e: CancellationException) {
-            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
-            // terminal failure here would report a fetch that did not happen.
+            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
+            // happened.
             throw e
         } catch (e: Exception) {
             eventPublisher.publishEvent(
@@ -107,7 +109,7 @@ class GithubCommitsService(
         if (!ingestionEngine.isUpToDate(coordinatesFactory.of(githubRepository))) {
             githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 repoConnectionRepository.save(githubRepository)
             }
         }

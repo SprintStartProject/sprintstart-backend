@@ -10,9 +10,12 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyS
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.CreateSessionResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.GetSessionsResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyActionService
+import com.sprintstart.sprintstartbackend.onboarding.service.BuddyOpeningService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddySuggestionService
 import com.sprintstart.sprintstartbackend.onboarding.service.BuddyTeamService
+import com.sprintstart.sprintstartbackend.shared.ids.AuthId
+import com.sprintstart.sprintstartbackend.shared.ids.BuddySessionId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Content
@@ -50,6 +53,7 @@ import java.util.UUID
 @Tag(name = "Onboarding - Buddy", description = "A hire's persistent onboarding companion")
 class BuddyController(
     private val buddyService: BuddyService,
+    private val buddyOpeningService: BuddyOpeningService,
     private val buddyTeamService: BuddyTeamService,
     private val buddyActionService: BuddyActionService,
     private val buddySuggestionService: BuddySuggestionService,
@@ -172,7 +176,7 @@ class BuddyController(
      */
     @Operation(
         summary = "Open a buddy session (streaming)",
-        description = "Opens a buddy session like `POST /open`: the previous visit is folded into the mentor's " +
+        description = "Opens a buddy session: the previous visit is folded into the mentor's " +
             "durable memory, and a proactive greeting grounded in the hire's state is streamed as it is written " +
             "instead of arriving whole. The first conversation and a visit after a long absence receive a new " +
             "greeting. Otherwise, an existing opening is replayed when it is the latest message; conversations " +
@@ -210,7 +214,7 @@ class BuddyController(
     @ResponseStatus(HttpStatus.OK)
     @PostMapping("/open/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     @PreAuthorize("hasRole('USER')")
-    suspend fun streamOpenForMe(
+    fun streamOpenForMe(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
         @Parameter(description = "The session to open")
@@ -219,7 +223,7 @@ class BuddyController(
         @RequestParam(required = false) teamProjectId: UUID?,
     ): Flow<BuddyStreamEvent> =
         if (teamProjectId == null) {
-            buddyService.streamOpenForMe(jwt.subject, sessionId)
+            buddyOpeningService.streamOpenForMe(AuthId(jwt.subject), sessionId?.let(::BuddySessionId))
         } else {
             buddyTeamService.streamOpenForMe(jwt.subject, teamProjectId)
         }

@@ -25,24 +25,28 @@ import java.util.UUID
 class StarterWorkTaskProposal(
     @Id
     val id: UUID = UUID.randomUUID(),
-    // The backend's stable GitHub issue identifier (e.g. "github:org/repo:ISSUE:123"), unique
-    // per proposal so the same issue is never mined into two rows.
+    /**
+     * The stable issue identifier (e.g. "github:org/repo:ISSUE:123"); unique, so an issue is never mined into
+     * two rows.
+     */
     @Column(name = "source_id", nullable = false, unique = true)
     val sourceId: String,
     @Column(nullable = false)
     val title: String,
-    // Mutable, unlike the fields around it: title, sourceId and sourceUrl are the tracker's facts
-    // and must never drift from it, while this is our own note about the issue. Promotion rewrites
-    // it when reviving a stale row, because the person vouching for it then is the one whose note
-    // it now is.
+    /**
+     * Our own note about the issue, unlike the tracker's facts around it. Promotion rewrites it when reviving
+     * a stale row, so it belongs to whoever vouches for the task now.
+     */
     @Column(nullable = true, columnDefinition = "TEXT")
     var summary: String? = null,
     @Column(nullable = true, columnDefinition = "TEXT")
     val rationale: String? = null,
     @Column(name = "source_url", nullable = true)
     val sourceUrl: String? = null,
-    // The competency keys the AI judged this task exercises. One of the four signals the matcher
-    // ranks a task by for a hire; it says what the work touches, never who may claim it.
+    /**
+     * The competency keys the AI judged this task exercises: one of the matcher's four ranking signals, never
+     * a claim restriction.
+     */
     @ElementCollection
     @CollectionTable(
         name = "starter_work_task_proposal_competency_keys",

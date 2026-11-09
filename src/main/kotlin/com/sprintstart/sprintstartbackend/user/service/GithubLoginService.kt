@@ -50,10 +50,8 @@ class GithubLoginService(
             )
         }
 
-        // A verdict is about a *value*. Leaving the old one in place after a correction would show
-        // "we could not find that account" against the login that replaced it, which is the same
-        // class of wrong answer this verification exists to prevent. Nothing verifies here: the
-        // check is an HTTP call and this runs inside the caller's transaction.
+        // A verdict is about a value, so a changed login drops it. Nothing verifies here: the check is an
+        // HTTP call, and this runs inside the caller's transaction.
         if (user.githubLogin != normalized) {
             clearVerification(user)
         }

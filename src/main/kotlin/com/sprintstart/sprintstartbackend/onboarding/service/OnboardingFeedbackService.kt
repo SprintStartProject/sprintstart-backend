@@ -24,8 +24,6 @@ class OnboardingFeedbackService(
     private val onboardingStepRepository: OnboardingStepRepository,
     private val userApi: UserApi,
 ) {
-//  ========================== Methods for users ==========================
-
     /**
      * Retrieves all feedback provided by this user.
      *
@@ -91,8 +89,6 @@ class OnboardingFeedbackService(
 
         return feedback.toGetResponse()
     }
-
-//  ========================== Methods for admins ==========================
 
     /**
      * Retrieves all feedback for all users.
@@ -160,8 +156,6 @@ class OnboardingFeedbackService(
 
         return feedback.toReadResponse()
     }
-
-//  ========================== Helper methods ==========================
 
     /**
      * Retrieves a user's id by it's auth id.

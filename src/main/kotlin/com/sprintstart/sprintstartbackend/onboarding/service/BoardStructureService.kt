@@ -7,6 +7,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BoardStructure
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -49,17 +51,15 @@ class BoardStructureService(
      * 404 the board read gives — a 403 would confirm that a given project exists.
      */
     @Transactional(readOnly = true)
-    fun read(userId: UUID, projectId: UUID): BoardStructureResponse? {
+    fun read(userId: UserId, projectId: ProjectId): BoardStructureResponse? {
         if (!isMember(userId, projectId)) return null
 
-        val board = boardRepository.findByUserIdAndProjectId(userId, projectId)
+        val board = boardRepository.findByUserIdAndProjectId(userId.value, projectId.value)
             ?: return BoardStructureResponse(BoardStructurePayload(), null)
         val stored = boardStructureRepository.findByBoardId(board.id)
             ?: return BoardStructureResponse(BoardStructurePayload(), null)
 
-        // A row this version cannot read answers exactly as an unarranged board does, `updatedAt`
-        // included. Reporting "nothing is stored" alongside the moment it was last stored is two
-        // answers to one question, and the client acts on the first of them.
+        // An unreadable row answers exactly like an unarranged board, `updatedAt` included.
         val decoded = decode(stored) ?: return BoardStructureResponse(BoardStructurePayload(), null)
 
         return BoardStructureResponse(decoded, stored.updatedAt)
@@ -78,7 +78,7 @@ class BoardStructureService(
      * notices it lost.
      */
     @Transactional
-    fun write(userId: UUID, projectId: UUID, payload: BoardStructurePayload): BoardStructureResponse? {
+    fun write(userId: UserId, projectId: ProjectId, payload: BoardStructurePayload): BoardStructureResponse? {
         if (!isMember(userId, projectId)) return null
 
         val encoded = json.encodeToString(BoardStructurePayload.serializer(), payload)
@@ -92,12 +92,11 @@ class BoardStructureService(
             )
         }
 
-        val board = boardRepository.findByUserIdAndProjectId(userId, projectId)
-            ?: boardRepository.save(Board(userId = userId, projectId = projectId))
+        val board = boardRepository.findByUserIdAndProjectId(userId.value, projectId.value)
+            ?: boardRepository.save(Board(userId = userId.value, projectId = projectId.value))
 
-        // One statement, so that two tabs arranging the same board for the first time cannot both
-        // insert. See [BoardStructureRepository.upsert]; `now` is what the row will carry, which is
-        // why it is read here rather than taken from an entity this no longer loads.
+        // One statement, so two tabs arranging a new board cannot both insert (see
+        // [BoardStructureRepository.upsert]).
         val now = Instant.now()
         boardStructureRepository.upsert(
             id = UUID.randomUUID(),
@@ -136,8 +135,8 @@ class BoardStructureService(
             null
         }
 
-    private fun isMember(userId: UUID, projectId: UUID): Boolean =
-        projectMembershipApi.getProjectMembers(projectId).any { it.userId == userId }
+    private fun isMember(userId: UserId, projectId: ProjectId): Boolean =
+        projectMembershipApi.getProjectMembers(projectId.value).any { it.userId == userId.value }
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }

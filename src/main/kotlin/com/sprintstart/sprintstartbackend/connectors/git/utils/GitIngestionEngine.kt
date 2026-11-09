@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCache
 import com.sprintstart.sprintstartbackend.shared.git.GitRepositoryCoordinates
 import com.sprintstart.sprintstartbackend.shared.git.GitRevisionState
 import com.sprintstart.sprintstartbackend.shared.git.GitWorkingTree
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asFlow
@@ -62,6 +63,7 @@ class GitIngestionEngine(
     private val changeSet: GitChangeSet,
     private val gitLog: GitLog,
     private val config: GitConfig,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val repositoryLocks = ConcurrentHashMap<String, Mutex>()
     private val logger = LoggerFactory.getLogger(GitIngestionEngine::class.java)
@@ -239,7 +241,7 @@ class GitIngestionEngine(
         relativePaths
             .asFlow()
             .flatMapMerge(concurrency = readConcurrency()) { relativePath ->
-                flow { emit(inspect(repositoryPath, relativePath, revision)) }.flowOn(Dispatchers.IO)
+                flow { emit(inspect(repositoryPath, relativePath, revision)) }.flowOn(ioDispatcher)
             }.collect { inspection ->
                 when (inspection) {
                     is Inspection.Changed -> {

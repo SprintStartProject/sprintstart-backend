@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.Ch
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.ChangeNotionCredentialTokenRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.request.DeleteNotionCredentialRequest
 import com.sprintstart.sprintstartbackend.connectors.notion.model.api.response.NotionCredentialResponse
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service
 internal class NotionCredentialService(
     private val notionClient: NotionClient,
     private val persistenceService: NotionCredentialPersistenceService,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /** Validates a PAT before storing its encrypted value and safe remote identity metadata. */
     suspend fun addCredential(
@@ -29,7 +31,7 @@ internal class NotionCredentialService(
         val normalizedName = request.name.trim()
         val normalizedToken = request.token.trim()
         val workspace = notionClient.validateConnection(normalizedToken)
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             persistenceService.persistNew(
                 authId = authId,
                 name = normalizedName,
@@ -52,7 +54,7 @@ internal class NotionCredentialService(
         val normalizedToken = request.newToken.trim()
 
         val workspace = notionClient.validateConnection(normalizedToken)
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             persistenceService.replaceToken(
                 authId = authId,
                 name = normalizedName,

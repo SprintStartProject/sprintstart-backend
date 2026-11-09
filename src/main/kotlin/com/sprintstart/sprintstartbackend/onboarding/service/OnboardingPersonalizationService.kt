@@ -239,7 +239,7 @@ class OnboardingPersonalizationService(
         skillIds: Set<UUID>,
     ): BlueprintSelection =
         withContext(Dispatchers.IO) {
-            readTxTemplate.execute {
+            readTxTemplate.execute { _ ->
                 val blueprint = selectActiveBlueprint(projectId)
                 BlueprintSelection(
                     id = blueprint.id,
@@ -257,7 +257,7 @@ class OnboardingPersonalizationService(
                         },
                 )
             }
-        } ?: throw IllegalStateException("Blueprint selection returned no result")
+        }
 
     private suspend fun persistPath(
         blueprint: BlueprintSelection,
@@ -292,7 +292,7 @@ class OnboardingPersonalizationService(
                 entityManager.persist(onboardingPath)
                 response
             }
-        } ?: throw IllegalStateException("Onboarding path transaction returned no result")
+        }
 
     /**
      * Runs one phase's AI assembly under the concurrency and timeout bounds.

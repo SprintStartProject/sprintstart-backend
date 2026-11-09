@@ -17,15 +17,15 @@ class IngestionRun(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     val sourceSystem: SourceSystem,
-    // Connector-neutral reference to the concrete source instance this run belongs to. Kept
-    // generic (not GitHub-specific) so the entity stays abstract across connectors (GitHub, Jira,
-    // upload, ...). Nullable because some sources (for example UPLOAD) have no instance, and older
-    // runs predate these columns.
-    // For GitHub, sourceInstanceId is the repository connection id.
+    /**
+     * The source instance this run belongs to (for GitHub, the repository connection id); null for sources
+     * without one, such as uploads.
+     */
     var sourceInstanceId: UUID? = null,
-    // Denormalized, human-readable label of the source instance (for GitHub: "owner/name"). Stored
-    // on the run so its history stays readable even if the instance is later decoupled or deleted,
-    // and to avoid an extra lookup when listing runs.
+    /**
+     * Readable label of the source instance (for GitHub, "owner/name"), kept so the run stays readable after
+     * the instance is gone.
+     */
     var sourceInstanceRef: String? = null,
     val startedAt: Instant = Instant.now(),
     var finishedAt: Instant? = null,
@@ -43,12 +43,10 @@ class IngestionRun(
     @ElementCollection
     @Column(nullable = false)
     val artifactIdsToDeindex: MutableList<String> = mutableListOf(),
-    // Artifacts this run changed that were first stored by an *earlier* run. They keep pointing at
-    // that earlier run (`Artifact.ingestionRun` is immutable, so run history stays truthful), which
-    // means `findAllByIngestionRunId` does not return them -- and without this list they would
-    // never be sent to the AI service again: neither their new content nor a newly linked project
-    // would ever become searchable. A set, not a bag, because one run can touch an artifact
-    // repeatedly and because two bag-fetches in one entity graph cannot be loaded together.
+    /**
+     * Artifacts this run changed that an earlier run stored. They keep pointing at that run, so without this
+     * set they would never reach the AI index again. A set, because one entity graph cannot fetch two bags.
+     */
     @ElementCollection
     @Column(nullable = false)
     val artifactIdsToReingest: MutableSet<UUID> = mutableSetOf(),

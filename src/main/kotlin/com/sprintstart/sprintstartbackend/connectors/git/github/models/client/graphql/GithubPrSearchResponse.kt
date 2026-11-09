@@ -18,7 +18,7 @@ data class GithubPrSearchResponse(
     )
 
     override val results: List<PrNode>
-        get() = data?.search?.nodes ?: emptyList()
+        get() = data?.search?.nodes.orEmpty()
 
     override val hasNextPage: Boolean
         get() = data?.search?.pageInfo?.hasNextPage ?: false
