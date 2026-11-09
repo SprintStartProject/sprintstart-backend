@@ -69,4 +69,5 @@ internal class ConfluenceTransportException(
 /** Represents a malformed or internally inconsistent Confluence response without retaining upstream data. */
 internal class ConfluenceInvalidResponseException(
     val requestContext: String,
-) : RuntimeException("Confluence returned an invalid response while $requestContext")
+    cause: Throwable? = null,
+) : RuntimeException("Confluence returned an invalid response while $requestContext", cause)

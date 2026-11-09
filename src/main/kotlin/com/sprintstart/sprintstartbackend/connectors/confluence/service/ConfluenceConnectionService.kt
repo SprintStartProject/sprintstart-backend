@@ -191,16 +191,16 @@ internal class ConfluenceConnectionService(
         spaceId: String,
     ) = try {
         confluenceClient.getSpace(baseUrl, credentials, spaceId)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceAuthenticationException) {
-        throw ConfluenceConnectionConfigurationException("Confluence credentials were rejected", httpStatus = 401)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceAccessDeniedException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space access was denied", httpStatus = 403)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceResourceNotFoundException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space $spaceId was not found", httpStatus = 404)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceExternalServiceException) {
-        throw ConfluenceConnectionConfigurationException("Confluence space validation failed", httpStatus = 502)
-    } catch (@Suppress("SwallowedException") exception: ConfluenceInvalidResponseException) {
-        throw ConfluenceConnectionConfigurationException("Confluence returned invalid space metadata", httpStatus = 502)
+    } catch (exception: ConfluenceAuthenticationException) {
+        throw spaceCheckFailed("Confluence credentials were rejected", 401, exception)
+    } catch (exception: ConfluenceAccessDeniedException) {
+        throw spaceCheckFailed("Confluence space access was denied", 403, exception)
+    } catch (exception: ConfluenceResourceNotFoundException) {
+        throw spaceCheckFailed("Confluence space $spaceId was not found", 404, exception)
+    } catch (exception: ConfluenceExternalServiceException) {
+        throw spaceCheckFailed("Confluence space validation failed", 502, exception)
+    } catch (exception: ConfluenceInvalidResponseException) {
+        throw spaceCheckFailed("Confluence returned invalid space metadata", 502, exception)
     }
 }
 
@@ -213,3 +213,7 @@ private fun normalizeSpaceId(rawSpaceId: String): String {
     }
     return spaceId
 }
+
+/** A failed space check, keeping what the client reported as its cause. */
+private fun spaceCheckFailed(message: String, httpStatus: Int, cause: Exception) =
+    ConfluenceConnectionConfigurationException(message, httpStatus = httpStatus, cause = cause)

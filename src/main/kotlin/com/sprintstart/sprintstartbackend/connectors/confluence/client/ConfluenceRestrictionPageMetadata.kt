@@ -23,8 +23,8 @@ internal fun ConfluenceSpaceResponse.toDomain(): ConfluenceSpace {
 internal fun ConfluencePageResponse.toDomain(restrictions: ConfluencePageRestrictions): ConfluencePage {
     val createdAt = try {
         OffsetDateTime.parse(version.createdAt).toInstant()
-    } catch (@Suppress("SwallowedException") exception: DateTimeException) {
-        throw ConfluenceInvalidResponseException("mapping page $id")
+    } catch (exception: DateTimeException) {
+        throw ConfluenceInvalidResponseException("mapping page $id", exception)
     }
     return ConfluencePage(
         id = id,
@@ -61,8 +61,8 @@ internal fun ConfluenceRestrictionsResponse.validatePage(
 
     val nextStart = try {
         Math.addExact(requestedStart, users.limit)
-    } catch (@Suppress("SwallowedException") exception: ArithmeticException) {
-        throw ConfluenceInvalidResponseException(requestContext)
+    } catch (exception: ArithmeticException) {
+        throw ConfluenceInvalidResponseException(requestContext, exception)
     }
     return ConfluenceRestrictionPageMetadata(
         nextStart = nextStart,
