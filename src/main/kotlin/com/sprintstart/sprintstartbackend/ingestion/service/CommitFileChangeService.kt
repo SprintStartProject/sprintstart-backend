@@ -5,7 +5,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ChangeAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileChange
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.LineCounts
-import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.CommitArtifactNotFoundException
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.EvidenceArtifactNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.shared.git.CommitFile
@@ -33,12 +33,12 @@ class CommitFileChangeService(
      * owner of everything it touched.
      *
      * @param command The commit and the files it changed.
-     * @throws CommitArtifactNotFoundException when the commit artifact is not stored.
+     * @throws EvidenceArtifactNotFoundException when the commit artifact is not stored.
      */
     @Transactional
     fun record(command: CommitFileChangesCommand) {
         val artifact = artifactRepository.findBySourceId(command.sourceId)
-            ?: throw CommitArtifactNotFoundException(command.sourceId)
+            ?: throw EvidenceArtifactNotFoundException(command.sourceId)
 
         fileChangeRepository.deleteAllByArtifactId(artifact.id)
 

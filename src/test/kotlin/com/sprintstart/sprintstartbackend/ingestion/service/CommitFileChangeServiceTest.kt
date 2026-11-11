@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.CommitFileChangesCommand
-import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.CommitArtifactNotFoundException
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.EvidenceArtifactNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.repository.CommitArtifacts
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.shared.crypto.CryptoConfiguration
@@ -139,7 +139,7 @@ class CommitFileChangeServiceTest {
 
     @Test
     fun `fails when the commit artifact is not stored`() {
-        val error = assertThrows<CommitArtifactNotFoundException> { service.record(command(listed("a.kt"))) }
+        val error = assertThrows<EvidenceArtifactNotFoundException> { service.record(command(listed("a.kt"))) }
 
         assertThat(error.message).contains(sourceId)
         assertThat(storedPaths()).isEmpty()
