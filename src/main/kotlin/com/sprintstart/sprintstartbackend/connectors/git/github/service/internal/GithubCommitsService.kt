@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRep
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
+import com.sprintstart.sprintstartbackend.connectors.git.utils.commitResumePoint
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
@@ -70,7 +71,10 @@ class GithubCommitsService(
         }) {
             val ingested = ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(githubRepository),
-                sinceRevision = githubRepository.lastCommitsSyncedSha,
+                sinceRevision = commitResumePoint(
+                    githubRepository.lastCommitsSyncedSha,
+                    githubRepository.commitFilesRecorded,
+                ),
                 sink = GithubCommitSink(eventPublisher, githubRepository, transactionId),
             )
             // Inside the try, so a failed cursor write still ends the run with a terminal event. Only the
@@ -92,6 +96,10 @@ class GithubCommitsService(
      * Given a GitHub repository connected to this application, this function checks if the local state is outdated,
      * and if so marks the repository as [ConnectionState.OUT_OF_DATE], but does not update it.
      *
+     * A repository whose stored commits were read without their changed files is outdated too, even
+     * when its clone matches the remote: only an update reads its history again, so without this a
+     * repository that is never pushed to would never ask for one.
+     *
      * @param githubRepository The GitHub repository to check.
      * @param transactionId The id of the overall transaction this sub-action belongs to.
      */
@@ -101,7 +109,7 @@ class GithubCommitsService(
             GithubCommitsFetchStartedEvent(transactionId, githubRepository.owner, githubRepository.name),
         )
 
-        if (!ingestionEngine.isUpToDate(coordinatesFactory.of(githubRepository))) {
+        if (commitsNeedUpdate(githubRepository)) {
             githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
             withContext(ioDispatcher) {
@@ -113,6 +121,16 @@ class GithubCommitsService(
             GithubCommitsFetchCompletedEvent(transactionId, githubRepository.owner, githubRepository.name),
         )
     }
+
+    /**
+     * Whether the repository's stored commits are behind what an update would store.
+     *
+     * The clone is only compared with the remote when the stored commits already carry their files,
+     * because a repository that has to be read again is outdated whatever the remote says.
+     */
+    private suspend fun commitsNeedUpdate(githubRepository: GithubRepositoryConnection): Boolean =
+        !githubRepository.commitFilesRecorded ||
+            !ingestionEngine.isUpToDate(coordinatesFactory.of(githubRepository))
 }
 
 /** Turns the engine's commits into this connector's commit event. */

@@ -84,11 +84,22 @@ class BitbucketCommitsServiceTest {
     @Test
     fun `advances from the commit cursor the last run stored`() = runTest {
         connection.lastCommitsSyncedSha = PREVIOUS_REVISION
+        connection.commitFilesRecorded = true
         givenIngestSucceeds()
 
         service.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
 
         coVerify { ingestionEngine.ingestCommitsSince(coordinates, PREVIOUS_REVISION, any()) }
+    }
+
+    @Test
+    fun `reads the whole history again when the stored commits carry no files`() = runTest {
+        connection.lastCommitsSyncedSha = PREVIOUS_REVISION
+        givenIngestSucceeds()
+
+        service.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+
+        coVerify { ingestionEngine.ingestCommitsSince(coordinates, "", any()) }
     }
 
     @Test

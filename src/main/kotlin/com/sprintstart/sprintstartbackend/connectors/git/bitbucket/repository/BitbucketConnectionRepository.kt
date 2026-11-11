@@ -177,10 +177,12 @@ internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnec
     )
 
     /**
-     * Advances only the commit cursor of one connection.
+     * Advances only the commit cursor of one connection and records that its commits carry their
+     * changed files.
      *
      * Narrow for the same reason as [updateFileCursor]: parallel collectors must never write each
-     * other's columns.
+     * other's columns. A successful ingest always read the commits with their files, so the flag
+     * is set here rather than by a separate write that could be skipped.
      *
      * @param repositoryId The connection whose commit cursor should advance.
      * @param sha The revision whose commits were last ingested.
@@ -190,7 +192,7 @@ internal interface BitbucketConnectionRepository : JpaRepository<BitbucketConnec
     @Query(
         """
         UPDATE BitbucketConnection b
-        SET b.lastCommitsSyncedSha = :sha
+        SET b.lastCommitsSyncedSha = :sha, b.commitFilesRecorded = true
         WHERE b.id = :repositoryId
         """,
     )

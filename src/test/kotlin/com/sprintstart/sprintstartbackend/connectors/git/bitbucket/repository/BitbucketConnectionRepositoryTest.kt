@@ -69,6 +69,17 @@ class BitbucketConnectionRepositoryTest {
     }
 
     @Test
+    fun `a new connection has not recorded commit files until its commit cursor advances`() {
+        val id = store().id
+
+        assertThat(reloaded(id).commitFilesRecorded).isFalse()
+
+        repository.updateCommitsCursor(id, "sha-2")
+
+        assertThat(reloaded(id).commitFilesRecorded).isTrue()
+    }
+
+    @Test
     fun `updatePullRequestsCursor writes the sync instant`() {
         val id = store().id
         val syncedAt = Instant.parse("2026-03-01T10:00:00Z")
