@@ -40,6 +40,8 @@ class BitbucketCommitSinkTest {
                         it.slug == "sprintstart-backend" &&
                         it.sha == "sha-1" &&
                         it.author == "Ada" &&
+                        it.authorEmail == "ada@example.com" &&
+                        it.files == CommitFiles.Listed(emptyList()) &&
                         it.committedAt == committedAt &&
                         it.subject == "Fix the bug" &&
                         it.sourceUrl == "https://bitbucket.org/sprintstart/sprintstart-backend/commits/sha-1"

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits
 
+import com.sprintstart.sprintstartbackend.shared.git.CommitFiles
 import java.time.Instant
 import java.util.UUID
 
@@ -13,10 +14,12 @@ import java.util.UUID
  * @property author The Git author name recorded in the commit. This is free text chosen by the
  *           committer, not a Bitbucket account handle, and must not be used to attribute the commit
  *           to an account.
+ * @property authorEmail The Git author email recorded in the commit.
  * @property committedAt The commit time.
  * @property sha The full commit SHA.
  * @property subject The first line of the commit message.
  * @property sourceUrl A link to the commit on Bitbucket.
+ * @property files The files the commit changed.
  */
 data class BitbucketCommitFetchedEvent(
     val transactionId: UUID,
@@ -24,8 +27,10 @@ data class BitbucketCommitFetchedEvent(
     val workspace: String,
     val slug: String,
     val author: String,
+    val authorEmail: String,
     val committedAt: Instant,
     val sha: String,
     val subject: String,
     val sourceUrl: String,
+    val files: CommitFiles,
 )

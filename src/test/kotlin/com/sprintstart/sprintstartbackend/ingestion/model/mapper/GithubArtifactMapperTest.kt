@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMeta
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.git.CommitFiles
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -81,9 +82,11 @@ class GithubArtifactMapperTest {
             repositoryOwner = "owner",
             repositoryName = "repo",
             author = "alice",
+            authorEmail = "alice@example.com",
             date = Instant.parse("2024-01-01T00:00:00Z"),
             sha = "abc123",
             msg = message,
+            files = CommitFiles.Listed(emptyList()),
         )
 
         val result = mapper.toCommand(event)
@@ -166,9 +169,11 @@ class GithubArtifactMapperTest {
             repositoryOwner = "owner",
             repositoryName = "repo",
             author = "Ada Lovelace",
+            authorEmail = "ada@example.com",
             date = Instant.parse("2024-01-01T00:00:00Z"),
             sha = "abc123",
             msg = "fix: something",
+            files = CommitFiles.Listed(emptyList()),
         )
 
         // `git log --pretty=%an` yields a display name, not an account -- storing it as a login

@@ -66,6 +66,19 @@ object SourceIdFactory {
         )
 
     /**
+     * Builds the key of a GitHub repository: `github:owner/repo`, the part of every artifact source id
+     * that precedes the artifact type.
+     */
+    fun buildGithubRepositoryKey(repositoryOwner: String, repositoryName: String): String =
+        "github:$repositoryOwner/$repositoryName"
+
+    /**
+     * Builds the key of a Bitbucket repository: `bitbucket:workspace/slug`, the part of every
+     * artifact source id that precedes the artifact type.
+     */
+    fun buildBitbucketRepositoryKey(workspace: String, slug: String): String = "bitbucket:$workspace/$slug"
+
+    /**
      * Assembles a source id from its segments, omitting the unique part when there is none.
      *
      * A workspace- or org-level artifact has exactly one row per scope, so it needs no unique

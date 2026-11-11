@@ -23,6 +23,7 @@ internal class BitbucketCommitSink(
                 workspace = connection.workspace,
                 slug = connection.slug,
                 author = commit.authorName,
+                authorEmail = commit.authorEmail,
                 committedAt = commit.committedAt,
                 sha = commit.sha,
                 subject = commit.subject,
@@ -31,6 +32,7 @@ internal class BitbucketCommitSink(
                     name = connection.slug,
                     sha = commit.sha,
                 ),
+                files = commit.files,
             ),
         )
     }
