@@ -64,6 +64,17 @@ class GithubRepositoryConnection(
     @Column(name = "commit_files_recorded", nullable = false, columnDefinition = "boolean default false")
     var commitFilesRecorded: Boolean = false
 
+    /**
+     * Whether the stored pull requests were read together with their files, so their reviews can be
+     * attributed to files.
+     *
+     * `false` for every connection that existed before review activity was recorded, which makes its
+     * next update read every pull request again instead of only those updated since the last sync. It
+     * turns `true` after the first successful full read.
+     */
+    @Column(name = "pull_request_reviews_recorded", nullable = false, columnDefinition = "boolean default false")
+    var pullRequestReviewsRecorded: Boolean = false
+
     val projectIds: Set<UUID>
         get() = projectIdsInternal.toSet()
 }

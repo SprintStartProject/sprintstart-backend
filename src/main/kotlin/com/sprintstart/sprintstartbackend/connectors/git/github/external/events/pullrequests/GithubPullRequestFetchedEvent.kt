@@ -26,6 +26,7 @@ import java.util.UUID
  * @property reviews A list of reviews associated with the GitHub pull request.
  * @property comments A list of comments related to the GitHub pull request.
  * @property reviewThreads A list of review threads associated with the GitHub pull request.
+ * @property files The files the pull request changed.
  */
 data class GithubPullRequestFetchedEvent(
     val transactionId: UUID,
@@ -44,6 +45,7 @@ data class GithubPullRequestFetchedEvent(
     val reviews: List<GithubPullRequestReview>?,
     val comments: List<GithubPullRequestComment>?,
     val reviewThreads: List<GithubPullRequestReviewThread>?,
+    val files: GithubPullRequestFiles,
 )
 
 data class GithubPullRequestReview(

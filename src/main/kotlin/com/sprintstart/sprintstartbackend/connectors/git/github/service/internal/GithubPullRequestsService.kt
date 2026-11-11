@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFiles
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReviewThread
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
@@ -13,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.GithubRepositoryConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.CommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequestFilesConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewThreadNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.exceptions.RepositoryNotFoundException
@@ -62,7 +64,7 @@ class GithubPullRequestsService(
         val pullRequests = reportingFailure(transactionId, repositoryOwner, repositoryName) {
             githubRepository = loadRepository(githubRepositoryId, repositoryOwner, repositoryName)
 
-            githubClient.fetchAllPullRequests(githubRepository, since?.toString())
+            fetchPullRequests(checkNotNull(githubRepository), performUpdate, since)
         }
 
         // Publishing a fetched pull request runs the persistence listener synchronously, so a failure
@@ -77,7 +79,8 @@ class GithubPullRequestsService(
                         pr.asFetchedEvent(transactionId, githubRepositoryId, repositoryOwner, repositoryName),
                     )
                 }
-            } else if (githubRepository != null && pullRequests.isNotEmpty()) {
+                githubRepository?.let { markReviewsRecorded(it) }
+            } else if (githubRepository != null && needsUpdate(githubRepository, pullRequests)) {
                 markOutOfDate(githubRepository)
             }
         }
@@ -85,6 +88,33 @@ class GithubPullRequestsService(
         eventPublisher.publishEvent(
             GithubPullRequestsFetchCompletedEvent(transactionId, repositoryOwner, repositoryName),
         )
+    }
+
+    /**
+     * Reads the pull requests an update has to store.
+     *
+     * A repository whose stored pull requests were read without their files has to read them all
+     * again, because the ones not updated since the last sync would never be revisited. A check that
+     * only looks for updates reads nothing in that case: the repository is out of date regardless, and
+     * fetching every pull request in full on each check would repeat that cost until someone updates.
+     */
+    private suspend fun fetchPullRequests(
+        repository: GithubRepositoryConnection,
+        performUpdate: Boolean,
+        since: Instant?,
+    ): List<PullRequest> =
+        when {
+            repository.pullRequestReviewsRecorded -> githubClient.fetchAllPullRequests(repository, since?.toString())
+            performUpdate -> githubClient.fetchAllPullRequests(repository, null)
+            else -> emptyList()
+        }
+
+    private fun needsUpdate(repository: GithubRepositoryConnection, pullRequests: List<PullRequest>): Boolean =
+        pullRequests.isNotEmpty() || !repository.pullRequestReviewsRecorded
+
+    private suspend fun markReviewsRecorded(repository: GithubRepositoryConnection) {
+        if (repository.pullRequestReviewsRecorded) return
+        withContext(ioDispatcher) { repoConnectionRepository.markPullRequestReviewsRecorded(repository.id) }
     }
 
     private suspend fun loadRepository(repository: UUID, owner: String, name: String): GithubRepositoryConnection =
@@ -146,9 +176,17 @@ class GithubPullRequestsService(
             reviews = this.reviews?.nodes?.map { it.toEventReview() },
             comments = this.comments?.nodes?.map { it.toEventComment() },
             reviewThreads = this.reviewThreads?.nodes?.map { it.toEventThread() },
+            files = this.files.toEventFiles(),
         )
     }
 }
+
+private fun PullRequestFilesConnection?.toEventFiles(): GithubPullRequestFiles =
+    if (this?.nodes == null || pageInfo?.hasNextPage == true) {
+        GithubPullRequestFiles.Incomplete
+    } else {
+        GithubPullRequestFiles.Listed(nodes.map { it.path })
+    }
 
 private fun ReviewNode.toEventReview() = GithubPullRequestReview(body, state, author?.login, submittedAt)
 

@@ -1,8 +1,10 @@
 package com.sprintstart.sprintstartbackend.connectors.git.github.service.internal
 
+import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.github.GithubClient
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFiles
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReviewThreadComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestsFetchCompletedEvent
@@ -16,7 +18,10 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubActor
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.LabelNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.LabelsConnection
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PageInfo
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequest
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequestFileNode
+import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequestFilesConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewThreadNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ReviewThreadsConnection
@@ -24,8 +29,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.gr
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ThreadCommentNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.ThreadCommentsConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubRepositoryConnectionRepository
+import io.mockk.Runs
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
@@ -56,6 +64,7 @@ class GithubPullRequestsServiceTest {
 
     @BeforeEach
     fun setUp() {
+        every { repoConnectionRepository.markPullRequestReviewsRecorded(any()) } just Runs
         service = GithubPullRequestsService(
             repoConnectionRepository = repoConnectionRepository,
             githubClient = githubClient,
@@ -72,12 +81,13 @@ class GithubPullRequestsServiceTest {
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = null)
 
-            coEvery { githubClient.fetchAllPullRequests(repo) }
+            coVerify { githubClient.fetchAllPullRequests(repo, null) }
         }
 
         @Test
         fun `fetches pull requests with since filter when since is provided`() = runTest {
             val since = Instant.parse("2024-01-01T00:00:00Z")
+            repo.pullRequestReviewsRecorded = true
             coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
             coEvery {
                 githubClient.fetchAllPullRequests(repo, since.toString())
@@ -85,7 +95,154 @@ class GithubPullRequestsServiceTest {
 
             service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = since)
 
-            coEvery { githubClient.fetchAllPullRequests(repo, since.toString()) }
+            coVerify { githubClient.fetchAllPullRequests(repo, since.toString()) }
+        }
+
+        @Test
+        fun `reads every pull request again when the stored ones carry no files even if since is provided`() =
+            runTest {
+                val since = Instant.parse("2024-01-01T00:00:00Z")
+                coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+                coEvery { githubClient.fetchAllPullRequests(repo, null) } returns emptyList()
+
+                service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, since = since)
+
+                coVerify { githubClient.fetchAllPullRequests(repo, null) }
+                coVerify(exactly = 0) { githubClient.fetchAllPullRequests(repo, since.toString()) }
+            }
+    }
+
+    @Nested
+    inner class ReviewRecording {
+        @Test
+        fun `records that the pull requests carry their files after a successful update`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns listOf(pullRequest(number = 1))
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+
+            verify(exactly = 1) { repoConnectionRepository.markPullRequestReviewsRecorded(repo.id) }
+        }
+
+        @Test
+        fun `does not record it again once it is recorded`() = runTest {
+            repo.pullRequestReviewsRecorded = true
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns listOf(pullRequest(number = 1))
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+
+            verify(exactly = 0) { repoConnectionRepository.markPullRequestReviewsRecorded(any()) }
+        }
+
+        @Test
+        fun `does not record it when the fetch fails`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } throws RuntimeException("API error")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.markPullRequestReviewsRecorded(any()) }
+        }
+
+        @Test
+        fun `does not record it when storing a pull request fails`() = runTest {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns listOf(pullRequest(number = 1))
+            every { eventPublisher.publishEvent(match<Any> { it is GithubPullRequestFetchedEvent }) } throws
+                RuntimeException("persist rejected")
+
+            assertThrows<RuntimeException> {
+                service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId)
+            }
+
+            verify(exactly = 0) { repoConnectionRepository.markPullRequestReviewsRecorded(any()) }
+        }
+
+        @Test
+        fun `a check marks the repository out of date without fetching while the files are not recorded`() = runTest {
+            every { repoConnectionRepository.save(repo) } returns repo
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, performUpdate = false)
+
+            assertThat(repo.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
+            coVerify(exactly = 0) { githubClient.fetchAllPullRequests(any(), any()) }
+        }
+
+        @Test
+        fun `a check leaves a recorded repository with nothing new alone`() = runTest {
+            repo.pullRequestReviewsRecorded = true
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns emptyList()
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, performUpdate = false)
+
+            assertThat(repo.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
+            verify(exactly = 0) { repoConnectionRepository.save(any()) }
+        }
+
+        @Test
+        fun `a check marks a recorded repository out of date when pull requests changed`() = runTest {
+            repo.pullRequestReviewsRecorded = true
+            every { repoConnectionRepository.save(repo) } returns repo
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns listOf(pullRequest(number = 1))
+
+            service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId, performUpdate = false)
+
+            assertThat(repo.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
+        }
+    }
+
+    @Nested
+    inner class FilesMapping {
+        private fun publishedFiles(files: PullRequestFilesConnection?): GithubPullRequestFiles {
+            coEvery { repoConnectionRepository.findById(any()) } returns Optional.of(repo)
+            coEvery { githubClient.fetchAllPullRequests(repo, null) } returns listOf(pullRequest(files = files))
+            val eventSlot = slot<GithubPullRequestFetchedEvent>()
+
+            runTest { service.fetchAndIngestAllPullRequests(repo.id, repo.owner, repo.name, transactionId) }
+            verify { eventPublisher.publishEvent(capture(eventSlot)) }
+
+            return eventSlot.captured.files
+        }
+
+        private fun filesOf(vararg paths: String, hasNextPage: Boolean? = null) =
+            PullRequestFilesConnection(
+                nodes = paths.map { PullRequestFileNode(it) },
+                pageInfo = hasNextPage?.let { PageInfo(hasNextPage = it, endCursor = null) },
+            )
+
+        @Test
+        fun `lists the files of a pull request that fits one page`() {
+            val files = publishedFiles(filesOf("a.kt", "b.kt", hasNextPage = false))
+
+            assertThat(files).isEqualTo(GithubPullRequestFiles.Listed(listOf("a.kt", "b.kt")))
+        }
+
+        @Test
+        fun `lists the files when the response carries no page info`() {
+            assertThat(publishedFiles(filesOf("a.kt"))).isEqualTo(GithubPullRequestFiles.Listed(listOf("a.kt")))
+        }
+
+        @Test
+        fun `reports a pull request with more files than one page as incomplete`() {
+            assertThat(publishedFiles(filesOf("a.kt", hasNextPage = true)))
+                .isEqualTo(GithubPullRequestFiles.Incomplete)
+        }
+
+        @Test
+        fun `reports a pull request without a files connection as incomplete`() {
+            assertThat(publishedFiles(null)).isEqualTo(GithubPullRequestFiles.Incomplete)
+        }
+
+        @Test
+        fun `reports a pull request whose files connection has no nodes as incomplete`() {
+            assertThat(publishedFiles(PullRequestFilesConnection(nodes = null)))
+                .isEqualTo(GithubPullRequestFiles.Incomplete)
         }
     }
 
@@ -367,6 +524,7 @@ class GithubPullRequestsServiceTest {
         url: String = "https://github.com/owner/repo/pull/$number",
         authorLogin: String? = "author",
         labels: List<String>? = emptyList(),
+        files: PullRequestFilesConnection? = null,
     ) = PullRequest(
         number = number,
         title = title,
@@ -381,7 +539,7 @@ class GithubPullRequestsServiceTest {
         comments = null,
         reviewThreads = null,
         statusCheckRollup = null,
-        files = null,
+        files = files,
         commits = null,
     )
 }

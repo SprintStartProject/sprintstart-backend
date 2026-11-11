@@ -8,7 +8,7 @@ import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import jakarta.persistence.EntityManager
 import java.util.UUID
 
-/** Stores the rows a changed-file test needs: a finished run and commit artifacts of it. */
+/** Stores the rows an evidence test needs: a finished run and commit or pull request artifacts of it. */
 internal class CommitArtifacts(
     private val entityManager: EntityManager,
 ) {
@@ -19,12 +19,17 @@ internal class CommitArtifacts(
     ).also(entityManager::persist)
 
     /** Stores a GitHub commit artifact with the given source id. */
-    fun commit(sourceId: String): Artifact {
+    fun commit(sourceId: String): Artifact = store(sourceId, ArtifactType.COMMIT)
+
+    /** Stores a GitHub pull request artifact with the given source id. */
+    fun pullRequest(sourceId: String): Artifact = store(sourceId, ArtifactType.PULL_REQUEST)
+
+    private fun store(sourceId: String, type: ArtifactType): Artifact {
         val artifact = Artifact(
             sourceSystem = SourceSystem.GITHUB,
             sourceId = sourceId,
             sourceUrl = "https://github.com/acme/backend",
-            artifactType = ArtifactType.COMMIT,
+            artifactType = type,
             title = sourceId,
             content = "content",
             mime = null,

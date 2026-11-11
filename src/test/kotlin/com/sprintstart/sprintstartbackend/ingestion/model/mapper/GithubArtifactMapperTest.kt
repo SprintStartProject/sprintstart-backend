@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.org.GithubOrgMetadataTeamMember
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFiles
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
@@ -226,6 +227,7 @@ class GithubArtifactMapperTest {
             reviews = null,
             comments = null,
             reviewThreads = null,
+            files = GithubPullRequestFiles.Listed(emptyList()),
         )
 
         val result = mapper.toCommand(event)
@@ -444,5 +446,6 @@ class GithubArtifactMapperTest {
         reviews = reviews,
         comments = comments,
         reviewThreads = null,
+        files = GithubPullRequestFiles.Listed(emptyList()),
     )
 }

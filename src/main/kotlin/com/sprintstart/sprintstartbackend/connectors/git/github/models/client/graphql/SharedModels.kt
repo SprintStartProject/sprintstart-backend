@@ -125,6 +125,8 @@ data class PullRequestFileNode(
 @Serializable
 data class PullRequestFilesConnection(
     val nodes: List<PullRequestFileNode>?,
+    /** Whether the pull request changed more files than were returned; absent in responses that did not ask. */
+    val pageInfo: PageInfo? = null,
 )
 
 @Serializable

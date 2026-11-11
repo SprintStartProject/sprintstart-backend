@@ -87,4 +87,25 @@ interface GithubRepositoryConnectionRepository : JpaRepository<GithubRepositoryC
         @Param("repositoryId") repositoryId: UUID,
         @Param("sha") sha: String,
     )
+
+    /**
+     * Records that every pull request of one connection was read together with its files.
+     *
+     * Narrow for the same reason as [updateCommitsCursor]: parallel collectors must never write each
+     * other's columns.
+     *
+     * @param repositoryId The connection whose pull requests were read in full.
+     */
+    @Transactional
+    @Modifying
+    @Query(
+        """
+        UPDATE GithubRepositoryConnection r
+        SET r.pullRequestReviewsRecorded = true
+        WHERE r.id = :repositoryId
+        """,
+    )
+    fun markPullRequestReviewsRecorded(
+        @Param("repositoryId") repositoryId: UUID,
+    )
 }
