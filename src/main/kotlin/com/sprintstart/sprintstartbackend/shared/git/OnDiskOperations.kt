@@ -112,7 +112,13 @@ class OnDiskOperations {
     fun gitListFiles() = ProcessBuilder("git", "ls-files", "-z")
 
     /**
-     * Constructs a `git log` command that reads commit metadata in [GIT_LOG_FORMAT].
+     * Constructs a `git log` command that reads commit metadata in [GIT_LOG_FORMAT] together with the
+     * files each commit changed.
+     *
+     * `--numstat` lists the changed files with their added and removed line counts, `-M` reports a
+     * moved file as a rename instead of a delete plus an add, and `-z` terminates every path with NUL
+     * so paths containing spaces, tabs or newlines stay intact. A merge commit lists no files, because
+     * the commits it merges already carry the same changes.
      *
      * @param sinceRevision When set, commits reachable from it are excluded by using the
      *        `sinceRevision..HEAD` range. When `null`, the entire history is read.
@@ -123,6 +129,9 @@ class OnDiskOperations {
                 add("git")
                 add("log")
                 if (sinceRevision != null) add("$sinceRevision..HEAD")
+                add("--numstat")
+                add("-M")
+                add("-z")
                 add("--pretty=format:$GIT_LOG_FORMAT")
             },
         )
@@ -180,13 +189,15 @@ class OnDiskOperations {
         }
 
         /**
-         * Record format of [gitLog]: SHA, author name, commit time and subject.
+         * Record format of [gitLog]: SHA, author name, author email, commit time and subject.
          *
-         * Fields are separated by the ASCII unit separator rather than a printable character,
-         * because a printable one can occur inside an author name or a subject and would then split
-         * the record. The subject is last and single-line, so it cannot truncate a later field.
+         * Each record starts with the ASCII record separator, and its fields are separated by the
+         * ASCII unit separator rather than a printable character, because a printable one can occur
+         * inside an author name or a subject and would then split the record. The subject is last and
+         * single-line, so it cannot truncate a later field; whatever follows it belongs to the file
+         * list.
          */
-        const val GIT_LOG_FORMAT = "%H%x1f%an%x1f%cI%x1f%s"
+        const val GIT_LOG_FORMAT = "%x1e%H%x1f%an%x1f%ae%x1f%cI%x1f%s"
 
         /**
          * Sanitizes a command part by masking sensitive information such as user credentials in a URI.

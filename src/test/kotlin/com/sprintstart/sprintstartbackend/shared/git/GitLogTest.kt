@@ -7,69 +7,48 @@ import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
-import java.time.Instant
 
 class GitLogTest {
     private val gitRunner = mockk<GitOperationRunner>()
     private val onDiskOperations = OnDiskOperations()
-    private val log = GitLog(onDiskOperations, gitRunner)
     private val repositoryPath = Path.of("/fake/repo")
 
-    private fun record(
-        sha: String = "abc",
-        author: String = "Ada",
-        date: String = "2026-01-02T03:04:05Z",
-        subject: String = "Fix",
-    ) = listOf(sha, author, date, subject).joinToString("\u001F")
+    private fun logLimitedTo(maxFilesPerCommit: Int) =
+        GitLog(
+            onDiskOperations,
+            gitRunner,
+            GitConfig(ingest = GitIngestConfig(maxFilesPerCommit = maxFilesPerCommit)),
+        )
+
+    private fun output(vararg paths: String) =
+        "\u001Eabc\u001FAda\u001Fada@example.com\u001F2026-01-02T03:04:05Z\u001FFix\n" +
+            paths.joinToString("") { "1\t0\t$it\u0000" } + "\u0000"
 
     @Test
-    fun `parses a well formed record`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns record(sha = "abc123", author = "Ada", subject = "Fix the bug")
+    fun `returns the commits Git printed with their author email and files`() = runTest {
+        every { gitRunner.exec(any(), any()) } returns output("src/A.kt")
 
-        val commits = log.commits(repositoryPath, sinceRevision = null)
+        val commit = logLimitedTo(10).commits(repositoryPath, sinceRevision = null).single()
 
-        assertThat(commits).hasSize(1)
-        assertThat(commits.first().sha).isEqualTo("abc123")
-        assertThat(commits.first().authorName).isEqualTo("Ada")
-        assertThat(commits.first().subject).isEqualTo("Fix the bug")
-        assertThat(commits.first().committedAt).isEqualTo(Instant.parse("2026-01-02T03:04:05Z"))
+        assertThat(commit.sha).isEqualTo("abc")
+        assertThat(commit.authorEmail).isEqualTo("ada@example.com")
+        assertThat(commit.files).isEqualTo(CommitFiles.Listed(listOf(CommitFile("src/A.kt", 1, 0, null))))
     }
 
     @Test
-    fun `keeps a subject that contains the old printable delimiter`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns record(subject = "Revert \"Fix - the bug\"")
+    fun `applies the configured limit on files per commit`() = runTest {
+        every { gitRunner.exec(any(), any()) } returns output("a", "b")
 
-        assertThat(log.commits(repositoryPath, null).first().subject).isEqualTo("Revert \"Fix - the bug\"")
-    }
+        val commit = logLimitedTo(1).commits(repositoryPath, sinceRevision = null).single()
 
-    @Test
-    fun `skips a stray line without losing the records around it`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns listOf(
-            "warning: something on the merged stream",
-            record(sha = "first"),
-            record(sha = "second"),
-        ).joinToString("\n")
-
-        val commits = log.commits(repositoryPath, null)
-
-        assertThat(commits.map { it.sha }).containsExactly("first", "second")
-    }
-
-    @Test
-    fun `skips a record whose timestamp cannot be parsed`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns listOf(
-            record(sha = "broken", date = "not-a-date"),
-            record(sha = "fine"),
-        ).joinToString("\n")
-
-        assertThat(log.commits(repositoryPath, null).map { it.sha }).containsExactly("fine")
+        assertThat(commit.files).isEqualTo(CommitFiles.TooMany(2))
     }
 
     @Test
     fun `reads only the commits after a cursor when one is given`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns record()
+        every { gitRunner.exec(any(), any()) } returns output()
 
-        log.commits(repositoryPath, sinceRevision = "cursor123")
+        logLimitedTo(10).commits(repositoryPath, sinceRevision = "cursor123")
 
         verify {
             gitRunner.exec(
@@ -81,14 +60,28 @@ class GitLogTest {
 
     @Test
     fun `reads the whole history when no cursor is given`() = runTest {
-        every { gitRunner.exec(any(), any()) } returns record()
+        every { gitRunner.exec(any(), any()) } returns output()
 
-        log.commits(repositoryPath, sinceRevision = null)
+        logLimitedTo(10).commits(repositoryPath, sinceRevision = null)
 
         verify {
             gitRunner.exec(
                 repositoryPath,
                 match { command -> command.command().none { it.endsWith("..HEAD") } },
+            )
+        }
+    }
+
+    @Test
+    fun `asks Git for the changed files with renames followed and paths NUL terminated`() = runTest {
+        every { gitRunner.exec(any(), any()) } returns output()
+
+        logLimitedTo(10).commits(repositoryPath, sinceRevision = null)
+
+        verify {
+            gitRunner.exec(
+                repositoryPath,
+                match { command -> command.command().containsAll(listOf("--numstat", "-M", "-z")) },
             )
         }
     }
