@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.offboarding.service
 import com.sprintstart.sprintstartbackend.offboarding.model.RiskSnapshotId
 import com.sprintstart.sprintstartbackend.offboarding.model.SnapshotSummary
 import com.sprintstart.sprintstartbackend.offboarding.model.StoredRiskMap
+import com.sprintstart.sprintstartbackend.offboarding.model.response.ConcentrationResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSettingsResponse
@@ -53,6 +54,7 @@ class StudyExportServiceTest {
         sourceBreakdown = mapOf("commits" to 0.5),
         recentActivity = 0.3,
         fragmentation = 0.4,
+        concentration = ConcentrationResponse(1.1, knowers.firstOrNull()),
         remainingKnowers = knowers.toList(),
         lastChangedAt = asOf,
     )
@@ -108,6 +110,8 @@ class StudyExportServiceTest {
         assertThat(exported.unknownDeparting).containsExactly(names.of("typo@x.org"))
         assertThat(exported.files.map { it.remainingKnowers })
             .containsExactly(listOf(names.of("ben@x.org")), listOf(names.of("carol")))
+        assertThat(exported.files.map { it.concentration?.island })
+            .containsExactly(names.of("ben@x.org"), names.of("carol"))
     }
 
     @Test

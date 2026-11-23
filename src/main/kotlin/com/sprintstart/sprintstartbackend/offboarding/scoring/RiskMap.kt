@@ -21,6 +21,7 @@ enum class RiskLevel {
  * @property sourceBreakdown For each kind of evidence on the file, the leaving people's share of it.
  * @property recentActivity How recently and often the file changes, relative to the busiest file, from 0 to 1.
  * @property fragmentation How spread the changes are across people: 0 for one person, towards 1 for many.
+ * @property concentration How unevenly the knowledge of the file is spread over people.
  * @property remainingKnowers The authors who stay, at most one.
  * @property lastChangedAt When the file last changed.
  */
@@ -33,6 +34,7 @@ data class FileRisk(
     val sourceBreakdown: Map<SourceId, Double>,
     val recentActivity: Double,
     val fragmentation: Double,
+    val concentration: Concentration,
     val remainingKnowers: List<PersonKey>,
     val lastChangedAt: Instant,
 )

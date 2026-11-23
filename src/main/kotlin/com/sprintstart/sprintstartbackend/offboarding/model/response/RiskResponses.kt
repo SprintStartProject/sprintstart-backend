@@ -40,6 +40,17 @@ data class RiskSummaryResponse(
     val listed: Int,
 )
 
+/**
+ * How unevenly the knowledge of a file is spread.
+ *
+ * @property effectiveKnowers How many equally strong knowers the spread is worth.
+ * @property island The person who holds almost all of the knowledge, if one does.
+ */
+data class ConcentrationResponse(
+    val effectiveKnowers: Double,
+    val island: String?,
+)
+
 /** One file at risk, with the measures that put it there. */
 data class FileRiskResponse(
     val repository: String,
@@ -50,6 +61,7 @@ data class FileRiskResponse(
     val sourceBreakdown: Map<String, Double>,
     val recentActivity: Double,
     val fragmentation: Double,
+    val concentration: ConcentrationResponse? = null,
     val remainingKnowers: List<String>,
     val lastChangedAt: Instant,
 )

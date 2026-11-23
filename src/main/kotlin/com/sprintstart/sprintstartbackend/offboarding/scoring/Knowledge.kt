@@ -41,6 +41,9 @@ interface Knowledge {
     /** How much one touch still counts as of the date. */
     fun weight(touch: Touch): Double
 
+    /** What each person who touched [history]'s file knows of it, by weight. */
+    fun knowledgeOf(history: FileHistory): Map<PersonKey, Double>
+
     /** The people who know [history]'s file. */
     fun authorsOf(history: FileHistory): Set<PersonKey>
 

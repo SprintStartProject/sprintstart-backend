@@ -50,6 +50,7 @@ internal class Assessor(
             sourceBreakdown = breakdown,
             recentActivity = activity,
             fragmentation = fragmentation(history),
+            concentration = Concentration.of(knowledge.knowledgeOf(history)),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )

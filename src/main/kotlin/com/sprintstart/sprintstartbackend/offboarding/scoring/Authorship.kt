@@ -34,9 +34,12 @@ class Authorship(
         return profile.weightOf(touch.source) * 0.5.pow(ageDays / profile.halfLifeDays)
     }
 
+    override fun knowledgeOf(history: FileHistory): Map<PersonKey, Double> =
+        history.touches.groupBy({ it.person }, { weight(it) }).mapValues { it.value.sum() }
+
     /** The people who count as authors of [history]'s file. */
     override fun authorsOf(history: FileHistory): Set<PersonKey> {
-        val own = history.touches.groupBy({ it.person }, { weight(it) }).mapValues { it.value.sum() }
+        val own = knowledgeOf(history)
         val total = own.values.sum()
         val creator = history.touches.firstOrNull { it.founding }?.person
         val degrees = own.mapValues { (person, mine) -> degree(person == creator, mine, total - mine) }

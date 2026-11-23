@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.service
 
 import com.sprintstart.sprintstartbackend.offboarding.model.response.ExportedSnapshotResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.StudyExportResponse
 import com.sprintstart.sprintstartbackend.offboarding.scoring.Pseudonyms
@@ -35,6 +36,12 @@ class StudyExportService(
         map.copy(
             departing = map.departing.map(names::of),
             unknownDeparting = map.unknownDeparting.map(names::of),
-            files = map.files.map { file -> file.copy(remainingKnowers = file.remainingKnowers.map(names::of)) },
+            files = map.files.map { file -> pseudonymised(file, names) },
+        )
+
+    private fun pseudonymised(file: FileRiskResponse, names: Pseudonyms): FileRiskResponse =
+        file.copy(
+            remainingKnowers = file.remainingKnowers.map(names::of),
+            concentration = file.concentration?.let { it.copy(island = it.island?.let(names::of)) },
         )
 }

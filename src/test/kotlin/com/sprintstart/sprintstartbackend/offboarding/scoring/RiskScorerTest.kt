@@ -53,6 +53,22 @@ class RiskScorerTest {
     }
 
     @Test
+    fun `a file only its leaving author changed is a knowledge island of one`() {
+        val risk = scorer.score(listOf(solo("core.kt", "ada@x.org")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.concentration.effectiveKnowers).isCloseTo(1.0, within(1e-9))
+        assertThat(risk.concentration.island).isEqualTo(PersonKey("ada@x.org"))
+    }
+
+    @Test
+    fun `a file two people maintain about equally is worth almost two knowers and has no island`() {
+        val risk = scorer.score(listOf(pair("util.kt")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.concentration.effectiveKnowers).isBetween(1.5, 2.0)
+        assertThat(risk.concentration.island).isNull()
+    }
+
+    @Test
     fun `a file that keeps two or more authors is not at risk`() {
         val noFading = WeightProfile(halfLifeDays = 1_000_000.0)
         val shared = history(

@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.RiskSnapshotId
 import com.sprintstart.sprintstartbackend.offboarding.model.exception.RiskSnapshotNotFoundException
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.repository.RiskSnapshotRepository
+import com.sprintstart.sprintstartbackend.offboarding.scoring.Concentration
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileRisk
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskLevel
@@ -64,6 +65,7 @@ class RiskSnapshotServiceTest {
         sourceBreakdown = mapOf(SourceId.COMMITS to 1.0),
         recentActivity = 0.4,
         fragmentation = 0.0,
+        concentration = Concentration(1.0, null),
         remainingKnowers = if (level == RiskLevel.HOARDED) listOf(PersonKey("ben")) else emptyList(),
         lastChangedAt = asOf,
     )

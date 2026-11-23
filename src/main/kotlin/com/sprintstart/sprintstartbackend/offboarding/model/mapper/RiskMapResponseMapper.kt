@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.mapper
 
+import com.sprintstart.sprintstartbackend.offboarding.model.response.ConcentrationResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.KnowledgeResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
@@ -57,6 +58,7 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     sourceBreakdown = sourceBreakdown.mapKeys { it.key.value }.mapValues { rounded(it.value) }.toSortedMap(),
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
+    concentration = ConcentrationResponse(rounded(concentration.effectiveKnowers), concentration.island?.value),
     remainingKnowers = remainingKnowers.map { it.value },
     lastChangedAt = lastChangedAt,
 )

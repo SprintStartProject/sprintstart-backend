@@ -23,8 +23,7 @@ class TimeWeightedKnowledge(
         return profile.weightOf(touch.source) * 0.5.pow(ageDays / profile.halfLifeDays)
     }
 
-    /** What each person who touched [history]'s file knows of it, by weight. */
-    fun knowledgeOf(history: FileHistory): Map<PersonKey, Double> {
+    override fun knowledgeOf(history: FileHistory): Map<PersonKey, Double> {
         val founding = history.touches.firstOrNull { it.founding }
         val gathered = history.touches
             .groupBy({ it.person }, ::weight)
