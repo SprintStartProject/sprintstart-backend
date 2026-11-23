@@ -13,7 +13,8 @@ class GitLogParserTest {
         email: String = "ada@example.com",
         date: String = "2026-01-02T03:04:05Z",
         subject: String = "Fix",
-    ) = "\u001E" + listOf(sha, name, email, date, subject).joinToString("\u001F")
+        trailers: String = "",
+    ) = "\u001E" + listOf(sha, name, email, date, trailers, subject).joinToString("\u001F")
 
     private fun stat(added: String, removed: String, path: String) = "$added\t$removed\t$path\u0000"
 
@@ -189,5 +190,28 @@ class GitLogParserTest {
     @Test
     fun `returns nothing for empty output`() {
         assertThat(parser.parse("")).isEmpty()
+    }
+
+    @Test
+    fun `reads the emails of the people a commit credits as co-authors`() {
+        val trailers = "Ben <Ben@X.org>\u001DCarol Jones <carol@x.org>"
+
+        val commit = parser.parse(commit(header(trailers = trailers))).single()
+
+        assertThat(commit.coAuthorEmails).containsExactly("ben@x.org", "carol@x.org")
+    }
+
+    @Test
+    fun `a commit without trailers has no co-authors`() {
+        assertThat(parser.parse(commit(header())).single().coAuthorEmails).isEmpty()
+    }
+
+    @Test
+    fun `the author and a person credited twice are listed once or not at all`() {
+        val trailers = "Ada <ada@example.com>\u001DBen <ben@x.org>\u001DBen <BEN@x.org>\u001DNo address"
+
+        val commit = parser.parse(commit(header(trailers = trailers))).single()
+
+        assertThat(commit.coAuthorEmails).containsExactly("ben@x.org")
     }
 }

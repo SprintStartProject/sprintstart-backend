@@ -16,6 +16,9 @@ import org.springframework.transaction.annotation.Transactional
 /**
  * Records which files each stored commit changed.
  *
+ * A commit that credits others with `Co-authored-by` records its files once for each of them, so pair
+ * programming gives both people their share of the knowledge.
+ *
  * The record is a projection of the commit's history, so recording the same commit again replaces
  * what was stored instead of adding to it. That is what makes a full re-read of a repository's
  * history safe to repeat.
@@ -43,18 +46,31 @@ class CommitFileChangeService(
         fileChangeRepository.deleteAllByArtifactId(artifact.id)
 
         when (val files = command.files) {
-            is CommitFiles.Listed -> fileChangeRepository.saveAll(files.files.map { toEntity(artifact, command, it) })
+            is CommitFiles.Listed -> fileChangeRepository.saveAll(
+                files.files.flatMap { toEntities(artifact, command, it) },
+            )
             is CommitFiles.TooMany -> Unit
         }
     }
 
-    private fun toEntity(artifact: Artifact, command: CommitFileChangesCommand, file: CommitFile): FileChange =
+    /** One row for the author and one for each person the commit credits with `Co-authored-by`. */
+    private fun toEntities(artifact: Artifact, command: CommitFileChangesCommand, file: CommitFile): List<FileChange> =
+        listOf(ChangeAuthor(command.authorName, command.authorEmail))
+            .plus(command.coAuthorEmails.map { ChangeAuthor(name = it, email = it) })
+            .map { toEntity(artifact, command, file, it) }
+
+    private fun toEntity(
+        artifact: Artifact,
+        command: CommitFileChangesCommand,
+        file: CommitFile,
+        author: ChangeAuthor,
+    ): FileChange =
         FileChange(
             artifact = artifact,
             repository = command.repository,
             path = file.path,
             renamedFrom = file.renamedFrom,
-            author = ChangeAuthor(name = command.authorName, email = command.authorEmail),
+            author = author,
             changedAt = command.changedAt,
             lines = LineCounts(added = file.linesAdded, removed = file.linesRemoved),
         )

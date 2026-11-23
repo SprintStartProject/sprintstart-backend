@@ -60,6 +60,25 @@ class GitLogRealGitTest {
     }
 
     @Test
+    fun `reads the people a commit message credits as co-authors`() = runTest {
+        write("src/A.kt", "one\n")
+        git("add", "-A")
+        git(
+            "commit",
+            "-m",
+            "Pair on A",
+            "-m",
+            "Co-authored-by: Ben Builder <Ben@Example.com>\nCo-authored-by: Ada Lovelace <ada@example.com>",
+            "--quiet",
+        )
+
+        val commit = commits().single()
+
+        assertThat(commit.subject).isEqualTo("Pair on A")
+        assertThat(commit.coAuthorEmails).containsExactly("ben@example.com")
+    }
+
+    @Test
     fun `counts added and removed lines of a modified file`() = runTest {
         commitFile("a.txt", "one\ntwo\nthree\n", "first")
         commitFile("a.txt", "one\nTWO\nthree\nfour\n", "second")

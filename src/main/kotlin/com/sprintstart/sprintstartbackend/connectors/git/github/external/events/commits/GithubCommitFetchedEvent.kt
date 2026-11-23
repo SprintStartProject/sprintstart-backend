@@ -32,4 +32,5 @@ data class GithubCommitFetchedEvent(
     val sha: String,
     val msg: String,
     val files: CommitFiles,
+    val coAuthorEmails: List<String> = emptyList(),
 )

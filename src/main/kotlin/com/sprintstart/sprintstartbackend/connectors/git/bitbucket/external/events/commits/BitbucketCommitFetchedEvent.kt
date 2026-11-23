@@ -33,4 +33,5 @@ data class BitbucketCommitFetchedEvent(
     val subject: String,
     val sourceUrl: String,
     val files: CommitFiles,
+    val coAuthorEmails: List<String> = emptyList(),
 )

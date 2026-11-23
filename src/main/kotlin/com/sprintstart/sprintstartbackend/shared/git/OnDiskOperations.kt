@@ -199,15 +199,18 @@ class OnDiskOperations {
         }
 
         /**
-         * Record format of [gitLog]: SHA, author name, author email, commit time and subject.
+         * Record format of [gitLog]: SHA, author name, author email, commit time, the `Co-authored-by`
+         * trailers and subject.
          *
          * Each record starts with the ASCII record separator, and its fields are separated by the
          * ASCII unit separator rather than a printable character, because a printable one can occur
-         * inside an author name or a subject and would then split the record. The subject is last and
+         * inside an author name or a subject and would then split the record. The trailers are separated
+         * from each other by the group separator, and unfolded so that none spans lines. The subject is last and
          * single-line, so it cannot truncate a later field; whatever follows it belongs to the file
          * list.
          */
-        const val GIT_LOG_FORMAT = "%x1e%H%x1f%an%x1f%ae%x1f%cI%x1f%s"
+        const val GIT_LOG_FORMAT =
+            "%x1e%H%x1f%an%x1f%ae%x1f%cI%x1f%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1d)%x1f%s"
 
         /**
          * Sanitizes a command part by masking sensitive information such as user credentials in a URI.

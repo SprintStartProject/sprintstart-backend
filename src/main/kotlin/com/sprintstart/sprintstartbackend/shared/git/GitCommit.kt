@@ -20,6 +20,8 @@ import java.time.Instant
  * @property authorEmail The Git author email, as recorded in the commit.
  * @property committedAt The commit time, normalised to an instant.
  * @property subject The first line of the commit message.
+ * @property coAuthorEmails The emails of the people the message credits with `Co-authored-by`, lower-cased,
+ *           without the author of the commit.
  * @property files The files the commit changed.
  */
 data class GitCommit(
@@ -29,4 +31,5 @@ data class GitCommit(
     val committedAt: Instant,
     val subject: String,
     val files: CommitFiles,
+    val coAuthorEmails: List<String> = emptyList(),
 )

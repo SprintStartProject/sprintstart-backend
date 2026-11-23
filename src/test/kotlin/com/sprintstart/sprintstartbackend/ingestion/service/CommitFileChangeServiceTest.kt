@@ -47,13 +47,18 @@ class CommitFileChangeServiceTest {
         artifacts = CommitArtifacts(entityManager)
     }
 
-    private fun command(files: CommitFiles, id: String = sourceId) = CommitFileChangesCommand(
+    private fun command(
+        files: CommitFiles,
+        id: String = sourceId,
+        coAuthors: List<String> = emptyList(),
+    ) = CommitFileChangesCommand(
         sourceId = id,
         repository = "github:acme/backend",
         authorName = "Ada Lovelace",
         authorEmail = "ada@example.com",
         changedAt = committedAt,
         files = files,
+        coAuthorEmails = coAuthors,
     )
 
     private fun listed(vararg paths: String) =
@@ -143,5 +148,34 @@ class CommitFileChangeServiceTest {
 
         assertThat(error.message).contains(sourceId)
         assertThat(storedPaths()).isEmpty()
+    }
+
+    @Test
+    fun `a commit credits its co-authors with the same files as its author`() {
+        artifacts.commit(sourceId)
+
+        service.record(command(listed("src/A.kt", "src/B.kt"), coAuthors = listOf("ben@example.com")))
+        entityManager.flush()
+        entityManager.clear()
+
+        val stored = repository.findAll()
+        assertThat(stored).hasSize(4)
+        assertThat(stored.filter { it.author.email == "ada@example.com" }.map { it.path })
+            .containsExactlyInAnyOrder("src/A.kt", "src/B.kt")
+        assertThat(stored.filter { it.author.email == "ben@example.com" }.map { it.path })
+            .containsExactlyInAnyOrder("src/A.kt", "src/B.kt")
+        assertThat(stored.map { it.changedAt }.distinct()).containsExactly(committedAt)
+    }
+
+    @Test
+    fun `recording a commit again replaces the rows of its co-authors too`() {
+        artifacts.commit(sourceId)
+        service.record(command(listed("src/A.kt"), coAuthors = listOf("ben@example.com")))
+
+        service.record(command(listed("src/A.kt")))
+        entityManager.flush()
+        entityManager.clear()
+
+        assertThat(repository.findAll().map { it.author.email }).containsExactly("ada@example.com")
     }
 }
