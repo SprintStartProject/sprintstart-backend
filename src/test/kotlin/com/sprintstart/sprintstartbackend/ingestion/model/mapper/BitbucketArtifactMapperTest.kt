@@ -11,6 +11,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactM
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.git.CommitFiles
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -99,10 +100,12 @@ class BitbucketArtifactMapperTest {
             workspace = "sprintstart",
             slug = "backend",
             author = "Ada",
+            authorEmail = "ada@example.com",
             committedAt = Instant.parse("2026-03-04T05:06:07Z"),
             sha = "abc123",
             subject = subject,
             sourceUrl = "https://bitbucket.org/sprintstart/backend/commits/abc123",
+            files = CommitFiles.Listed(emptyList()),
         )
 
         val result = mapper.toCommand(event)

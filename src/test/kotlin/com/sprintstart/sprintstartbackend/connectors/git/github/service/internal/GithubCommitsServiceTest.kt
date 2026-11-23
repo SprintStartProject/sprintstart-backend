@@ -179,6 +179,8 @@ class GithubCommitsServiceTest {
                     it is GithubCommitFetchedEvent &&
                         it.sha == "sha-1" &&
                         it.author == "Ada" &&
+                        it.authorEmail == "ada@example.com" &&
+                        it.files == CommitFiles.Listed(emptyList()) &&
                         it.msg == "Fix the bug" &&
                         it.date == committedAt &&
                         it.repositoryId == connection.id &&

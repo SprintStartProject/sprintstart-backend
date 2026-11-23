@@ -134,6 +134,8 @@ class BitbucketCommitsServiceTest {
                     it is BitbucketCommitFetchedEvent &&
                         it.sha == "sha-1" &&
                         it.author == "Ada" &&
+                        it.authorEmail == "ada@example.com" &&
+                        it.files == CommitFiles.Listed(emptyList()) &&
                         it.subject == "Fix the bug" &&
                         it.committedAt == committedAt &&
                         it.repositoryId == connection.id &&

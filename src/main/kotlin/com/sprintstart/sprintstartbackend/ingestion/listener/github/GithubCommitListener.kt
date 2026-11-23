@@ -5,8 +5,10 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.commits.GithubCommitsFetchFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
+import com.sprintstart.sprintstartbackend.ingestion.model.mapper.CommitFileChangesMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactFailedMapper
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactMapper
+import com.sprintstart.sprintstartbackend.ingestion.service.CommitFileChangeService
 import com.sprintstart.sprintstartbackend.ingestion.service.FailedArtifactService
 import com.sprintstart.sprintstartbackend.ingestion.service.GithubIngestionRunService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
@@ -20,12 +22,15 @@ internal class GithubCommitListener(
     private val githubArtifactFailedMapper: GithubArtifactFailedMapper,
     private val githubIngestionRunService: GithubIngestionRunService,
     private val failedArtifactService: FailedArtifactService,
+    private val commitFileChangeService: CommitFileChangeService,
+    private val commitFileChangesMapper: CommitFileChangesMapper,
 ) {
     @EventListener
     fun on(
         event: GithubCommitFetchedEvent,
     ) {
         githubArtifactProviderService.persistArtifact(githubArtifactMapper.toCommand(event))
+        commitFileChangeService.record(commitFileChangesMapper.toCommand(event))
     }
 
     @EventListener

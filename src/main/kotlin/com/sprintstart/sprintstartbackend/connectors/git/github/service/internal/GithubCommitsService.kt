@@ -129,9 +129,11 @@ private class GithubCommitSink(
                 repositoryOwner = connection.owner,
                 repositoryName = connection.name,
                 author = commit.authorName,
+                authorEmail = commit.authorEmail,
                 date = commit.committedAt,
                 sha = commit.sha,
                 msg = commit.subject,
+                files = commit.files,
             ),
         )
     }

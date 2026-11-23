@@ -5,7 +5,9 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.commits.BitbucketCommitsFetchingFailedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.BitbucketArtifactMapper
+import com.sprintstart.sprintstartbackend.ingestion.model.mapper.CommitFileChangesMapper
 import com.sprintstart.sprintstartbackend.ingestion.service.BitbucketIngestionRunService
+import com.sprintstart.sprintstartbackend.ingestion.service.CommitFileChangeService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.BitbucketArtifactProviderService
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
@@ -22,10 +24,13 @@ internal class BitbucketCommitListener(
     private val bitbucketArtifactProviderService: BitbucketArtifactProviderService,
     private val bitbucketArtifactMapper: BitbucketArtifactMapper,
     private val bitbucketIngestionRunService: BitbucketIngestionRunService,
+    private val commitFileChangeService: CommitFileChangeService,
+    private val commitFileChangesMapper: CommitFileChangesMapper,
 ) {
     @EventListener
     fun on(event: BitbucketCommitFetchedEvent) {
         bitbucketArtifactProviderService.persistArtifact(bitbucketArtifactMapper.toCommand(event))
+        commitFileChangeService.record(commitFileChangesMapper.toCommand(event))
     }
 
     @EventListener
