@@ -19,6 +19,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Diagra
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -59,9 +62,9 @@ class BoardDiagramService(
     private val onboardingAiClient: OnboardingAiClient,
     transactionManager: PlatformTransactionManager,
     private val clock: Clock = Clock.systemUTC(),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    // The AI call is a long-running suspend operation, so it must not run inside a transaction --
-    // the same read-tx -> AI -> write-tx split TaskOrientationService uses.
+    // The AI call is long-running, so it must not run inside a transaction.
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -97,8 +100,8 @@ class BoardDiagramService(
      * @throws ResponseStatusException 404 when the card is not a diagram card of theirs — a card
      *   belonging to somebody else and one that does not exist answer identically, on purpose.
      */
-    suspend fun refresh(userId: UUID, cardId: UUID): DiagramContent {
-        val context = withContext(Dispatchers.IO) {
+    suspend fun refresh(userId: UserId, cardId: BoardCardId): DiagramContent {
+        val context = withContext(ioDispatcher) {
             readTxTemplate.execute { loadContext(userId, cardId) }
         } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No such diagram card on your board")
 
@@ -109,12 +112,12 @@ class BoardDiagramService(
                 lastFingerprint = context.fingerprint,
             )
         } catch (e: OnboardingAiException) {
-            logger.warn("Diagram assembly unavailable for card {}: {}", cardId, e.message)
+            logger.warn("Diagram assembly unavailable for card {}: {}", cardId.value, e.message)
             // No evidence about staleness, so the last picture drawn stands.
             return context.served(UNAVAILABLE)
         }
 
-        return withContext(Dispatchers.IO) { txTemplate.execute { apply(context, outcome) }!! }
+        return withContext(ioDispatcher) { txTemplate.execute { apply(context, outcome) }!! }
     }
 
     private fun apply(context: DiagramContext, outcome: DiagramOutcome): DiagramContent {
@@ -208,16 +211,16 @@ class BoardDiagramService(
             .onFailure { logger.warn("Discarding undecodable diagram cache for card {}", cached.cardId) }
             .getOrNull()
 
-    private fun loadContext(userId: UUID, cardId: UUID): DiagramContext? {
-        val card = boardCardRepository.findById(cardId).orElse(null) ?: return null
+    private fun loadContext(userId: UserId, cardId: BoardCardId): DiagramContext? {
+        val card = boardCardRepository.findById(cardId.value).orElse(null) ?: return null
         if (card.kind != BoardCardKind.DIAGRAM) return null
         val board = boardRepository.findById(card.boardId).orElse(null) ?: return null
-        if (board.userId != userId) return null
+        if (board.userId != userId.value) return null
         val subject = card.subject?.takeIf { it.isNotBlank() } ?: return null
 
-        val cached = boardDiagramRepository.findById(cardId).orElse(null)
+        val cached = boardDiagramRepository.findById(cardId.value).orElse(null)
         return DiagramContext(
-            cardId = cardId,
+            cardId = cardId.value,
             projectId = board.projectId,
             subject = subject,
             // A cache that will not decode must not be revalidated as if it were current, or an

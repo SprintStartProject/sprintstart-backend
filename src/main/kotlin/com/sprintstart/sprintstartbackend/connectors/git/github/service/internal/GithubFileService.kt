@@ -14,6 +14,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.util.GithubGitPr
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -50,6 +51,7 @@ class GithubFileService(
     private val provider: GithubGitProvider,
     private val ingestionEngine: GitIngestionEngine,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val logger = LoggerFactory.getLogger(GithubFileService::class.java)
 
@@ -76,7 +78,7 @@ class GithubFileService(
     ) {
         eventPublisher.publishEvent(GithubFilesFetchStartedEvent(transactionId, repositoryOwner, repositoryName))
 
-        val connection = withContext(Dispatchers.IO) {
+        val connection = withContext(ioDispatcher) {
             repoConnectionRepository.findById(githubRepositoryId)
         }.orElseThrow {
             eventPublisher.publishEvent(
@@ -137,7 +139,7 @@ class GithubFileService(
         if (!ingestionEngine.isUpToDate(coordinatesFactory.of(githubRepository))) {
             githubRepository.connectionState = ConnectionState.OUT_OF_DATE
 
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 repoConnectionRepository.save(githubRepository)
             }
         }
@@ -196,13 +198,13 @@ class GithubFileService(
             // Only the cursor column is written: this copy of the connection was read when the run
             // started, and saving all of it would reset the commit cursor the parallel commit fetch
             // has advanced since.
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 repoConnectionRepository.updateFileCursor(githubRepository.id, ingested.revision)
             }
             ingested
         } catch (e: CancellationException) {
-            // Never swallow cancellation: the run is abandoned, not failed, and publishing a
-            // terminal failure here would report a fetch that did not happen.
+            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
+            // happened.
             throw e
         } catch (e: Exception) {
             eventPublisher.publishEvent(

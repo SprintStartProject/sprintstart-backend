@@ -15,7 +15,9 @@ uploads/
 logs/
 *.log
 
-docs/
+/docs/*
+!/docs/architecture/
+!/docs/adrs-proposed/
 
 # Agent instructions
 GEMINI.md

@@ -26,13 +26,15 @@ class CanonicalAnswer(
     val id: UUID = UUID.randomUUID(),
     @Column(name = "project_id", nullable = false)
     val projectId: UUID,
-    // The question this answers, in the words a future hire might search — seeded from the request
-    // but a PM may generalise it so it matches more than the one phrasing that triggered it.
+    /**
+     * The question this answers, in the words a future hire might search; seeded from the request, and a PM
+     * may generalise it.
+     */
     @Column(name = "question", nullable = false, columnDefinition = "TEXT")
     var question: String,
     @Column(name = "answer", nullable = false, columnDefinition = "TEXT")
     var answer: String,
-    // The PM who authored (or last edited) the answer — provenance a hire can see and trust.
+    /** The PM who wrote or last edited the answer, shown to the hire as its provenance. */
     @Column(name = "author_id", nullable = false)
     var authorId: UUID,
     @Column(name = "created_at", nullable = false)

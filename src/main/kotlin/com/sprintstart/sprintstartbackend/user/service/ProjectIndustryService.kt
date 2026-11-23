@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.user.model.mapper.toIndustryResponse
 import com.sprintstart.sprintstartbackend.user.model.response.project.ProjectIndustryResponse
 import com.sprintstart.sprintstartbackend.user.repository.ProjectRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -33,6 +34,7 @@ class ProjectIndustryService(
     private val projectRepository: ProjectRepository,
     private val projectIndustryAiClient: ProjectIndustryAiClient,
     transactionManager: PlatformTransactionManager,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ProjectIndustryApi {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -55,10 +57,10 @@ class ProjectIndustryService(
      */
     @Tracked("Evaluating project industry")
     override suspend fun evaluateIndustry(projectId: UUID): AiIndustryEvaluationResponse {
-        withContext(Dispatchers.IO) { findProject(projectId) }
+        withContext(ioDispatcher) { findProject(projectId) }
         val response = projectIndustryAiClient.evaluateIndustry(projectId)
 
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             txTemplate.executeWithoutResult {
                 val project = findProject(projectId)
                 project.industry = response.industry
@@ -99,7 +101,7 @@ class ProjectIndustryService(
      */
     @Tracked("Getting or lazily evaluating project industry")
     override suspend fun getOrEvaluateIndustry(projectId: UUID): String? {
-        val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: return null
+        val existingProject = withContext(ioDispatcher) { findProjectOrNull(projectId) } ?: return null
         if (existingProject.industryCustom) {
             return existingProject.industry?.takeIf { it.isNotBlank() }
         }
@@ -110,7 +112,7 @@ class ProjectIndustryService(
         return try {
             val response = projectIndustryAiClient.evaluateIndustry(projectId)
             if (isEligibleConfidence(response.confidence) && response.industry.isNotBlank()) {
-                withContext(Dispatchers.IO) {
+                withContext(ioDispatcher) {
                     txTemplate.execute {
                         val project = projectRepository
                             .findByIdForUpdate(projectId)
@@ -156,7 +158,7 @@ class ProjectIndustryService(
     @Tracked("Evaluating project industry automatically")
     override suspend fun evaluateIndustryAutomatically(projectId: UUID) {
         try {
-            val existingProject = withContext(Dispatchers.IO) { findProjectOrNull(projectId) } ?: run {
+            val existingProject = withContext(ioDispatcher) { findProjectOrNull(projectId) } ?: run {
                 logger.warn("Cannot auto-evaluate industry for non-existent project {}", projectId)
                 return
             }
@@ -179,7 +181,7 @@ class ProjectIndustryService(
                 return
             }
 
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 txTemplate.executeWithoutResult {
                     val project = projectRepository
                         .findByIdForUpdate(projectId)

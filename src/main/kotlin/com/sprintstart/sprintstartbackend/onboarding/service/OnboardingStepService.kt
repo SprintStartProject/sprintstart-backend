@@ -101,7 +101,6 @@ class OnboardingStepService(
             phase.generationStatus = GenerationStatus.GENERATED
         }
 
-        // Shift right
         shiftStepsRight(phase, request)
 
         val onboardingStep = OnboardingStep(
@@ -339,7 +338,6 @@ class OnboardingStepService(
             .findById(phaseId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No phase found with id: $phaseId") }
 
-        // Shift right
         shiftStepsRight(phase, request)
 
         val onboardingStep = OnboardingStep(
@@ -418,7 +416,6 @@ class OnboardingStepService(
             .findById(stepId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
 
-        // Shift left
         val stepsToShift = onboardingStepRepository
             .findAllByPhaseIdAndPositionGreaterThan(step.phase.id, step.position)
         stepsToShift.forEach { it.position -= 1 }

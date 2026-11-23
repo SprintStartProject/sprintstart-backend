@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.Noti
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
 import com.sprintstart.sprintstartbackend.ingestion.external.NotionArtifactIngestionApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -30,6 +31,7 @@ internal class NotionWorkspaceIngestionService(
     private val syncedPageService: NotionSyncedPageService,
     private val pageSyncService: NotionPageSyncService,
     private val ingestionApi: NotionArtifactIngestionApi,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Synchronizes all visible pages for one project-owned connection.
@@ -41,7 +43,7 @@ internal class NotionWorkspaceIngestionService(
         projectId: UUID,
         connectionId: UUID,
         forceRefresh: Boolean = false,
-    ): NotionIngestionResult = withContext(Dispatchers.IO) {
+    ): NotionIngestionResult = withContext(ioDispatcher) {
         val connection = connectionPersistenceService.requireConnection(projectId, connectionId)
         val runId = UUID.randomUUID()
         if (!connection.sourceEnabled) {

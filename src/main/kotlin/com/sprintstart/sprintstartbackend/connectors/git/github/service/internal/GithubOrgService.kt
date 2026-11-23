@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.respo
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.git.github.repository.GithubOrganizationRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.context.ApplicationEventPublisher
@@ -26,6 +27,7 @@ class GithubOrgService(
     private val githubClient: GithubClient,
     private val orgRepository: GithubOrganizationRepository,
     private val eventPublisher: ApplicationEventPublisher,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Fetches & triggers ingestion of organization level metadata for GitHub, if the given org is not already
@@ -43,7 +45,7 @@ class GithubOrgService(
     suspend fun connectGithubOrgIfNecessary(org: String, token: String, transactionId: UUID) {
         eventPublisher.publishEvent(GithubOrgMetadataFetchingStartedEvent(transactionId))
 
-        if (withContext(Dispatchers.IO) { orgRepository.existsByLoginIgnoreCase(org) }) {
+        if (withContext(ioDispatcher) { orgRepository.existsByLoginIgnoreCase(org) }) {
             eventPublisher.publishEvent(GithubOrgMetadataAlreadyConnectedEvent(transactionId, org))
             eventPublisher.publishEvent(GithubOrgMetadataFetchingCompletedEvent(transactionId))
             return
@@ -77,7 +79,7 @@ class GithubOrgService(
             val event = buildOrgMetadataFetchedEvent(transactionId, metadata, teams, teamMembers)
             eventPublisher.publishEvent(event)
 
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 orgRepository.save(GithubOrganization(login = org, name = metadata.name))
             }
         }.onFailure { error ->

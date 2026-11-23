@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -41,6 +42,7 @@ class CustomOnDiskCache(
     private val config: GitConfig,
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : GitRepositoryCache {
     private val logger = LoggerFactory.getLogger(CustomOnDiskCache::class.java)
     private val repositoryLocks = ConcurrentHashMap<Path, Mutex>()
@@ -97,7 +99,7 @@ class CustomOnDiskCache(
      * @param remoteUri The current remote URI, with the current credentials embedded.
      */
     private suspend fun refreshRemoteUrl(localFsPath: Path, remoteUri: String) {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner.exec(localFsPath, onDiskOperations.gitSetRemoteUrl(remoteUri))
         }
     }
@@ -113,7 +115,7 @@ class CustomOnDiskCache(
      */
     private suspend fun isCached(path: Path): Boolean {
         if (!path.exists()) return false
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             try {
                 gitRunner.exec(path, onDiskOperations.gitStatus())
                 ensureRepositoryCheckout(path)
@@ -136,7 +138,7 @@ class CustomOnDiskCache(
      * @param remoteUri The uri to clone the repository from, if not already cached.
      */
     private suspend fun cloneRepository(localFsPath: Path, remoteUri: String) {
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             localFsPath.toFile().deleteRecursively()
             localFsPath.toFile().mkdirs()
 

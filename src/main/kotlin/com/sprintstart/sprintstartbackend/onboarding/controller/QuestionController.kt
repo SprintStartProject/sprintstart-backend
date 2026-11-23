@@ -44,8 +44,6 @@ import java.util.UUID
 class QuestionController(
     private val questionAttemptService: QuestionAttemptService,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Submits the authenticated user's answer to one question.
      *
@@ -87,8 +85,6 @@ class QuestionController(
     ): SubmitQuestionAttemptResponse {
         return questionAttemptService.submitQuestionAttemptForMe(jwt.subject, questionId, request)
     }
-
-//  ========================== Endpoints for admins ==========================
 
     /**
      * Returns the questions of a phase including correct answers.

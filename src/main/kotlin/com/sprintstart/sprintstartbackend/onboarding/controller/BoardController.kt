@@ -9,6 +9,10 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Diagra
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.PathStepContent
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardDiagramService
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardService
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.OnboardingTaskId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -31,7 +35,6 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
-import java.util.UUID
 
 /**
  * The hire's own board.
@@ -72,7 +75,7 @@ class BoardController(
     fun getMyBoard(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam projectId: UUID,
+        @RequestParam projectId: ProjectId,
     ): BoardResponse =
         boardService.getBoard(resolveUserId(jwt), projectId)
             ?: throw ResponseStatusException(
@@ -103,7 +106,7 @@ class BoardController(
     suspend fun refreshDiagram(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable cardId: UUID,
+        @PathVariable cardId: BoardCardId,
     ): DiagramContent = boardDiagramService.refresh(resolveUserId(jwt), cardId)
 
     @Operation(
@@ -127,7 +130,7 @@ class BoardController(
     fun addCard(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam projectId: UUID,
+        @RequestParam projectId: ProjectId,
         @RequestBody request: AuthoredCardRequest,
     ): BoardCardResponse = boardService.addAuthoredCard(resolveUserId(jwt), projectId, request)
 
@@ -151,7 +154,7 @@ class BoardController(
     fun editCard(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable cardId: UUID,
+        @PathVariable cardId: BoardCardId,
         @RequestBody request: AuthoredCardRequest,
     ): BoardCardResponse = boardService.editAuthoredCard(resolveUserId(jwt), cardId, request)
 
@@ -180,8 +183,8 @@ class BoardController(
     fun tickPathStepTask(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable cardId: UUID,
-        @PathVariable taskId: UUID,
+        @PathVariable cardId: BoardCardId,
+        @PathVariable taskId: OnboardingTaskId,
         @RequestBody request: TickPathStepTaskRequest,
     ): PathStepContent = boardService.tickPathStepTask(resolveUserId(jwt), cardId, taskId, request.done)
 
@@ -204,10 +207,10 @@ class BoardController(
     fun reorder(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam projectId: UUID,
+        @RequestParam projectId: ProjectId,
         @RequestBody request: ReorderBoardRequest,
     ) {
-        boardService.reorder(resolveUserId(jwt), projectId, request.cardIds)
+        boardService.reorder(resolveUserId(jwt), projectId, request.cardIds.map(::BoardCardId))
     }
 
     @Operation(
@@ -229,7 +232,7 @@ class BoardController(
     fun dismissCard(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable cardId: UUID,
+        @PathVariable cardId: BoardCardId,
     ) {
         // A card on somebody else's board and a card that does not exist answer the same, on
         // purpose: a 403 here would confirm that a given id is a real card of somebody's.
@@ -238,8 +241,8 @@ class BoardController(
         }
     }
 
-    private fun resolveUserId(jwt: Jwt): UUID =
-        userApi.getUserIdByAuthId(jwt.subject).orElseThrow {
+    private fun resolveUserId(jwt: Jwt): UserId =
+        userApi.getUserIdByAuthId(jwt.subject).map(::UserId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: ${jwt.subject}")
         }
 }

@@ -108,7 +108,6 @@ class ProjectRoleService(
 
             val catalogMatch = catalogMap[normalized]
             if (catalogMatch != null) {
-                // Active skill match: use catalog as ground truth
                 results.add(
                     SkillSuggestionItemResponse(
                         skillId = catalogMatch.id,
@@ -121,10 +120,8 @@ class ProjectRoleService(
                     ),
                 )
             } else {
-                // Check if it matches a RETIRED skill in DB -> skip if retired
                 val dbMatch = skillRepository.findByNormalizedName(trimmedName)
                 if (dbMatch != null && dbMatch.status == SkillStatus.RETIRED) {
-                    // Skip suggestion matching a retired skill
                     continue
                 }
                 results.add(
@@ -229,16 +226,13 @@ class ProjectRoleService(
         if (!projectRoleRepository.existsById(roleId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "Project role with id $roleId not found")
         }
-        // Let every assignment go of the role first. The database would cascade (V4), but the entity
-        // mapping declares no cascade — so tests, which build schema from entities, would fail on the
-        // constraint — and a DB-side cascade leaves loaded assignments holding a role that no longer
-        // exists. Doing it here makes it the same everywhere.
+        // Assignments are released here rather than by the database cascade: the entity mapping declares
+        // none, and loaded assignments would keep a deleted role.
         val holders = projectUserAssignmentRepository.findAllHoldingRole(roleId)
         holders.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
         projectUserAssignmentRepository.saveAll(holders)
-        // The same for the skills linked to it: `sprintstart_skill_project_roles` references the
-        // role too, and without this a role that carries any skill could not be deleted at all —
-        // the constraint failed the delete. The skills themselves stay in the catalog.
+        // `sprintstart_skill_project_roles` references the role too; the skills themselves stay in the
+        // catalog.
         val linkedSkills = skillRepository.findAllByProjectRolesId(roleId)
         linkedSkills.forEach { it.projectRoles.removeIf { role -> role.id == roleId } }
         skillRepository.saveAll(linkedSkills)

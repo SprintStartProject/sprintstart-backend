@@ -16,6 +16,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.Onboarding
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardCardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardDiagramRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -45,7 +47,9 @@ class BoardDiagramServiceTest {
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
 
     private val hireId: UUID = UUID.randomUUID()
+    private val hire = UserId(hireId)
     private val cardId: UUID = UUID.randomUUID()
+    private val card = BoardCardId(cardId)
     private val boardId: UUID = UUID.randomUUID()
     private val projectId: UUID = UUID.randomUUID()
     private val subject = "how a request reaches the database"
@@ -110,7 +114,7 @@ class BoardDiagramServiceTest {
     fun `draws the picture and keeps it with the corpus it was drawn from`() = runTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled()
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.subject).isEqualTo(subject)
         assertThat(content.nodes.map { it.label })
@@ -128,7 +132,7 @@ class BoardDiagramServiceTest {
     fun `every box carries the source that proves it`() = runTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled()
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.nodes).allSatisfy { assertThat(it.citations).isNotEmpty() }
         assertThat(
@@ -146,7 +150,7 @@ class BoardDiagramServiceTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } returns
             DiagramOutcome(status = "unchanged")
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.nodes.map { it.label }).containsExactly("AuthFilter")
         assertThat(content.reason).isNull()
@@ -159,7 +163,7 @@ class BoardDiagramServiceTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } returns
             DiagramOutcome(status = "skipped", notes = listOf("no grounding evidence retrieved"))
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.nodes).isEmpty()
         assertThat(content.reason).isEqualTo("no grounding evidence retrieved")
@@ -172,7 +176,7 @@ class BoardDiagramServiceTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), "corpus-1") } throws
             OnboardingAiException(503, "", "down")
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         // Unlike `skipped`, an outage is no evidence at all about staleness -- so the last picture
         // drawn is still the most honest thing available, and it is not deleted.
@@ -185,7 +189,7 @@ class BoardDiagramServiceTest {
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } throws
             OnboardingAiException(503, "", "down")
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.nodes).isEmpty()
         assertThat(content.reason).isEqualTo("Diagrams are temporarily unavailable")
@@ -199,7 +203,7 @@ class BoardDiagramServiceTest {
             Optional.of(cached(payload = "{ this is not json"))
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled("corpus-2")
 
-        val content = service.refresh(hireId, cardId)
+        val content = service.refresh(hire, card)
 
         assertThat(content.nodes).hasSize(2)
     }
@@ -210,7 +214,7 @@ class BoardDiagramServiceTest {
             Optional.of(cached(payload = "{ this is not json"))
         coEvery { onboardingAiClient.assembleDiagram(subject, listOf(projectId), null) } returns assembled("corpus-2")
 
-        service.refresh(hireId, cardId)
+        service.refresh(hire, card)
 
         // Sending the fingerprint of a picture nobody can read would answer `unchanged` and leave
         // the card empty for as long as the corpus stands still.
@@ -239,7 +243,7 @@ class BoardDiagramServiceTest {
         every { boardRepository.findById(boardId) } returns
             Optional.of(Board(id = boardId, userId = UUID.randomUUID(), projectId = UUID.randomUUID()))
 
-        assertFailsWith<ResponseStatusException> { service.refresh(hireId, cardId) }
+        assertFailsWith<ResponseStatusException> { service.refresh(hire, card) }
     }
 
     @Test
@@ -254,7 +258,7 @@ class BoardDiagramServiceTest {
             ),
         )
 
-        assertFailsWith<ResponseStatusException> { service.refresh(hireId, cardId) }
+        assertFailsWith<ResponseStatusException> { service.refresh(hire, card) }
     }
 
     private companion object {

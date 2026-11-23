@@ -75,7 +75,6 @@ class IngestionRunLifeCycleService(
             if (status == IngestionRunStatus.FAILED) {
                 ingestionRun.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
             }
-            // Backfill source-instance metadata if a later lifecycle call resolved it.
             if (ingestionRun.sourceInstanceId == null) ingestionRun.sourceInstanceId = sourceInstanceId
             if (ingestionRun.sourceInstanceRef == null) ingestionRun.sourceInstanceRef = sourceInstanceRef
         }
@@ -158,10 +157,7 @@ class IngestionRunLifeCycleService(
     fun finishRun(run: IngestionRun, successfulItemCount: Int = 0) {
         require(successfulItemCount >= 0) { "Successful item count must not be negative" }
         val changedArtifactCount = run.ingestedCount + run.updatedCount + run.deletedCount
-        // Work that moves no counter and still has to reach the AI index: an artifact an earlier
-        // run stored that this one re-scoped into another project, or whose `state`/labels moved.
-        // Neither is an ingest, an update or a delete -- by design, since nothing was fetched --
-        // so counting only the counters would call such a run empty and skip its sync entirely.
+        // Re-scoping or a moved state/label changes no counter but still has to reach the AI index.
         val hasPendingAiWork = run.artifactIdsToReingest.isNotEmpty() || run.artifactIdsToDeindex.isNotEmpty()
         val didSomething = changedArtifactCount > 0 || hasPendingAiWork
 
@@ -181,8 +177,7 @@ class IngestionRunLifeCycleService(
         ) {
             publisher.publishEvent(RunFinishedEvent(run.id))
         } else {
-            // Nothing was ingested, updated, deleted or re-scoped, so there is nothing for the AI
-            // sync layer to act on -- it will never run for this id.
+            // Nothing for the AI sync to act on; it never runs for this id.
             run.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
         }
     }

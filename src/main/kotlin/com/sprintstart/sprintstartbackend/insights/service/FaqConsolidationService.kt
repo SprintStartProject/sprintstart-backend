@@ -80,7 +80,7 @@ class FaqConsolidationService(
             return
         }
 
-        txTemplate.executeWithoutResult {
+        txTemplate.executeWithoutResult { _ ->
             val byId = faqGroupRepository
                 .findAllByProjectIdOrderByOccurrenceCountDesc(projectId)
                 .associateBy { it.id.toString() }

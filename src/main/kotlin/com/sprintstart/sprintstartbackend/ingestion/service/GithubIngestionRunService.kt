@@ -68,11 +68,8 @@ class GithubIngestionRunService(
             .findByIdForUpdate(runId)
             .orElseThrow { IngestionRunNotFoundException(runId) }
 
-        // Gated on the phase not having closed yet: the same failure can be reported twice, for
-        // example by a retry after a transient error, or by two operations of one phase that fail
-        // for the same reason. Ungated, that run records the failure twice, and -- if the phase is
-        // the last outstanding one -- finishes twice, firing `RunFinishedEvent` and the whole AI
-        // sync a second time.
+        // A failure can be reported twice (a retry, two operations of one phase); finishing the run twice
+        // would start the AI sync twice.
         if (!run.finishedTypes.add(finishedType)) {
             return
         }

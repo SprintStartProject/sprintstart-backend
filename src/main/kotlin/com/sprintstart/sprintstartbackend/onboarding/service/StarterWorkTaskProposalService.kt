@@ -333,12 +333,8 @@ class StarterWorkTaskProposalService(
         when (this) {
             ProposalStatus.LIVE -> CandidatePoolState.IN_POOL
             ProposalStatus.REJECTED -> CandidatePoolState.REMOVED
-            // A stale row is only ever seen here when its issue has *reopened* — this browser lists
-            // open issues only — and that is exactly when promoting it should work. Promotion
-            // revives the row rather than duplicating it, so offering it is the honest answer:
-            // nothing is on offer to a hire right now, and the PM's click is what brings it back.
-            // Reporting IN_POOL would hide the one action that helps, and REMOVED would blame a
-            // person for something the tracker did.
+            // A stale row appears here only when its issue reopened; promoting it revives the row, so it is
+            // offered as AVAILABLE.
             ProposalStatus.STALE -> CandidatePoolState.AVAILABLE
         }
 
@@ -636,9 +632,8 @@ class StarterWorkTaskProposalService(
         val proposal = starterWorkTaskProposalRepository.findById(id).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No starter-work task found with id: $id")
         }
-        // Each refusal names which of the two it is. One is a person's decision and permanent, the
-        // other is the tracker's and reverses itself — somebody told "rejected" about a closed
-        // issue would go looking for a colleague who never acted.
+        // Each refusal says which it is: a rejection is a person's permanent decision, a closed issue the
+        // tracker's and reversible.
         val reason = when (proposal.status) {
             ProposalStatus.LIVE -> return proposal
             ProposalStatus.REJECTED -> "Starter-work task $id was rejected and is no longer in the pool"

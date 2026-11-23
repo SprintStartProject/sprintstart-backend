@@ -7,8 +7,6 @@ import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAske
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentRequest
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyCitationDto
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpecDto
@@ -20,7 +18,6 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySession
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionStatus
 import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.AiResponseException
-import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.request.buddy.AiGenerateSessionTitleRequest
@@ -31,14 +28,12 @@ import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyCitationRep
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddySessionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.ids.BuddySessionId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import com.sprintstart.sprintstartbackend.user.service.SessionActivityService
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
@@ -61,8 +56,6 @@ import kotlin.coroutines.cancellation.CancellationException
  * the hire's own onboarding are answered by [BuddyToolExecutor].
  */
 @Service
-// One method per thing a visit can do -- open it, stream it open, read it, speak into it -- plus the
-// agent loop's helpers. The count tracks the conversation's surface, not a class doing two jobs.
 @Suppress("TooManyFunctions")
 class BuddyService(
     private val buddySessionRepository: BuddySessionRepository,
@@ -72,10 +65,8 @@ class BuddyService(
     private val buddyToolExecutor: BuddyToolExecutor,
     private val buddyActionService: BuddyActionService,
     private val userApi: UserApi,
-    private val buddyCompactionService: BuddyCompactionService,
     private val artifactLookupService: ArtifactLookupService,
-    private val sessionActivityService: SessionActivityService,
-    private val applicationScope: CoroutineScope,
+    private val compactionScheduler: BuddyCompactionScheduler,
     private val buddyAiClient: BuddyAiClient,
     private val eventPublisher: ApplicationEventPublisher,
     private val clock: Clock,
@@ -107,10 +98,9 @@ class BuddyService(
         }
         val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Buddy session not found for current user")
-        val messages = buddyMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
-        // No marker anywhere falls back to showing *everything*, never nothing.
-        return messages
-            .drop(messages.indexOfLast { it.opening }.takeIf { it >= 0 } ?: 0)
+        return buddyMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+            .sinceLastOpening { it.opening }
             .map { it.toResponse() }
     }
 
@@ -133,182 +123,6 @@ class BuddyService(
         )
         buddySessionRepository.save(session)
         return CreateSessionResponse(session.id)
-    }
-
-    /**
-     * Opens a visit, streaming the greeting as the mentor writes it.
-     *
-     * The greeting is persisted as the visit's opening message. No transcript is replayed.
-     *
-     * A broken stream is two rules, not one:
-     * - Nothing arrived — the fallback greeting is emitted and nothing is persisted, so a
-     *   reload tries the model again.
-     * - Some arrived — what the hire already read is persisted, so a reload shows the same
-     *   words. Memory and cursor are untouched either way.
-     *
-     * @throws ResponseStatusException 404 if the authenticated user doesn't exist.
-     */
-    suspend fun streamOpenForMe(
-        authId: String,
-        sessionId: UUID?,
-    ): Flow<BuddyStreamEvent> {
-        val userId = resolveUserId(authId)
-
-        if (sessionId == null) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "sessionId required",
-            )
-        }
-
-        val session = buddySessionRepository.findByIdAndUserId(sessionId, userId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "Session not found for current user",
-            )
-
-        val messages = buddyMessageRepository
-            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
-
-        /*
-         * The current request is counted as activity, but the decision whether
-         * this is a long absence is made from the previous lastSeenAt.
-         */
-        val longAbsence = sessionActivityService.recordActivityAndReturnLongAbsence(userId)
-
-        val firstConversation = buddySessionRepository.countByUserId(userId) == 1L
-
-        /*
-         * The last opening is special: opening the same conversation again without
-         * the hire saying anything replays the existing opening instead of asking
-         * the AI for another greeting.
-         */
-        if (!longAbsence) {
-            messages
-                .lastOrNull()
-                ?.takeIf { it.opening }
-                ?.let { opening ->
-                    return flow {
-                        emit(
-                            BuddyStreamEvent(
-                                type = TOKEN,
-                                content = opening.content,
-                            ),
-                        )
-                        emit(BuddyStreamEvent(type = DONE))
-                    }
-                }
-        }
-
-        if (!firstConversation && !longAbsence) {
-            return flowOf(BuddyStreamEvent(type = DONE))
-        }
-
-        val recent = messages
-            .drop(session.summarizedCount)
-            .map { it.toAgentMessage() }
-
-        val state = buddyToolExecutor.stateSnapshot(userId)
-
-        return flow {
-            val streamed = StringBuilder()
-            var opening: BuddyOpenStreamEvent? = null
-
-            try {
-                onboardingAiClient
-                    .streamBuddyOpen(
-                        BuddyOpenRequest(
-                            memory = session.summary,
-                            recent = recent,
-                            state = state,
-                        ),
-                    ).collect { event ->
-                        when (event.type) {
-                            TOKEN -> {
-                                streamed.append(event.content.orEmpty())
-
-                                emit(
-                                    BuddyStreamEvent(
-                                        type = TOKEN,
-                                        content = event.content,
-                                    ),
-                                )
-                            }
-
-                            DONE -> {
-                                opening = event
-                            }
-                        }
-                    }
-            } catch (e: OnboardingAiException) {
-                logger.warn(
-                    "Buddy opening failed for session {}",
-                    session.id,
-                    e,
-                )
-            }
-
-            finishOpen(
-                session = session,
-                streamed = streamed.toString(),
-                opening = opening,
-            )
-
-            compactInBackground(userId, session.id)
-        }
-    }
-
-    /**
-     * Folds this session's backlog into the mentor's memory without anybody waiting on it.
-     *
-     * Fire-and-forget on the application scope, matching `CorpusIndexedListener`: the fold is a
-     * prompt-shaping device, so one that dies costs a longer prompt on the next turn and nothing
-     * else. The point of the whole change is that no hire is ever blocked on this, so it must
-     * not be awaited here, and [BuddyCompactionService.compactIfNeeded] never throws.
-     */
-    private fun compactInBackground(userId: UUID, sessionId: UUID) {
-        applicationScope.launch {
-            buddyCompactionService.compactIfNeeded(userId, sessionId)
-        }
-    }
-
-    /**
-     * Persists what the open produced and emits the terminal events.
-     *
-     * Three outcomes differing in what each may write: a complete open stores the greeting, a
-     * broken one stores only the words the hire saw, and one that produced nothing writes nothing.
-     *
-     * Nothing here touches the memory or the cursor — that is [BuddyCompactionService]'s.
-     */
-    private suspend fun FlowCollector<BuddyStreamEvent>.finishOpen(
-        session: BuddySession,
-        streamed: String,
-        opening: BuddyOpenStreamEvent?,
-    ) {
-        val greeting = opening?.greeting?.takeIf { it.isNotBlank() } ?: streamed
-
-        if (greeting.isBlank()) {
-            // Nothing reached the hire, so nothing is persisted: storing the fallback would make
-            // an outage this visit's permanent greeting.
-            emit(BuddyStreamEvent(type = TOKEN, content = FALLBACK_OPENING))
-            emit(BuddyStreamEvent(type = DONE))
-            return
-        }
-
-        buddyMessageRepository.save(
-            BuddyMessage(
-                session = session,
-                role = BuddyMessageRole.ASSISTANT,
-                content = greeting,
-                // This is the first message of the conversation.
-                opening = true,
-            ),
-        )
-
-        opening?.action?.let {
-            emit(BuddyStreamEvent(type = OPENING_ACTION, label = it.label, question = it.question))
-        }
-        emit(BuddyStreamEvent(type = DONE))
     }
 
     /**
@@ -376,12 +190,10 @@ class BuddyService(
             buddySessionRepository.save(session)
         }
 
-        // Check if title has to be generated
         if (session.title.isBlank()) {
             try {
                 val generatedTitle = buddyAiClient.getSessionTitle(AiGenerateSessionTitleRequest(content))
-                session.title = generatedTitle.title
-                buddySessionRepository.save(session)
+                buddySessionRepository.nameIfUntitled(session.id, generatedTitle.title)
             } catch (e: AiResponseException) {
                 logger.warn("Could not generate buddy session title", e)
             }
@@ -416,12 +228,9 @@ class BuddyService(
             )
         }
 
-        // The AI reasoner sees the read-only tools *and* the action tools it may propose. An action
-        // tool call never mutates here — it produces a proposal the hire must confirm out-of-band.
-        //
-        // With capabilities off the list is empty, which is the whole mechanism: a tool the model
-        // was never given is one it cannot call, so the mode is enforced here rather than asked for
-        // in the prompt. Retrieval is untouched — `search_docs` runs AI-side, not as a backend tool.
+        // The reasoner gets the read-only tools and the action tools it may propose; an action never mutates
+        // here. With capabilities off the list is empty, so the mode is enforced by what the model is given,
+        // not asked for in the prompt.
         val tools = if (capabilitiesEnabled) {
             buddyToolExecutor.toolSpecs(userId) + buddyActionService.actionSpecs(userId)
         } else {
@@ -433,10 +242,8 @@ class BuddyService(
         val vocabulary = vocabulary()
         val projectIds = session.projectId?.let { listOf(it.toString()) } ?: memberProjects
 
-        // A hire on no project has no scope the AI may retrieve from — it fails closed on an empty
-        // list — so a turn would search nothing and answer as though the project had no material on
-        // the subject. Refuse the turn here instead, and say the one thing that resolves it. The
-        // user's message is already persisted above, so the transcript still shows what they asked.
+        // A hire on no project has no retrieval scope, and the AI fails closed on an empty one, so the turn
+        // is refused here with the one thing that resolves it. The message is already persisted.
         if (projectIds.isEmpty()) {
             return flow {
                 emitAgentReply(NO_PROJECT_REPLY, emptyList(), StringBuilder())
@@ -547,9 +354,8 @@ class BuddyService(
             }
 
             buddyCitationRepository.saveAll(citationEntities)
-            // Only now, with the reply persisted and the hire reading it. Folding before this point
-            // is what the whole change exists to stop.
-            compactInBackground(userId, session.id)
+            // Only now, with the reply persisted: folding must never delay the answer.
+            compactionScheduler.foldHireConversation(UserId(userId), BuddySessionId(session.id))
         }.endFailureWithErrorEvent()
     }
 
@@ -704,38 +510,30 @@ class BuddyService(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
     companion object {
-        // How many agent round-trips (AI reason -> backend tool -> AI reason) before we stop and
-        // answer with what we have. The AI service has its own internal search budget; this bounds
-        // only the backend-tool hops so a loop can never run unbounded.
-        //
-        // Visible to BuddyTeamService, whose loop is bounded by the same budget.
+        /**
+         * How many backend-tool round trips a turn may take before it answers with what it has; the team
+         * buddy's loop shares the budget.
+         */
         const val MAX_AGENT_STEPS = 5
 
-        // The most messages (user + assistant) the AI is ever sent; older turns reach it only
-        // through the session's running summary. 20 keeps ~10 exchanges verbatim.
-        //
-        // Visible to BuddyCompactionService, which folds back down to it. One constant, not two:
-        // a fold target disagreeing with the window it feeds leaves the prompt over budget.
+        /**
+         * The most messages the AI is ever sent; older turns reach it only through the running summary.
+         * Compaction folds back down to the same number, so the prompt stays within budget.
+         */
         const val WINDOW = 20
 
         const val FALLBACK_REPLY =
             "I wasn't able to finish answering that one — could you rephrase or add a little detail?"
 
-        // Shown when the hire is on no project. Retrieval fails closed on an empty scope, so a
-        // turn would search nothing and answer as though the project had no material — the worst
-        // possible moment to sound confident. The turn is refused instead, and the hire is told the
-        // state and the one thing that resolves it, the same way `BuddyBoardTools` tells them there
-        // is no board to put a card on.
+        /**
+         * Shown when the hire is on no project: retrieval fails closed on an empty scope, so the turn is
+         * refused rather than answered from nothing.
+         */
         const val NO_PROJECT_REPLY =
             "I can't look through your project's material yet — you're not on a project, so " +
                 "there's nothing for me to search. Once you're added to one, I'll be able to find " +
                 "its docs, code and conventions for you. If you expected to be on a project " +
                 "already, ask your project manager to add you."
-
-        // Shown when opening a visit can't reach the AI: a plain, warm welcome so the page still
-        // works and the hire can start talking.
-        const val FALLBACK_OPENING =
-            "Welcome back! How can I help with your onboarding today?"
 
         // The stream vocabulary the client switches on, plus one for the opening's suggested next
         // step. OPENING_ACTION is NOT `action_proposal`: that type is gated on the hire
@@ -743,10 +541,10 @@ class BuddyService(
         const val TOKEN = "token"
         const val DONE = "done"
 
-        // Terminal like DONE: the turn failed after its stream had started.
+        /** Terminal like DONE: the turn failed after its stream had started. */
         const val ERROR = "error"
 
-        // Team mode only: the words shown so far were not the answer after all and are to be dropped.
+        /** Team mode only: the words shown so far were not the answer and are to be dropped. */
         const val RESET = "reset"
         const val OPENING_ACTION = "opening_action"
 
@@ -755,8 +553,10 @@ class BuddyService(
         const val TOOL_USE = "tool_use"
         const val TOOL_KIND = "tool"
 
-        // Split after each space, keeping the space on the preceding chunk, so concatenating every
-        // emitted token reproduces the answer exactly (newlines and punctuation preserved).
+        /**
+         * Splits after each space, keeping the space on the preceding chunk, so the concatenated tokens
+         * reproduce the answer exactly.
+         */
         val TOKEN_CHUNK = Regex("(?<= )")
     }
 

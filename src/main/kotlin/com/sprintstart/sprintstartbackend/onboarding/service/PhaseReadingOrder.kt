@@ -55,7 +55,7 @@ internal object PhaseReadingOrder {
             indexRow(row)
         }
 
-        repeat(PASSES) {
+        repeat(PASSES) { _ ->
             for (index in 1 until rows.size) sortRow(rows[index]) { blockers[it].orEmpty() }
             for (index in rows.size - 2 downTo 0) sortRow(rows[index]) { dependents[it].orEmpty() }
         }

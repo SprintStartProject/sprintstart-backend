@@ -151,7 +151,7 @@ class GithubUpdatesService(
                 githubRepository.name,
                 transactionId,
                 false,
-                githubRepository.snapshot!!.lastIssuesSyncAt,
+                checkNotNull(githubRepository.snapshot).lastIssuesSyncAt,
             )
         }
         applicationScope.launch {
@@ -161,12 +161,11 @@ class GithubUpdatesService(
                 githubRepository.name,
                 transactionId,
                 false,
-                githubRepository.snapshot!!.lastPullRequestsSyncAt,
+                checkNotNull(githubRepository.snapshot).lastPullRequestsSyncAt,
             )
         }
-        // Not a pretty fix but it does the job.
-        // As currently the org metadata has no update management, calling this method results in the fetching being
-        // aborted, however from the ingestion run POV it succeeded, therefore unlocks the ingestion run.
+        // Org metadata has no update management: this call aborts its fetch, which the ingestion run counts
+        // as success, so the run is unlocked.
         applicationScope.launch {
             githubOrgService.connectGithubOrgIfNecessary(
                 githubRepository.owner,
@@ -202,7 +201,7 @@ class GithubUpdatesService(
                 githubRepository.name,
                 transactionId,
                 true,
-                githubRepository.snapshot!!.lastIssuesSyncAt,
+                checkNotNull(githubRepository.snapshot).lastIssuesSyncAt,
             )
         }
         applicationScope.launch {
@@ -212,12 +211,11 @@ class GithubUpdatesService(
                 githubRepository.name,
                 transactionId,
                 true,
-                githubRepository.snapshot!!.lastPullRequestsSyncAt,
+                checkNotNull(githubRepository.snapshot).lastPullRequestsSyncAt,
             )
         }
-        // Not a pretty fix but it does the job.
-        // As currently the org metadata has no update management, calling this method results in the fetching being
-        // aborted, however from the ingestion run POV it succeeded, therefore unlocks the ingestion run.
+        // Org metadata has no update management: this call aborts its fetch, which the ingestion run counts
+        // as success, so the run is unlocked.
         applicationScope.launch {
             githubOrgService.connectGithubOrgIfNecessary(
                 githubRepository.owner,

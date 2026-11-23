@@ -8,7 +8,6 @@ interface PageableResponse<S> {
     val results: List<S>
 }
 
-// Shared PageInfo object used across all paginated responses
 @Serializable
 data class PageInfo(
     val hasNextPage: Boolean,

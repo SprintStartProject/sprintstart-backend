@@ -14,7 +14,7 @@ data class GradeAnswersRequest(
 
 @Serializable
 data class GradeAnswerItem(
-    // Correlation id echoed back in the result; the backend passes the questionId.
+    /** Correlation id echoed back in the result; the backend passes the question id. */
     val id: String,
     val question: String,
     @SerialName("reference_answer")

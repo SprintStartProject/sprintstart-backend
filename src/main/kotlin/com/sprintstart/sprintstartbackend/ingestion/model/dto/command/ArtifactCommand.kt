@@ -29,7 +29,7 @@ data class GithubArtifactCommand(
     val updatedAtSource: Instant?,
     val hash: String?,
     val metadata: ArtifactMetadata,
-    // Only populated for ArtifactType.ISSUE today; null/empty for other GitHub artifact types.
+    /** Set for issues only. */
     val state: String? = null,
     val labels: List<String> = emptyList(),
     /**

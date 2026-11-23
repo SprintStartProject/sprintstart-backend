@@ -15,6 +15,6 @@ data class BitbucketRepositoryNotConnectedException(
     val slug: String? = null,
 ) : RuntimeException(
         "Repository '${workspace ?: "*"}/${slug ?: "*"}'" +
-            (id?.let { " (id: '$it')" } ?: "") +
+            (id?.let { " (id: '$it')" }.orEmpty()) +
             " not connected to this application",
     )

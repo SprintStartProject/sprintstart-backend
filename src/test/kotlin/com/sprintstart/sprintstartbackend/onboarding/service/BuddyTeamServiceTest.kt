@@ -57,7 +57,7 @@ class BuddyTeamServiceTest {
     private val service = BuddyTeamService(
         buddyTeamSessionRepository,
         buddyTeamMessageRepository,
-        onboardingAiClient,
+        BuddyOpeningStream(onboardingAiClient),
         buddyTeamTools,
         TeamAgentLoop(
             onboardingAiClient,
@@ -66,8 +66,7 @@ class BuddyTeamServiceTest {
             artifactLookupService,
         ),
         userApi,
-        buddyCompactionService,
-        CoroutineScope(Dispatchers.Unconfined),
+        BuddyCompactionScheduler(buddyCompactionService, CoroutineScope(Dispatchers.Unconfined)),
     )
 
     private val authId = "auth|pm"
@@ -858,6 +857,14 @@ class BuddyTeamServiceTest {
 
         assertThat(messages.map { it.content }).containsExactly("Hello.", "who is stuck?", "Part of ")
         assertThat(messages.last().isIncomplete).isTrue()
+    }
+
+    @Test
+    fun `shows an empty transcript before the manager has opened team mode, without creating one`() {
+        every { buddyTeamSessionRepository.findByUserIdAndProjectId(userId, projectId) } returns null
+
+        assertThat(service.getMessagesForMe(authId, projectId)).isEmpty()
+        verify(exactly = 0) { buddyTeamSessionRepository.save(any()) }
     }
 
     /**

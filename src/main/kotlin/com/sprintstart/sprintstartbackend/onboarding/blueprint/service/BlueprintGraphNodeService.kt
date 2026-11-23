@@ -192,8 +192,6 @@ class BlueprintGraphNodeService(
         )
     }
 
-//  ================ Helper methods ==================
-
     private fun dfs(currentNode: BlueprintPhase, targetNode: BlueprintPhase) {
         if (currentNode.id == targetNode.id) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Blocking cant be cyclic")

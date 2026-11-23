@@ -172,15 +172,10 @@ class GithubArtifactProviderService(
                 }
             }
 
-            // State and labels are refreshed on every fetch, regardless of the hash: an issue being
-            // closed or re-labeled doesn't move its title or body, so gating them on hash equality
-            // would silently miss exactly the updates they exist for. Neither counts as a content
-            // change -- they leave `lastChangedAt` and the run's update count alone -- but both
-            // travel in the AI payload, so they still have to reach the index.
+            // State and labels refresh on every fetch: closing or re-labelling an issue moves no text.
+            // Neither is a content change, but both travel in the AI payload.
             ArtifactType.ISSUE -> {
-                // Compared as sets: GitHub returns an issue's labels in no guaranteed order, and a
-                // list comparison would call a pure reordering a change -- putting every issue in
-                // the repository up for re-embedding on a nightly run that altered nothing.
+                // Compared as sets: GitHub returns labels in no guaranteed order.
                 val trackingChanged =
                     artifact.state != command.state ||
                         artifact.labels.toSet() != command.labels.toSet()
@@ -197,11 +192,8 @@ class GithubArtifactProviderService(
                 ArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
 
-            // Pull requests carry no content hash, so the stored title and body are compared
-            // directly. Overwriting them unconditionally, as this did before, counted every
-            // re-fetch as an update: it inflated the run's update count, re-sent unchanged pull
-            // requests to be embedded again, and would make `lastChangedAt` move on a sync that
-            // changed nothing.
+            // Pull requests carry no content hash, so title and body are compared; overwriting them would
+            // count every re-fetch as an update and re-embed it.
             ArtifactType.PULL_REQUEST -> {
                 val trackingChanged = artifact.state != command.state
                 // Refreshed on every fetch, for the same reason as an issue's state: a pull request

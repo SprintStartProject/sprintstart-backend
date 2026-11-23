@@ -70,6 +70,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the coverage gate compares with the base branch
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -84,11 +86,16 @@ jobs:
       - name: Style check with ktlint
         run: ./gradlew ktlintCheck
 
+      # detektMain adds type resolution; without it rules such as LongParameterList never run.
       - name: Code quality check with detekt
-        run: ./gradlew detekt
+        run: ./gradlew detekt detektMain
 
       - name: Run tests with coverage
-        run: ./gradlew check
+        run: ./gradlew check jacocoTestReport
+
+      - name: Coverage gate
+        if: github.event_name == 'pull_request'
+        run: bash scripts/quality/coverage-gate.sh "origin/${{ github.base_ref }}"
 
       - name: Build
         run: ./gradlew assemble

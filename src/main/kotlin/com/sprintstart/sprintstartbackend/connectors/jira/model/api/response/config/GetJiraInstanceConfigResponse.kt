@@ -14,7 +14,7 @@ internal data class GetJiraInstanceConfigResponse(
     companion object {
         internal fun of(config: JiraInstanceConfig): GetJiraInstanceConfigResponse {
             return GetJiraInstanceConfigResponse(
-                instanceUrl = config.id!!,
+                instanceUrl = checkNotNull(config.id) { "A stored Jira instance config has its URL as id" },
                 autoUpdate = config.autoUpdate,
                 spec = config.spec,
                 schedule = config.schedule,

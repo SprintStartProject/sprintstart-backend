@@ -18,6 +18,9 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.board.Checkl
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.CurrentTaskContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.LinkContent
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.NoteContent
+import com.sprintstart.sprintstartbackend.shared.ids.BoardCardId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
@@ -63,6 +66,7 @@ class BuddyBoardEditActionsTest {
 
     private val userId = UUID.randomUUID()
     private val projectId = UUID.randomUUID()
+    private val project = ProjectId(projectId)
     private val authId = "auth|hire"
     private val jwt: Jwt = mockk<Jwt>().also { every { it.subject } returns authId }
 
@@ -127,8 +131,8 @@ class BuddyBoardEditActionsTest {
 
     private fun onOneProjectWithBoard() {
         onProjects(ProjectDto(projectId, "Checkout", null))
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } answers {
+        every { boardService.hasBoard(UserId(userId), project) } returns true
+        every { boardService.getBoard(UserId(userId), project) } answers {
             BoardResponse(UUID.randomUUID(), projectId, boardCards)
         }
     }
@@ -276,7 +280,7 @@ class BuddyBoardEditActionsTest {
     @Test
     fun `proposing against a board the hire never opened reads nothing into existence`() {
         onProjects(ProjectDto(projectId, "Checkout", null))
-        every { boardService.hasBoard(userId, projectId) } returns false
+        every { boardService.hasBoard(UserId(userId), project) } returns false
 
         val outcome = service.propose(call("reorder_cards", ids(noteId)), userId)
 
@@ -309,7 +313,13 @@ class BuddyBoardEditActionsTest {
     @Test
     fun `confirming a clean-up dismisses exactly the confirmed cards on the resolved project`() = runTest {
         asHire()
-        every { boardService.dismissForBuddy(userId, projectId, listOf(noteId, linkId)) } returns 2
+        every {
+            boardService.dismissForBuddy(
+                UserId(userId),
+                project,
+                listOf(noteId, linkId).map(::BoardCardId),
+            )
+        } returns 2
 
         val result = service.perform(
             BuddyActionRequest(action = "dismiss_cards", cardIds = listOf(noteId, linkId)),
@@ -318,13 +328,21 @@ class BuddyBoardEditActionsTest {
 
         assertThat(result.ok).isTrue()
         assertThat(result.message).contains("Took 2 off your board")
-        verify { boardService.dismissForBuddy(userId, projectId, listOf(noteId, linkId)) }
+        verify {
+            boardService.dismissForBuddy(
+                UserId(userId),
+                project,
+                listOf(noteId, linkId).map(::BoardCardId),
+            )
+        }
     }
 
     @Test
     fun `confirming an order rearranges the board on the resolved project`() = runTest {
         asHire()
-        every { boardService.reorderForBuddy(userId, projectId, listOf(checklistId)) } returns 3
+        every {
+            boardService.reorderForBuddy(UserId(userId), project, listOf(checklistId).map(::BoardCardId))
+        } returns 3
 
         val result = service.perform(BuddyActionRequest(action = "reorder_cards", cardIds = listOf(checklistId)), jwt)
 
@@ -389,8 +407,8 @@ class BuddyBoardEditActionsTest {
             BoardCardOwner.HIRE,
             NoteContent(text = "x".repeat(BoardReading.NOTE_PREVIEW + 1)),
         )
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns
+        every { boardService.hasBoard(UserId(userId), project) } returns true
+        every { boardService.getBoard(UserId(userId), project) } returns
             BoardResponse(UUID.randomUUID(), projectId, listOf(longNote))
 
         val outcome = service.propose(
@@ -442,8 +460,8 @@ class BuddyBoardEditActionsTest {
                 items = List(2) { ChecklistItemResponse(id = UUID.randomUUID(), text = "Set up laptop", done = false) },
             ),
         )
-        every { boardService.hasBoard(userId, projectId) } returns true
-        every { boardService.getBoard(userId, projectId) } returns
+        every { boardService.hasBoard(UserId(userId), project) } returns true
+        every { boardService.getBoard(UserId(userId), project) } returns
             BoardResponse(UUID.randomUUID(), projectId, listOf(repeated))
 
         val outcome = service.propose(
@@ -502,7 +520,15 @@ class BuddyBoardEditActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.editAuthoredCardForBuddy(userId, projectId, noteId, capture(request), proposal.basedOn) }
+        verify {
+            boardService.editAuthoredCardForBuddy(
+                UserId(userId),
+                project,
+                BoardCardId(noteId),
+                capture(request),
+                proposal.basedOn,
+            )
+        }
         assertThat(request.captured).isEqualTo(NoteCardRequest(text = "Deploys run on Tuesdays"))
     }
 
@@ -525,9 +551,9 @@ class BuddyBoardEditActionsTest {
         val request = slot<AuthoredCardRequest>()
         verify {
             boardService.editAuthoredCardForBuddy(
-                userId,
-                projectId,
-                checklistId,
+                UserId(userId),
+                project,
+                BoardCardId(checklistId),
                 capture(request),
                 proposal.basedOn,
             )
@@ -615,7 +641,14 @@ class BuddyBoardEditActionsTest {
 
         assertThat(result.ok).isTrue()
         val request = slot<AuthoredCardRequest>()
-        verify { boardService.addAuthoredCard(userId, projectId, capture(request), BoardActor.BUDDY) }
+        verify {
+            boardService.addAuthoredCard(
+                UserId(userId),
+                project,
+                capture(request),
+                BoardActor.BUDDY,
+            )
+        }
         assertThat(request.captured).isEqualTo(LinkCardRequest(url = "https://wiki/runbook", label = "Runbook"))
     }
 

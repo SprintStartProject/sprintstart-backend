@@ -1,0 +1,2 @@
+# Violations that existed when CodeStructureTest was introduced. This list may only shrink;
+# see KnownViolations for how to update it.

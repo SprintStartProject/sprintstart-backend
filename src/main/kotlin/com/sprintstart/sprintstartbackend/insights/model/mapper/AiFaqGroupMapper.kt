@@ -41,10 +41,8 @@ class AiFaqGroupMapper {
             lastAskedAt = askedAt.maxOrNull() ?: now,
         )
 
-        // One row per ask, not per sampled phrasing. A sample carries every id asked in that
-        // exact wording, so a question repeated verbatim keeps all of its asks — each with its own
-        // timestamp, which is what the trend counts and what makes "last asked" true. Rows for ids
-        // the sampling did not cover carry no text; they exist to be counted.
+        // One row per ask, not per sampled phrasing: every ask keeps its own timestamp for the trend and for
+        // "last asked". Rows for ids the sample did not cover carry no text.
         val sampleTexts = aiGroup.questions
             .flatMap { sample ->
                 sample.ids.map { it to sample.text }

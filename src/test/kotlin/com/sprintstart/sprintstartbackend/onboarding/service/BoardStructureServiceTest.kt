@@ -15,6 +15,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.entity.CardSizePayloa
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.CardStructurePayload
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BoardStructureRepository
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import io.mockk.every
@@ -40,6 +42,7 @@ class BoardStructureServiceTest {
 
     private val userId: UUID = UUID.randomUUID()
     private val projectId: UUID = UUID.randomUUID()
+    private val project = ProjectId(projectId)
     private val board = Board(userId = userId, projectId = projectId)
 
     @BeforeEach
@@ -53,7 +56,7 @@ class BoardStructureServiceTest {
         every { boardRepository.findByUserIdAndProjectId(userId, projectId) } returns board
         every { boardStructureRepository.findByBoardId(board.id) } returns null
 
-        val read = service.read(userId, projectId)
+        val read = service.read(UserId(userId), project)
 
         // Having arranged nothing is a normal first day, not an error a client has to special-case.
         assertEquals(BoardStructurePayload(), read?.structure)
@@ -64,8 +67,8 @@ class BoardStructureServiceTest {
     fun `somebody who is not on the project gets nothing to tell apart from a missing project`() {
         every { projectMembershipApi.getProjectMembers(projectId) } returns emptyList()
 
-        assertNull(service.read(userId, projectId))
-        assertNull(service.write(userId, projectId, BoardStructurePayload()))
+        assertNull(service.read(UserId(userId), project))
+        assertNull(service.write(UserId(userId), project, BoardStructurePayload()))
     }
 
     @Test
@@ -89,14 +92,14 @@ class BoardStructureServiceTest {
         every { boardRepository.findByUserIdAndProjectId(userId, projectId) } returns board
         val stored = slot<String>()
 
-        service.write(userId, projectId, payload)
+        service.write(UserId(userId), project, payload)
         verify { boardStructureRepository.upsert(any(), board.id, capture(stored), any()) }
 
         // Read back through the same decoder the read path uses, so the test is about the stored
         // document rather than about the object that was handed in.
         every { boardStructureRepository.findByBoardId(board.id) } returns
             BoardStructure(boardId = board.id, payload = stored.captured)
-        assertEquals(payload, service.read(userId, projectId)?.structure)
+        assertEquals(payload, service.read(UserId(userId), project)?.structure)
     }
 
     @Test
@@ -108,12 +111,12 @@ class BoardStructureServiceTest {
         every { boardRepository.findByUserIdAndProjectId(userId, projectId) } returns board
         val stored = slot<String>()
 
-        service.write(userId, projectId, payload)
+        service.write(UserId(userId), project, payload)
         verify { boardStructureRepository.upsert(any(), board.id, capture(stored), any()) }
 
         every { boardStructureRepository.findByBoardId(board.id) } returns
             BoardStructure(boardId = board.id, payload = stored.captured)
-        assertEquals(payload.groups, service.read(userId, projectId)?.structure?.groups)
+        assertEquals(payload.groups, service.read(UserId(userId), project)?.structure?.groups)
     }
 
     @Test
@@ -124,7 +127,7 @@ class BoardStructureServiceTest {
 
         // The arrangement is the least important thing on the page; the worst it can do is take the
         // page down with it.
-        val read = service.read(userId, projectId)
+        val read = service.read(UserId(userId), project)
         assertEquals(BoardStructurePayload(), read?.structure)
         // And it answers as an unarranged board answers, all the way down: a client told there is
         // nothing stored and handed the moment it was stored has been given two different answers.
@@ -140,7 +143,7 @@ class BoardStructureServiceTest {
                 payload = """{"collapsedCardIds":["c1"],"somethingWeDropped":{"a":1}}""",
             )
 
-        assertEquals(listOf("c1"), service.read(userId, projectId)?.structure?.collapsedCardIds)
+        assertEquals(listOf("c1"), service.read(UserId(userId), project)?.structure?.collapsedCardIds)
     }
 
     @Test
@@ -150,7 +153,7 @@ class BoardStructureServiceTest {
 
         // A client that arranges before it reads is doing nothing wrong; refusing would make the
         // order of two unrelated calls matter.
-        assertTrue(service.write(userId, projectId, BoardStructurePayload()) != null)
+        assertTrue(service.write(UserId(userId), project, BoardStructurePayload()) != null)
         verify { boardStructureRepository.upsert(any(), board.id, any(), any()) }
     }
 
@@ -158,7 +161,7 @@ class BoardStructureServiceTest {
     fun `the write never looks before it stores`() {
         every { boardRepository.findByUserIdAndProjectId(userId, projectId) } returns board
 
-        service.write(userId, projectId, BoardStructurePayload())
+        service.write(UserId(userId), project, BoardStructurePayload())
 
         // The point of the upsert: two tabs arranging the same board for the first time used to
         // both see no row and both insert, and one of them got a constraint violation for what the
@@ -176,7 +179,8 @@ class BoardStructureServiceTest {
             marks = mapOf("c1" to listOf(CardMarkPayload("x".repeat(600_000)))),
         )
 
-        val refused = assertThrows<ResponseStatusException> { service.write(userId, projectId, huge) }
+        val refused =
+            assertThrows<ResponseStatusException> { service.write(UserId(userId), project, huge) }
 
         // What it is stored as is unbounded TEXT, and what it is read into is every prompt that
         // describes this board. A client does not get to decide how large either of those is.
@@ -195,12 +199,12 @@ class BoardStructureServiceTest {
         val payload = BoardStructurePayload(
             marks = mapOf("c1" to listOf(CardMarkPayload(color = HighlightColor.GREEN))),
         )
-        service.write(userId, projectId, payload)
+        service.write(UserId(userId), project, payload)
         verify { boardStructureRepository.upsert(any(), board.id, capture(stored), any()) }
 
         every { boardStructureRepository.findByBoardId(board.id) } returns
             BoardStructure(boardId = board.id, payload = stored.captured)
-        assertEquals(payload.marks, service.read(userId, projectId)?.structure?.marks)
+        assertEquals(payload.marks, service.read(UserId(userId), project)?.structure?.marks)
     }
 
     private fun memberOf(id: UUID): ProjectMember = ProjectMember(

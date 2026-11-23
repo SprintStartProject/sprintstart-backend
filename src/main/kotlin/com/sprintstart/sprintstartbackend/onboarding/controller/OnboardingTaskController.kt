@@ -50,8 +50,6 @@ import java.util.UUID
 class OnboardingTaskController(
     val onboardingTaskService: OnboardingTaskService,
 ) {
-//  ========================== Endpoints for users (/me/...) ==========================
-
     /**
      * Returns all tasks for one step in the authenticated user's onboarding path.
      *
@@ -238,8 +236,6 @@ class OnboardingTaskController(
     ) {
         onboardingTaskService.deleteOnboardingTaskForMe(jwt.subject, taskId)
     }
-
-//  ========================== Endpoints for admins ==========================
 
     /**
      * Returns all tasks belonging to a specific step.

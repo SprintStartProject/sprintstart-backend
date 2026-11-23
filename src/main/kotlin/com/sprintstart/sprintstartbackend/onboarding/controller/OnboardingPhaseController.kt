@@ -45,8 +45,6 @@ import java.util.UUID
 class OnboardingPhaseController(
     val onboardingPhaseService: OnboardingPhaseService,
 ) {
-//  ========================== Endpoints for users (/me/path/...) ==========================
-
     /**
      * Returns all phases in the authenticated user's onboarding path.
      *
@@ -234,8 +232,6 @@ class OnboardingPhaseController(
     ) {
         onboardingPhaseService.deleteOnboardingPhaseForMe(jwt.subject, phaseId)
     }
-
-//  ========================== Endpoints for admins (/users/{userId}/path/phases/...) ==========================
 
     /**
      * Returns all phases for a specific user's onboarding path.

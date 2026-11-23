@@ -102,8 +102,7 @@ internal class ArtifactIngestionApiService(
                             it.artifactType,
                         ) as? GithubArtifactMetadata
                     )?.repositoryFullName,
-                    // Source ids are `github:owner/name:PULL_REQUEST:<number>`, so the number is
-                    // already in the identifier and needs no extra lookup.
+                    // Source ids end in the pull request number (`github:owner/name:PULL_REQUEST:<number>`).
                     number = it.sourceId.substringAfterLast(':').toIntOrNull(),
                     title = it.title,
                     sourceUrl = it.sourceUrl,
@@ -163,9 +162,8 @@ internal class ArtifactIngestionApiService(
     override fun getOpenIssues(projectId: UUID): List<IngestedIssue> {
         return artifactRepository
             .findAllByProjectIdAndArtifactType(projectId, ArtifactType.ISSUE)
-            // Only a definite "OPEN" qualifies. A row whose state was never captured is unknown,
-            // and offering an issue that may already be finished costs a hire more than not
-            // offering one that is fine -- the same direction mining chooses.
+            // Only a definite "OPEN": offering an issue that may be finished costs a hire more than skipping
+            // one that is fine.
             .filter { OPEN_STATE.equals(it.state, ignoreCase = true) }
             .map { it.toIngestedIssue() }
     }

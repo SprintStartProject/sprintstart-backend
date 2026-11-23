@@ -136,7 +136,7 @@ class GithubArtifactMapper {
             buildString {
                 append(event.title)
                 append("|")
-                append(event.body ?: "")
+                append(event.body.orEmpty())
             }
         val hash = content.toByteArray().sha256()
         return GithubArtifactCommand(
@@ -203,8 +203,6 @@ class GithubArtifactMapper {
                     name = event.repositoryName,
                 ),
             ),
-            // GitHub reports MERGED as a state and the merge time separately; both are kept,
-            // because "closed without merging" and "merged" are different outcomes for a hire.
             state = event.state,
             authorLogin = event.author?.lowercase(),
             mergedAtSource = event.mergedAt?.let(Instant::parse),

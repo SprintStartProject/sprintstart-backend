@@ -89,7 +89,6 @@ class ArtifactAiStatusService(
 
     private fun toItem(id: UUID, aiItem: ArtifactIngestStatusAiItem): ArtifactAiStatusItemResponse {
         val status = ArtifactAiIndexStatus.fromAi(aiItem.status)
-        // UNKNOWN always carries nulls, whatever the AI sent, so it has a single meaning downstream.
         if (status == ArtifactAiIndexStatus.UNKNOWN) return unknownItem(id)
         return ArtifactAiStatusItemResponse(
             artifactId = id,

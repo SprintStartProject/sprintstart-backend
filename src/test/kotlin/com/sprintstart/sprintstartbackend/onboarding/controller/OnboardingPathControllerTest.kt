@@ -264,7 +264,7 @@ class OnboardingPathControllerTest(
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
                     .with(userJwt),
-            ).andExpect(status().isIAmATeapot)
+            ).andExpect(status().`is`(HttpStatus.I_AM_A_TEAPOT.value()))
 
         verify(exactly = 1) { onboardingGenerationRegistry.startOrAttach(authId, projectId, false, any()) }
     }
@@ -296,7 +296,7 @@ class OnboardingPathControllerTest(
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/me/path/personalize")
                     .with(userJwt),
-            ).andExpect(status().isIAmATeapot)
+            ).andExpect(status().`is`(HttpStatus.I_AM_A_TEAPOT.value()))
 
         verify(exactly = 0) { onboardingPathService.requireMayReplacePath(any(), any(), any()) }
     }
@@ -315,7 +315,7 @@ class OnboardingPathControllerTest(
             .perform(
                 post("/api/v1/projects/$projectId/onboarding/users/$userId/path/personalize")
                     .with(managerJwt),
-            ).andExpect(status().isIAmATeapot)
+            ).andExpect(status().`is`(HttpStatus.I_AM_A_TEAPOT.value()))
 
         verify(exactly = 1) { onboardingPathService.requireMayReplacePath(managerAuthId, userId, projectId) }
     }

@@ -37,7 +37,7 @@ internal class NotionWorkspaceMigration(
                     rs.getString("credential_name"),
                 )
             }
-            rows.forEach { migrate(it) }
+            rows.forEach(::migrate)
         }
     }
 

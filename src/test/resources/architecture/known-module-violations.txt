@@ -1,0 +1,112 @@
+# Module boundary violations that existed when ModuleBoundariesTest was introduced.
+# This list may only shrink; see KnownViolations for how to update it.
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueDescription
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueFields
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueStatus
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapper -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueStatusCategory
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraAuthor
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueChangelog
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueChangelogHistory
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueChangelogHistoryItem
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueComment
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueCommentBody
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueCommentField
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueFields
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueProject
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.model.mapper.JiraArtifactMapperKt -> com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueType
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunService -> com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.service.IngestionSourceStatusService -> com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
+Module 'ingestion' depends on module 'connectors' via com.sprintstart.sprintstartbackend.ingestion.service.IngestionSourceStatusService -> com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
+Module 'ingestion' depends on module 'upload' via com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient -> com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+Module 'ingestion' depends on module 'upload' via com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService -> com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+Module 'ingestion' depends on module 'upload' via com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService -> com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+Module 'ingestion' depends on module 'upload' via com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService -> com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+Module 'ingestion' depends on named interface(s) 'connectors :: confluence-events' via com.sprintstart.sprintstartbackend.ingestion.listener.confluence.ConfluenceSpaceProjectsListener -> com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
+Module 'ingestion' depends on named interface(s) 'connectors :: jira-events' via com.sprintstart.sprintstartbackend.ingestion.listener.jira.JiraInstanceProjectsListener -> com.sprintstart.sprintstartbackend.connectors.jira.external.events.projects.JiraInstanceProjectLinkChangedEvent
+Module 'ingestion' depends on named interface(s) 'connectors :: notion-events' via com.sprintstart.sprintstartbackend.ingestion.listener.notion.NotionPageProjectsListener -> com.sprintstart.sprintstartbackend.connectors.notion.external.events.projects.NotionWorkspaceConnectionDeletedEvent
+Module 'ingestion' depends on named interface(s) 'user :: api-events' via com.sprintstart.sprintstartbackend.ingestion.listener.user.ProjectDeletedListener -> com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
+Module 'insights' depends on non-exposed type com.sprintstart.sprintstartbackend.onboarding.external.BuddyQuestionApi within module 'onboarding'!
+Module 'insights' depends on non-exposed type com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent within module 'onboarding'!
+Module 'insights' depends on non-exposed type com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyQuestion within module 'onboarding'!
+Module 'onboarding' depends on non-exposed type com.sprintstart.sprintstartbackend.user.service.SessionActivityService within module 'user'!
+Module 'user' depends on non-exposed type com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi within module 'connectors'!
+cycle: config -> user -> config
+cycle: connectors -> ingestion -> connectors
+cycle: connectors -> ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> upload -> user -> connectors
+cycle: connectors -> ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> user -> connectors
+cycle: connectors -> ingestion -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> ingestion -> shared -> onboarding -> upload -> user -> connectors
+cycle: connectors -> ingestion -> shared -> onboarding -> user -> connectors
+cycle: connectors -> ingestion -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> ingestion -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> user -> connectors
+cycle: connectors -> ingestion -> upload -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> upload -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> ingestion -> upload -> shared -> onboarding -> user -> connectors
+cycle: connectors -> ingestion -> upload -> user -> connectors
+cycle: connectors -> ingestion -> upload -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> upload -> user -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> user -> connectors
+cycle: connectors -> ingestion -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> ingestion -> user -> shared -> onboarding -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion -> upload -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion -> upload -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> upload -> user -> connectors
+cycle: connectors -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> user -> connectors
+cycle: connectors -> shared -> onboarding -> connectors
+cycle: connectors -> shared -> onboarding -> ingestion -> connectors
+cycle: connectors -> shared -> onboarding -> ingestion -> upload -> user -> connectors
+cycle: connectors -> shared -> onboarding -> ingestion -> user -> connectors
+cycle: connectors -> shared -> onboarding -> insights -> ingestion -> connectors
+cycle: connectors -> shared -> onboarding -> insights -> ingestion -> upload -> user -> connectors
+cycle: connectors -> shared -> onboarding -> insights -> ingestion -> user -> connectors
+cycle: connectors -> shared -> onboarding -> insights -> user -> connectors
+cycle: connectors -> shared -> onboarding -> upload -> user -> connectors
+cycle: connectors -> shared -> onboarding -> user -> connectors
+cycle: connectors -> user -> connectors
+cycle: connectors -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> connectors
+cycle: connectors -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion -> connectors
+cycle: connectors -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion -> connectors
+cycle: connectors -> user -> shared -> onboarding -> connectors
+cycle: connectors -> user -> shared -> onboarding -> ingestion -> connectors
+cycle: connectors -> user -> shared -> onboarding -> insights -> ingestion -> connectors
+cycle: ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion
+cycle: ingestion -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> shared -> onboarding -> ingestion
+cycle: ingestion -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion
+cycle: ingestion -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> upload -> shared -> onboarding -> ingestion
+cycle: ingestion -> upload -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> upload -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion
+cycle: ingestion -> upload -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> upload -> user -> shared -> onboarding -> ingestion
+cycle: ingestion -> upload -> user -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> ingestion
+cycle: ingestion -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights -> ingestion
+cycle: ingestion -> user -> shared -> onboarding -> ingestion
+cycle: ingestion -> user -> shared -> onboarding -> insights -> ingestion
+cycle: insights -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights
+cycle: insights -> shared -> onboarding -> insights
+cycle: insights -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding -> insights
+cycle: insights -> user -> shared -> onboarding -> insights
+cycle: onboarding -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding
+cycle: onboarding -> shared -> onboarding
+cycle: onboarding -> upload -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding
+cycle: onboarding -> upload -> shared -> onboarding
+cycle: onboarding -> upload -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding
+cycle: onboarding -> upload -> user -> shared -> onboarding
+cycle: onboarding -> user -> root:com.sprintstart.sprintstartbackend -> shared -> onboarding
+cycle: onboarding -> user -> shared -> onboarding
+cycle: root:com.sprintstart.sprintstartbackend -> shared -> root:com.sprintstart.sprintstartbackend

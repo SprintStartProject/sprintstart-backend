@@ -25,16 +25,15 @@ import java.util.UUID
 class FaqQuestion(
     @Id
     val id: UUID = UUID.randomUUID(),
-    // Empty rather than null, so an existing database needs no constraint change — Hibernate's
-    // schema update adds columns but never relaxes a NOT NULL, and a nullable field here would
-    // fail on insert against a table created before it.
+    // Empty rather than null: Hibernate's schema update never relaxes a NOT NULL on an existing table.
     @Column(nullable = false, columnDefinition = "TEXT")
     val text: String,
     @Column(name = "asked_at", nullable = false)
     val askedAt: Instant = Instant.now(),
-    // The chat message this question came from. Nullable because rows written before the live path
-    // existed have no origin on record. It is what makes classification idempotent: a redelivered
-    // event must not count the same message twice.
+    /**
+     * The chat message this question came from; null for older rows. Makes classification idempotent: a
+     * redelivered event must not count a message twice.
+     */
     @Column(name = "source_message_id")
     val sourceMessageId: UUID? = null,
     @ManyToOne(optional = false)

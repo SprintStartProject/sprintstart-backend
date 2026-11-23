@@ -3,6 +3,8 @@ package com.sprintstart.sprintstartbackend.onboarding.controller
 import com.sprintstart.sprintstartbackend.onboarding.model.request.board.SaveBoardStructureRequest
 import com.sprintstart.sprintstartbackend.onboarding.model.response.board.BoardStructureResponse
 import com.sprintstart.sprintstartbackend.onboarding.service.BoardStructureService
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -22,7 +24,6 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
-import java.util.UUID
 
 /**
  * How the hire has arranged their own board.
@@ -71,7 +72,7 @@ class BoardStructureController(
     fun getMyStructure(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam projectId: UUID,
+        @RequestParam projectId: ProjectId,
     ): BoardStructureResponse =
         boardStructureService.read(resolveUserId(jwt), projectId)
             ?: throw ResponseStatusException(
@@ -105,7 +106,7 @@ class BoardStructureController(
     fun saveMyStructure(
         @Parameter(hidden = true)
         @AuthenticationPrincipal jwt: Jwt,
-        @RequestParam projectId: UUID,
+        @RequestParam projectId: ProjectId,
         @RequestBody @Valid request: SaveBoardStructureRequest,
     ): BoardStructureResponse =
         boardStructureService.write(resolveUserId(jwt), projectId, request.structure)
@@ -114,8 +115,8 @@ class BoardStructureController(
                 "You are not a member of that project",
             )
 
-    private fun resolveUserId(jwt: Jwt): UUID =
-        userApi.getUserIdByAuthId(jwt.subject).orElseThrow {
+    private fun resolveUserId(jwt: Jwt): UserId =
+        userApi.getUserIdByAuthId(jwt.subject).map(::UserId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: ${jwt.subject}")
         }
 }

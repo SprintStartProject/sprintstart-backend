@@ -1,0 +1,16 @@
+# Violations that existed when CodeStructureTest was introduced. This list may only shrink;
+# see KnownViolations for how to update it.
+ArtifactController.getArtifactContent
+ArtifactController.getProjectArtifactAiStatus
+ArtifactController.getProjectArtifacts
+BoardController.dismissCard
+BoardController.getMyBoard
+BoardStructureController.getMyStructure
+BoardStructureController.saveMyStructure
+BuddyController.getMessagesForMe
+BuddyController.sendMessageForMe
+BuddyController.streamOpenForMe
+JiraController.getInstances
+OnboardingMetricsController.getHireTimeline
+OnboardingMetricsController.getMyTimeline
+ProjectOnboardingPathController.personalizePath

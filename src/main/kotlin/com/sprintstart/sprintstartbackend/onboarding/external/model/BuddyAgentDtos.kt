@@ -17,13 +17,13 @@ import kotlinx.serialization.json.JsonObject
 data class BuddyToolCallDto(
     val id: String,
     val name: String,
-    // Opaque to the backend for a no-argument tool; round-tripped verbatim when carried back.
+    /** Opaque to the backend; carried back verbatim. */
     val arguments: JsonObject = JsonObject(emptyMap()),
 )
 
 @Serializable
 data class BuddyAgentMessageDto(
-    // One of system | user | assistant | tool.
+    /** One of system, user, assistant or tool. */
     val role: String,
     val content: String = "",
     @SerialName("tool_calls") val toolCalls: List<BuddyToolCallDto> = emptyList(),
@@ -50,7 +50,7 @@ data class BuddyAgentMessageDto(
 data class BuddyToolSpecDto(
     val name: String,
     val description: String,
-    // JSON-schema of the tool's arguments.
+    /** The JSON schema of the tool's arguments. */
     val parameters: JsonObject,
 )
 
@@ -212,10 +212,10 @@ data class BuddyOpenStreamEvent(
 
 @Serializable
 data class BuddyAgentResponse(
-    // True when [text] is the answer; false when [pendingToolCalls] must be run first.
+    /** True when [text] is the answer; false when [pendingToolCalls] must run first. */
     val final: Boolean,
     val text: String = "",
-    // The full running conversation to carry back verbatim on a resume.
+    /** The whole running conversation, carried back verbatim on a resume. */
     val messages: List<BuddyAgentMessageDto> = emptyList(),
     @SerialName("pending_tool_calls") val pendingToolCalls: List<BuddyToolCallDto> = emptyList(),
     val citations: List<BuddyCitationDto> = emptyList(),

@@ -190,8 +190,6 @@ class SkillService(
         return savedAssessment.toCreateResponse()
     }
 
-    // Api methods
-
     /**
      * Returns the active skills matching the given ids.
      *

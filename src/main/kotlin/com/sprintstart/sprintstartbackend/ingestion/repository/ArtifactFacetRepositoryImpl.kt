@@ -13,11 +13,13 @@ import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.CompoundSelection
 import jakarta.persistence.criteria.CriteriaBuilder
+import jakarta.persistence.criteria.Expression
 import jakarta.persistence.criteria.Join
 import jakarta.persistence.criteria.Nulls
 import jakarta.persistence.criteria.Order
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
+import jakarta.persistence.criteria.Selection
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
@@ -75,8 +77,6 @@ internal fun languageFacetOptions(
 
 @Repository
 @Transactional(readOnly = true)
-// One function per facet dimension plus the shared predicate/order builders; splitting them would
-// scatter the own-dimension exclusion rule that must stay identical across list and facets.
 @Suppress("TooManyFunctions")
 class ArtifactFacetRepositoryImpl(
     @PersistenceContext private val entityManager: EntityManager,
@@ -89,7 +89,6 @@ class ArtifactFacetRepositoryImpl(
     ): Page<ArtifactResponse> {
         val cb = entityManager.criteriaBuilder
 
-        // 1. Data Query (Projection - D3: does not hydrate content TEXT column)
         val query = cb.createQuery(ArtifactResponse::class.java)
         val root = query.from(Artifact::class.java)
         val projectJoin = root.join<Artifact, UUID>("projectIdsInternal")
@@ -99,7 +98,6 @@ class ArtifactFacetRepositoryImpl(
         val predicates = buildPredicates(cb, root, projectJoin, projectId, criteria, null)
         query.where(*predicates.toTypedArray())
 
-        // D2: Deterministic sort -- the requested key, then id ASC as the tie-break.
         query.orderBy(orderFor(cb, root, sort))
 
         val typedQuery = entityManager.createQuery(query)
@@ -107,7 +105,6 @@ class ArtifactFacetRepositoryImpl(
         typedQuery.maxResults = pageable.pageSize
         val items = typedQuery.resultList
 
-        // 2. Count Query
         val countQuery = cb.createQuery(Long::class.java)
         val countRoot = countQuery.from(Artifact::class.java)
         val countJoin = countRoot.join<Artifact, UUID>("projectIdsInternal")
@@ -194,34 +191,51 @@ class ArtifactFacetRepositoryImpl(
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
     ): ArtifactFacetsResponse {
-        val cb = entityManager.criteriaBuilder
         return ArtifactFacetsResponse(
-            types = computeTypeFacets(cb, projectId, criteria),
-            sources = computeSourceFacets(cb, projectId, criteria),
-            formats = computeFormatFacets(cb, projectId, criteria),
-            repositories = computeRepositoryFacets(cb, projectId, criteria),
-            languages = computeLanguageFacets(cb, projectId, criteria),
+            types = computeTypeFacets(projectId, criteria),
+            sources = computeSourceFacets(projectId, criteria),
+            formats = computeFormatFacets(projectId, criteria),
+            repositories = computeRepositoryFacets(projectId, criteria),
+            languages = computeLanguageFacets(projectId, criteria),
         )
     }
 
-    private fun computeTypeFacets(
-        cb: CriteriaBuilder,
+    /** What one facet asks of the artifacts: the columns it reads, its own conditions, and its grouping. */
+    private class FacetQuery(
+        val columns: List<Selection<*>>,
+        val conditions: List<Predicate> = emptyList(),
+        val groupBy: Expression<*>? = null,
+    )
+
+    /**
+     * The rows one facet counts from: the artifacts of [projectId] that pass every active filter but
+     * [kind]'s own — a facet that narrowed itself could never offer the other values — and the
+     * facet's own conditions.
+     */
+    private fun facetRows(
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
-    ): List<FacetCountResponse> {
-        val typeCountsMap = mutableMapOf<ArtifactType, Long>()
+        kind: FacetKind,
+        facet: (CriteriaBuilder, Root<Artifact>) -> FacetQuery,
+    ): List<Array<Any>> {
+        val cb = entityManager.criteriaBuilder
         val query = cb.createQuery(Array<Any>::class.java)
         val root = query.from(Artifact::class.java)
         val join = root.join<Artifact, UUID>("projectIdsInternal")
-        query.multiselect(
-            root.get<ArtifactType>("artifactType"),
-            cb.countDistinct(root.get<UUID>("id")),
-        )
-        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.TYPES)
-        query.where(*preds.toTypedArray())
-        query.groupBy(root.get<ArtifactType>("artifactType"))
+        val spec = facet(cb, root)
+        query.select(cb.array(*spec.columns.toTypedArray()))
+        query.where(*(buildPredicates(cb, root, join, projectId, criteria, kind) + spec.conditions).toTypedArray())
+        spec.groupBy?.let { query.groupBy(it) }
+        return entityManager.createQuery(query).resultList
+    }
 
-        for (row in entityManager.createQuery(query).resultList) {
+    private fun computeTypeFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
+        val typeCountsMap = mutableMapOf<ArtifactType, Long>()
+        val rows = facetRows(projectId, criteria, FacetKind.TYPES) { cb, root ->
+            val type = root.get<ArtifactType>("artifactType")
+            FacetQuery(listOf(type, cb.countDistinct(root.get<UUID>("id"))), groupBy = type)
+        }
+        for (row in rows) {
             val type = row[0] as ArtifactType
             val count = (row[1] as Number).toLong()
             typeCountsMap[type] = count
@@ -234,24 +248,13 @@ class ArtifactFacetRepositoryImpl(
         }
     }
 
-    private fun computeSourceFacets(
-        cb: CriteriaBuilder,
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-    ): List<FacetCountResponse> {
+    private fun computeSourceFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
         val sourceCountsMap = mutableMapOf<SourceSystem, Long>()
-        val query = cb.createQuery(Array<Any>::class.java)
-        val root = query.from(Artifact::class.java)
-        val join = root.join<Artifact, UUID>("projectIdsInternal")
-        query.multiselect(
-            root.get<SourceSystem>("sourceSystem"),
-            cb.countDistinct(root.get<UUID>("id")),
-        )
-        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.SOURCES)
-        query.where(*preds.toTypedArray())
-        query.groupBy(root.get<SourceSystem>("sourceSystem"))
-
-        for (row in entityManager.createQuery(query).resultList) {
+        val rows = facetRows(projectId, criteria, FacetKind.SOURCES) { cb, root ->
+            val source = root.get<SourceSystem>("sourceSystem")
+            FacetQuery(listOf(source, cb.countDistinct(root.get<UUID>("id"))), groupBy = source)
+        }
+        for (row in rows) {
             val source = row[0] as SourceSystem
             val count = (row[1] as Number).toLong()
             sourceCountsMap[source] = count
@@ -264,32 +267,20 @@ class ArtifactFacetRepositoryImpl(
         }
     }
 
-    private fun computeFormatFacets(
-        cb: CriteriaBuilder,
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-    ): List<FacetCountResponse> {
+    private fun computeFormatFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
         val formatCountsMap = mutableMapOf(
             UploadFormat.PDF to 0L,
             UploadFormat.MARKDOWN to 0L,
             UploadFormat.IMAGE to 0L,
             UploadFormat.OTHER to 0L,
         )
-        val query = cb.createQuery(Array<Any>::class.java)
-        val root = query.from(Artifact::class.java)
-        val join = root.join<Artifact, UUID>("projectIdsInternal")
-        query.multiselect(
-            root.get<String?>("title"),
-            root.get<String?>("sourceUrl"),
-            root.get<String>("sourceId"),
-            root.get<String?>("mime"),
-            root.get<String?>("language"),
-        )
-        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.FORMATS).toMutableList()
-        preds.add(cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD))
-        query.where(*preds.toTypedArray())
-
-        for (row in entityManager.createQuery(query).resultList) {
+        val rows = facetRows(projectId, criteria, FacetKind.FORMATS) { cb, root ->
+            FacetQuery(
+                columns = listOf("title", "sourceUrl", "sourceId", "mime", "language").map { root.get<String?>(it) },
+                conditions = listOf(cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD)),
+            )
+        }
+        for (row in rows) {
             val title = row[0] as? String
             val sourceUrl = row[1] as? String
             val sourceId = row[2] as String
@@ -314,26 +305,17 @@ class ArtifactFacetRepositoryImpl(
      * systems have a repository under the same `a/b` name, the two are one option and their counts add
      * up, which is exactly what the repository filter returns for that value.
      */
-    private fun computeRepositoryFacets(
-        cb: CriteriaBuilder,
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-    ): List<FacetCountResponse> {
+    private fun computeRepositoryFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
         val repoCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
         val orgCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
-        val query = cb.createQuery(Array<Any>::class.java)
-        val root = query.from(Artifact::class.java)
-        val join = root.join<Artifact, UUID>("projectIdsInternal")
-        query.multiselect(
-            root.get<SourceSystem>("sourceSystem"),
-            root.get<String>("sourceId"),
-            root.get<ArtifactType>("artifactType"),
-        )
-        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.REPOSITORIES).toMutableList()
-        preds.add(root.get<SourceSystem>("sourceSystem").`in`(REPOSITORY_SOURCE_SYSTEMS))
-        query.where(*preds.toTypedArray())
-
-        for (row in entityManager.createQuery(query).resultList) {
+        val rows = facetRows(projectId, criteria, FacetKind.REPOSITORIES) { _, root ->
+            val system = root.get<SourceSystem>("sourceSystem")
+            FacetQuery(
+                columns = listOf(system, root.get<String>("sourceId"), root.get<ArtifactType>("artifactType")),
+                conditions = listOf(system.`in`(REPOSITORY_SOURCE_SYSTEMS)),
+            )
+        }
+        for (row in rows) {
             val system = row[0] as SourceSystem
             val sourceId = row[1] as String
             val artifactType = row[2] as ArtifactType
@@ -376,21 +358,16 @@ class ArtifactFacetRepositoryImpl(
      * Groups by lower(language) so the counts use the same case folding as the filter predicate;
      * min(language) then picks one stored spelling to display for the group.
      */
-    private fun computeLanguageFacets(
-        cb: CriteriaBuilder,
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-    ): List<FacetCountResponse> {
-        val query = cb.createQuery(Array<Any>::class.java)
-        val root = query.from(Artifact::class.java)
-        val join = root.join<Artifact, UUID>("projectIdsInternal")
-        val language = root.get<String>("language")
-        query.multiselect(cb.least(language), cb.countDistinct(root.get<UUID>("id")))
-        val preds = buildPredicates(cb, root, join, projectId, criteria, FacetKind.LANGUAGES)
-        query.where(*(preds + cb.isNotNull(language)).toTypedArray())
-        query.groupBy(cb.lower(language))
-
-        val counted = entityManager.createQuery(query).resultList.map { row ->
+    private fun computeLanguageFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
+        val rows = facetRows(projectId, criteria, FacetKind.LANGUAGES) { cb, root ->
+            val language = root.get<String>("language")
+            FacetQuery(
+                columns = listOf(cb.least(language), cb.countDistinct(root.get<UUID>("id"))),
+                conditions = listOf(cb.isNotNull(language)),
+                groupBy = cb.lower(language),
+            )
+        }
+        val counted = rows.map { row ->
             (row[0] as String) to (row[1] as Number).toLong()
         }
         return languageFacetOptions(counted, criteria.selectedLanguages())
@@ -488,11 +465,8 @@ class ArtifactFacetRepositoryImpl(
         root: Root<Artifact>,
         format: UploadFormat,
     ): Predicate {
-        // Nullable columns fold to "" exactly as `classifyUploadFormat` does, so this predicate
-        // and the Kotlin classifier that produces the facet counts can never disagree. Without
-        // the coalesce, `NOT(OR(...))` — the OTHER bucket — evaluates to NULL rather than TRUE
-        // for a row whose mime, language and title are unset, and an upload the facet counts as
-        // OTHER would come back from the filter as nothing at all.
+        // Nullable columns fold to "" exactly as `classifyUploadFormat` does. Without the coalesce,
+        // `NOT(OR(...))` is NULL for a row with unset columns, and the OTHER bucket would match nothing.
         val titleLower = cb.coalesce(cb.lower(root.get("title")), "")
         val sourceUrlLower = cb.coalesce(cb.lower(root.get("sourceUrl")), "")
         val sourceIdLower = cb.lower(root.get("sourceId"))
@@ -680,11 +654,11 @@ class ArtifactFacetRepositoryImpl(
             mime: String?,
             language: String?,
         ): UploadFormat {
-            val titleLower = title?.lowercase() ?: ""
-            val sourceUrlLower = sourceUrl?.lowercase() ?: ""
+            val titleLower = title?.lowercase().orEmpty()
+            val sourceUrlLower = sourceUrl?.lowercase().orEmpty()
             val sourceIdLower = sourceId.lowercase()
-            val mimeLower = mime?.lowercase() ?: ""
-            val languageLower = language?.lowercase() ?: ""
+            val mimeLower = mime?.lowercase().orEmpty()
+            val languageLower = language?.lowercase().orEmpty()
 
             return when {
                 isPdf(titleLower, sourceUrlLower, sourceIdLower, mimeLower) -> UploadFormat.PDF

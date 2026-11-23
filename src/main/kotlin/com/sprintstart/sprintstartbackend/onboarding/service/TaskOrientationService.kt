@@ -74,8 +74,7 @@ class TaskOrientationService(
     transactionManager: PlatformTransactionManager,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    // The AI call is a long-running suspend operation, so it must not run inside a transaction:
-    // the work splits read-tx -> AI -> write-tx.
+    // The AI call is long-running, so it must not run inside a transaction.
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -173,11 +172,6 @@ class TaskOrientationService(
                 .onFailure { e -> logger.warn("Could not decode streamed orientation result: {}", e.message) }
                 .getOrNull()
         }
-
-    // ========================== Human authoring ==========================
-    //
-    // None of the methods below touch the AI service: authoring is pure DB work, so unlike getForHire
-    // there is no read-tx -> AI -> write-tx split, just a plain transaction.
 
     /**
      * The current orientation for a task, for a PM to author from -- the cached packet if there is one,

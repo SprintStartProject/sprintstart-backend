@@ -7,10 +7,8 @@ import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyToolSpe
 import com.sprintstart.sprintstartbackend.onboarding.model.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -157,7 +155,7 @@ class BuddyToolExecutor(
                 GET_COMPETENCIES_TO_ASSESS -> getCompetenciesToAssess(userId)
                 GET_MY_OPEN_PULL_REQUESTS -> getMyOpenPullRequests(userId)
                 GET_SUGGESTED_TASKS -> getSuggestedTasks(userId)
-                SEARCH_CANONICAL_ANSWERS -> searchCanonicalAnswers(userId, call.stringArg("query"))
+                SEARCH_CANONICAL_ANSWERS -> searchCanonicalAnswers(userId, call.textArgument("query"))
                 GET_TEAMMATES -> getTeammates(userId)
                 BuddyAppGuideTools.GET_APP_GUIDE -> buddyAppGuideTools.guideFor(userId, currentPage)
                 else -> "Unknown tool: ${call.name}."
@@ -287,7 +285,7 @@ class BuddyToolExecutor(
             appendLine("- Time from your first pull request to its first response: $it hours")
         }
         val stall = if (timeline.stalled) {
-            "yes" + (timeline.stalledReason?.let { " ($it)" } ?: "")
+            "yes" + (timeline.stalledReason?.let { " ($it)" }.orEmpty())
         } else {
             "no"
         }
@@ -441,10 +439,6 @@ class BuddyToolExecutor(
         }
         return matches.joinToString("\n\n") { "Q: ${it.question}\nA: ${it.answer}" }
     }
-
-    /** Reads a string argument the model passed to a tool, or "" when it is missing/non-text. */
-    private fun BuddyToolCallDto.stringArg(name: String): String =
-        (arguments[name] as? JsonPrimitive)?.contentOrNull.orEmpty()
 
     /**
      * Not private: [BuddySuggestionService] binds its chips to these constants, so renaming a

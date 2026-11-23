@@ -26,7 +26,7 @@ The plan should help another agent understand:
 * Use consistent file names that include the ticket or issue number when available.
 * Do not create or update ticket drafts in this mode.
 * Do not write ADRs from this mode; only mark whether an ADR is needed.
-* ADRs are handled separately by the ADR agent and belong in `./docs/adrs/`.
+* ADRs are handled separately by the ADR agent and belong in the Wiki repository's `docs/source/explanations/adrs/`.
 
 ## When to use this mode
 

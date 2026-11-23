@@ -1,28 +1,22 @@
 package com.sprintstart.sprintstartbackend.onboarding.service
 
-import com.sprintstart.sprintstartbackend.onboarding.external.OnboardingAiClient
 import com.sprintstart.sprintstartbackend.onboarding.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyAgentMessageDto
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenRequest
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyOpenStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.entity.BuddyTeamSession
-import com.sprintstart.sprintstartbackend.onboarding.model.exceptions.OnboardingAiException
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toAgentMessage
 import com.sprintstart.sprintstartbackend.onboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.onboarding.model.response.buddy.BuddyMessageResponse
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamMessageRepository
 import com.sprintstart.sprintstartbackend.onboarding.repository.BuddyTeamSessionRepository
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.UserApi
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -31,24 +25,21 @@ import java.util.UUID
 /**
  * Team mode: a project manager's buddy conversation about one project's team.
  *
- * Follows the hire's buddy ([BuddyService]) with three differences:
- * - Every entry point confirms through [UserApi.canManageProject] that the caller manages the project.
- * - Each project has its own conversation, separate from the manager's onboarding memory.
- * - The tool list is rebuilt on every hop, because `open_area` changes what the next hop may call.
+ * Every entry point confirms through [UserApi.canManageProject] that the caller manages the project. Each
+ * project has its own conversation, separate from the manager's onboarding memory. Opening a visit runs the
+ * protocol in [BuddyOpeningStream]; a reply runs [TeamAgentLoop], which rebuilds the tool list on every hop
+ * because `open_area` changes what the next hop may call.
  */
 @Service
 class BuddyTeamService(
     private val buddyTeamSessionRepository: BuddyTeamSessionRepository,
     private val buddyTeamMessageRepository: BuddyTeamMessageRepository,
-    private val onboardingAiClient: OnboardingAiClient,
+    private val openingStream: BuddyOpeningStream,
     private val buddyTeamTools: BuddyTeamTools,
     private val teamAgentLoop: TeamAgentLoop,
     private val userApi: UserApi,
-    private val buddyCompactionService: BuddyCompactionService,
-    private val applicationScope: CoroutineScope,
+    private val compactionScheduler: BuddyCompactionScheduler,
 ) {
-    private val logger = LoggerFactory.getLogger(javaClass)
-
     /**
      * Returns the current visit of the caller's team conversation about [projectId], oldest first.
      *
@@ -58,9 +49,9 @@ class BuddyTeamService(
         val userId = authorize(authId, projectId)
         val session = buddyTeamSessionRepository.findByUserIdAndProjectId(userId, projectId)
             ?: return emptyList()
-        val messages = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
-        return messages
-            .drop(messages.indexOfLast { it.opening }.takeIf { it >= 0 } ?: 0)
+        return buddyTeamMessageRepository
+            .findAllBySessionIdOrderByCreatedAtAsc(session.id)
+            .sinceLastOpening { it.opening }
             .map { it.toResponse() }
     }
 
@@ -72,54 +63,27 @@ class BuddyTeamService(
      *
      * @throws ResponseStatusException 404 if the user does not exist; 403 if they do not manage the project.
      */
-    suspend fun streamOpenForMe(authId: String, projectId: UUID): Flow<BuddyStreamEvent> {
+    fun streamOpenForMe(authId: String, projectId: UUID): Flow<BuddyStreamEvent> {
         val userId = authorize(authId, projectId)
         val session = getOrCreateSession(userId, projectId)
         val all = buddyTeamMessageRepository.findAllBySessionIdOrderByCreatedAtAsc(session.id)
 
-        val greetingAlreadyThere = all.lastOrNull()?.takeIf { it.opening }
-        if (greetingAlreadyThere != null) {
-            return flowOf(
-                BuddyStreamEvent(type = BuddyService.TOKEN, content = greetingAlreadyThere.content),
-                BuddyStreamEvent(type = BuddyService.DONE),
-            )
-        }
+        all.lastOrNull()?.takeIf { it.opening }?.let { return openingStream.replay(it.content) }
 
-        val recent = all.drop(session.summarizedCount).map { it.toAgentMessage() }
-        val state = buddyTeamTools.teamSnapshot(projectId)
-
-        return flow {
-            val streamed = StringBuilder()
-            val opening = relayOpening(
-                BuddyOpenRequest(memory = session.summary, recent = recent, state = state, teamMode = true),
-                streamed,
-            )
-            finishOpen(session, streamed.toString(), opening)
-            compactInBackground(userId, projectId)
-        }
-    }
-
-    /** Forwards the greeting as it is written; a broken stream keeps what [streamed] holds so far. */
-    private suspend fun FlowCollector<BuddyStreamEvent>.relayOpening(
-        request: BuddyOpenRequest,
-        streamed: StringBuilder,
-    ): BuddyOpenStreamEvent? {
-        var opening: BuddyOpenStreamEvent? = null
-        try {
-            onboardingAiClient.streamBuddyOpen(request).collect { event ->
-                when (event.type) {
-                    BuddyOpenStreamEvent.TOKEN -> event.content?.let {
-                        streamed.append(it)
-                        emit(BuddyStreamEvent(type = BuddyService.TOKEN, content = it))
-                    }
-
-                    BuddyOpenStreamEvent.DONE -> opening = event
-                }
-            }
-        } catch (@Suppress("SwallowedException") e: OnboardingAiException) {
-            logger.warn("Team buddy open stream failed: {}", e.message)
-        }
-        return opening
+        val request = BuddyOpenRequest(
+            memory = session.summary,
+            recent = all.drop(session.summarizedCount).map { it.toAgentMessage() },
+            state = buddyTeamTools.teamSnapshot(projectId),
+            teamMode = true,
+        )
+        return openingStream.open(
+            request,
+            OpeningConversation(
+                fallbackGreeting = FALLBACK_TEAM_OPENING,
+                saveOpening = { greeting -> saveOpening(session, greeting) },
+                afterOpening = { compactionScheduler.foldTeamConversation(UserId(userId), ProjectId(projectId)) },
+            ),
+        )
     }
 
     /**
@@ -179,7 +143,7 @@ class BuddyTeamService(
                     openedAreas = turn.areas.activeThisTurn.encoded(),
                 ),
             )
-            compactInBackground(userId, projectId)
+            compactionScheduler.foldTeamConversation(UserId(userId), ProjectId(projectId))
         }.endFailureWithErrorEvent()
     }
 
@@ -200,44 +164,15 @@ class BuddyTeamService(
         )
     }
 
-    private suspend fun FlowCollector<BuddyStreamEvent>.finishOpen(
-        session: BuddyTeamSession,
-        streamed: String,
-        opening: BuddyOpenStreamEvent?,
-    ) {
-        val greeting = opening?.greeting?.takeIf { it.isNotBlank() } ?: streamed
-
-        if (greeting.isBlank()) {
-            // Not persisted: a stored fallback would become this visit's permanent greeting.
-            emit(BuddyStreamEvent(type = BuddyService.TOKEN, content = FALLBACK_TEAM_OPENING))
-            emit(BuddyStreamEvent(type = BuddyService.DONE))
-            return
-        }
-
+    private fun saveOpening(session: BuddyTeamSession, greeting: String) {
         buddyTeamMessageRepository.save(
-            BuddyTeamMessage(
-                session = session,
-                role = BuddyMessageRole.ASSISTANT,
-                content = greeting,
-                opening = true,
-            ),
+            BuddyTeamMessage(session = session, role = BuddyMessageRole.ASSISTANT, content = greeting, opening = true),
         )
-
-        opening?.action?.let {
-            emit(BuddyStreamEvent(type = BuddyService.OPENING_ACTION, label = it.label, question = it.question))
-        }
-        emit(BuddyStreamEvent(type = BuddyService.DONE))
     }
 
     private fun getOrCreateSession(userId: UUID, projectId: UUID): BuddyTeamSession =
         buddyTeamSessionRepository.findByUserIdAndProjectId(userId, projectId)
             ?: buddyTeamSessionRepository.save(BuddyTeamSession(userId = userId, projectId = projectId))
-
-    private fun compactInBackground(userId: UUID, projectId: UUID) {
-        applicationScope.launch {
-            buddyCompactionService.compactTeamIfNeeded(userId, projectId)
-        }
-    }
 
     /** @throws ResponseStatusException 404 if the user does not exist; 403 if they do not manage the project. */
     private fun authorize(authId: String, projectId: UUID): UUID {

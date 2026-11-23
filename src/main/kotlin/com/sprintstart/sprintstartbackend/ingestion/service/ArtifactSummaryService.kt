@@ -170,7 +170,7 @@ internal class ArtifactSummaryService(
         }
         citations += PendingCitation(
             citedArtifactId = citedArtifactId,
-            filename = event.filename ?: "",
+            filename = event.filename.orEmpty(),
             sourceUrl = event.sourceUrl,
         )
         return event

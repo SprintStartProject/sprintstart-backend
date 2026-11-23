@@ -11,10 +11,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.orientation.
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -89,25 +87,18 @@ class BuddyActionService(
         val type = BuddyActionType.fromToolName(call.name)
             ?: return ProposeOutcome("Unknown action: ${call.name}.", null)
 
-        // Before the project gate, deliberately. A GitHub login is a fact about a *person*, not
-        // about a project -- the same reason `GET /me/arrival` is not project-scoped. Gating it
-        // would refuse exactly the hire most likely to be setting one: somebody on day one who has
-        // not been added to anything yet. A test pins that.
+        // Before the project gate: a GitHub login is a fact about a person, and a hire on day one may be on
+        // no project yet.
         if (type == BuddyActionType.SET_GITHUB_LOGIN) {
             return proposeGithubLogin(call, type)
         }
 
-        // Also before the project gate, and for the same reason: the competency ledger is global,
-        // so a placement is a fact about the person. Gating it would refuse the assessment to
-        // somebody on day one, who is exactly the hire it exists for.
+        // Before the project gate as well: the competency ledger is global.
         if (type == BuddyActionType.RECORD_ASSESSMENT) {
             return proposeAssessment(call, type)
         }
 
-        // Also before the project gate, and for a reason worth stating: an onboarding path belongs
-        // to a *person*. It is generated from one project's blueprint, but the path itself is not
-        // project-scoped, so gating these would refuse a hire onboarding on two projects — and they
-        // still have exactly one path, sitting on the page they are looking at.
+        // Before the project gate as well: an onboarding path belongs to a person, not to a project.
         if (buddyPathActions.handles(type)) {
             return buddyPathActions.propose(call, type, userId)
         }
@@ -129,7 +120,7 @@ class BuddyActionService(
 
         return when (type) {
             BuddyActionType.FLAG_TO_PM -> {
-                val question = call.stringArg("question").trim()
+                val question = call.textArgument("question")
                 if (question.isBlank()) {
                     ProposeOutcome(
                         "No question was provided to flag. Ask the hire what they want answered first.",
@@ -140,7 +131,7 @@ class BuddyActionService(
                 }
             }
             BuddyActionType.CLAIM_GOAL -> {
-                val taskId = call.uuidArg("task_id")
+                val taskId = call.uuidArgument("task_id")
                 if (taskId == null) {
                     ProposeOutcome(
                         "No task_id was provided. Read the suggested tasks and offer to claim one " +
@@ -175,7 +166,7 @@ class BuddyActionService(
      * them to drift.
      */
     private fun proposeGithubLogin(call: BuddyToolCallDto, type: BuddyActionType): ProposeOutcome {
-        val login = call.stringArg("login").trim()
+        val login = call.textArgument("login")
         if (login.isBlank()) {
             return ProposeOutcome(
                 "No username was provided. Ask the hire for their GitHub username before offering " +
@@ -240,7 +231,7 @@ class BuddyActionService(
      * before it becomes a record.
      */
     private fun proposeAssessment(call: BuddyToolCallDto, type: BuddyActionType): ProposeOutcome {
-        val key = call.stringArg("competency_key").trim()
+        val key = call.textArgument("competency_key")
         val label = key.takeIf { it.isNotBlank() }?.let { competencyPlacementService.labelFor(it) }
             ?: return ProposeOutcome(
                 "No competency matched “$key”. Read get_competencies_to_assess and pass a " +
@@ -248,7 +239,7 @@ class BuddyActionService(
                 null,
             )
 
-        val level = ProficiencyLevel.fromWord(call.stringArg("level"))
+        val level = ProficiencyLevel.fromWord(call.textArgument("level"))
             ?: return ProposeOutcome(
                 "That is not a level I can record. Use one of: ${ProficiencyLevel.WORDS.joinToString(", ")}.",
                 null,
@@ -299,8 +290,8 @@ class BuddyActionService(
         type: BuddyActionType,
         projectName: String,
     ): ProposeOutcome {
-        val title = call.stringArg("title").trim()
-        val attesterId = call.uuidArg("attester_id")
+        val title = call.textArgument("title")
+        val attesterId = call.uuidArgument("attester_id")
         return when {
             title.isBlank() ->
                 ProposeOutcome("No title was provided. Ask the hire what work they want confirmed.", null)
@@ -617,14 +608,6 @@ class BuddyActionService(
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId") }
 
-    /** Reads a string argument the model passed to a tool, or "" when it is missing/non-text. */
-    private fun BuddyToolCallDto.stringArg(name: String): String =
-        (arguments[name] as? JsonPrimitive)?.contentOrNull.orEmpty()
-
-    /** Reads a UUID argument the model passed to a tool, or null when it is missing/unparseable. */
-    private fun BuddyToolCallDto.uuidArg(name: String): UUID? =
-        runCatching { UUID.fromString(stringArg(name)) }.getOrNull()
-
     /** A verb phrase for the reason lines, e.g. "claim a goal", "flag this to a PM". */
     @Suppress("CyclomaticComplexMethod") // One flat branch per action type, and the enum is exhaustive.
     private fun BuddyActionType.gerund(): String =
@@ -633,20 +616,14 @@ class BuddyActionService(
             BuddyActionType.OPEN_ORIENTATION -> "open a task packet"
             BuddyActionType.CLAIM_GOAL -> "claim a goal"
             BuddyActionType.REQUEST_ATTESTATION -> "ask somebody to confirm your work"
-            // Unused in practice -- the gerund only appears in the no-project reason lines, which
-            // this action never reaches. Present because the enum is exhaustive, which is what
-            // made the compiler point at both of these when it was added.
+            // The next three never reach the no-project reason lines: they are not project-scoped.
             BuddyActionType.SET_GITHUB_LOGIN -> "save a GitHub username"
-            // Unused for the same reason: not project-scoped, so it never reaches the no-project
-            // reason lines.
             BuddyActionType.RECORD_ASSESSMENT -> "record where a chat placed you"
-            // Unused for the same reason again: a path is not project-scoped either.
             BuddyActionType.COMPLETE_STEP -> "tick a step off your path"
             BuddyActionType.COMPLETE_TASK -> "tick a line off your checklist"
             BuddyActionType.ANSWER_QUESTION -> "send an answer to a question"
             BuddyActionType.ADD_PATH_STEP -> "add a step to your path"
             BuddyActionType.REQUEST_SKIP -> "ask your PM to skip a step"
-            // The board writes: a table rather than eleven branches of the same shape.
             else -> BOARD_WRITE_GERUNDS.getValue(this)
         }
 
@@ -661,9 +638,10 @@ class BuddyActionService(
         val action: String,
         val label: String,
         val question: String?,
-        // Confirm payloads for the actions that carry one: the client echoes them back verbatim,
-        // so the target of a confirmed action is the one the buddy proposed, never one the client
-        // picked.
+        /**
+         * The goal-claim target. This and the confirm payloads below are echoed back verbatim by the client,
+         * so a confirmed action targets what the buddy proposed.
+         */
         val taskId: UUID? = null,
         val title: String? = null,
         val attesterId: String? = null,

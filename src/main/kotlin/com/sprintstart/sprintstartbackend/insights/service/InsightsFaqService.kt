@@ -49,12 +49,8 @@ class InsightsFaqService(
     private val applicationConfig: ApplicationConfig,
     transactionManager: PlatformTransactionManager,
 ) {
-    // The cache swap below deletes and re-saves in one go. Derived delete queries carry no
-    // transaction of their own — unlike the inherited deleteAll() — so without this the delete
-    // threw TransactionRequiredException as soon as there was anything to delete, which is why
-    // the first refresh of a project appeared to work and every later one failed. Wrapping both
-    // also makes the swap atomic: a failure in between would otherwise leave the panel empty.
-    // @Transactional cannot be used here, the method is suspend.
+    // The cache swap deletes and re-saves in one transaction: derived delete queries carry none of their own,
+    // and the swap must be atomic. @Transactional does not apply to suspend functions.
     private val txTemplate = TransactionTemplate(transactionManager)
 
     /**

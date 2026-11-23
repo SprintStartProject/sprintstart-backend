@@ -6,9 +6,8 @@ import com.sprintstart.sprintstartbackend.onboarding.model.response.resource.Get
 import com.sprintstart.sprintstartbackend.onboarding.model.response.task.GetOnboardingTasksResponse
 import java.util.UUID
 
-// What a `PATH_STEP` card shows. Pure mapping from the path the hire already has, kept beside
-// [BoardService] rather than inside it: the service decides which card is on the board, and this
-// only says what one of them reads as.
+// What a `PATH_STEP` card shows: a pure mapping from the hire's path. [BoardService] decides which cards are
+// on the board.
 
 /**
  * A step of the hire's path, read live — or, when [subject] no longer names one, why not.

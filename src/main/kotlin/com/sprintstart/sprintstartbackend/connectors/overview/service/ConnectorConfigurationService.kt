@@ -18,6 +18,7 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.
 import com.sprintstart.sprintstartbackend.connectors.overview.repository.ConnectorConfigurationRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
@@ -31,6 +32,7 @@ class ConnectorConfigurationService(
     private val repository: ConnectorConfigurationRepository,
     private val connectors: List<IConnector>,
     private val sourceClient: SourceClient,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ConnectorOverviewApi {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -54,7 +56,6 @@ class ConnectorConfigurationService(
         val insertables = connectorIds - savedConnectorIds
         val deletables = savedConnectorIds - connectorIds
 
-        // Insert all connectors that are defined via the `IConnector` interface but have no db entry
         insertables.forEach { connectorId ->
             repository.findById(connectorId).orElseGet {
                 logger.info("Found missing connector db entry '$connectorId' - inserting")
@@ -62,7 +63,6 @@ class ConnectorConfigurationService(
             }
         }
 
-        // Delete all connector db entries that are not defined via the `IConnector` interface anymore
         deletables.forEach { connectorId ->
             logger.info("Found deprecated connector db entry '$connectorId' - deleting")
             repository.deleteById(connectorId)
@@ -105,7 +105,7 @@ class ConnectorConfigurationService(
     suspend fun configure(connectorId: String, request: ConfigureConnectorRequest): ConfigureConnectorResponse {
         connectors.find { it.id == connectorId }
             ?: throw ConnectorNotFoundException("No connector with id $connectorId")
-        val configuration = withContext(Dispatchers.IO) {
+        val configuration = withContext(ioDispatcher) {
             repository.findById(connectorId)
         }.get()
 
@@ -118,7 +118,7 @@ class ConnectorConfigurationService(
 
         sourceClient.configureConnector(connectorId, request.enabled)
 
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             repository.save(configuration)
         }.toConfigureConnectorResponse()
     }
@@ -210,13 +210,12 @@ class ConnectorConfigurationService(
     ): PatchSourcesOfConnectorResponse {
         val result = connector
             .getSources()
-            .stream()
-            .filter { source ->
-                requestedSources.containsKey(source.id) && requestedSources[source.id] != null
-            }.map { source ->
-                connector.patchSource(source, requestedSources[source.id]!!)
-                PatchedSource(source.id, source.name, source.url, requestedSources[source.id]!!)
-            }.toList()
+            .mapNotNull { source ->
+                requestedSources[source.id]?.let { enabled ->
+                    connector.patchSource(source, enabled)
+                    PatchedSource(source.id, source.name, source.url, enabled)
+                }
+            }
 
         sourceClient.patchSources(connector.id, requestedSources)
 

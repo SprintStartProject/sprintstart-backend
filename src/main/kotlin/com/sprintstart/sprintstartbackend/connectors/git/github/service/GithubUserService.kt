@@ -123,7 +123,6 @@ class GithubUserService(
             )
         }
 
-        // Delete only if not still in use
         if (githubRepositoryConnectionRepository.findByUser(userPat).isEmpty()) {
             githubUserRepository.delete(userPat)
         } else {

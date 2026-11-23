@@ -143,8 +143,9 @@ class OnboardingMetricsService(
             .filter { it.firstResponseAt == null && it.isInFlight }
             .mapNotNull { it.openedAt }
             .minOrNull()
-        if (waitingSince != null && hoursBetween(waitingSince, now)!! >= RESPONSE_SLA_HOURS) {
-            val days = hoursBetween(waitingSince, now)!! / HOURS_PER_DAY
+        val waitingHours = hoursBetween(waitingSince, now)
+        if (waitingHours != null && waitingHours >= RESPONSE_SLA_HOURS) {
+            val days = waitingHours / HOURS_PER_DAY
             return "A ${ContributionWording.NOUN} has been waiting $days days for a first response"
         }
 

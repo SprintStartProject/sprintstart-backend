@@ -57,10 +57,10 @@ class BuddyPathStepActionTest {
     private val pathActions = BuddyPathActions(
         buddyPathTools = buddyPathTools,
         onboardingStepService = onboardingStepService,
-        onboardingStepPlacementService = onboardingStepPlacementService,
+        edits = BuddyPathEditActions(buddyPathTools, onboardingStepPlacementService),
         onboardingTaskService = onboardingTaskService,
-        questionAttemptService = questionAttemptService,
-        onboardingSkipService = onboardingSkipService,
+        questions = BuddyQuestionActions(buddyPathTools, questionAttemptService),
+        skips = BuddySkipActions(buddyPathTools, onboardingSkipService),
         userApi = userApi,
     )
 

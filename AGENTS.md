@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **Read [`AI_RULES.md`](./AI_RULES.md) first.** Its rules are binding for every AI agent and
+> override this file and the `.agent-modes/` files wherever they conflict. Claude Code loads
+> it automatically through `.claude/settings.json`; other agents must read it before starting.
+> Before you report a task as done, run `bash scripts/quality/ratchet.sh` — CI runs the same.
+
 ## Project overview
 
 This is a Kotlin/Spring Boot backend for an AI-assisted onboarding tool.
@@ -200,7 +205,7 @@ Narrate what you are doing as you go. Do not work silently and present a result 
 * Do not rename packages unnecessarily.
 * Do not move large parts of the project without need.
 * Do not ignore failing tests.
-* Do not make unrelated cleanup changes.
+* Do not make unrelated cleanup changes. Extracting shared code instead of copying it is never "unrelated".
 * Do not replace the existing architecture with a different pattern.
 * Do not mix DTOs and JPA entities.
 * Do not access another module's database repositories directly.

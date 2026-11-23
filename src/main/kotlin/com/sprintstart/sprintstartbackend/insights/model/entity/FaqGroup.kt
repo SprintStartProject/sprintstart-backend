@@ -25,22 +25,22 @@ import java.util.UUID
 class FaqGroup(
     @Id
     val id: UUID = UUID.randomUUID(),
-    // See KnowledgeGap.projectId — same lifecycle, same nullability reason.
+    /** The project this group belongs to; null only for rows from before insights were project-scoped. */
     @Column(name = "project_id")
     val projectId: UUID? = null,
     @Column(nullable = false, columnDefinition = "TEXT")
     var question: String,
     @Column(nullable = false)
     var occurrenceCount: Int,
-    // Nullable rather than defaulted: rows written before titles existed genuinely have none, and
-    // the reader falls back to [question] for those rather than inventing one.
+    /** A short title; null for older rows, where readers fall back to [question]. */
     @Column(name = "title", columnDefinition = "TEXT")
     var title: String? = null,
     @Column(name = "first_asked_at", nullable = false)
     var firstAskedAt: Instant = Instant.now(),
-    // Distinct from refreshedAt: when the group's question was last actually asked, which is what
-    // drives recency and the fading of stale topics. refreshedAt only records when this row was
-    // last written.
+    /**
+     * When the group's question was last asked, which drives recency; [refreshedAt] only records when the row
+     * was written.
+     */
     @Column(name = "last_asked_at", nullable = false)
     var lastAskedAt: Instant = Instant.now(),
     @Column(nullable = false)

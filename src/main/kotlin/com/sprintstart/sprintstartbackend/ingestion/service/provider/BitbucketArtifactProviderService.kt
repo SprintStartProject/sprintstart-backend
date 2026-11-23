@@ -158,10 +158,8 @@ class BitbucketArtifactProviderService(
                 }
             }
 
-            // Pull requests carry no content hash, so the stored title and body are compared
-            // directly. Overwriting them unconditionally would count every re-fetch as an update:
-            // it would inflate the run's update count and re-send unchanged pull requests to be
-            // embedded again.
+            // Pull requests carry no content hash, so title and body are compared; overwriting them would
+            // count every re-fetch as an update and re-embed it.
             ArtifactType.PULL_REQUEST -> {
                 val trackingChanged = artifact.state != command.state
                 // Refreshed on every fetch, for the same reason as GitHub's: a pull request being
@@ -185,9 +183,8 @@ class BitbucketArtifactProviderService(
                 BitbucketArtifactChange(content = contentChanged, tracking = trackingChanged)
             }
 
-            // Workspace metadata rots: members join and leave, display data changes. A re-fetch
-            // overwrites the stored payload so the artifact never fossilizes, and a changed payload
-            // re-indexes like any other content change — while an identical one stays quiet.
+            // Workspace metadata changes as members come and go; a re-fetch overwrites it and re-indexes only
+            // when it changed.
             ArtifactType.ORG_METADATA -> {
                 val metadata = artifactMetadataJsonMapper.toJson(command.metadata)
                 val contentChanged = artifact.metadata != metadata || artifact.title != command.title

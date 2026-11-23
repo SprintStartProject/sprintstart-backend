@@ -26,16 +26,13 @@ class KnowledgeGapResponseMapper {
             gaps = gaps.map {
                 toResponse(
                     it,
-                    ownersByComponent[it.component] ?: emptyList(),
+                    ownersByComponent[it.component].orEmpty(),
                     firstIngestedByComponent[it.component],
                 )
             },
             refreshing = refreshing,
-            // The recorded scan time is authoritative because it survives a scan that found
-            // nothing, which is exactly when the gap rows cannot answer this. Falling back to the
-            // gaps keeps projects last scanned before that record existed from reading as never
-            // scanned; the gaps are rebuilt as one set, so any row's timestamp is the set's, and
-            // taking the newest stays honest if a partial write ever left them differing.
+            // The recorded scan time wins because it survives a scan that found nothing; the newest gap
+            // stands in for projects scanned before scans were recorded.
             refreshedAt = scannedAt ?: gaps.maxOfOrNull { it.refreshedAt },
         )
     }

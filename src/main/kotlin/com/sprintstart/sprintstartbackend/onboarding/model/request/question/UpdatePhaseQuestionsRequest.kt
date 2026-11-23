@@ -21,9 +21,9 @@ data class UpdateQuestionRequest(
     val type: CheckQuestionType,
     val question: String,
     val explanation: String? = null,
-    // Only used for SHORT_TEXT questions
+    /** Used only for SHORT_TEXT questions. */
     val correctAnswer: String? = null,
-    // Only used for MULTIPLE_CHOICE questions
+    /** Used only for MULTIPLE_CHOICE questions. */
     val options: List<UpdateOptionRequest> = emptyList(),
 )
 

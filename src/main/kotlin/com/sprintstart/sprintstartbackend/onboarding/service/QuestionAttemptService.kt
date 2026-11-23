@@ -79,8 +79,6 @@ class QuestionAttemptService(
         val explanation: String?,
     )
 
-//  ========================== Methods for users ==========================
-
     /**
      * Grades and stores one answer to a question in the authenticated user's path.
      *
@@ -112,11 +110,10 @@ class QuestionAttemptService(
     ): SubmitQuestionAttemptResponse {
         val userId = resolveUserId(authId)
         val question = readTxTemplate.execute { findQuestionSnapshot(questionId, userId) }
-            ?: throw IllegalStateException("Question lookup returned no result")
         val graded = gradeQuestion(question, request)
         return txTemplate.execute {
             persistAttempt(userId, question, request, graded)
-        } ?: throw IllegalStateException("Attempt persistence returned no result")
+        }
     }
 
     /**
@@ -165,8 +162,6 @@ class QuestionAttemptService(
             onboardingCompleted = onboardingCompleted,
         )
     }
-
-//  ========================== Methods for admins ==========================
 
     /**
      * Returns the questions of a phase including correct answers, for admin-facing
@@ -255,8 +250,6 @@ class QuestionAttemptService(
             attempts = attempts.map { it.toResponse() },
         )
     }
-
-//  ========================== Helper Methods ==========================
 
     /**
      * Drops the blocker edges pointing at questions that are about to be deleted.

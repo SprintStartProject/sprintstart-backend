@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.git
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
@@ -10,6 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.Locale
 
 /**
  * The result of reading one tracked file from a clone.
@@ -66,6 +68,7 @@ class GitWorkingTree(
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
     private val config: GitConfig,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
      * Lists the repository-relative paths of every tracked file in a clone.
@@ -75,7 +78,7 @@ class GitWorkingTree(
      * @throws RuntimeException if the path is not a usable Git repository.
      */
     suspend fun trackedFiles(repositoryPath: Path): List<String> =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             gitRunner
                 .exec(repositoryPath, onDiskOperations.gitListFiles())
                 .split(NUL)
@@ -93,7 +96,7 @@ class GitWorkingTree(
         if (isBinary(relativePath)) return GitFileRead.Binary
 
         val absolutePath = repositoryPath.resolve(relativePath)
-        return withContext(Dispatchers.IO) {
+        return withContext(ioDispatcher) {
             runCatching {
                 val sizeBytes = Files.size(absolutePath)
                 if (sizeBytes > config.ingest.maxFileSizeBytes) {
@@ -137,7 +140,7 @@ class GitWorkingTree(
         }.getOrElse { e -> if (e is CharacterCodingException) null else throw e }
 
     private fun sha256(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(Locale.ROOT, it) }
 
     private companion object {
         /** Terminator used by `git ls-files -z`, which makes any file name representable. */
@@ -145,7 +148,6 @@ class GitWorkingTree(
 
         /** File types that are skipped without being read. */
         val BINARY_EXTENSIONS = setOf(
-            // images
             "png",
             "jpg",
             "jpeg",
@@ -154,27 +156,22 @@ class GitWorkingTree(
             "ico",
             "svg",
             "webp",
-            // compiled
             "class",
             "jar",
             "war",
             "ear",
-            // archives
             "zip",
             "tar",
             "gz",
             "rar",
-            // binaries
             "exe",
             "dll",
             "so",
             "dylib",
-            // media
             "mp3",
             "mp4",
             "wav",
             "avi",
-            // documents
             "pdf",
             "doc",
             "docx",

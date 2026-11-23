@@ -203,8 +203,6 @@ class BlueprintTaskService(
         blueprintTaskRepository.delete(blueprintTask)
     }
 
-    // Helper Methods
-
     private fun validateRevision(
         task: BlueprintTask,
         revision: Long,

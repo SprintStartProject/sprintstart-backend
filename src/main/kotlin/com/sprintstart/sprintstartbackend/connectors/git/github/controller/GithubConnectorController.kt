@@ -340,12 +340,9 @@ internal class GithubConnectorController(
         @PathVariable repositoryId: UUID,
         @PathVariable projectId: UUID,
     ): ResponseEntity<AddRepositoryToProjectResponse> {
-        // Two separate questions, and the service below only answers the first: may the caller
-        // write to this project, and may they see this repository at all? Linking is how a
-        // repository's artifacts reach a project, so without the second check a connection id --
-        // which source-overview responses hand out -- would be enough to pull somebody else's
-        // private repository into a project of one's own. Runs before the transactional call
-        // because it suspends.
+        // Linking pulls a repository's artifacts into the project, so the caller must also be able to see the
+        // repository; otherwise a connection id from a source overview would import somebody else's private
+        // repository. Checked before the transactional call because it suspends.
         visibilityService.requireCallerCanSeeConnection(jwt.subject, repositoryId)
 
         val projectIds = githubRepositoryProjectService.addProjectToRepository(jwt.subject, repositoryId, projectId)

@@ -35,13 +35,9 @@ class RequestBuilder(
     val rawBody: String? = null,
     val timeout: Duration? = null,
 ) {
-    // ── URI ──────────────────────────────────────────────────────────────────
-
     fun uri(uri: URI): RequestBuilder = copy(uri = uri)
 
     fun uri(uri: String): RequestBuilder = copy(uri = URI.create(uri))
-
-    // ── Headers ──────────────────────────────────────────────────────────────
 
     fun header(key: String, value: String): RequestBuilder =
         copy(headers = headers + (key to value))
@@ -51,8 +47,6 @@ class RequestBuilder(
 
     fun headers(map: Map<String, String>): RequestBuilder =
         copy(headers = headers + map)
-
-    // ── Body ─────────────────────────────────────────────────────────────────
 
     /**
      * Serializes [body] to JSON and attaches it as the request body.
@@ -71,8 +65,6 @@ class RequestBuilder(
             rawBody = body,
             headers = headers + ("Content-Type" to "application/json"),
         )
-
-    // ── Execution context selection ───────────────────────────────────────────
 
     /**
      * Returns a [SyncExecution] context for a standard request/response cycle.
@@ -93,8 +85,6 @@ class RequestBuilder(
      * Call `.perform<ChunkType>()` on the result to open the stream as a [kotlinx.coroutines.flow.Flow].
      */
     fun stream(): StreamExecution = StreamExecution(this)
-
-    // ── Internal copy helper ──────────────────────────────────────────────────
 
     @PublishedApi
     internal fun copy(

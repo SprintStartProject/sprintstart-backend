@@ -159,8 +159,6 @@ class BlueprintResourceService(
         blueprintResourceRepository.delete(blueprintResource)
     }
 
-    // Helper methods
-
     private fun validateRevision(
         resource: BlueprintResource,
         revision: Long,

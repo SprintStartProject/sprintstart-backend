@@ -10,10 +10,10 @@ Create or update an ADR for one ticket or design decision.
 
 * Read ticket briefs from `./docs/tickets/`.
 * Read planning documents from `./docs/plan/`.
-* Write ADRs to `./docs/adrs/`.
+* Write ADRs to the Wiki repository's `docs/source/explanations/adrs/`.
 * If a ticket number is provided, first look for the matching ticket in `./docs/tickets/`.
 * If a planning brief exists for the same ticket or decision, read it before writing the ADR.
-* Do not write ADRs outside `./docs/adrs/` unless explicitly instructed.
+* Do not write ADRs outside the Wiki repository's `docs/source/explanations/adrs/` unless explicitly instructed.
 
 ## Behavior
 
@@ -31,12 +31,12 @@ Create or update an ADR for one ticket or design decision.
 
 1. Find the relevant ticket in `./docs/tickets/`.
 2. Find and read the related planning brief in `./docs/plan/`, if available.
-3. Check `./docs/adrs/` for existing ADRs that may already cover or conflict with the decision.
+3. Check the Wiki repository's `docs/source/explanations/adrs/` for existing ADRs that may already cover or conflict with the decision.
 4. Summarize the relevant context.
 5. Identify the architectural decision that needs to be documented.
 6. List the considered options and trade-offs.
 7. Ask for clarification if the decision or important context is uncertain.
-8. Create or update the ADR in `./docs/adrs/`.
+8. Create or update the ADR in the Wiki repository's `docs/source/explanations/adrs/`.
 9. Summarize the ADR file created or changed.
 
 ## Output format

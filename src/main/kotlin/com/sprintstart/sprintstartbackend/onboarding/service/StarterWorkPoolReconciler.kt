@@ -78,18 +78,14 @@ class StarterWorkPoolReconciler(
         // by one: the only thing they need written is the timestamp, and that is one statement.
         val unchanged = mutableListOf<UUID>()
 
-        // One lookup for the whole pool rather than one per row. A pass reads the corpus, so the
-        // cost was never a tracker call — but on an hourly job over a growing pool, N queries to
-        // answer one question is the kind of thing that is cheap until abruptly it is not.
+        // One lookup for the whole pool rather than one per row.
         val issues = artifactIngestionApi.getIssues(rows.map { it.sourceId })
 
         rows.forEach { proposal ->
             val issue = issues[proposal.sourceId]
             if (issue == null) {
-                // The corpus no longer holds the issue — a source disconnected, or an artifact
-                // pruned. That says nothing about whether the work is still open, so the row is
-                // left exactly as it is rather than guessed at. Not even the timestamp is written:
-                // nothing was compared, so claiming a check happened would be untrue.
+                // An issue missing from the corpus says nothing about whether the work is open: the row is left
+                // as it is, timestamp included.
                 skipped++
                 return@forEach
             }
@@ -150,10 +146,7 @@ class StarterWorkPoolReconciler(
         val now = Instant.now()
         val applied = apply(proposal, issue.state, issue.hasAssignee, now)
         if (!applied.changed) {
-            // [apply] leaves an unmoved row unwritten so a full pass can stamp them in one
-            // statement. There is only one row here, so it is stamped directly — the check still
-            // happened, and a claim path that quietly stopped recording that would make
-            // `sourceCheckedAt` mean something different depending on who asked.
+            // A single row is stamped directly; the full pass stamps unmoved rows in one statement.
             starterWorkTaskProposalRepository.markSourceChecked(listOf(proposal.id), now)
         }
         return applied.transition != Transition.NONE
@@ -191,9 +184,7 @@ class StarterWorkPoolReconciler(
             Transition.NONE -> Unit
         }
         val applied = Applied(transition, assigneeChanged)
-        // A row that moved is written here and now. One that did not still owes its caller a
-        // timestamp, but not a statement of its own — the full pass collects those and stamps them
-        // together, and the single-row path below has only the one to write anyway.
+        // A moved row is written now; an unmoved one only owes its caller a timestamp.
         if (applied.changed) {
             proposal.sourceCheckedAt = now
             starterWorkTaskProposalRepository.save(proposal)

@@ -39,8 +39,6 @@ class User(
     var enabled: Boolean = true,
     @Column(nullable = true)
     var profileIcon: String? = null,
-    // Restored alongside the new model rather than replaced by it: the blueprint-era onboarding
-    // path still reads these, and this stack does not remove that feature.
     @Column(nullable = false)
     var hasCompletedOnboarding: Boolean = false,
     @OneToMany(
@@ -50,8 +48,9 @@ class User(
     )
     @BatchSize(size = 50)
     var skillAssessments: MutableSet<UserSkillAssessment> = mutableSetOf(),
-    // Stamped by SessionActivityService on authenticated request traffic; used to detect an idle
-    // gap past the configured threshold as a stand-in for a real login/session boundary.
+    /**
+     * Last authenticated request; an idle gap past the configured threshold stands in for a login boundary.
+     */
     @Column(name = "last_seen_at", nullable = true)
     var lastSeenAt: Instant? = null,
     @ElementCollection(fetch = FetchType.EAGER)
@@ -64,19 +63,19 @@ class User(
     val roles: MutableSet<Role> = mutableSetOf(),
     @Column(nullable = true)
     var avatarUrl: String? = null,
-    // The GitHub account this user contributes as. Artifact verification attributes a submitted
-    // pull request to a hire by comparing its author against this, so it is what makes the
-    // highest-rigor tier attributable at all -- see GithubLoginSource for how far it can be
-    // trusted. Null until the user (or a PM) fills it in.
+    /**
+     * The GitHub account this user contributes as; artifact verification attributes a pull request to a hire
+     * by its author (see GithubLoginSource for how far that can be trusted). Null until filled in.
+     */
     @Column(name = "github_login", nullable = true, unique = true)
     var githubLogin: String? = null,
     @Enumerated(EnumType.STRING)
     @Column(name = "github_login_source", nullable = true)
     var githubLoginSource: GithubLoginSource? = null,
-    // Whether GitHub confirmed this account exists. Null means "not checked, or the check could not
-    // run" -- an outage or a rate limit never records NOT_FOUND, because a wrong "no such account"
-    // in front of somebody whose account is fine is worse than saying nothing. Cleared whenever the
-    // login changes, so a verdict never outlives the value it was about.
+    /**
+     * Whether GitHub confirmed the account exists. Null means not checked or the check could not run: an
+     * outage never records NOT_FOUND. Cleared when the login changes.
+     */
     @Enumerated(EnumType.STRING)
     @Column(name = "github_login_verification", nullable = true)
     var githubLoginVerification: GithubLoginVerification? = null,
@@ -106,10 +105,11 @@ class User(
      */
     @Column(name = "jira_display_name", nullable = true, unique = true)
     var jiraDisplayName: String? = null,
-    // When the user opted in to having their existing work in the project's connected repositories
-    // used to calibrate their skill assessment. Null means no consent -- the default, and what
-    // revoking returns it to. Consent is the gate; the derived signal itself lives in
-    // GithubHistoryPrior and is deleted on revocation.
+    /**
+     * When the user consented to calibrating their skill assessment with their work in the project's
+     * repositories; null means no consent. The derived signal lives in GithubHistoryPrior and is deleted on
+     * revocation.
+     */
     @Column(name = "github_seeding_consent_at", nullable = true)
     var githubSeedingConsentAt: Instant? = null,
     @ManyToMany(fetch = FetchType.LAZY)
