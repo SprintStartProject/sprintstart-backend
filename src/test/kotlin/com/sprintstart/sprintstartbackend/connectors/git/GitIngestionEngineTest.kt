@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileChange
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.git.CommitFiles
+import com.sprintstart.sprintstartbackend.shared.git.GitBlame
 import com.sprintstart.sprintstartbackend.shared.git.GitChangeSet
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import com.sprintstart.sprintstartbackend.shared.git.GitConfig
@@ -17,6 +18,7 @@ import com.sprintstart.sprintstartbackend.shared.git.GitRevisionState
 import com.sprintstart.sprintstartbackend.shared.git.GitWorkingTree
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
@@ -36,6 +38,7 @@ class GitIngestionEngineTest {
     private val workingTree = mockk<GitWorkingTree>()
     private val changeSet = mockk<GitChangeSet>()
     private val gitLog = mockk<GitLog>()
+    private val gitBlame = mockk<GitBlame>()
     private val sink = mockk<GitFileSink>(relaxed = true)
 
     private val coordinates = GitRepositoryCoordinates(
@@ -52,6 +55,7 @@ class GitIngestionEngineTest {
         workingTree = workingTree,
         changeSet = changeSet,
         gitLog = gitLog,
+        gitBlame = gitBlame,
         config = GitConfig(ingest = GitIngestConfig(batchSize = batchSize)),
     )
 
@@ -59,11 +63,29 @@ class GitIngestionEngineTest {
     fun setUp() {
         coEvery { repositoryCache.getLocalRepositoryPath(coordinates) } returns repositoryPath
         coEvery { revisionState.knowsRevision(any(), any()) } returns true
+        every { gitBlame.authorLines(any(), any()) } returns emptyMap()
     }
 
     /** A tracked file that exists on disk, so the engine sees it as present. */
     private fun existingFile(relativePath: String) {
         Files.writeString(repositoryPath.resolve(relativePath), "content")
+    }
+
+    @Test
+    fun `a file that is read carries who wrote its lines`() = runTest {
+        existingFile("Main.kt")
+        coEvery { revisionState.updateLocal(repositoryPath) } returns REVISION
+        coEvery { workingTree.trackedFiles(repositoryPath) } returns listOf("Main.kt")
+        coEvery { workingTree.readFile(repositoryPath, "Main.kt") } returns GitFileRead.Text("fun main() {}", "hash")
+        every { gitBlame.authorLines(repositoryPath, "Main.kt") } returns mapOf("ada@x.org" to 1)
+
+        engine().ingestWorkingTree(coordinates, sink)
+
+        coVerify {
+            sink.onBatch(
+                match { batch -> (batch.single() as GitFileChange.Modified).authorLines == mapOf("ada@x.org" to 1) },
+            )
+        }
     }
 
     // ── full ingest ───────────────────────────────────────────────────────────

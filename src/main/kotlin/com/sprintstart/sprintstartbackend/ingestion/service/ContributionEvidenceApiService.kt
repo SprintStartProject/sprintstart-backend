@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.ReviewActivityRepository
@@ -18,6 +20,7 @@ internal class ContributionEvidenceApiService(
     private val fileChangeRepository: FileChangeRepository,
     private val reviewActivityRepository: ReviewActivityRepository,
     private val fileComplexityRepository: FileComplexityRepository,
+    private val fileAuthorshipRepository: FileAuthorshipRepository,
 ) : ContributionEvidenceApi {
     @Transactional(readOnly = true)
     override fun fileContributions(projectId: ProjectId, asOf: Instant): List<FileContribution> =
@@ -30,4 +33,8 @@ internal class ContributionEvidenceApiService(
     @Transactional(readOnly = true)
     override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> =
         if (repositories.isEmpty()) emptyList() else fileComplexityRepository.readAll(repositories)
+
+    @Transactional(readOnly = true)
+    override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> =
+        if (repositories.isEmpty()) emptyList() else fileAuthorshipRepository.readAll(repositories)
 }

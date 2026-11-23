@@ -26,4 +26,5 @@ data class GithubFileFetchedEvent(
     val path: String,
     val content: String,
     val sourceUrl: String,
+    val authorLines: Map<String, Int> = emptyMap(),
 )

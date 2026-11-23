@@ -112,6 +112,16 @@ class OnDiskOperations {
     fun gitListFiles() = ProcessBuilder("git", "ls-files", "-z")
 
     /**
+     * Constructs a `git blame` command that says who wrote each line of one file.
+     *
+     * `--line-porcelain` describes every line on its own, so the author of a line never has to be
+     * inferred from the line before it. `-w` ignores whitespace changes, and `-M -C` follow lines that
+     * were moved or copied, so a reformat or a move does not take the lines from their author.
+     */
+    fun gitBlame(relativePath: String) =
+        ProcessBuilder("git", "blame", "--line-porcelain", "-w", "-M", "-C", "--", relativePath)
+
+    /**
      * Constructs a `git log` command that reads commit metadata in [GIT_LOG_FORMAT] together with the
      * files each commit changed.
      *

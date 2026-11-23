@@ -70,6 +70,7 @@ internal class GithubFileSink(
                     path = change.relativePath,
                     content = change.content,
                     sourceUrl = fileUrl(change.relativePath, change.revision),
+                    authorLines = change.authorLines,
                 ),
             )
 

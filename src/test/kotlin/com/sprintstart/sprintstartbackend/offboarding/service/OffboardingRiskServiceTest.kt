@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
@@ -47,6 +48,8 @@ class OffboardingRiskServiceTest {
 
         override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> =
             complexities.filter { it.repository in repositories }
+
+        override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
     }
 
     private val noComplexity = FileComplexities(RecordingEvidence(emptyList()))

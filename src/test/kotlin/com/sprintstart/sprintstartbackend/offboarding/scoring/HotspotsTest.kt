@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
@@ -99,6 +100,8 @@ class HotspotsTest {
 
             override fun fileComplexities(repositories: Collection<String>) =
                 listOf(FileComplexityReading(REPOSITORY, "a.kt", 12.5, 30))
+
+            override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
         }
 
         assertThat(FileComplexities(api).of(listOf(REPOSITORY))).isEqualTo(mapOf(key("a.kt") to 12.5))

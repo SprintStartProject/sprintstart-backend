@@ -1,8 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.ReviewActivityRepository
@@ -18,7 +20,8 @@ class ContributionEvidenceApiServiceTest {
     private val repository = mockk<FileChangeRepository>()
     private val reviews = mockk<ReviewActivityRepository>()
     private val complexities = mockk<FileComplexityRepository>()
-    private val service = ContributionEvidenceApiService(repository, reviews, complexities)
+    private val authorship = mockk<FileAuthorshipRepository>()
+    private val service = ContributionEvidenceApiService(repository, reviews, complexities, authorship)
 
     @Test
     fun `reads the project's changes up to the date from the repository`() {
@@ -51,5 +54,18 @@ class ContributionEvidenceApiServiceTest {
     @Test
     fun `asks nothing when no repository is given`() {
         assertThat(service.fileComplexities(emptyList())).isEmpty()
+    }
+
+    @Test
+    fun `reads who wrote the lines of the files of the given repositories`() {
+        val rows = listOf(FileAuthorshipReading("github:acme/app", "a.kt", "ada@x.org", 12))
+        every { authorship.readAll(listOf("github:acme/app")) } returns rows
+
+        assertThat(service.fileAuthorship(listOf("github:acme/app"))).isEqualTo(rows)
+    }
+
+    @Test
+    fun `asks nothing about authors when no repository is given`() {
+        assertThat(service.fileAuthorship(emptyList())).isEmpty()
     }
 }

@@ -25,4 +25,5 @@ data class BitbucketFileFetchedEvent(
     val path: String,
     val content: String,
     val sourceUrl: String,
+    val authorLines: Map<String, Int> = emptyMap(),
 )

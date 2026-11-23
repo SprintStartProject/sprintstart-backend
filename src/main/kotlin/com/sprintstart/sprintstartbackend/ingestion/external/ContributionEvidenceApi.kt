@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.external
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
@@ -46,4 +47,14 @@ interface ContributionEvidenceApi {
      * @return One entry per measured file; empty when none was measured.
      */
     fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading>
+
+    /**
+     * How many of the lines each file of the given repositories has now each author wrote, by `git blame`.
+     *
+     * Files for which Git could not say have no entry.
+     *
+     * @param repositories The repository keys, for example `github:owner/repo`.
+     * @return One entry per file and author; empty when nothing was read.
+     */
+    fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading>
 }

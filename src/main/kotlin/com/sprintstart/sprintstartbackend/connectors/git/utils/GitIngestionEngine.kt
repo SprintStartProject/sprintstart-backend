@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.git.utils
 
+import com.sprintstart.sprintstartbackend.shared.git.GitBlame
 import com.sprintstart.sprintstartbackend.shared.git.GitChangeSet
 import com.sprintstart.sprintstartbackend.shared.git.GitConfig
 import com.sprintstart.sprintstartbackend.shared.git.GitFileRead
@@ -53,6 +54,7 @@ import java.util.concurrent.ConcurrentHashMap
  * @property workingTree Enumerates and reads tracked files.
  * @property changeSet Lists what differs between two revisions.
  * @property gitLog Reads commit metadata.
+ * @property gitBlame Says who wrote the lines of a file.
  * @property config Bounds file size, batch size and read concurrency.
  */
 @Service
@@ -62,6 +64,7 @@ class GitIngestionEngine(
     private val workingTree: GitWorkingTree,
     private val changeSet: GitChangeSet,
     private val gitLog: GitLog,
+    private val gitBlame: GitBlame,
     private val config: GitConfig,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -281,7 +284,13 @@ class GitIngestionEngine(
 
         return when (val read = workingTree.readFile(repositoryPath, relativePath)) {
             is GitFileRead.Text -> Inspection.Changed(
-                GitFileChange.Modified(relativePath, revision, read.text, read.sha256),
+                GitFileChange.Modified(
+                    relativePath,
+                    revision,
+                    read.text,
+                    read.sha256,
+                    gitBlame.authorLines(repositoryPath, relativePath),
+                ),
             )
 
             is GitFileRead.Binary -> Inspection.Skipped

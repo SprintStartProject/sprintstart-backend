@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
@@ -24,6 +25,8 @@ class ReviewEvidenceTest {
                 if (projectId == project && asOf == NOW) reviews.toList() else emptyList()
 
             override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
+
+            override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
         },
     )
 

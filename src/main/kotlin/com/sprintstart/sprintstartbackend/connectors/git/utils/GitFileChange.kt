@@ -21,12 +21,15 @@ sealed interface GitFileChange {
      * @property content The file's text content.
      * @property sha256 SHA-256 of the same bytes [content] was decoded from, so callers can use it
      *           for change detection without hashing the content a second time.
+     * @property authorLines How many of the lines each author email wrote, by `git blame`; empty when
+     *           Git could not say.
      */
     data class Modified(
         override val relativePath: String,
         override val revision: String,
         val content: String,
         val sha256: String,
+        val authorLines: Map<String, Int> = emptyMap(),
     ) : GitFileChange
 
     /** A file that is no longer part of [revision] and must be removed from the index. */
