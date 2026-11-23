@@ -16,6 +16,7 @@ query GetPRDetails($owner: String!, $name: String!, $prNumber: Int!, $commentsCu
                 state
             }
             files(first: 100) {
+                pageInfo { hasNextPage, endCursor }
                 nodes { path }
             }
             commits(first: 100) {
