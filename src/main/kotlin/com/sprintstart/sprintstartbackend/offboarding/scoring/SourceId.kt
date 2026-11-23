@@ -16,5 +16,8 @@ value class SourceId(
     companion object {
         /** The changes commits made to files. */
         val COMMITS = SourceId("commits")
+
+        /** The pull requests a person reviewed, per file. */
+        val REVIEWS = SourceId("reviews")
     }
 }

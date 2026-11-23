@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -17,6 +18,8 @@ class CommitEvidenceTest {
             val asked = projectId == project && asOf == NOW
             return if (asked) recorded else emptyList()
         }
+
+        override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
     }
 
     @Test

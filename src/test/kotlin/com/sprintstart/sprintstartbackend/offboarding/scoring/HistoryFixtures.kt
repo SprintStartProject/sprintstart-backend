@@ -20,7 +20,7 @@ private const val SECONDS_PER_DAY = 86_400L
 internal fun touch(email: String, daysAgo: Long): Touch = Touch(PersonKey.ofEmail(email), daysAgo(daysAgo))
 
 /** The evidence of who reviewed a file, a second source next to the commits. */
-internal val REVIEWS = SourceId("reviews")
+internal val REVIEWS = SourceId.REVIEWS
 
 /** One review by [email] made [daysAgo] days before [NOW]; a review cannot found a file. */
 internal fun review(email: String, daysAgo: Long): Touch =

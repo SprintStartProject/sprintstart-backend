@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.request
 
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
+import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
 import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
@@ -21,6 +22,8 @@ data class RiskRequest(
  * @property halfLifeDays Override how fast old changes fade.
  * @property inactiveAfterDays Override how long without a change makes a person count as gone.
  * @property authorThreshold Override the fraction of a file's top degree of authorship that makes an author.
+ * @property reviewWeight Let reviews count with this weight next to commits, which count 1; left out, reviews
+ *           are not used.
  * @property limit How many files to list; the summary always counts all of them.
  */
 data class RiskParameters(
@@ -29,6 +32,7 @@ data class RiskParameters(
     val halfLifeDays: Double? = null,
     val inactiveAfterDays: Long? = null,
     val authorThreshold: Double? = null,
+    val reviewWeight: Double? = null,
     val limit: Int? = null,
 ) {
     /** How many files to list. */
@@ -51,12 +55,16 @@ data class RiskParameters(
                     halfLifeDays = halfLifeDays ?: defaults.halfLifeDays,
                     inactiveAfterDays = inactiveAfterDays ?: defaults.inactiveAfterDays,
                     authorThreshold = authorThreshold ?: defaults.authorThreshold,
+                    sourceWeights = sourceWeights(),
                 ),
             )
         } catch (invalid: IllegalArgumentException) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, invalid.message, invalid)
         }
     }
+
+    private fun sourceWeights(): Map<SourceId, Double> =
+        mapOf(SourceId.COMMITS to 1.0) + listOfNotNull(reviewWeight?.let { SourceId.REVIEWS to it })
 
     private companion object {
         const val DEFAULT_LIMIT = 100

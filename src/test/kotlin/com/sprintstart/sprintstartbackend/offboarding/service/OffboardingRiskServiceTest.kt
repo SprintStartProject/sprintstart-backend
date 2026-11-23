@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.offboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.CommitEvidence
 import com.sprintstart.sprintstartbackend.offboarding.scoring.EvidenceSource
@@ -33,6 +34,8 @@ class OffboardingRiskServiceTest {
             asked += projectId to asOf
             return rows.filter { !it.changedAt.isAfter(asOf) }
         }
+
+        override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
     }
 
     private fun row(path: String, email: String, at: String) =
