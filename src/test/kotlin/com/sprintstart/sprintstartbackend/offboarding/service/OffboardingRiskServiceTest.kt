@@ -3,10 +3,15 @@ package com.sprintstart.sprintstartbackend.offboarding.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
+import com.sprintstart.sprintstartbackend.offboarding.scoring.CommitEvidence
+import com.sprintstart.sprintstartbackend.offboarding.scoring.EvidenceSource
+import com.sprintstart.sprintstartbackend.offboarding.scoring.FileHistory
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskLevel
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskScorer
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
+import com.sprintstart.sprintstartbackend.offboarding.scoring.Touch
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -40,10 +45,10 @@ class OffboardingRiskServiceTest {
     )
 
     private fun service(evidence: ContributionEvidenceApi) =
-        OffboardingRiskService(evidence, RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+        OffboardingRiskService(listOf(CommitEvidence(evidence)), RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
 
     private fun request(asOf: Instant? = null) =
-        RiskRequest(setOf(PersonKey("ada@x.org")), asOf, ScoringProfile())
+        RiskRequest(setOf(PersonKey("ada@x.org")), asOf, WeightProfile())
 
     @Test
     fun `an open date means the moment of the request`() {
@@ -67,6 +72,59 @@ class OffboardingRiskServiceTest {
         assertThat(map.asOf).isEqualTo(earlier)
         assertThat(map.files.map { it.path }).containsExactly("core.kt")
         assertThat(map.files.single().level).isEqualTo(RiskLevel.ORPHANED)
+    }
+
+    private class FixedSource(
+        override val id: SourceId,
+        private val histories: List<FileHistory>,
+    ) : EvidenceSource {
+        var reads = 0
+
+        override fun histories(projectId: ProjectId, asOf: Instant): List<FileHistory> {
+            reads++
+            return histories
+        }
+    }
+
+    private fun reviewOf(path: String, email: String) = FileHistory(
+        "github:acme/app",
+        path,
+        listOf(
+            Touch(
+                PersonKey.ofEmail(email),
+                Instant.parse("2026-10-20T00:00:00Z"),
+                SourceId("reviews"),
+                founding = false,
+            ),
+        ),
+    )
+
+    @Test
+    fun `a source the profile gives no weight is not read`() {
+        val reviews = FixedSource(SourceId("reviews"), listOf(reviewOf("core.kt", "ada@x.org")))
+        val commits = CommitEvidence(RecordingEvidence(rows))
+        val service = OffboardingRiskService(listOf(commits, reviews), RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+
+        service.riskMap(project, request())
+
+        assertThat(reviews.reads).isZero()
+    }
+
+    @Test
+    fun `sources the profile weighs are merged into one ranking`() {
+        val reviews = FixedSource(SourceId("reviews"), listOf(reviewOf("core.kt", "ada@x.org")))
+        val commits = CommitEvidence(RecordingEvidence(rows))
+        val service = OffboardingRiskService(listOf(commits, reviews), RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+        val profile = WeightProfile(sourceWeights = mapOf(SourceId.COMMITS to 1.0, SourceId("reviews") to 1.0))
+
+        val map = service.riskMap(project, RiskRequest(setOf(PersonKey("ada@x.org")), null, profile))
+
+        assertThat(reviews.reads).isEqualTo(1)
+        assertThat(
+            map.files
+                .single { it.path == "core.kt" }
+                .sourceBreakdown.keys,
+        ).containsExactlyInAnyOrder(SourceId.COMMITS, SourceId("reviews"))
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.request
 
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
@@ -10,7 +10,7 @@ import java.time.Instant
 data class RiskRequest(
     val departing: Set<PersonKey>,
     val asOf: Instant?,
-    val profile: ScoringProfile,
+    val profile: WeightProfile,
 )
 
 /**
@@ -43,7 +43,7 @@ data class RiskParameters(
     fun toRequest(): RiskRequest {
         try {
             require(leaving.isNotEmpty()) { "Name at least one leaving person with `leaving`" }
-            val defaults = ScoringProfile()
+            val defaults = WeightProfile()
             return RiskRequest(
                 departing = leaving.map(PersonKey::parse).toSet(),
                 asOf = asOf,

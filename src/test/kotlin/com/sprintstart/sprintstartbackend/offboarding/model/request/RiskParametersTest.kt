@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.request
 
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -25,7 +25,7 @@ class RiskParametersTest {
 
     @Test
     fun `settings that are not given keep their defaults`() {
-        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile).isEqualTo(ScoringProfile())
+        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile).isEqualTo(WeightProfile())
     }
 
     @Test
@@ -38,7 +38,7 @@ class RiskParametersTest {
         ).toRequest()
 
         assertThat(request.profile).isEqualTo(
-            ScoringProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.5),
+            WeightProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.5),
         )
     }
 

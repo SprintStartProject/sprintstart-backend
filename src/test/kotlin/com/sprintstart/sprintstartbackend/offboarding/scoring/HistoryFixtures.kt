@@ -19,6 +19,25 @@ private const val SECONDS_PER_DAY = 86_400L
 /** One change by [email] made [daysAgo] days before [NOW]. */
 internal fun touch(email: String, daysAgo: Long): Touch = Touch(PersonKey.ofEmail(email), daysAgo(daysAgo))
 
+/** The evidence of who reviewed a file, a second source next to the commits. */
+internal val REVIEWS = SourceId("reviews")
+
+/** One review by [email] made [daysAgo] days before [NOW]; a review cannot found a file. */
+internal fun review(email: String, daysAgo: Long): Touch =
+    Touch(PersonKey.ofEmail(email), daysAgo(daysAgo), REVIEWS, founding = false)
+
+/** A file's history from commits and reviews, each written as `email to days ago`. */
+internal fun reviewedHistory(
+    path: String,
+    commits: List<Pair<String, Long>>,
+    reviews: List<Pair<String, Long>>,
+): FileHistory = FileHistory(
+    REPOSITORY,
+    path,
+    (commits.map { (email, ago) -> touch(email, ago) } + reviews.map { (email, ago) -> review(email, ago) })
+        .sortedBy { it.at },
+)
+
 /** A file's history built from changes written as `email to days ago`, in any order. */
 internal fun history(path: String, vararg touches: Pair<String, Long>): FileHistory =
     FileHistory(REPOSITORY, path, touches.map { (email, ago) -> touch(email, ago) }.sortedBy { it.at })

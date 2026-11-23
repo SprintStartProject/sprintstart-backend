@@ -38,7 +38,8 @@ internal class Assessor(
     }
 
     private fun risk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
-        val share = history.touches.count { it.person in query.departing }.toDouble() / history.touches.size
+        val breakdown = departingShareBySource(history)
+        val share = weightedShare(breakdown)
         val activity = if (busiest > 0) activity(history) / busiest else 0.0
         return FileRisk(
             repository = history.repository,
@@ -46,11 +47,22 @@ internal class Assessor(
             level = if (remaining.isEmpty()) RiskLevel.ORPHANED else RiskLevel.HOARDED,
             score = query.profile.knowledgeWeight * share + query.profile.activityWeight * activity,
             departingShare = share,
+            sourceBreakdown = breakdown,
             recentActivity = activity,
             fragmentation = fragmentation(history),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )
+    }
+
+    private fun departingShareBySource(history: FileHistory): Map<SourceId, Double> =
+        history.touches.groupBy { it.source }.mapValues { (_, touches) ->
+            touches.count { it.person in query.departing }.toDouble() / touches.size
+        }
+
+    private fun weightedShare(breakdown: Map<SourceId, Double>): Double {
+        val weights = breakdown.keys.associateWith { query.profile.weightOf(it) }
+        return breakdown.entries.sumOf { (source, share) -> weights.getValue(source) * share } / weights.values.sum()
     }
 
     private fun activity(history: FileHistory): Double = history.touches.sumOf(authorship::weight)

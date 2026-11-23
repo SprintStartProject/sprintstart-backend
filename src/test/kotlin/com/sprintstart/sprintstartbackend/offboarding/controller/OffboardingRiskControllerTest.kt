@@ -8,7 +8,8 @@ import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskLevel
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskMap
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskSummary
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import com.sprintstart.sprintstartbackend.offboarding.service.OffboardingRiskService
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
@@ -54,6 +55,7 @@ class OffboardingRiskControllerTest {
         level = level,
         score = 0.81234,
         departingShare = 1.0,
+        sourceBreakdown = mapOf(SourceId.COMMITS to 1.0),
         recentActivity = 0.4,
         fragmentation = 0.0,
         remainingKnowers = if (level == RiskLevel.HOARDED) listOf(PersonKey("ben")) else emptyList(),
@@ -62,7 +64,7 @@ class OffboardingRiskControllerTest {
 
     private fun riskMap(vararg files: FileRisk) = RiskMap(
         asOf = asOf,
-        profile = ScoringProfile(),
+        profile = WeightProfile(),
         departing = setOf(PersonKey("ada")),
         unknownDeparting = emptySet(),
         summary = RiskSummary(files = 10, orphaned = 2, hoarded = 1, alreadyOrphaned = 3),
@@ -84,6 +86,9 @@ class OffboardingRiskControllerTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.departing[0]").value("ada"))
             .andExpect(jsonPath("$.settings.halfLifeDays").value(152.0))
+            .andExpect(jsonPath("$.settings.name").value("default"))
+            .andExpect(jsonPath("$.settings.sourceWeights.commits").value(1.0))
+            .andExpect(jsonPath("$.files[0].sourceBreakdown.commits").value(1.0))
             .andExpect(jsonPath("$.summary.files").value(10))
             .andExpect(jsonPath("$.summary.orphaned").value(2))
             .andExpect(jsonPath("$.summary.listed").value(2))
@@ -113,7 +118,7 @@ class OffboardingRiskControllerTest {
         assertThat(request.captured.departing).containsExactlyInAnyOrder(PersonKey("ada@x.org"), PersonKey("ben"))
         assertThat(request.captured.asOf).isEqualTo(Instant.parse("2026-05-01T00:00:00Z"))
         assertThat(request.captured.profile)
-            .isEqualTo(ScoringProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.6))
+            .isEqualTo(WeightProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.6))
     }
 
     @Test

@@ -5,7 +5,7 @@ import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 
 class AuthorshipTest {
-    private fun authors(file: FileHistory, profile: ScoringProfile = ScoringProfile()) =
+    private fun authors(file: FileHistory, profile: WeightProfile = WeightProfile()) =
         Authorship(profile, NOW).authorsOf(file).map { it.value }
 
     @Test
@@ -46,7 +46,7 @@ class AuthorshipTest {
             *repeated("xia@x.org", 5, 1_100),
             *repeated("yan@x.org", 5, 20),
         )
-        val noFading = ScoringProfile(halfLifeDays = 1_000_000.0)
+        val noFading = WeightProfile(halfLifeDays = 1_000_000.0)
 
         assertThat(authors(file, noFading)).contains("xia@x.org")
         assertThat(authors(file)).doesNotContain("xia@x.org").contains("yan@x.org")
@@ -61,19 +61,19 @@ class AuthorshipTest {
 
     @Test
     fun `a change made now counts fully`() {
-        assertThat(Authorship(ScoringProfile(), NOW).weight(Touch(PersonKey("a"), NOW))).isEqualTo(1.0)
+        assertThat(Authorship(WeightProfile(), NOW).weight(Touch(PersonKey("a"), NOW))).isEqualTo(1.0)
     }
 
     @Test
     fun `a change counts half after one half-life`() {
-        val profile = ScoringProfile(halfLifeDays = 100.0)
+        val profile = WeightProfile(halfLifeDays = 100.0)
 
         assertThat(Authorship(profile, NOW).weight(touch("a@x.org", 100))).isEqualTo(0.5, within(1e-9))
     }
 
     @Test
     fun `a change dated after the date counts fully instead of growing`() {
-        assertThat(Authorship(ScoringProfile(), NOW).weight(touch("a@x.org", -30))).isEqualTo(1.0)
+        assertThat(Authorship(WeightProfile(), NOW).weight(touch("a@x.org", -30))).isEqualTo(1.0)
     }
 
     @Test
@@ -81,6 +81,6 @@ class AuthorshipTest {
         val file = history("a.kt", "ada@x.org" to 10, *repeated("ben@x.org", 5, 10))
 
         assertThat(authors(file)).containsExactlyInAnyOrder("ada@x.org", "ben@x.org")
-        assertThat(authors(file, ScoringProfile(authorThreshold = 0.99))).containsExactly("ada@x.org")
+        assertThat(authors(file, WeightProfile(authorThreshold = 0.99))).containsExactly("ada@x.org")
     }
 }

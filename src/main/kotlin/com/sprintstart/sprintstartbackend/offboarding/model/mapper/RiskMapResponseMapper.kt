@@ -6,7 +6,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSetting
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSummaryResponse
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileRisk
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskMap
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import kotlin.math.round
 
 private const val THOUSAND = 1000.0
@@ -30,12 +30,14 @@ fun RiskMap.toResponse(limit: Int): RiskMapResponse {
     )
 }
 
-private fun ScoringProfile.toResponse() = RiskSettingsResponse(
+private fun WeightProfile.toResponse() = RiskSettingsResponse(
     halfLifeDays = halfLifeDays,
     inactiveAfterDays = inactiveAfterDays,
     authorThreshold = authorThreshold,
     knowledgeWeight = knowledgeWeight,
     activityWeight = activityWeight,
+    name = name,
+    sourceWeights = sourceWeights.mapKeys { it.key.value }.toSortedMap(),
 )
 
 private fun FileRisk.toResponse() = FileRiskResponse(
@@ -44,6 +46,7 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     level = level.name,
     score = rounded(score),
     departingShare = rounded(departingShare),
+    sourceBreakdown = sourceBreakdown.mapKeys { it.key.value }.mapValues { rounded(it.value) }.toSortedMap(),
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
     remainingKnowers = remainingKnowers.map { it.value },

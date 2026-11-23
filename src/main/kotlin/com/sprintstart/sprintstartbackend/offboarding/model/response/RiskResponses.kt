@@ -19,6 +19,8 @@ data class RiskSettingsResponse(
     val authorThreshold: Double,
     val knowledgeWeight: Double,
     val activityWeight: Double,
+    val name: String,
+    val sourceWeights: Map<String, Double>,
 )
 
 /** How many files fall in each class; `listed` is how many of the at-risk files `files` carries. */
@@ -37,6 +39,7 @@ data class FileRiskResponse(
     val level: String,
     val score: Double,
     val departingShare: Double,
+    val sourceBreakdown: Map<String, Double>,
     val recentActivity: Double,
     val fragmentation: Double,
     val remainingKnowers: List<String>,

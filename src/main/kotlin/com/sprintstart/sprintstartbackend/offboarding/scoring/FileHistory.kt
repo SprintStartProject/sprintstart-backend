@@ -3,10 +3,17 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import java.time.Instant
 
-/** One person changing a file at one moment. */
+/**
+ * One person doing something to a file at one moment.
+ *
+ * @property source The kind of evidence that recorded it.
+ * @property founding Whether this can be the creation of the file. A review cannot found a file.
+ */
 data class Touch(
     val person: PersonKey,
     val at: Instant,
+    val source: SourceId = SourceId.COMMITS,
+    val founding: Boolean = true,
 )
 
 /**
@@ -26,10 +33,29 @@ class FileHistory(
         val seen = touches.filter { !it.at.isAfter(asOf) }
         return if (seen.isEmpty()) null else FileHistory(repository, path, seen)
     }
+
+    /**
+     * The history as it stood at [asOf], with only the evidence [profile] gives weight to, or `null`
+     * when nothing is left.
+     */
+    fun seenBy(profile: WeightProfile, asOf: Instant): FileHistory? {
+        val counted = touches.filter { !it.at.isAfter(asOf) && profile.weightOf(it.source) > 0 }
+        return if (counted.isEmpty()) null else FileHistory(repository, path, counted)
+    }
 }
 
 /** Builds file histories from the recorded changes. */
 object FileHistories {
+    /**
+     * Joins the histories several sources have of the same files into one history per file.
+     *
+     * Files are matched by repository and latest path; the touches of all sources are kept in time order.
+     */
+    fun merge(bySource: List<List<FileHistory>>): List<FileHistory> =
+        bySource.flatten().groupBy { it.repository to it.path }.map { (file, parts) ->
+            FileHistory(file.first, file.second, parts.flatMap { it.touches }.sortedBy { it.at })
+        }
+
     /**
      * Groups changes into one history per file, following renames so a moved file keeps its past.
      *
@@ -54,7 +80,9 @@ private class TrackedFiles {
         val id = idFor(row)
         idByPath[row.path] = id
         pathById[id] = row.path
-        touchesById.getOrPut(id) { mutableListOf() }.add(Touch(PersonKey.ofEmail(row.authorEmail), row.changedAt))
+        touchesById
+            .getOrPut(id) { mutableListOf() }
+            .add(Touch(PersonKey.ofEmail(row.authorEmail), row.changedAt, SourceId.COMMITS))
     }
 
     fun histories(repository: String): List<FileHistory> =

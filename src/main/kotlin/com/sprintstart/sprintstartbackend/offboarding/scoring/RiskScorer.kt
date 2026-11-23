@@ -16,7 +16,7 @@ class RiskScorer {
      * Files that nobody active knew before, and files that keep two or more authors, are only counted.
      */
     fun score(histories: List<FileHistory>, query: DepartureQuery): RiskMap {
-        val visible = histories.mapNotNull { it.knownAt(query.asOf) }
+        val visible = histories.mapNotNull { it.seenBy(query.profile, query.asOf) }
         val assessor = Assessor(query, visible)
         val assessments = visible.map(assessor::assess)
         val atRisk = assessments.filterIsInstance<Assessment.AtRisk>().map { it.risk }

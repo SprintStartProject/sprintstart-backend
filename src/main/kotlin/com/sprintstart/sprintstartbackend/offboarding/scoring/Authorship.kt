@@ -22,20 +22,23 @@ private const val MILLIS_PER_DAY = 86_400_000.0
  * that are re-added.
  */
 class Authorship(
-    private val profile: ScoringProfile,
+    private val profile: WeightProfile,
     private val asOf: Instant,
 ) {
-    /** How much one change still counts: 1 for a change made now, halving every half-life. */
+    /**
+     * How much one touch still counts: the weight of its source for a touch made now, halving every
+     * half-life.
+     */
     fun weight(touch: Touch): Double {
         val ageDays = Duration.between(touch.at, asOf).toMillis().coerceAtLeast(0) / MILLIS_PER_DAY
-        return 0.5.pow(ageDays / profile.halfLifeDays)
+        return profile.weightOf(touch.source) * 0.5.pow(ageDays / profile.halfLifeDays)
     }
 
     /** The people who count as authors of [history]'s file. */
     fun authorsOf(history: FileHistory): Set<PersonKey> {
         val own = history.touches.groupBy({ it.person }, { weight(it) }).mapValues { it.value.sum() }
         val total = own.values.sum()
-        val creator = history.touches.first().person
+        val creator = history.touches.firstOrNull { it.founding }?.person
         val degrees = own.mapValues { (person, mine) -> degree(person == creator, mine, total - mine) }
         val best = degrees.values.max()
         return degrees.filter { (person, degree) -> isAuthor(degree, best, person == creator) }.keys
