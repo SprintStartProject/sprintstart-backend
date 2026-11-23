@@ -14,11 +14,14 @@ import java.time.Clock
 @Service
 class OffboardingRiskService(
     private val sources: List<EvidenceSource>,
+    private val links: IdentityLinkService,
     private val scorer: RiskScorer,
     private val clock: Clock,
 ) {
     /**
      * Simulates a departure over a project's recorded history.
+     *
+     * Identities a manager confirmed as one person count as one, both in the history and among the leaving.
      *
      * @param projectId The project whose repositories are read.
      * @param request Who leaves and how to weigh the evidence; the date defaults to now.
@@ -26,7 +29,9 @@ class OffboardingRiskService(
     fun riskMap(projectId: ProjectId, request: RiskRequest): RiskMap {
         val asOf = request.asOf ?: clock.instant()
         val weighed = sources.filter { request.profile.weightOf(it.id) > 0 }
-        val histories = FileHistories.merge(weighed.map { it.histories(projectId, asOf) })
-        return scorer.score(histories, DepartureQuery(request.departing, asOf, request.profile))
+        val identities = links.identities(projectId)
+        val histories = FileHistories.merge(weighed.map { it.histories(projectId, asOf) }).map(identities::resolve)
+        val departing = identities.resolve(request.departing)
+        return scorer.score(histories, DepartureQuery(departing, asOf, request.profile))
     }
 }
