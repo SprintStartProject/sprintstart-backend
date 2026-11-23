@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion
 
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import java.util.UUID
 
 /**
@@ -27,7 +28,7 @@ interface NotionArtifactIngestionApi {
     fun failRun(runId: UUID, failureReason: String)
 
     /** Records one isolated page failure without aborting the remaining workspace run. */
-    fun recordPageFailure(runId: UUID, sourceId: String, sourceUrl: String?, reason: String)
+    fun recordPageFailure(runId: UUID, sourceId: SourceId, sourceUrl: String?, reason: String)
 
     /** Removes one page artifact and its indexed chunks from a project while retaining canonical data. */
     suspend fun unlinkPage(runId: UUID, projectId: UUID, connectionId: UUID, pageId: String)

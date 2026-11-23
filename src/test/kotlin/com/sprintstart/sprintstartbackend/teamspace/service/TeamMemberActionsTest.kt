@@ -2,6 +2,10 @@ package com.sprintstart.sprintstartbackend.teamspace.service
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionDraft
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionHandler
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
+import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
 import com.sprintstart.sprintstartbackend.user.external.ProjectMember
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.ProjectRoleApi

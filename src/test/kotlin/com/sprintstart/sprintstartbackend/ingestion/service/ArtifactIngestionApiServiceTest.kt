@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.mockk
@@ -208,7 +209,7 @@ class ArtifactIngestionApiServiceTest {
         val artifact = issue(sourceId = "github:owner/repo:ISSUE:7", state = "OPEN").apply { hasAssignee = true }
         every { artifactRepository.findBySourceId("github:owner/repo:ISSUE:7") } returns artifact
 
-        val result = service.getIssue("github:owner/repo:ISSUE:7")
+        val result = service.getIssue(SourceId("github:owner/repo:ISSUE:7"))
 
         assertEquals("OPEN", result?.state)
         assertEquals(true, result?.hasAssignee)
@@ -229,14 +230,14 @@ class ArtifactIngestionApiServiceTest {
         )
         every { artifactRepository.findBySourceId("github:owner/repo:PULL_REQUEST:7") } returns pullRequest
 
-        assertNull(service.getIssue("github:owner/repo:PULL_REQUEST:7"))
+        assertNull(service.getIssue(SourceId("github:owner/repo:PULL_REQUEST:7")))
     }
 
     @Test
     fun `getIssue returns null when nothing with that source id is ingested`() {
         every { artifactRepository.findBySourceId("github:owner/repo:ISSUE:404") } returns null
 
-        assertNull(service.getIssue("github:owner/repo:ISSUE:404"))
+        assertNull(service.getIssue(SourceId("github:owner/repo:ISSUE:404")))
     }
 
     private fun issue(

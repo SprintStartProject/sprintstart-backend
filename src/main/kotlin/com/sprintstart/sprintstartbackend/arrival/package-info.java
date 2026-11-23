@@ -6,7 +6,7 @@
 @ApplicationModule(
         allowedDependencies = {
                 "shared :: ids", "shared :: annotations", "user :: api", "user :: api-enum", "user :: api-events",
-                "ingestion :: api", "ingestion :: api.model", "connectors :: api"
+                "ingestion :: api", "ingestion :: api.model", "connectors :: api", "assistant :: api"
         }
 )
 package com.sprintstart.sprintstartbackend.arrival;

@@ -45,3 +45,20 @@ The kernel goes to L0, so features may depend on it to contribute tools.
 - The kernel must stay small and stable, because every feature depends on it. Its size is tracked.
 - The hand-written dispatch in `BuddyActionService` and its relatives disappears. Until then, the
   two patterns (router and registry) coexist.
+
+## Outcome (2026-10-22)
+
+Implemented in #252–#265; [04-migration](../architecture/04-migration.md) lists the PRs.
+
+- **The kernel sits in L1, not L0.** It turned out to need the platform: the agent loop reads users,
+  ingestion and uploads. Features are in L2 and above, so they can still contribute tools.
+- **The SPI comes in three shapes.** `HireTool` is a hire's read tool. `HireAction` is a hire's
+  propose/perform action, scoped to the person or to their one project. The team registry
+  (`TeamArea`, `TypedTeamAction`) is team mode's. Each feature contributes them from
+  `<feature>/assistant/`, ordered by `HireToolOrder`/`HireActionOrder`.
+- **The hire side is complete.** `BuddyToolExecutor` and `BuddyActionService` only mount the beans,
+  and `BuddyActionService` resolves the project in front of the project-scoped ones. `BuddyActionType`
+  is gone. `set_github_login` is still a Buddy bean, because `user` sits below the kernel.
+- **Two team areas stay in `teamspace` because of the layering.** The content area reads both path
+  and starter work, and path may not depend on starter work. The members area would need `user`
+  above the kernel.

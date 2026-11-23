@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.starterwork.service
 
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.ids.StarterWorkTaskId
 import com.sprintstart.sprintstartbackend.starterwork.external.StarterWorkPoolApi
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
@@ -26,7 +27,7 @@ class StarterWorkPool(
     override fun taskOn(taskId: StarterWorkTaskId?, projectId: ProjectId): StarterWorkTaskProposalResponse? =
         taskId
             ?.let { starterWorkTaskProposalRepository.findById(it.value).orElse(null) }
-            ?.takeIf { starterWorkScope.covers(it.sourceId, projectId.value) }
+            ?.takeIf { starterWorkScope.covers(SourceId(it.sourceId), projectId.value) }
             ?.toResponse()
 
     /** The live pool task [taskId] names, if its repository is linked to [projectId]. */
@@ -55,9 +56,9 @@ class StarterWorkPool(
 
     /** The status of the task made from the issue [source] names, or null when none was. */
     @Transactional(readOnly = true)
-    override fun statusOf(source: String): ProposalStatus? =
-        starterWorkTaskProposalRepository.findBySourceId(source)?.status
+    override fun statusOf(source: SourceId): ProposalStatus? =
+        starterWorkTaskProposalRepository.findBySourceId(source.value)?.status
 
-    override fun covers(sourceId: String, projectId: ProjectId): Boolean =
+    override fun covers(sourceId: SourceId, projectId: ProjectId): Boolean =
         starterWorkScope.covers(sourceId, projectId.value)
 }

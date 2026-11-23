@@ -5,6 +5,10 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyProposalRisk
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyProposalStatus
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionDraft
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionHandler
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
+import com.sprintstart.sprintstartbackend.assistant.external.TeamToolContext
 import com.sprintstart.sprintstartbackend.assistant.model.entity.BuddyActionProposal
 import com.sprintstart.sprintstartbackend.assistant.repository.BuddyActionProposalRepository
 import com.sprintstart.sprintstartbackend.assistant.service.ActionProposalStore

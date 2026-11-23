@@ -14,6 +14,8 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.assistant.external.ConversationCompaction
 import com.sprintstart.sprintstartbackend.assistant.external.FALLBACK_REPLY
+import com.sprintstart.sprintstartbackend.assistant.external.HireActionOutcome
+import com.sprintstart.sprintstartbackend.assistant.external.HireActionProposal
 import com.sprintstart.sprintstartbackend.assistant.external.ResolvedArtifact
 import com.sprintstart.sprintstartbackend.buddy.client.BuddyAiClient
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
@@ -1322,9 +1324,9 @@ class BuddyServiceTest {
             )
             every { buddyActionService.isAction("open_orientation") } returns true
             every { buddyActionService.propose(actionCall, userId) } returns
-                BuddyActionService.ProposeOutcome(
+                HireActionOutcome(
                     toolResult = "Proposed to the hire; awaiting confirmation.",
-                    proposal = BuddyActionService.BuddyActionProposal(
+                    proposal = HireActionProposal(
                         action = "open_orientation",
                         label = "Open the task packet",
                         question = null,
@@ -1391,9 +1393,9 @@ class BuddyServiceTest {
                 )
                 every { buddyActionService.isAction("request_attestation") } returns true
                 every { buddyActionService.propose(actionCall, userId) } returns
-                    BuddyActionService.ProposeOutcome(
+                    HireActionOutcome(
                         toolResult = "Proposed to the hire; awaiting confirmation.",
-                        proposal = BuddyActionService.BuddyActionProposal(
+                        proposal = HireActionProposal(
                             action = "request_attestation",
                             label = "Ask them to confirm this",
                             question = null,
@@ -1942,7 +1944,7 @@ class BuddyServiceTest {
         /** One turn in which the AI calls [actionCall] and the action service answers with [outcome]. */
         private suspend fun eventsForAction(
             actionCall: BuddyToolCallDto,
-            outcome: BuddyActionService.ProposeOutcome,
+            outcome: HireActionOutcome,
         ): List<BuddyStreamEvent> {
             val session = BuddySession(userId = userId, title = "session")
             stageConversation(session)
@@ -1966,7 +1968,7 @@ class BuddyServiceTest {
             runTest {
                 val call = BuddyToolCallDto(id = "call_0", name = "add_path_step")
                 val ids = List(3) { UUID.randomUUID() }
-                val proposal = BuddyActionService.BuddyActionProposal(
+                val proposal = HireActionProposal(
                     action = "add_path_step",
                     label = "Add this step to your path",
                     question = null,
@@ -1975,7 +1977,7 @@ class BuddyServiceTest {
                     unlocksIds = listOf(ids[2]),
                 )
 
-                val event = eventsForAction(call, BuddyActionService.ProposeOutcome("Proposed.", proposal))
+                val event = eventsForAction(call, HireActionOutcome("Proposed.", proposal))
                     .single { it.type == "action_proposal" }
 
                 assertThat(event.optionIds).containsExactly(ids[0].toString())
@@ -1987,13 +1989,13 @@ class BuddyServiceTest {
         fun `a proposal leaves out the id lists it does not use`() =
             runTest {
                 val call = BuddyToolCallDto(id = "call_0", name = "flag_to_pm")
-                val proposal = BuddyActionService.BuddyActionProposal(
+                val proposal = HireActionProposal(
                     action = "flag_to_pm",
                     label = "Flag this to your PM",
                     question = "When is the freeze?",
                 )
 
-                val event = eventsForAction(call, BuddyActionService.ProposeOutcome("Proposed.", proposal))
+                val event = eventsForAction(call, HireActionOutcome("Proposed.", proposal))
                     .single { it.type == "action_proposal" }
 
                 assertThat(event.optionIds).isNull()
@@ -2005,7 +2007,7 @@ class BuddyServiceTest {
         fun `an action that cannot be proposed shows no proposal and the turn still answers`() =
             runTest {
                 val call = BuddyToolCallDto(id = "call_0", name = "flag_to_pm")
-                val refused = BuddyActionService.ProposeOutcome("No question was provided to flag.", null)
+                val refused = HireActionOutcome("No question was provided to flag.", null)
 
                 val events = eventsForAction(call, refused)
 

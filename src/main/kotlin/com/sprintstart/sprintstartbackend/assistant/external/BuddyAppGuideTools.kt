@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.user.external.UserApi
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -33,9 +34,21 @@ import java.util.UUID
  * drifted from the frontend would mislead, never let anybody in.
  */
 @Component
+@Order(HireToolOrder.APP_GUIDE)
 class BuddyAppGuideTools(
     private val userApi: UserApi,
-) {
+) : HireTool {
+    override val spec = GET_APP_GUIDE_SPEC
+
+    /** "This page" is the one the chip was pressed on: the client sends it with the message. */
+    override val suggestion = HireToolSuggestion(
+        label = "What can I do here?",
+        question = "What can I do on this page?",
+    )
+
+    override fun execute(call: BuddyToolCallDto, context: HireToolContext): String =
+        guideFor(context.hire.value, context.currentPage)
+
     /**
      * The guide for [userId], naming the page they are on when [currentPage] is known.
      *

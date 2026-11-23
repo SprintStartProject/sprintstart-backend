@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.N
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionSyncedPage
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -107,7 +108,7 @@ class NotionWorkspaceIngestionServiceTest {
         verify {
             api.recordPageFailure(
                 result.runId,
-                notionPageSourceId(connection.id, "parent"),
+                SourceId(notionPageSourceId(connection.id, "parent")),
                 any(),
                 "Notion page content could not be fetched",
             )

@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
+import com.sprintstart.sprintstartbackend.assistant.external.TeamArea
 import com.sprintstart.sprintstartbackend.blueprint.external.enums.StepType
 import com.sprintstart.sprintstartbackend.path.external.enums.GenerationStatus
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus

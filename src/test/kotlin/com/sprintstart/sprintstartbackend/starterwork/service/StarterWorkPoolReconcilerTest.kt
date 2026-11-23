@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.starterwork.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.starterwork.external.model.PoolReconciliation
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.StarterWorkTaskProposal
@@ -299,7 +300,7 @@ class StarterWorkPoolReconcilerTest {
         @Test
         fun `a closed issue goes stale and says so`() {
             val row = proposal()
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "CLOSED")
+            every { artifactIngestionApi.getIssue(SourceId(row.sourceId)) } returns issue(state = "CLOSED")
 
             assertTrue(reconciler.reconcileOne(row))
             assertEquals(ProposalStatus.STALE, row.status)
@@ -308,7 +309,7 @@ class StarterWorkPoolReconcilerTest {
         @Test
         fun `an open issue changes nothing and says so`() {
             val row = proposal()
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "OPEN")
+            every { artifactIngestionApi.getIssue(SourceId(row.sourceId)) } returns issue(state = "OPEN")
 
             assertEquals(false, reconciler.reconcileOne(row))
             assertEquals(ProposalStatus.LIVE, row.status)
@@ -322,7 +323,7 @@ class StarterWorkPoolReconcilerTest {
         @Test
         fun `an unmoved row still records that it was checked`() {
             val row = proposal()
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns issue(state = "OPEN")
+            every { artifactIngestionApi.getIssue(SourceId(row.sourceId)) } returns issue(state = "OPEN")
 
             reconciler.reconcileOne(row)
 
@@ -341,7 +342,7 @@ class StarterWorkPoolReconcilerTest {
         @Test
         fun `an issue the corpus lost leaves the row alone`() {
             val row = proposal()
-            every { artifactIngestionApi.getIssue(row.sourceId) } returns null
+            every { artifactIngestionApi.getIssue(SourceId(row.sourceId)) } returns null
 
             assertEquals(false, reconciler.reconcileOne(row))
             assertEquals(ProposalStatus.LIVE, row.status)

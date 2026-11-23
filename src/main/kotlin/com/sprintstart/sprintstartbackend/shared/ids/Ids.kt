@@ -109,3 +109,12 @@ value class SkipId(
 value class FeedbackId(
     val value: UUID,
 )
+
+/**
+ * Where an artifact or issue came from, as ingestion keys it: `github:<owner>/<repo>:<TYPE>:<unique>`, a
+ * Jira, Confluence or Notion key, or `authored:` for a task a person wrote.
+ */
+@JvmInline
+value class SourceId(
+    val value: String,
+)

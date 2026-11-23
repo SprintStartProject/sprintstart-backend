@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionAp
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.TaskSourceArtifact
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.shared.ai.AiServiceException
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.OrientationAiClient
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationOrigin
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationStep
@@ -96,7 +97,7 @@ class TaskOrientationServiceTest {
         isMember()
         every { currentTaskReader.currentTaskFor(hireId, projectId) } returns proposal
         every { proposalRepository.findById(proposal.id) } returns Optional.of(proposal)
-        every { artifactIngestionApi.getTaskSource(proposal.sourceId) } returns null
+        every { artifactIngestionApi.getTaskSource(SourceId(proposal.sourceId)) } returns null
         every { packetRepository.findByTaskProposalIdAndProjectId(proposal.id, projectId) } returns cached
         every { packetRepository.save(any()) } answers { firstArg() }
     }
@@ -300,7 +301,7 @@ class TaskOrientationServiceTest {
     @Test
     fun `assembles from the issue's own words and labels, not the mined summary`() = runTest {
         hasTask()
-        every { artifactIngestionApi.getTaskSource(proposal.sourceId) } returns
+        every { artifactIngestionApi.getTaskSource(SourceId(proposal.sourceId)) } returns
             TaskSourceArtifact(
                 title = "Stale cache header on /api/v1/reports",
                 body = "The header is set at boot and never refreshed.",

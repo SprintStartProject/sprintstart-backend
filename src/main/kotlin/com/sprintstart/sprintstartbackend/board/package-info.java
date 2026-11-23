@@ -10,7 +10,7 @@
                 "path :: api", "path :: api-model", "path :: api-enums", "path :: api-responses",
                 "arrival :: api", "arrival :: api-model", "arrival :: api-enums", "arrival :: api-responses",
                 "starterwork :: api", "starterwork :: api-enums", "starterwork :: api-events",
-                "starterwork :: api-model", "starterwork :: api-responses"
+                "starterwork :: api-model", "starterwork :: api-responses", "assistant :: api"
         }
 )
 package com.sprintstart.sprintstartbackend.board;

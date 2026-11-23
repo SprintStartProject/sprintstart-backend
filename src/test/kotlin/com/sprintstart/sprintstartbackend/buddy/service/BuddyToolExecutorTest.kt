@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.buddy.service
 
+import com.sprintstart.sprintstartbackend.arrival.assistant.ArrivalStepsTool
+import com.sprintstart.sprintstartbackend.arrival.assistant.TeammatesTool
 import com.sprintstart.sprintstartbackend.arrival.external.enums.Rigor
 import com.sprintstart.sprintstartbackend.arrival.model.entity.ArrivalStep
 import com.sprintstart.sprintstartbackend.arrival.service.ArrivalStepService
@@ -7,17 +9,24 @@ import com.sprintstart.sprintstartbackend.arrival.service.ArrivalSteps
 import com.sprintstart.sprintstartbackend.arrival.service.ResolvedArrivalStep
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyAppGuideTools
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
-import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.board.assistant.OpenPullRequestsTool
 import com.sprintstart.sprintstartbackend.board.service.OpenPullRequestReader
-import com.sprintstart.sprintstartbackend.board.service.hireBoardOver
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.AuthoredPullRequest
+import com.sprintstart.sprintstartbackend.insights.assistant.MyMetricsTool
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.metrics.HireTimelineResponse
 import com.sprintstart.sprintstartbackend.insights.service.InsightsReadService
 import com.sprintstart.sprintstartbackend.insights.service.OnboardingMetricsService
+import com.sprintstart.sprintstartbackend.knowledge.assistant.CanonicalAnswersTool
 import com.sprintstart.sprintstartbackend.knowledge.model.response.knowledge.CanonicalAnswerResponse
 import com.sprintstart.sprintstartbackend.knowledge.service.HireKnowledgeService
 import com.sprintstart.sprintstartbackend.knowledge.service.KnowledgeBaseService
+import com.sprintstart.sprintstartbackend.path.assistant.MyPathTool
+import com.sprintstart.sprintstartbackend.path.external.HirePathApi
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
+import com.sprintstart.sprintstartbackend.starterwork.assistant.CompetenciesToAssessTool
+import com.sprintstart.sprintstartbackend.starterwork.assistant.MyCompetenciesTool
+import com.sprintstart.sprintstartbackend.starterwork.assistant.SuggestedTasksTool
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.CompetencyKind
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.CompetencySource
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
@@ -36,6 +45,7 @@ import com.sprintstart.sprintstartbackend.user.external.dto.ProjectDto
 import com.sprintstart.sprintstartbackend.user.external.dto.UserDto
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
@@ -54,8 +64,7 @@ class BuddyToolExecutorTest {
     private val userApi: UserApi = mockk {
         every { getGithubLoginByUserId(any()) } returns "sam"
     }
-    private val buddyBoardTools: BuddyBoardTools = mockk(relaxed = true)
-    private val buddyAppGuideTools: BuddyAppGuideTools = mockk()
+    private val buddyAppGuideTools: BuddyAppGuideTools = spyk(BuddyAppGuideTools(userApi))
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val projectMembershipApi: ProjectMembershipApi = mockk()
 
@@ -71,33 +80,38 @@ class BuddyToolExecutorTest {
         every { topicsFor(any()) } returns emptyList()
     }
 
-    // Pathless, and explicitly rather than relaxed: a relaxed mock would put an empty greeting
-    // section into the snapshot these cases assert on.
-    private val buddyPathTools: BuddyPathTools = mockk {
-        every { toolSpecs(any()) } returns emptyList()
-        every { snapshotFor(any()) } returns null
-        every { handles(any()) } returns false
+    // Pathless by default: every case here is about a tool that reads something other than the
+    // onboarding path, and "no path" is what keeps the path tool out of their expectations. Explicitly
+    // rather than relaxed: a relaxed mock would put an empty greeting section into the snapshot.
+    private val hirePathApi: HirePathApi = mockk {
+        every { hasPath(any()) } returns false
+        every { pathOf(any()) } returns null
     }
+    private val myPathTool: MyPathTool = spyk(MyPathTool(hirePathApi))
 
+    private val hireStarterWork = hireStarterWorkOver(
+        starterWorkTaskProposalService = starterWorkTaskProposalService,
+        myCompetencyService = myCompetencyService,
+        competencyPlacementService = competencyPlacementService,
+    )
+
+    // The real tools, in their @Order order, over the same mocks: these cases are about what the
+    // buddy is handed and what it reads, wherever the tool now lives.
     private val executor = BuddyToolExecutor(
-        InsightsReadService(onboardingMetricsService, mockk()),
-        hireStarterWorkOver(
-            starterWorkTaskProposalService = starterWorkTaskProposalService,
-            myCompetencyService = myCompetencyService,
-            competencyPlacementService = competencyPlacementService,
+        listOf(
+            myPathTool,
+            ArrivalStepsTool(ArrivalSteps(arrivalStepService)),
+            MyMetricsTool(userApi, InsightsReadService(onboardingMetricsService, mockk())),
+            MyCompetenciesTool(hireStarterWork),
+            CompetenciesToAssessTool(hireStarterWork),
+            // The real reader, not a mock: which pull requests count as open and which one leads are
+            // its judgements, and these tests are about the buddy still reporting them.
+            OpenPullRequestsTool(userApi, OpenPullRequestReader(artifactIngestionApi)),
+            SuggestedTasksTool(userApi, hireStarterWork),
+            CanonicalAnswersTool(HireKnowledgeService(knowledgeBaseService)),
+            TeammatesTool(userApi, projectMembershipApi),
+            buddyAppGuideTools,
         ),
-        HireKnowledgeService(knowledgeBaseService),
-        userApi,
-        buddyBoardTools,
-        // The real reader, not a mock: which pull requests count as open and which one leads are
-        // its judgements now, and these tests are about the buddy still reporting them.
-        hireBoardOver(openPullRequestReader = OpenPullRequestReader(artifactIngestionApi)),
-        projectMembershipApi,
-        ArrivalSteps(arrivalStepService),
-        // Pathless by default: every case here is about a tool that reads something other than the
-        // onboarding path, and "no path" is what keeps the path tool out of their expectations.
-        buddyPathTools,
-        buddyAppGuideTools,
     )
 
     private val userId = UUID.randomUUID()
@@ -324,9 +338,7 @@ class BuddyToolExecutorTest {
      */
     @Test
     fun `the path comes first, and arrival before every other hire-state tool`() {
-        every { buddyPathTools.toolSpecs(userId) } returns listOf(
-            BuddyToolSpecDto(name = "get_my_onboarding_path", description = "", parameters = buildJsonObject { }),
-        )
+        every { hirePathApi.hasPath(UserId(userId)) } returns true
         every { arrivalStepService.forHire(userId) } returns listOf(resolvedStep())
 
         assertThat(executor.toolSpecs(userId).map { it.name })
@@ -400,7 +412,7 @@ class BuddyToolExecutorTest {
      */
     @Test
     fun `the opening greeting is grounded in the path, then what is missing, then progress`() {
-        every { buddyPathTools.snapshotFor(userId) } returns "Onboarding path: phase 1 of 3"
+        every { myPathTool.snapshotFor(userId) } returns "Onboarding path: phase 1 of 3"
         every { arrivalStepService.forHire(userId) } returns listOf(resolvedStep())
         every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userWith())
         // No projects, so metrics and suggestions short-circuit; only the ledger is reached.
@@ -698,7 +710,7 @@ class BuddyToolExecutorTest {
         val line = executor.stateSnapshot(userId).lineSequence().first { it.contains("Never placed on") }
         val named = line.substringAfterLast("): ")
 
-        assertThat(named.split(", ")).hasSize(BuddyToolExecutor.GREETING_TOPICS)
+        assertThat(named.split(", ")).hasSize(CompetenciesToAssessTool.GREETING_TOPICS)
     }
 
     @Test

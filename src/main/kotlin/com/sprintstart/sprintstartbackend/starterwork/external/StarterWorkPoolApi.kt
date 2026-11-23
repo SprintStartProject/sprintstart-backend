@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.starterwork.external
 
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.ids.StarterWorkTaskId
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.starterwork.model.response.starterwork.StarterWorkTaskProposalResponse
@@ -24,8 +25,8 @@ interface StarterWorkPoolApi {
     fun unreviewedTasksOn(projectId: ProjectId): List<StarterWorkTaskProposalResponse>
 
     /** The status of the task made from the issue [source] names, or null when none was. */
-    fun statusOf(source: String): ProposalStatus?
+    fun statusOf(source: SourceId): ProposalStatus?
 
     /** Whether the task or issue [sourceId] names belongs to [projectId]. */
-    fun covers(sourceId: String, projectId: ProjectId): Boolean
+    fun covers(sourceId: SourceId, projectId: ProjectId): Boolean
 }

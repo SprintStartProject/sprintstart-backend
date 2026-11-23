@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.teamspace.service
 
+import com.sprintstart.sprintstartbackend.assistant.external.TeamActionDraft
 import com.sprintstart.sprintstartbackend.path.external.model.PathElementKind
 import com.sprintstart.sprintstartbackend.path.model.request.resource.CreateOnboardingResourceRequest
 import com.sprintstart.sprintstartbackend.path.model.request.resource.UpdateOnboardingResourceRequest

@@ -1,6 +1,8 @@
 # ADR (proposed) 001: Split the buddy's action components by action
 
 **Status:** Accepted (provisionally by agent 2026-10-18, confirmed by the team 2026-10-19).
+Superseded by option 2 through [ADR-proposed-004](adr-proposed-004-assistant-kernel-and-tool-spi.md)
+(#262–#265): every action is now a `HireAction` bean, and the routers named below no longer exist.
 
 ## Context
 

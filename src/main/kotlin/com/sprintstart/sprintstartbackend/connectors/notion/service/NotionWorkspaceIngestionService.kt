@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.Noti
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -139,7 +140,12 @@ internal class NotionWorkspaceIngestionService(
             } else {
                 "Notion page reconciliation failed"
             }
-            ingestionApi.recordPageFailure(runId, notionPageSourceId(connection.id, pageId), pageUrl, reason.orEmpty())
+            ingestionApi.recordPageFailure(
+                runId,
+                SourceId(notionPageSourceId(connection.id, pageId)),
+                pageUrl,
+                reason.orEmpty(),
+            )
             progress.failed++
         }
     }

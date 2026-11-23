@@ -7,7 +7,7 @@
         allowedDependencies = {
                 "shared :: shared", "shared :: ids", "shared :: ai", "shared :: annotations", "path :: api-model",
                 "user :: api", "user :: api-enum", "user :: api-events", "ingestion :: api", "ingestion :: api.model", "connectors :: api",
-                "connectors :: github-events", "connectors :: jira.events.issues"
+                "connectors :: github-events", "connectors :: jira.events.issues", "assistant :: api"
         }
 )
 package com.sprintstart.sprintstartbackend.starterwork;

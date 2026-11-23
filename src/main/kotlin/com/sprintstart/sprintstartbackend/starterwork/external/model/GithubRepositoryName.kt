@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.starterwork.external.model
 
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
+
 /** A GitHub repository as a starter-work source id names it. */
 data class GithubRepositoryName(
     val owner: String,
@@ -17,9 +19,9 @@ const val GITHUB_SOURCE_PREFIX = "github:"
  * Null for every other shape — a hand-authored task (`authored:`), a Jira issue, or anything
  * malformed — so none of those is ever mistaken for a repository's work.
  */
-fun githubRepositoryOf(sourceId: String): GithubRepositoryName? {
-    if (!sourceId.startsWith(GITHUB_SOURCE_PREFIX)) return null
-    val parts = sourceId.removePrefix(GITHUB_SOURCE_PREFIX).split(':')
+fun githubRepositoryOf(sourceId: SourceId): GithubRepositoryName? {
+    if (!sourceId.value.startsWith(GITHUB_SOURCE_PREFIX)) return null
+    val parts = sourceId.value.removePrefix(GITHUB_SOURCE_PREFIX).split(':')
     if (parts.size < 3) return null
     val ownerAndName = parts[0].split('/')
     if (ownerAndName.size != 2 || ownerAndName.any { it.isBlank() }) return null

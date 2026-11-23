@@ -15,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.stereotype.Service
@@ -170,8 +171,8 @@ internal class ArtifactIngestionApiService(
 
     @Transactional(readOnly = true)
     @Tracked("Retrieving one ingested issue by source id")
-    override fun getIssue(sourceId: String): IngestedIssue? {
-        val artifact = artifactRepository.findBySourceId(sourceId) ?: return null
+    override fun getIssue(sourceId: SourceId): IngestedIssue? {
+        val artifact = artifactRepository.findBySourceId(sourceId.value) ?: return null
         if (artifact.artifactType != ArtifactType.ISSUE) return null
         return artifact.toIngestedIssue()
     }
@@ -200,8 +201,8 @@ internal class ArtifactIngestionApiService(
         )
 
     @Transactional(readOnly = true)
-    override fun getTaskSource(sourceId: String): TaskSourceArtifact? {
-        val artifact = artifactRepository.findBySourceId(sourceId) ?: return null
+    override fun getTaskSource(sourceId: SourceId): TaskSourceArtifact? {
+        val artifact = artifactRepository.findBySourceId(sourceId.value) ?: return null
         return TaskSourceArtifact(
             title = artifact.title,
             body = artifact.content,

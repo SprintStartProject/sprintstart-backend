@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.starterwork.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.starterwork.external.model.PoolReconciliation
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.StarterWorkTaskProposal
@@ -124,7 +125,7 @@ class StarterWorkPoolReconciler(
     @Transactional
     fun reconcileOne(proposal: StarterWorkTaskProposal): Boolean {
         if (proposal.status == ProposalStatus.REJECTED) return false
-        val issue = artifactIngestionApi.getIssue(proposal.sourceId) ?: return false
+        val issue = artifactIngestionApi.getIssue(SourceId(proposal.sourceId)) ?: return false
         val now = Instant.now()
         val applied = apply(proposal, issue.state, issue.hasAssignee, now)
         if (!applied.changed) {

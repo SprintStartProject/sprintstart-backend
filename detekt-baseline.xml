@@ -9,6 +9,9 @@
     <ID>CognitiveComplexMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Getting or lazily evaluating project industry") override suspend fun getOrEvaluateIndustry(projectId: UUID): String?</ID>
     <ID>CognitiveComplexMethod:StarterWorkMatcher.kt:StarterWorkMatcher$@Suppress("CyclomaticComplexMethod") fun score( profile: HireProfile, task: TaskFeatures, responsiveness: Responsiveness?, ): Score</ID>
     <ID>CognitiveComplexMethod:StreamExecution.kt:StreamExecution$@Suppress("CyclomaticComplexMethod") inline fun &lt;reified T&gt; perform( terminationMarkers: Set&lt;String&gt; = setOf("[DONE]"), crossinline onChunkError: (raw: String, error: Throwable) -&gt; Boolean = { raw, err -&gt; System.err.println("WebClient stream: failed to deserialize chunk '$raw': ${err.message}") true // skip and continue by default }, ): Flow&lt;T&gt;</ID>
+    <ID>CyclomaticComplexMethod:AddPathStepAction.kt:AddPathStepAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
+    <ID>CyclomaticComplexMethod:AnswerQuestionAction.kt:AnswerQuestionAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
+    <ID>CyclomaticComplexMethod:AnswerQuestionAction.kt:AnswerQuestionAction$override suspend fun perform( request: HireActionRequest, context: HireActionContext, authId: AuthId, ): BuddyActionResponse</ID>
     <ID>CyclomaticComplexMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun buildPredicates( cb: CriteriaBuilder, root: Root&lt;Artifact&gt;, projectJoin: Join&lt;Artifact, UUID&gt;, projectId: UUID, criteria: ArtifactFilterCriteria, exclude: FacetKind?, ): List&lt;Predicate&gt;</ID>
     <ID>CyclomaticComplexMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun computeRepositoryFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List&lt;FacetCountResponse&gt;</ID>
     <ID>CyclomaticComplexMethod:ArtifactService.kt:ArtifactService$@Transactional(readOnly = true) @Tracked("Retrieving content of artifact") fun getArtifactContent(projectId: UUID, artifactId: UUID, authId: String): ArtifactContentResult</ID>
@@ -16,16 +19,7 @@
     <ID>CyclomaticComplexMethod:BoardCardHydrator.kt:BoardCardHydrator$private fun hydrate( card: BoardCard, member: ProjectMember, projectId: ProjectId, diagram: BoardDiagram?, arrivalSteps: List&lt;ArrivalStepResponse&gt;, pathSteps: Map&lt;UUID, ResolvedPathStep&gt;, matches: () -&gt; List&lt;RankedStarterWorkTaskResponse&gt;, ): BoardCardContent</ID>
     <ID>CyclomaticComplexMethod:BoardService.kt:BoardService$@Transactional fun place( userId: UserId, projectId: ProjectId, kind: BoardCardKind, subject: String? = null, by: BoardActor = BoardActor.BUDDY, ): PlacementOutcome</ID>
     <ID>CyclomaticComplexMethod:BoardService.kt:BoardService$private fun editableCardOrThrow( userId: UserId, cardId: BoardCardId, kind: BoardCardKind, ): Pair&lt;BoardCard, Board&gt;</ID>
-    <ID>CyclomaticComplexMethod:BuddyActionService.kt:BuddyActionService$suspend fun perform(request: BuddyActionRequest, jwt: Jwt): BuddyActionResponse</ID>
     <ID>CyclomaticComplexMethod:BuddyAppGuideTools.kt:BuddyAppGuideTools$fun guideFor(userId: UUID, currentPage: String?): String</ID>
-    <ID>CyclomaticComplexMethod:BuddyBoardTools.kt:BuddyBoardTools$private fun readBoard(userId: UserId): String</ID>
-    <ID>CyclomaticComplexMethod:BuddyPathEditActions.kt:BuddyPathEditActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, user: UserId, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>CyclomaticComplexMethod:BuddyPathTools.kt:BuddyPathTools$fun snapshotFor(userId: UUID): String?</ID>
-    <ID>CyclomaticComplexMethod:BuddyQuestionActions.kt:BuddyQuestionActions$fun perform(authId: String, userId: UserId, request: BuddyActionRequest): BuddyActionResponse</ID>
-    <ID>CyclomaticComplexMethod:BuddyQuestionActions.kt:BuddyQuestionActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, userId: UserId, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>CyclomaticComplexMethod:BuddySkipActions.kt:BuddySkipActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, user: UserId, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>CyclomaticComplexMethod:BuddyToolExecutor.kt:BuddyToolExecutor$fun execute(call: BuddyToolCallDto, userId: UUID, currentPage: String? = null): String</ID>
-    <ID>CyclomaticComplexMethod:BuddyToolExecutor.kt:BuddyToolExecutor$private fun getArrivalSteps(userId: UUID): String</ID>
     <ID>CyclomaticComplexMethod:ConfluenceRestrictionPageMetadata.kt:private fun validateSharedRestrictionMetadata( users: ConfluenceRestrictedUsersResponse, groups: ConfluenceRestrictedGroupsResponse, requestedStart: Int, requestedLimit: Int, requestContext: String, )</ID>
     <ID>CyclomaticComplexMethod:ConfluenceStorageFormatParser.kt:InlineMarkdown$fun renderNode(node: Node): String</ID>
     <ID>CyclomaticComplexMethod:ContentTeamTools.kt:ContentTeamTools$private fun memberPath(memberId: UUID?, projectId: UUID): String</ID>
@@ -35,20 +29,26 @@
     <ID>CyclomaticComplexMethod:GithubPullRequestsService.kt:GithubPullRequestsService$@Suppress("ThrowsCount") @Tracked("Fetching all pull requests from repository") internal suspend fun fetchAndIngestAllPullRequests( githubRepositoryId: UUID, repositoryOwner: String, repositoryName: String, transactionId: UUID, performUpdate: Boolean = true, since: Instant? = null, )</ID>
     <ID>CyclomaticComplexMethod:IngestionSourceStatusService.kt:IngestionSourceStatusService$@Transactional(readOnly = true) @Tracked("Retrieving ingestion status per source instance") fun getStatusPerSourceInstance(projectId: UUID? = null): List&lt;SourceInstanceIngestionStatusResponse&gt;</ID>
     <ID>CyclomaticComplexMethod:KeycloakEventService.kt:KeycloakEventService$@Transactional @Tracked("Handling Keycloak event") fun handleEvent(request: KeycloakEventRequest)</ID>
+    <ID>CyclomaticComplexMethod:MyPathTool.kt:MyPathTool$fun snapshotFor(userId: UUID): String?</ID>
     <ID>CyclomaticComplexMethod:NotionCredentialPersistenceService.kt:NotionCredentialPersistenceService$private fun applyWorkspace(credential: NotionCredential, workspace: NotionTokenIdentity)</ID>
     <ID>CyclomaticComplexMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$private fun GeneratedPhaseContent.copyInto(onboardingPhase: OnboardingPhase)</ID>
     <ID>CyclomaticComplexMethod:PathElements.kt:PathElements$private fun containedIn(steps: List&lt;OnboardingStep&gt;, checks: Int, includeSteps: Boolean = true): String</ID>
     <ID>CyclomaticComplexMethod:PhaseText.kt:internal fun StringBuilder.appendCurrentPhase( phase: GetOnboardingPhaseForUserResponse, index: Int, phases: List&lt;GetOnboardingPhaseForUserResponse&gt;, lastAnswers: Map&lt;UUID, String&gt; = emptyMap(), )</ID>
     <ID>CyclomaticComplexMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Evaluating project industry automatically") override suspend fun evaluateIndustryAutomatically(projectId: UUID)</ID>
     <ID>CyclomaticComplexMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Getting or lazily evaluating project industry") override suspend fun getOrEvaluateIndustry(projectId: UUID): String?</ID>
+    <ID>CyclomaticComplexMethod:ReadBoardTool.kt:ReadBoardTool$private fun readBoard(userId: UserId): String</ID>
+    <ID>CyclomaticComplexMethod:RequestSkipAction.kt:RequestSkipAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
     <ID>CyclomaticComplexMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): PoolReconciliation</ID>
     <ID>CyclomaticComplexMethod:StepTeamActions.kt:AddStepAction$override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft</ID>
     <ID>CyclomaticComplexMethod:StepTeamActions.kt:UpdateStepAction$private fun badArgument(call: BuddyToolCallDto, slots: Int): String?</ID>
     <ID>LargeClass:BlueprintPathController.kt:BlueprintPathController</ID>
     <ID>LargeClass:BoardService.kt:BoardService</ID>
-    <ID>LargeClass:BuddyActionService.kt:BuddyActionService</ID>
     <ID>LargeClass:OnboardingPersonalizationService.kt:OnboardingPersonalizationService</ID>
+    <ID>LongMethod:AddPathStepAction.kt:AddPathStepAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
+    <ID>LongMethod:AddPathStepAction.kt:AddPathStepAction$override suspend fun perform( request: HireActionRequest, context: HireActionContext, authId: AuthId, ): BuddyActionResponse</ID>
     <ID>LongMethod:AiFaqGroupMapper.kt:AiFaqGroupMapper$fun toEntity( aiGroup: AiFaqGroup, projectId: UUID, askedAtByQuestionId: Map&lt;String, Instant&gt;, ): FaqGroup</ID>
+    <ID>LongMethod:AnswerQuestionAction.kt:AnswerQuestionAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
+    <ID>LongMethod:AnswerQuestionAction.kt:AnswerQuestionAction$override suspend fun perform( request: HireActionRequest, context: HireActionContext, authId: AuthId, ): BuddyActionResponse</ID>
     <ID>LongMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun buildPredicates( cb: CriteriaBuilder, root: Root&lt;Artifact&gt;, projectJoin: Join&lt;Artifact, UUID&gt;, projectId: UUID, criteria: ArtifactFilterCriteria, exclude: FacetKind?, ): List&lt;Predicate&gt;</ID>
     <ID>LongMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun buildUploadFormatPredicate( cb: CriteriaBuilder, root: Root&lt;Artifact&gt;, format: UploadFormat, ): Predicate</ID>
     <ID>LongMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun computeRepositoryFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List&lt;FacetCountResponse&gt;</ID>
@@ -63,31 +63,17 @@
     <ID>LongMethod:BitbucketUpdatesService.kt:BitbucketUpdatesService$private suspend fun updateConnection(connection: BitbucketConnection): UUID</ID>
     <ID>LongMethod:BlueprintPathCopyFactory.kt:BlueprintPathCopyFactory$fun createCopyFrom( path: BlueprintPath, blueprintKey: UUID, projectId: UUID?, status: BlueprintStatus, version: Int, ): BlueprintPath</ID>
     <ID>LongMethod:BlueprintSeeder.kt:BlueprintSeeder$fun seed()</ID>
+    <ID>LongMethod:BoardActionSupport.kt:internal fun HireBoardApi.namedCards(call: BuddyToolCallDto, board: HireBoard): Found&lt;List&lt;BoardCardResponse&gt;&gt;</ID>
     <ID>LongMethod:BoardDiagramService.kt:BoardDiagramService$private fun store( context: DiagramContext, outcome: DiagramOutcome, schema: DiagramSchema, ): DiagramContent</ID>
     <ID>LongMethod:BoardService.kt:BoardService$@Transactional fun place( userId: UserId, projectId: ProjectId, kind: BoardCardKind, subject: String? = null, by: BoardActor = BoardActor.BUDDY, ): PlacementOutcome</ID>
-    <ID>LongMethod:BuddyActionService.kt:BuddyActionService$@Suppress("CyclomaticComplexMethod") // The person-scoped gates first, then one branch per action. fun propose(call: BuddyToolCallDto, userId: UUID): ProposeOutcome</ID>
-    <ID>LongMethod:BuddyActionService.kt:BuddyActionService$private suspend fun dispatch( type: BuddyActionType, resolved: CallerContext.Resolved, authId: String, request: BuddyActionRequest, ): BuddyActionResponse</ID>
-    <ID>LongMethod:BuddyActionService.kt:BuddyActionService$suspend fun perform(request: BuddyActionRequest, jwt: Jwt): BuddyActionResponse</ID>
     <ID>LongMethod:BuddyAppGuideTools.kt:BuddyAppGuideTools$fun guideFor(userId: UUID, currentPage: String?): String</ID>
-    <ID>LongMethod:BuddyBoardEditActions.kt:BuddyBoardEditActions$private fun namedCards(call: BuddyToolCallDto, scope: Scope): Found&lt;List&lt;BoardCardResponse&gt;&gt;</ID>
-    <ID>LongMethod:BuddyBoardEditActions.kt:BuddyBoardEditActions$private fun proposeChecklistEdit(call: BuddyToolCallDto, type: BuddyActionType, scope: Scope): ProposeOutcome</ID>
-    <ID>LongMethod:BuddyBoardTools.kt:BuddyBoardTools$private fun readBoard(userId: UserId): String</ID>
-    <ID>LongMethod:BuddyPathActions.kt:BuddyPathActions$private fun proposeCompleteStep( call: BuddyToolCallDto, type: BuddyActionType, userId: UUID, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>LongMethod:BuddyPathActions.kt:BuddyPathActions$private fun proposeCompleteTask( call: BuddyToolCallDto, type: BuddyActionType, userId: UUID, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>LongMethod:BuddyPathEditActions.kt:BuddyPathEditActions$fun perform(authId: String, user: UserId, request: BuddyActionRequest): BuddyActionResponse</ID>
-    <ID>LongMethod:BuddyPathEditActions.kt:BuddyPathEditActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, user: UserId, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>LongMethod:BuddyPathTools.kt:BuddyPathTools$fun execute(userId: UUID): String</ID>
-    <ID>LongMethod:BuddyPathTools.kt:BuddyPathTools$fun snapshotFor(userId: UUID): String?</ID>
-    <ID>LongMethod:BuddyQuestionActions.kt:BuddyQuestionActions$fun perform(authId: String, userId: UserId, request: BuddyActionRequest): BuddyActionResponse</ID>
-    <ID>LongMethod:BuddyQuestionActions.kt:BuddyQuestionActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, userId: UserId, ): BuddyActionService.ProposeOutcome</ID>
     <ID>LongMethod:BuddyReplyStream.kt:internal suspend fun FlowCollector&lt;BuddyStreamEvent&gt;.relayAgentTurn( events: Flow&lt;BuddyAgentStreamEvent&gt;, emittedContent: StringBuilder, ): BuddyAgentResponse</ID>
     <ID>LongMethod:BuddyService.kt:BuddyService$@Suppress("CyclomaticComplexMethod", "ThrowsCount") suspend fun sendMessageForMe( authId: String, sessionId: UUID?, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters?, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
     <ID>LongMethod:BuddyService.kt:BuddyService$private suspend fun FlowCollector&lt;BuddyStreamEvent&gt;.runToolCall( call: BuddyToolCallDto, userId: UUID, currentPage: String?, ): String</ID>
-    <ID>LongMethod:BuddySkipActions.kt:BuddySkipActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, user: UserId, ): BuddyActionService.ProposeOutcome</ID>
     <ID>LongMethod:BuddyTeamService.kt:BuddyTeamService$fun sendMessageForMe( authId: String, projectId: UUID, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters? = null, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
-    <ID>LongMethod:BuddyToolExecutor.kt:BuddyToolExecutor$private fun getArrivalSteps(userId: UUID): String</ID>
-    <ID>LongMethod:BuddyToolExecutor.kt:BuddyToolExecutor$private fun getSuggestedTasks(userId: UUID): String</ID>
     <ID>LongMethod:CompetencyPlacementService.kt:CompetencyPlacementService$@Transactional fun record(userId: UUID, competencyKey: String, level: ProficiencyLevel): PlacementResult</ID>
+    <ID>LongMethod:CompleteStepAction.kt:CompleteStepAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
+    <ID>LongMethod:CompleteTaskAction.kt:CompleteTaskAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
     <ID>LongMethod:ConfluenceArtifactBatchService.kt:ConfluenceArtifactBatchService$fun persist(command: ConfluenceArtifactBatchCommand): ConfluenceArtifactBatchResult</ID>
     <ID>LongMethod:ConfluenceArtifactItemPersistenceService.kt:ConfluenceArtifactItemPersistenceService$private fun metadataJson(command: ConfluencePageArtifactCommand): String</ID>
     <ID>LongMethod:ConfluenceClient.kt:ConfluenceClient$private suspend fun fetchRestrictions( baseUrl: String, credentials: ConfluenceClientCredentials, pageId: String, ): ConfluencePageRestrictions</ID>
@@ -99,6 +85,7 @@
     <ID>LongMethod:ContentTeamTools.kt:ContentTeamTools$private fun memberPath(memberId: UUID?, projectId: UUID): String</ID>
     <ID>LongMethod:CreateArrivalStepsAction.kt:CreateArrivalStepsAction$override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft</ID>
     <ID>LongMethod:CreateArrivalStepsAction.kt:CreateArrivalStepsAction$private fun preview(drafted: List&lt;DraftedStep&gt;): String</ID>
+    <ID>LongMethod:EditChecklistAction.kt:EditChecklistAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
     <ID>LongMethod:FaqConsolidationService.kt:FaqConsolidationService$@Tracked("Merging duplicate FAQ entries") suspend fun mergeDuplicates(projectId: UUID)</ID>
     <ID>LongMethod:GithubArtifactMapper.kt:GithubArtifactMapper$fun toCommand(event: GithubCommitFetchedEvent): GithubArtifactCommand</ID>
     <ID>LongMethod:GithubArtifactMapper.kt:GithubArtifactMapper$fun toCommand(event: GithubFileFetchedEvent): GithubArtifactCommand</ID>
@@ -122,6 +109,8 @@
     <ID>LongMethod:JiraArtifactProviderService.kt:JiraArtifactProviderService$@Transactional fun persistArtifact(command: JiraArtifactCommand)</ID>
     <ID>LongMethod:JiraService.kt:JiraService$private suspend fun connectNewInstance( authId: String, request: ConnectJiraInstanceRequest, transactionId: UUID, ): UUID</ID>
     <ID>LongMethod:KeycloakEventService.kt:KeycloakEventService$@Transactional @Tracked("Handling Keycloak event") fun handleEvent(request: KeycloakEventRequest)</ID>
+    <ID>LongMethod:MyPathTool.kt:MyPathTool$fun execute(userId: UUID): String</ID>
+    <ID>LongMethod:MyPathTool.kt:MyPathTool$fun snapshotFor(userId: UUID): String?</ID>
     <ID>LongMethod:NotionCredentialPersistenceService.kt:NotionCredentialPersistenceService$@Transactional fun rename(authId: String, oldName: String, newName: String): NotionCredentialResponse</ID>
     <ID>LongMethod:NotionCredentialPersistenceService.kt:NotionCredentialPersistenceService$private fun applyWorkspace(credential: NotionCredential, workspace: NotionTokenIdentity)</ID>
     <ID>LongMethod:NotionWorkspaceIngestionService.kt:NotionWorkspaceIngestionService$private suspend fun syncWorkspace( runId: UUID, connection: NotionWorkspaceConnection, forceRefresh: Boolean, ): NotionIngestionResult</ID>
@@ -139,6 +128,8 @@
     <ID>LongMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Evaluating project industry automatically") override suspend fun evaluateIndustryAutomatically(projectId: UUID)</ID>
     <ID>LongMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Getting or lazily evaluating project industry") override suspend fun getOrEvaluateIndustry(projectId: UUID): String?</ID>
     <ID>LongMethod:ProjectRoleService.kt:ProjectRoleService$@Tracked("Suggesting skills for project role") suspend fun suggestSkillsForRole( roleId: UUID, request: SuggestSkillsRequest? = null, ): List&lt;SkillSuggestionItemResponse&gt;</ID>
+    <ID>LongMethod:ReadBoardTool.kt:ReadBoardTool$private fun readBoard(userId: UserId): String</ID>
+    <ID>LongMethod:RequestSkipAction.kt:RequestSkipAction$override fun propose(call: BuddyToolCallDto, context: HireActionContext): HireActionOutcome</ID>
     <ID>LongMethod:RunArtifactsIngestionService.kt:RunArtifactsIngestionService$@Tracked("Dispatching AI sync for run") suspend fun ingestRunArtifacts(runId: UUID)</ID>
     <ID>LongMethod:StarterWorkMatcher.kt:StarterWorkMatcher$@Suppress("CyclomaticComplexMethod") fun score( profile: HireProfile, task: TaskFeatures, responsiveness: Responsiveness?, ): Score</ID>
     <ID>LongMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): PoolReconciliation</ID>
