@@ -14,15 +14,16 @@ class RiskScorer {
      * Ranks the files that lose the people who know them when [DepartureQuery.departing] leave.
      *
      * Files that nobody active knew before, and files that keep two or more authors, are only counted.
-     * When the complexity of files is given, each file at risk also says whether it is a hotspot.
+     * When facts about the files are given, each file at risk also says whether it is a hotspot and how
+     * much of it was written by people who left.
      */
     fun score(
         histories: List<FileHistory>,
         query: DepartureQuery,
-        complexities: Map<FileKey, Double> = emptyMap(),
+        facts: FileFacts = FileFacts(),
     ): RiskMap {
         val visible = histories.mapNotNull { it.seenBy(query.profile, query.asOf) }
-        val assessor = Assessor(query, visible, complexities = complexities)
+        val assessor = Assessor(query, visible, facts = facts)
         val assessments = visible.map(assessor::assess)
         val atRisk = assessments.filterIsInstance<Assessment.AtRisk>().map { it.risk }
         return RiskMap(

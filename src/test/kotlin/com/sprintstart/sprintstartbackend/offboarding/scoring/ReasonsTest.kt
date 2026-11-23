@@ -12,6 +12,7 @@ class ReasonsTest {
         changedDaysAgo: Long = 2,
         coupling: Coupling = Coupling.NONE,
         hotspot: Double? = null,
+        abandoned: Double? = null,
     ) = FileRisk(
         repository = REPOSITORY,
         path = "a.kt",
@@ -26,6 +27,7 @@ class ReasonsTest {
         lastChangedAt = daysAgo(changedDaysAgo),
         coupling = coupling,
         hotspot = hotspot,
+        abandonedShare = abandoned,
     )
 
     private fun reasons(risk: FileRisk) = Reasons.of(risk, NOW)
@@ -79,6 +81,20 @@ class ReasonsTest {
         assertThat(reasons(risk(hotspot = 0.5))).contains("It is a hotspot: complicated and changed often.")
         assertThat(reasons(risk(hotspot = 0.49))).noneMatch { it.contains("hotspot") }
         assertThat(reasons(risk(hotspot = null))).noneMatch { it.contains("hotspot") }
+    }
+
+    @Test
+    fun `the share of lines written by people who left is said from half up`() {
+        assertThat(reasons(risk(abandoned = 0.724)))
+            .contains("72% of its lines were written by people who are leaving or have left.")
+        assertThat(reasons(risk(abandoned = 0.49))).noneMatch { it.contains("lines") }
+        assertThat(reasons(risk(abandoned = null))).noneMatch { it.contains("lines") }
+    }
+
+    @Test
+    fun `almost all lines from people who left is said plainly`() {
+        assertThat(reasons(risk(abandoned = 0.95)))
+            .contains("Almost all of its lines were written by people who are leaving or have left.")
     }
 
     @Test

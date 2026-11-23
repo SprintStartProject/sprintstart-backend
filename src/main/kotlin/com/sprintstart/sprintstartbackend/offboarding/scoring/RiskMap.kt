@@ -24,6 +24,8 @@ enum class RiskLevel {
  * @property concentration How unevenly the knowledge of the file is spread over people.
  * @property hotspot How complicated and how often changed the file is against the other files, from 0 to 1;
  *           `null` when its complexity was never measured.
+ * @property abandonedShare The share of the lines of the file written by people who are leaving or are
+ *           inactive, from 0 to 1; `null` when it was never blamed.
  * @property coupling The files that change together with this one.
  * @property successors People who could take the file over, best first; they know its surroundings.
  * @property reasons Plain sentences that say why the file is on the map; they name nobody.
@@ -44,6 +46,7 @@ data class FileRisk(
     val lastChangedAt: Instant,
     val coupling: Coupling = Coupling.NONE,
     val hotspot: Double? = null,
+    val abandonedShare: Double? = null,
     val successors: List<Successor> = emptyList(),
     val reasons: List<String> = emptyList(),
 )

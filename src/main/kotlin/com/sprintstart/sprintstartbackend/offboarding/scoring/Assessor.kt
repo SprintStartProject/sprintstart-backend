@@ -22,14 +22,14 @@ internal class Assessor(
     private val query: DepartureQuery,
     histories: List<FileHistory>,
     private val coupling: ChangeCoupling = ChangeCoupling(histories),
-    complexities: Map<FileKey, Double> = emptyMap(),
+    private val facts: FileFacts = FileFacts(),
 ) {
     private val knowledge = Knowledge.of(query.profile, query.asOf)
     private val inactive = inactivePeople(histories)
     private val successors = SuccessorFinder(histories, coupling, inactive + query.departing)
     private val busiest = histories.maxOfOrNull(::activity) ?: 0.0
     private val hotspots =
-        Hotspots(histories.associate { FileKey(it.repository, it.path) to activity(it) }, complexities)
+        Hotspots(histories.associate { FileKey(it.repository, it.path) to activity(it) }, facts.complexities)
 
     fun assess(history: FileHistory): Assessment {
         val knowers = knowledge.authorsOf(history) - inactive
@@ -63,10 +63,23 @@ internal class Assessor(
             concentration = Concentration.of(knowledge.knowledgeOf(history)),
             coupling = coupling.of(history),
             hotspot = hotspots.of(history),
+            abandonedShare = abandonedShare(history),
             successors = successors.suggest(history, remaining),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )
+    }
+
+    /** The share of the lines of the file written by people who are leaving or are inactive, when blame said. */
+    private fun abandonedShare(history: FileHistory): Double? {
+        val lines = facts.authorship[FileKey(history.repository, history.path)].orEmpty()
+        val total = lines.values.sum()
+        if (total == 0) return null
+        return lines
+            .filterKeys { it in query.departing || it in inactive }
+            .values
+            .sum()
+            .toDouble() / total
     }
 
     private fun departingShareBySource(history: FileHistory): Map<SourceId, Double> =

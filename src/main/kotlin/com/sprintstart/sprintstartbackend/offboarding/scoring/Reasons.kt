@@ -13,6 +13,8 @@ import kotlin.math.roundToInt
 object Reasons {
     private const val ACTIVE_FROM = 0.5
     private const val HOTSPOT_FROM = 0.5
+    private const val ABANDONED_FROM = 0.5
+    private const val ORPHANED_FROM = 0.9
     private const val DAYS_PER_MONTH = 30
     private const val PERCENT = 100
 
@@ -30,11 +32,19 @@ object Reasons {
             "One person holds almost all of the knowledge of it.".takeIf { risk.concentration.island != null },
             "It is among the more active files.".takeIf { risk.recentActivity >= ACTIVE_FROM },
             "It is a hotspot: complicated and changed often.".takeIf { (risk.hotspot ?: 0.0) >= HOTSPOT_FROM },
+            abandoned(risk.abandonedShare),
             risk.coupling.partners
                 .firstOrNull()
                 ?.let { "It usually changes together with ${it.path}." },
             lastChanged(Duration.between(risk.lastChangedAt, asOf).toDays()),
         )
+
+    private fun abandoned(share: Double?): String? =
+        when {
+            share == null || share < ABANDONED_FROM -> null
+            share >= ORPHANED_FROM -> "Almost all of its lines were written by people who are leaving or have left."
+            else -> "${percent(share)}% of its lines were written by people who are leaving or have left."
+        }
 
     private fun percent(share: Double): Int = (share * PERCENT).roundToInt()
 

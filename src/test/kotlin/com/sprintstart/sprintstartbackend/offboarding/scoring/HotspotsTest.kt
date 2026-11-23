@@ -84,7 +84,13 @@ class HotspotsTest {
     fun `a ranking carries the hotspot of the files at risk when complexity is given`() {
         val departure = DepartureQuery(setOf(PersonKey("ada@x.org")), NOW)
 
-        val with = RiskScorer().score(listOf(busyAndComplex), departure, mapOf(key("hot.kt") to 50.0)).files.single()
+        val with = RiskScorer()
+            .score(
+                listOf(busyAndComplex),
+                departure,
+                FileFacts(mapOf(key("hot.kt") to 50.0)),
+            ).files
+            .single()
         val without = RiskScorer().score(listOf(busyAndComplex), departure).files.single()
 
         assertThat(with.hotspot).isNotNull()
@@ -104,6 +110,7 @@ class HotspotsTest {
             override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
         }
 
-        assertThat(FileComplexities(api).of(listOf(REPOSITORY))).isEqualTo(mapOf(key("a.kt") to 12.5))
+        assertThat(FileFactsReader(api).of(listOf(REPOSITORY), Identities()).complexities)
+            .isEqualTo(mapOf(key("a.kt") to 12.5))
     }
 }

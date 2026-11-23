@@ -9,7 +9,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
 import com.sprintstart.sprintstartbackend.offboarding.scoring.CommitEvidence
 import com.sprintstart.sprintstartbackend.offboarding.scoring.EvidenceSource
-import com.sprintstart.sprintstartbackend.offboarding.scoring.FileComplexities
+import com.sprintstart.sprintstartbackend.offboarding.scoring.FileFactsReader
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileHistory
 import com.sprintstart.sprintstartbackend.offboarding.scoring.Identities
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
@@ -36,6 +36,7 @@ class OffboardingRiskServiceTest {
     private class RecordingEvidence(
         private val rows: List<FileContribution>,
         private val complexities: List<FileComplexityReading> = emptyList(),
+        private val authorship: List<FileAuthorshipReading> = emptyList(),
     ) : ContributionEvidenceApi {
         val asked = mutableListOf<Pair<ProjectId, Instant>>()
 
@@ -49,10 +50,11 @@ class OffboardingRiskServiceTest {
         override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> =
             complexities.filter { it.repository in repositories }
 
-        override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
+        override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> =
+            authorship.filter { it.repository in repositories }
     }
 
-    private val noComplexity = FileComplexities(RecordingEvidence(emptyList()))
+    private val noComplexity = FileFactsReader(RecordingEvidence(emptyList()))
 
     private fun row(path: String, email: String, at: String) =
         FileContribution("github:acme/app", path, null, email, Instant.parse(at))
@@ -208,12 +210,34 @@ class OffboardingRiskServiceTest {
             listOf(CommitEvidence(evidence)),
             links,
             RiskScorer(),
-            FileComplexities(evidence),
+            FileFactsReader(evidence),
             Clock.fixed(now, ZoneOffset.UTC),
         )
 
         val map = service.riskMap(project, request())
 
         assertThat(map.files.first { it.path == "core.kt" }.hotspot).isNotNull()
+    }
+
+    @Test
+    fun `who wrote the lines ingestion blamed shows as the share of a file written by people who left`() {
+        val evidence = RecordingEvidence(
+            rows,
+            authorship = listOf(
+                FileAuthorshipReading("github:acme/app", "core.kt", "ada@x.org", 9),
+                FileAuthorshipReading("github:acme/app", "core.kt", "ben@x.org", 1),
+            ),
+        )
+        val service = OffboardingRiskService(
+            listOf(CommitEvidence(evidence)),
+            links,
+            RiskScorer(),
+            FileFactsReader(evidence),
+            Clock.fixed(now, ZoneOffset.UTC),
+        )
+
+        val map = service.riskMap(project, request())
+
+        assertThat(map.files.first { it.path == "core.kt" }.abandonedShare).isEqualTo(0.9)
     }
 }
