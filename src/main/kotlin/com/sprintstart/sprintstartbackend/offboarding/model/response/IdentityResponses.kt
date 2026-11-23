@@ -53,6 +53,8 @@ data class MembersResponse(
  * @property matched Whether any trace in the evidence is attributed to them; a member without one
  *           cannot be ranked.
  * @property suggestions Links that would make their identities count as one person, to be confirmed.
+ * @property inactive Whether they have left no trace for so long that the ranking counts them as gone.
+ * @property lastSeenAt When they last left a trace under any identity; `null` when they never did.
  */
 data class MemberMatchResponse(
     val member: UUID,
@@ -61,4 +63,6 @@ data class MemberMatchResponse(
     val matched: Boolean,
     val identities: List<SeenIdentityResponse>,
     val suggestions: List<AliasLinkResponse>,
+    val inactive: Boolean = false,
+    val lastSeenAt: Instant? = null,
 )

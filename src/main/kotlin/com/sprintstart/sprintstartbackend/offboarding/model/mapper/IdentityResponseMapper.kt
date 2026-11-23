@@ -38,4 +38,6 @@ private fun MemberMatch.toResponse() = MemberMatchResponse(
     matched = matched,
     identities = identities.map { it.toResponse() },
     suggestions = suggestions.map { it.toResponse() },
+    inactive = inactive,
+    lastSeenAt = lastSeenAt,
 )

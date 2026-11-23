@@ -3,11 +3,14 @@ package com.sprintstart.sprintstartbackend.offboarding.service
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
 import com.sprintstart.sprintstartbackend.offboarding.scoring.MemberMatch
 import com.sprintstart.sprintstartbackend.offboarding.scoring.SeenIdentity
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import org.springframework.stereotype.Service
+import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -17,12 +20,16 @@ import java.util.UUID
  * An identity belongs to a member when it is exactly their registered email or their declared GitHub
  * login. Nothing is linked here: where one member owns several identities the matches only suggest the
  * links, and a manager confirms them.
+ *
+ * A member whose last trace is older than the default inactivity limit of the scoring is reported as inactive,
+ * which is the state the ranking already treats as gone, so a manager can tell it from a departure they mark.
  */
 @Service
 class MemberIdentityService(
     private val seenIdentities: SeenIdentityService,
     private val members: ProjectMembershipApi,
     private val users: UserApi,
+    private val clock: Clock,
 ) {
     /**
      * Every member of a project with the identities that are theirs, ordered by name.
@@ -32,6 +39,7 @@ class MemberIdentityService(
      */
     fun matches(projectId: ProjectId, asOf: Instant?): List<MemberMatch> {
         val ownedBy = seenIdentities.seen(projectId, asOf).groupBy(::ownerOf)
+        val limit = (asOf ?: clock.instant()).minus(Duration.ofDays(WeightProfile().inactiveAfterDays))
         return members
             .getProjectMembers(projectId.value)
             .map { member ->
@@ -42,6 +50,7 @@ class MemberIdentityService(
                     githubLogin = member.githubLogin,
                     identities = identities,
                     suggestions = suggestionsFor(identities),
+                    inactive = identities.isNotEmpty() && identities.all { it.lastSeenAt < limit },
                 )
             }.sortedBy { it.displayName.lowercase() }
     }

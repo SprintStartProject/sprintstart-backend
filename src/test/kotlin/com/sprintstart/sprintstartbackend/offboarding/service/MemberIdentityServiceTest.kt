@@ -14,7 +14,10 @@ import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Optional
 import java.util.UUID
 
@@ -23,7 +26,8 @@ class MemberIdentityServiceTest {
     private val seen = mockk<SeenIdentityService>()
     private val membership = mockk<ProjectMembershipApi>()
     private val users = mockk<UserApi>()
-    private val service = MemberIdentityService(seen, membership, users)
+    private val now = Instant.parse("2026-03-10T00:00:00Z")
+    private val service = MemberIdentityService(seen, membership, users, Clock.fixed(now, ZoneOffset.UTC))
 
     private val ada = UUID.randomUUID()
     private val ben = UUID.randomUUID()
@@ -33,12 +37,18 @@ class MemberIdentityServiceTest {
     private fun member(id: UUID, name: String, login: String? = null) =
         ProjectMember(userId = id, displayName = name, githubLogin = login, joinedAt = null)
 
-    private fun trace(identity: String, commits: Int = 0, reviews: Int = 0, person: String = identity) =
+    private fun trace(
+        identity: String,
+        commits: Int = 0,
+        reviews: Int = 0,
+        person: String = identity,
+        lastSeenAt: Instant = at,
+    ) =
         SeenIdentity(
             identity = PersonKey(identity),
             person = PersonKey(person),
             touches = mapOf(SourceId.COMMITS to commits, SourceId.REVIEWS to reviews).filterValues { it > 0 },
-            lastSeenAt = at,
+            lastSeenAt = lastSeenAt,
         )
 
     private fun owners(vararg owners: Pair<String, UUID>) {
@@ -159,5 +169,54 @@ class MemberIdentityServiceTest {
         owners()
 
         assertThat(service.matches(project, earlier).single().matched).isFalse()
+    }
+
+    @Test
+    fun `a member who left no trace for more than a year is inactive`() {
+        team(member(ada, "Ada"))
+        evidence(trace("ada@x.org", commits = 5, lastSeenAt = now.minus(Duration.ofDays(400))))
+        owners("ada@x.org" to ada)
+
+        val match = service.matches(project, null).single()
+
+        assertThat(match.inactive).isTrue()
+        assertThat(match.lastSeenAt).isEqualTo(now.minus(Duration.ofDays(400)))
+    }
+
+    @Test
+    fun `a member with a recent trace under any identity is active`() {
+        team(member(ada, "Ada"))
+        evidence(
+            trace("ada@x.org", commits = 5, lastSeenAt = now.minus(Duration.ofDays(400))),
+            trace("ada@old.org", commits = 1, lastSeenAt = now.minus(Duration.ofDays(20))),
+        )
+        owners("ada@x.org" to ada, "ada@old.org" to ada)
+
+        val match = service.matches(project, null).single()
+
+        assertThat(match.inactive).isFalse()
+        assertThat(match.lastSeenAt).isEqualTo(now.minus(Duration.ofDays(20)))
+    }
+
+    @Test
+    fun `a member nothing is known of is not inactive and has no last trace`() {
+        team(member(ben, "Ben"))
+        evidence()
+
+        val match = service.matches(project, null).single()
+
+        assertThat(match.inactive).isFalse()
+        assertThat(match.lastSeenAt).isNull()
+    }
+
+    @Test
+    fun `a past date is the point the inactivity is counted from`() {
+        val past = Instant.parse("2026-01-01T00:00:00Z")
+        team(member(ada, "Ada"))
+        every { seen.seen(project, past) } returns
+            listOf(trace("ada@x.org", commits = 1, lastSeenAt = past.minus(Duration.ofDays(30))))
+        owners("ada@x.org" to ada)
+
+        assertThat(service.matches(project, past).single().inactive).isFalse()
     }
 }
