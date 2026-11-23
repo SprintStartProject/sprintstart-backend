@@ -22,12 +22,12 @@ internal class Assessor(
     private val query: DepartureQuery,
     histories: List<FileHistory>,
 ) {
-    private val authorship = Authorship(query.profile, query.asOf)
+    private val knowledge = Knowledge.of(query.profile, query.asOf)
     private val inactive = inactivePeople(histories)
     private val busiest = histories.maxOfOrNull(::activity) ?: 0.0
 
     fun assess(history: FileHistory): Assessment {
-        val knowers = authorship.authorsOf(history) - inactive
+        val knowers = knowledge.authorsOf(history) - inactive
         val remaining = knowers - query.departing
         return when {
             knowers.isEmpty() -> Assessment.AlreadyOrphaned
@@ -65,7 +65,7 @@ internal class Assessor(
         return breakdown.entries.sumOf { (source, share) -> weights.getValue(source) * share } / weights.values.sum()
     }
 
-    private fun activity(history: FileHistory): Double = history.touches.sumOf(authorship::weight)
+    private fun activity(history: FileHistory): Double = history.touches.sumOf(knowledge::weight)
 
     private fun fragmentation(history: FileHistory): Double {
         val shares = history.touches

@@ -21,6 +21,14 @@ data class RiskSettingsResponse(
     val activityWeight: Double,
     val name: String,
     val sourceWeights: Map<String, Double>,
+    val knowledge: KnowledgeResponse = KnowledgeResponse(),
+)
+
+/** How a ranking decided who knows a file; maps stored before there was a choice used authorship. */
+data class KnowledgeResponse(
+    val model: String = "authorship",
+    val knowsAtLeast: Double = 1.0,
+    val foundingBonus: Double = 3.0,
 )
 
 /** How many files fall in each class; `listed` is how many of the at-risk files `files` carries. */

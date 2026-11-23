@@ -1,5 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.request
 
+import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeModel
+import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeSettings
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
 import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
 import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
@@ -41,6 +43,24 @@ class RiskParametersTest {
         assertThat(request.profile).isEqualTo(
             WeightProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.5),
         )
+    }
+
+    @Test
+    fun `the way knowledge is decided can be chosen by name`() {
+        val request = RiskParameters(
+            leaving = listOf("ada"),
+            knowledge = "time-weighted",
+            knowsAtLeast = 2.0,
+        ).toRequest()
+
+        assertThat(request.profile.knowledge)
+            .isEqualTo(KnowledgeSettings(KnowledgeModel.TIME_WEIGHTED, knowsAtLeast = 2.0))
+    }
+
+    @Test
+    fun `an unknown way of deciding knowledge is a bad request`() {
+        badRequestFor(RiskParameters(leaving = listOf("ada"), knowledge = "guess"))
+        badRequestFor(RiskParameters(leaving = listOf("ada"), knowsAtLeast = 0.0))
     }
 
     @Test

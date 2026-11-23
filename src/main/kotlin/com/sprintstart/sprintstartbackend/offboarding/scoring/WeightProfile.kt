@@ -13,6 +13,7 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
  * @property name What the profile is called where its ranking is shown or compared.
  * @property sourceWeights How much each kind of evidence counts, from 0. A source the profile does not
  *           name counts for nothing and is not read.
+ * @property knowledge How to decide who knows a file.
  */
 data class WeightProfile(
     val halfLifeDays: Double = DEFAULT_HALF_LIFE_DAYS,
@@ -22,6 +23,7 @@ data class WeightProfile(
     val activityWeight: Double = DEFAULT_ACTIVITY_WEIGHT,
     val name: String = DEFAULT_NAME,
     val sourceWeights: Map<SourceId, Double> = mapOf(SourceId.COMMITS to 1.0),
+    val knowledge: KnowledgeSettings = KnowledgeSettings(),
 ) {
     init {
         require(halfLifeDays > 0) { "The half-life must be positive" }

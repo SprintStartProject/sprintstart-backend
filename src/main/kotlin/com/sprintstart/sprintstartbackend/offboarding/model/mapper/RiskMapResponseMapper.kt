@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.mapper
 
 import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.KnowledgeResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSettingsResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSummaryResponse
@@ -38,6 +39,13 @@ private fun WeightProfile.toResponse() = RiskSettingsResponse(
     activityWeight = activityWeight,
     name = name,
     sourceWeights = sourceWeights.mapKeys { it.key.value }.toSortedMap(),
+    knowledge = KnowledgeResponse(
+        model = knowledge.model.name
+            .lowercase()
+            .replace('_', '-'),
+        knowsAtLeast = knowledge.knowsAtLeast,
+        foundingBonus = knowledge.foundingBonus,
+    ),
 )
 
 private fun FileRisk.toResponse() = FileRiskResponse(
