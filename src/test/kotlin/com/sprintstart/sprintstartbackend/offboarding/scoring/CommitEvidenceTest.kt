@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
@@ -20,6 +21,8 @@ class CommitEvidenceTest {
         }
 
         override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
+
+        override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
     }
 
     @Test

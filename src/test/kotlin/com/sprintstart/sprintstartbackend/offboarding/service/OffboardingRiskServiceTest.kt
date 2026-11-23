@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
@@ -41,6 +42,8 @@ class OffboardingRiskServiceTest {
         }
 
         override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
+
+        override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
     }
 
     private fun row(path: String, email: String, at: String) =

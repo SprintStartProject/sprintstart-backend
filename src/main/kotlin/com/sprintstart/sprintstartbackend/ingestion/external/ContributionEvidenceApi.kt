@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.external
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
@@ -35,4 +36,14 @@ interface ContributionEvidenceApi {
      * @return One entry per reviewer and file; empty when the project has no recorded reviews.
      */
     fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview>
+
+    /**
+     * How complicated each file of the given repositories was when it was last read.
+     *
+     * Files that were never read as text, such as binaries, have no entry.
+     *
+     * @param repositories The repository keys, for example `github:owner/repo`.
+     * @return One entry per measured file; empty when none was measured.
+     */
+    fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading>
 }
