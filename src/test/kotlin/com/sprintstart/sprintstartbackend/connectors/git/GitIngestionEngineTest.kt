@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileChange
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitFileSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
+import com.sprintstart.sprintstartbackend.shared.git.CommitFiles
 import com.sprintstart.sprintstartbackend.shared.git.GitChangeSet
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
 import com.sprintstart.sprintstartbackend.shared.git.GitConfig
@@ -251,8 +252,22 @@ class GitIngestionEngineTest {
         val commitSink = mockk<GitCommitSink>(relaxed = true)
         coEvery { revisionState.updateLocal(repositoryPath) } returns REVISION
         coEvery { gitLog.commits(repositoryPath, null) } returns listOf(
-            GitCommit("a", "Ada", Instant.parse("2026-01-01T00:00:00Z"), "First"),
-            GitCommit("b", "Bob", Instant.parse("2026-01-02T00:00:00Z"), "Second"),
+            GitCommit(
+                "a",
+                "Ada",
+                "ada@example.com",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                "First",
+                CommitFiles.Listed(emptyList()),
+            ),
+            GitCommit(
+                "b",
+                "Bob",
+                "bob@example.com",
+                Instant.parse("2026-01-02T00:00:00Z"),
+                "Second",
+                CommitFiles.Listed(emptyList()),
+            ),
         )
 
         val outcome = engine().ingestCommitsSince(coordinates, null, commitSink)

@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.springframework.stereotype.Service
 import java.nio.file.Path
-import java.time.Instant
 
 /**
  * Reads the commits of a local clone.
@@ -15,16 +14,21 @@ import java.time.Instant
  * timestamp filter silently drops exactly those commits and can never reconcile its clock against
  * the committer's.
  *
- * Fields are separated by the ASCII unit separator rather than by a printable delimiter, because a
- * printable one can occur inside an author name or a subject and would then split the record.
+ * Each commit also carries the files it changed, read in the same pass so that no second command
+ * per commit is needed. A commit that changed more files than [GitIngestConfig.maxFilesPerCommit]
+ * is reported without listing them. The record format and its parsing are described by
+ * [GitLogParser].
  *
  * @property onDiskOperations The factory supplying the Git commands themselves.
  * @property gitRunner The runner used to execute them.
+ * @property config Supplies the limit on how many files a commit may list.
+ * @property ioDispatcher The dispatcher the blocking Git call runs on.
  */
 @Service
 class GitLog(
     private val onDiskOperations: OnDiskOperations,
     private val gitRunner: GitOperationRunner,
+    private val config: GitConfig,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     /**
@@ -39,39 +43,7 @@ class GitLog(
      */
     suspend fun commits(repositoryPath: Path, sinceRevision: String?): List<GitCommit> =
         withContext(ioDispatcher) {
-            gitRunner
-                .exec(repositoryPath, onDiskOperations.gitLog(sinceRevision))
-                .lineSequence()
-                .mapNotNull(::parse)
-                .toList()
+            GitLogParser(config.ingest.maxFilesPerCommit)
+                .parse(gitRunner.exec(repositoryPath, onDiskOperations.gitLog(sinceRevision)))
         }
-
-    /**
-     * Parses one `git log` record.
-     *
-     * A record that is not exactly four well-formed fields is skipped rather than failing the whole
-     * read: Git writes warnings and progress notices to the same merged stream, and one such line
-     * must not cost the caller every commit after it.
-     */
-    private fun parse(record: String): GitCommit? {
-        val fields = record.split(FIELD_SEPARATOR, limit = FIELD_COUNT)
-        if (fields.size < FIELD_COUNT) return null
-
-        val committedAt = runCatching { Instant.parse(fields[2].trim()) }.getOrNull() ?: return null
-        val sha = fields[0].trim()
-        if (sha.isEmpty()) return null
-
-        return GitCommit(
-            sha = sha,
-            authorName = fields[1],
-            committedAt = committedAt,
-            subject = fields[3],
-        )
-    }
-
-    private companion object {
-        /** ASCII unit separator, emitted by `git log` as `%x1f`. */
-        const val FIELD_SEPARATOR = '\u001F'
-        const val FIELD_COUNT = 4
-    }
 }

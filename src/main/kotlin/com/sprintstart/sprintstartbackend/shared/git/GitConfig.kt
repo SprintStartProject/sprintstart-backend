@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *             parallelism: ...
  *             batch-size: ...
  *             max-file-size-bytes: ...
+ *             max-files-per-commit: ...
  * ```
  *
  * This is a bean of its own rather than a nested class of the application's root configuration,
@@ -45,9 +46,13 @@ data class GitConfig(
  * @property parallelism How many files to read concurrently. `0` derives it from the processor count.
  * @property batchSize How many changed files are handed to a sink in one batch.
  * @property maxFileSizeBytes Largest file that is read. Larger files are reported as skipped.
+ * @property maxFilesPerCommit Most files a commit may change and still have them listed. A commit
+ *           above it is almost always a reformat or a vendor update, so it is reported as changing
+ *           too many files instead of listing them.
  */
 data class GitIngestConfig(
     val parallelism: Int = 0,
     val batchSize: Int = 32,
     val maxFileSizeBytes: Long = 1_048_576,
+    val maxFilesPerCommit: Int = 200,
 )
