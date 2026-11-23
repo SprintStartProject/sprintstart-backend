@@ -28,6 +28,9 @@ object Reasons {
             "${percent(risk.departingShare)}% of the evidence about it comes from the leaving people.",
             "One person holds almost all of the knowledge of it.".takeIf { risk.concentration.island != null },
             "It is among the more active files.".takeIf { risk.recentActivity >= ACTIVE_FROM },
+            risk.coupling.partners
+                .firstOrNull()
+                ?.let { "It usually changes together with ${it.path}." },
             lastChanged(Duration.between(risk.lastChangedAt, asOf).toDays()),
         )
 

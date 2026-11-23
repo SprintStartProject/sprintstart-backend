@@ -10,6 +10,7 @@ class ReasonsTest {
         island: PersonKey? = null,
         activity: Double = 0.1,
         changedDaysAgo: Long = 2,
+        coupling: Coupling = Coupling.NONE,
     ) = FileRisk(
         repository = REPOSITORY,
         path = "a.kt",
@@ -22,6 +23,7 @@ class ReasonsTest {
         concentration = Concentration(1.0, island),
         remainingKnowers = emptyList(),
         lastChangedAt = daysAgo(changedDaysAgo),
+        coupling = coupling,
     )
 
     private fun reasons(risk: FileRisk) = Reasons.of(risk, NOW)
@@ -59,6 +61,15 @@ class ReasonsTest {
         assertThat(reasons(risk(changedDaysAgo = 5))).contains("It changed within the last month.")
         assertThat(reasons(risk(changedDaysAgo = 45))).contains("It last changed a month ago.")
         assertThat(reasons(risk(changedDaysAgo = 420))).contains("It last changed 14 months ago.")
+    }
+
+    @Test
+    fun `the strongest partner is named by its path`() {
+        val coupling =
+            Coupling(1.5, listOf(CoupledFile(REPOSITORY, "src/Parser.kt", 0.9), CoupledFile(REPOSITORY, "b.kt", 0.6)))
+
+        assertThat(reasons(risk(coupling = coupling))).contains("It usually changes together with src/Parser.kt.")
+        assertThat(reasons(risk())).noneMatch { it.contains("together") }
     }
 
     @Test

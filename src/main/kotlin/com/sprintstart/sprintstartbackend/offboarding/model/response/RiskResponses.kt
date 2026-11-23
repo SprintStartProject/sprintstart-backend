@@ -51,6 +51,24 @@ data class ConcentrationResponse(
     val island: String?,
 )
 
+/**
+ * The files that change together with a file.
+ *
+ * @property sum The coupling of every partner added up.
+ * @property partners The most strongly coupled files, strongest first.
+ */
+data class CouplingResponse(
+    val sum: Double,
+    val partners: List<CoupledFileResponse>,
+)
+
+/** A file that changes together with another, and how strongly, from 0 to 1. */
+data class CoupledFileResponse(
+    val repository: String,
+    val path: String,
+    val degree: Double,
+)
+
 /** One file at risk, with the measures that put it there. */
 data class FileRiskResponse(
     val repository: String,
@@ -62,6 +80,7 @@ data class FileRiskResponse(
     val recentActivity: Double,
     val fragmentation: Double,
     val concentration: ConcentrationResponse? = null,
+    val coupling: CouplingResponse? = null,
     val reasons: List<String> = emptyList(),
     val remainingKnowers: List<String>,
     val lastChangedAt: Instant,

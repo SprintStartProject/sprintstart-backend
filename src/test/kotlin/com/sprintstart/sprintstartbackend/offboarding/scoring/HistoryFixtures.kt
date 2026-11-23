@@ -52,4 +52,5 @@ internal fun contribution(
     at: Instant,
     renamedFrom: String? = null,
     repository: String = REPOSITORY,
-): FileContribution = FileContribution(repository, path, renamedFrom, email, at)
+    commit: java.util.UUID? = null,
+): FileContribution = FileContribution(repository, path, renamedFrom, email, at, commit)

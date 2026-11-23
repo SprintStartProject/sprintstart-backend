@@ -1,6 +1,8 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.mapper
 
 import com.sprintstart.sprintstartbackend.offboarding.model.response.ConcentrationResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.CoupledFileResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.CouplingResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.KnowledgeResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
@@ -59,6 +61,10 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
     reasons = reasons,
+    coupling = CouplingResponse(
+        sum = rounded(coupling.sum),
+        partners = coupling.partners.map { CoupledFileResponse(it.repository, it.path, rounded(it.degree)) },
+    ),
     concentration = ConcentrationResponse(rounded(concentration.effectiveKnowers), concentration.island?.value),
     remainingKnowers = remainingKnowers.map { it.value },
     lastChangedAt = lastChangedAt,

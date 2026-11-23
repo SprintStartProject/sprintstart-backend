@@ -21,6 +21,7 @@ internal sealed interface Assessment {
 internal class Assessor(
     private val query: DepartureQuery,
     histories: List<FileHistory>,
+    private val coupling: ChangeCoupling = ChangeCoupling(histories),
 ) {
     private val knowledge = Knowledge.of(query.profile, query.asOf)
     private val inactive = inactivePeople(histories)
@@ -56,6 +57,7 @@ internal class Assessor(
             recentActivity = activity,
             fragmentation = fragmentation(history),
             concentration = Concentration.of(knowledge.knowledgeOf(history)),
+            coupling = coupling.of(history),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )

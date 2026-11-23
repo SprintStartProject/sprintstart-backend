@@ -2,18 +2,21 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import java.time.Instant
+import java.util.UUID
 
 /**
  * One person doing something to a file at one moment.
  *
  * @property source The kind of evidence that recorded it.
  * @property founding Whether this can be the creation of the file. A review cannot found a file.
+ * @property commit The commit that made the change, when the source knows it, so files changed together can be found.
  */
 data class Touch(
     val person: PersonKey,
     val at: Instant,
     val source: SourceId = SourceId.COMMITS,
     val founding: Boolean = true,
+    val commit: UUID? = null,
 )
 
 /**
@@ -82,7 +85,7 @@ private class TrackedFiles {
         pathById[id] = row.path
         touchesById
             .getOrPut(id) { mutableListOf() }
-            .add(Touch(PersonKey.ofEmail(row.authorEmail), row.changedAt, SourceId.COMMITS))
+            .add(Touch(PersonKey.ofEmail(row.authorEmail), row.changedAt, SourceId.COMMITS, commit = row.commit))
     }
 
     fun histories(repository: String): List<FileHistory> =
