@@ -83,11 +83,22 @@ class GithubCommitsServiceTest {
     @Test
     fun `advances from the commit cursor the last run stored`() = runTest {
         connection.lastCommitsSyncedSha = PREVIOUS_REVISION
+        connection.commitFilesRecorded = true
         givenIngestSucceeds()
 
         service.fetchAndIngestCommits(connection, transactionId)
 
         coVerify { ingestionEngine.ingestCommitsSince(coordinates, PREVIOUS_REVISION, any()) }
+    }
+
+    @Test
+    fun `reads the whole history again when the stored commits carry no files`() = runTest {
+        connection.lastCommitsSyncedSha = PREVIOUS_REVISION
+        givenIngestSucceeds()
+
+        service.fetchAndIngestCommits(connection, transactionId)
+
+        coVerify { ingestionEngine.ingestCommitsSince(coordinates, "", any()) }
     }
 
     @Test
@@ -195,6 +206,7 @@ class GithubCommitsServiceTest {
 
     @Test
     fun `marks the repository out of date when the clone no longer matches the remote`() = runTest {
+        connection.commitFilesRecorded = true
         every { coordinatesFactory.of(connection) } returns coordinates
         every { repoConnectionRepository.save(connection) } returns connection
         coEvery { ingestionEngine.isUpToDate(coordinates) } returns false
@@ -206,7 +218,19 @@ class GithubCommitsServiceTest {
     }
 
     @Test
+    fun `marks a repository out of date when its stored commits carry no files even if the clone matches`() = runTest {
+        every { repoConnectionRepository.save(connection) } returns connection
+
+        service.verifyCommitSyncStatus(connection, transactionId)
+
+        assertThat(connection.connectionState).isEqualTo(ConnectionState.OUT_OF_DATE)
+        verify { repoConnectionRepository.save(connection) }
+        coVerify(exactly = 0) { ingestionEngine.isUpToDate(any()) }
+    }
+
+    @Test
     fun `leaves an up-to-date repository untouched`() = runTest {
+        connection.commitFilesRecorded = true
         every { coordinatesFactory.of(connection) } returns coordinates
         coEvery { ingestionEngine.isUpToDate(coordinates) } returns true
 

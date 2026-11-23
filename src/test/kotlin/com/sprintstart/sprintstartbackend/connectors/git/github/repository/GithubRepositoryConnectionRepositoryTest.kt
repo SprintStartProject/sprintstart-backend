@@ -41,6 +41,7 @@ class GithubRepositoryConnectionRepositoryTest {
         val stored = reloaded(id)
         assertThat(stored.lastSha).isEqualTo("sha-2")
         assertThat(stored.lastCommitsSyncedSha).isEqualTo("sha-0")
+        assertThat(stored.commitFilesRecorded).isFalse()
         assertThat(stored.sourceEnabled).isTrue()
         assertThat(stored.connectionState).isEqualTo(ConnectionState.UP_TO_DATE)
     }
@@ -56,6 +57,17 @@ class GithubRepositoryConnectionRepositoryTest {
         assertThat(stored.lastSha).isEqualTo("sha-1")
         assertThat(stored.sourceEnabled).isTrue()
         assertThat(stored.snapshot?.id).isEqualTo(id)
+    }
+
+    @Test
+    fun `a new connection has not recorded commit files until its commit cursor advances`() {
+        val id = store().id
+
+        assertThat(reloaded(id).commitFilesRecorded).isFalse()
+
+        repository.updateCommitsCursor(id, "sha-2")
+
+        assertThat(reloaded(id).commitFilesRecorded).isTrue()
     }
 
     private fun store(): GithubRepositoryConnection {

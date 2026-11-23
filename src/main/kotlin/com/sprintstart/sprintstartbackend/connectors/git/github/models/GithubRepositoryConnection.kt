@@ -54,6 +54,16 @@ class GithubRepositoryConnection(
     @OneToMany(mappedBy = "repository", fetch = FetchType.LAZY, orphanRemoval = true)
     var filesSnapshots: MutableList<GithubFileSnapshot> = mutableListOf(),
 ) {
+    /**
+     * Whether the commits behind [lastCommitsSyncedSha] were read together with the files they changed.
+     *
+     * `false` for every connection that existed before changed files were recorded, which is what
+     * makes its next commit ingest read the whole history again instead of resuming from the cursor.
+     * It turns `true` together with the cursor after the first successful ingest.
+     */
+    @Column(name = "commit_files_recorded", nullable = false, columnDefinition = "boolean default false")
+    var commitFilesRecorded: Boolean = false
+
     val projectIds: Set<UUID>
         get() = projectIdsInternal.toSet()
 }

@@ -9,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.Bi
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.utils.BitbucketGitProvider
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
+import com.sprintstart.sprintstartbackend.connectors.git.utils.commitResumePoint
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
@@ -59,7 +60,7 @@ internal class BitbucketCommitsService(
         }) {
             ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(connection),
-                sinceRevision = connection.lastCommitsSyncedSha,
+                sinceRevision = commitResumePoint(connection.lastCommitsSyncedSha, connection.commitFilesRecorded),
                 sink = BitbucketCommitSink(eventPublisher, connection, transactionId, provider.descriptor.sourceUrls),
             )
         }
