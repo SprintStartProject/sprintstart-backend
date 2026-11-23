@@ -11,6 +11,7 @@ class ReasonsTest {
         activity: Double = 0.1,
         changedDaysAgo: Long = 2,
         coupling: Coupling = Coupling.NONE,
+        hotspot: Double? = null,
     ) = FileRisk(
         repository = REPOSITORY,
         path = "a.kt",
@@ -24,6 +25,7 @@ class ReasonsTest {
         remainingKnowers = emptyList(),
         lastChangedAt = daysAgo(changedDaysAgo),
         coupling = coupling,
+        hotspot = hotspot,
     )
 
     private fun reasons(risk: FileRisk) = Reasons.of(risk, NOW)
@@ -70,6 +72,13 @@ class ReasonsTest {
 
         assertThat(reasons(risk(coupling = coupling))).contains("It usually changes together with src/Parser.kt.")
         assertThat(reasons(risk())).noneMatch { it.contains("together") }
+    }
+
+    @Test
+    fun `a hotspot says so and a file without one or below half does not`() {
+        assertThat(reasons(risk(hotspot = 0.5))).contains("It is a hotspot: complicated and changed often.")
+        assertThat(reasons(risk(hotspot = 0.49))).noneMatch { it.contains("hotspot") }
+        assertThat(reasons(risk(hotspot = null))).noneMatch { it.contains("hotspot") }
     }
 
     @Test

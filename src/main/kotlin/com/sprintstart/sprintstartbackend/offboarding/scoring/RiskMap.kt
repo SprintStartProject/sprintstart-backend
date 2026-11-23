@@ -22,6 +22,8 @@ enum class RiskLevel {
  * @property recentActivity How recently and often the file changes, relative to the busiest file, from 0 to 1.
  * @property fragmentation How spread the changes are across people: 0 for one person, towards 1 for many.
  * @property concentration How unevenly the knowledge of the file is spread over people.
+ * @property hotspot How complicated and how often changed the file is against the other files, from 0 to 1;
+ *           `null` when its complexity was never measured.
  * @property coupling The files that change together with this one.
  * @property successors People who could take the file over, best first; they know its surroundings.
  * @property reasons Plain sentences that say why the file is on the map; they name nobody.
@@ -41,6 +43,7 @@ data class FileRisk(
     val remainingKnowers: List<PersonKey>,
     val lastChangedAt: Instant,
     val coupling: Coupling = Coupling.NONE,
+    val hotspot: Double? = null,
     val successors: List<Successor> = emptyList(),
     val reasons: List<String> = emptyList(),
 )

@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
 import com.sprintstart.sprintstartbackend.offboarding.scoring.CommitEvidence
 import com.sprintstart.sprintstartbackend.offboarding.scoring.EvidenceSource
+import com.sprintstart.sprintstartbackend.offboarding.scoring.FileComplexities
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileHistory
 import com.sprintstart.sprintstartbackend.offboarding.scoring.Identities
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
@@ -33,6 +34,7 @@ class OffboardingRiskServiceTest {
 
     private class RecordingEvidence(
         private val rows: List<FileContribution>,
+        private val complexities: List<FileComplexityReading> = emptyList(),
     ) : ContributionEvidenceApi {
         val asked = mutableListOf<Pair<ProjectId, Instant>>()
 
@@ -43,8 +45,11 @@ class OffboardingRiskServiceTest {
 
         override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
 
-        override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
+        override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> =
+            complexities.filter { it.repository in repositories }
     }
+
+    private val noComplexity = FileComplexities(RecordingEvidence(emptyList()))
 
     private fun row(path: String, email: String, at: String) =
         FileContribution("github:acme/app", path, null, email, Instant.parse(at))
@@ -56,7 +61,13 @@ class OffboardingRiskServiceTest {
     )
 
     private fun service(evidence: ContributionEvidenceApi) =
-        OffboardingRiskService(listOf(CommitEvidence(evidence)), links, RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+        OffboardingRiskService(
+            listOf(CommitEvidence(evidence)),
+            links,
+            RiskScorer(),
+            noComplexity,
+            Clock.fixed(now, ZoneOffset.UTC),
+        )
 
     private fun request(asOf: Instant? = null) =
         RiskRequest(setOf(PersonKey("ada@x.org")), asOf, WeightProfile())
@@ -115,7 +126,13 @@ class OffboardingRiskServiceTest {
         val reviews = FixedSource(SourceId("reviews"), listOf(reviewOf("core.kt", "ada@x.org")))
         val commits = CommitEvidence(RecordingEvidence(rows))
         val service =
-            OffboardingRiskService(listOf(commits, reviews), links, RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+            OffboardingRiskService(
+                listOf(commits, reviews),
+                links,
+                RiskScorer(),
+                noComplexity,
+                Clock.fixed(now, ZoneOffset.UTC),
+            )
 
         service.riskMap(project, request())
 
@@ -127,7 +144,13 @@ class OffboardingRiskServiceTest {
         val reviews = FixedSource(SourceId("reviews"), listOf(reviewOf("core.kt", "ada@x.org")))
         val commits = CommitEvidence(RecordingEvidence(rows))
         val service =
-            OffboardingRiskService(listOf(commits, reviews), links, RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+            OffboardingRiskService(
+                listOf(commits, reviews),
+                links,
+                RiskScorer(),
+                noComplexity,
+                Clock.fixed(now, ZoneOffset.UTC),
+            )
         val profile = WeightProfile(sourceWeights = mapOf(SourceId.COMMITS to 1.0, SourceId("reviews") to 1.0))
 
         val map = service.riskMap(project, RiskRequest(setOf(PersonKey("ada@x.org")), null, profile))
@@ -145,7 +168,13 @@ class OffboardingRiskServiceTest {
         val reviews = FixedSource(SourceId("reviews"), listOf(reviewOf("core.kt", "ada")))
         val commits = CommitEvidence(RecordingEvidence(rows))
         val service =
-            OffboardingRiskService(listOf(commits, reviews), links, RiskScorer(), Clock.fixed(now, ZoneOffset.UTC))
+            OffboardingRiskService(
+                listOf(commits, reviews),
+                links,
+                RiskScorer(),
+                noComplexity,
+                Clock.fixed(now, ZoneOffset.UTC),
+            )
         val profile = WeightProfile(sourceWeights = mapOf(SourceId.COMMITS to 1.0, SourceId("reviews") to 1.0))
         val request = RiskRequest(setOf(PersonKey("ada")), null, profile)
 
@@ -167,5 +196,21 @@ class OffboardingRiskServiceTest {
         assertThat(map.files).isEmpty()
         assertThat(map.summary.files).isZero()
         assertThat(map.unknownDeparting).containsExactly(PersonKey("ada@x.org"))
+    }
+
+    @Test
+    fun `the complexity ingestion measured makes the files at risk hotspots`() {
+        val evidence = RecordingEvidence(rows, listOf(FileComplexityReading("github:acme/app", "core.kt", 40.0, 90)))
+        val service = OffboardingRiskService(
+            listOf(CommitEvidence(evidence)),
+            links,
+            RiskScorer(),
+            FileComplexities(evidence),
+            Clock.fixed(now, ZoneOffset.UTC),
+        )
+
+        val map = service.riskMap(project, request())
+
+        assertThat(map.files.first { it.path == "core.kt" }.hotspot).isNotNull()
     }
 }

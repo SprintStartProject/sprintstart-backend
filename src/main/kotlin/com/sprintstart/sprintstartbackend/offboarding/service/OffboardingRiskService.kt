@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.offboarding.service
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.DepartureQuery
 import com.sprintstart.sprintstartbackend.offboarding.scoring.EvidenceSource
+import com.sprintstart.sprintstartbackend.offboarding.scoring.FileComplexities
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileHistories
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskMap
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskScorer
@@ -16,6 +17,7 @@ class OffboardingRiskService(
     private val sources: List<EvidenceSource>,
     private val links: IdentityLinkService,
     private val scorer: RiskScorer,
+    private val complexities: FileComplexities,
     private val clock: Clock,
 ) {
     /**
@@ -32,6 +34,7 @@ class OffboardingRiskService(
         val identities = links.identities(projectId)
         val histories = FileHistories.merge(weighed.map { it.histories(projectId, asOf) }).map(identities::resolve)
         val departing = identities.resolve(request.departing)
-        return scorer.score(histories, DepartureQuery(departing, asOf, request.profile))
+        val complexity = complexities.of(histories.map { it.repository }.toSet())
+        return scorer.score(histories, DepartureQuery(departing, asOf, request.profile), complexity)
     }
 }
