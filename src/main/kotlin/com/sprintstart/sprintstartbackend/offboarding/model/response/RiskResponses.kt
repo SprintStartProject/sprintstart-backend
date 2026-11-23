@@ -69,6 +69,12 @@ data class CoupledFileResponse(
     val degree: Double,
 )
 
+/** A person who could take a file over, with the score of how well they know its surroundings. */
+data class SuccessorResponse(
+    val person: String,
+    val score: Double,
+)
+
 /** One file at risk, with the measures that put it there. */
 data class FileRiskResponse(
     val repository: String,
@@ -81,6 +87,7 @@ data class FileRiskResponse(
     val fragmentation: Double,
     val concentration: ConcentrationResponse? = null,
     val coupling: CouplingResponse? = null,
+    val successors: List<SuccessorResponse> = emptyList(),
     val reasons: List<String> = emptyList(),
     val remainingKnowers: List<String>,
     val lastChangedAt: Instant,

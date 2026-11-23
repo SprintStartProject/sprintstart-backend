@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskRes
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSettingsResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSummaryResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.SuccessorResponse
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
@@ -55,6 +56,7 @@ class StudyExportServiceTest {
         recentActivity = 0.3,
         fragmentation = 0.4,
         concentration = ConcentrationResponse(1.1, knowers.firstOrNull()),
+        successors = knowers.map { SuccessorResponse(it, 4.0) },
         remainingKnowers = knowers.toList(),
         lastChangedAt = asOf,
     )
@@ -109,6 +111,8 @@ class StudyExportServiceTest {
         assertThat(exported.departing).containsExactly(names.of("ada@x.org"))
         assertThat(exported.unknownDeparting).containsExactly(names.of("typo@x.org"))
         assertThat(exported.files.map { it.remainingKnowers })
+            .containsExactly(listOf(names.of("ben@x.org")), listOf(names.of("carol")))
+        assertThat(exported.files.map { file -> file.successors.map { it.person } })
             .containsExactly(listOf(names.of("ben@x.org")), listOf(names.of("carol")))
         assertThat(exported.files.map { it.concentration?.island })
             .containsExactly(names.of("ben@x.org"), names.of("carol"))

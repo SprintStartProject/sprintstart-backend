@@ -25,6 +25,7 @@ internal class Assessor(
 ) {
     private val knowledge = Knowledge.of(query.profile, query.asOf)
     private val inactive = inactivePeople(histories)
+    private val successors = SuccessorFinder(histories, coupling, inactive + query.departing)
     private val busiest = histories.maxOfOrNull(::activity) ?: 0.0
 
     fun assess(history: FileHistory): Assessment {
@@ -58,6 +59,7 @@ internal class Assessor(
             fragmentation = fragmentation(history),
             concentration = Concentration.of(knowledge.knowledgeOf(history)),
             coupling = coupling.of(history),
+            successors = successors.suggest(history, remaining),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )

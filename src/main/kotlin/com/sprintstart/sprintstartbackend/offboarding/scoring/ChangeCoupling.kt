@@ -6,11 +6,13 @@ import java.util.UUID
  * A file that tends to change in the same commits as another.
  *
  * @property degree The shared commits as a fraction of the two files' average number of commits, from 0 to 1.
+ * @property shared How many commits changed both files.
  */
 data class CoupledFile(
     val repository: String,
     val path: String,
     val degree: Double,
+    val shared: Int = 0,
 )
 
 /**
@@ -47,12 +49,17 @@ class ChangeCoupling(
         val path: String,
     )
 
+    private val partners: Map<Key, List<CoupledFile>>
     private val couplings: Map<Key, Coupling>
 
     init {
         val commitsByFile = histories.associate { Key(it.repository, it.path) to commitsOf(it) }
-        couplings = partnersByFile(commitsByFile).mapValues { (_, partners) -> coupling(partners) }
+        partners = partnersByFile(commitsByFile)
+        couplings = partners.mapValues { (_, files) -> coupling(files) }
     }
+
+    /** Every file coupled to [history]'s file, with how many commits they share. */
+    fun partnersOf(history: FileHistory): List<CoupledFile> = partners[Key(history.repository, history.path)].orEmpty()
 
     /** The coupling of [history]'s file. */
     fun of(history: FileHistory): Coupling = couplings[Key(history.repository, history.path)] ?: Coupling.NONE
@@ -66,13 +73,13 @@ class ChangeCoupling(
                 val degree =
                     together /
                         ((commitsByFile.getValue(pair.first).size + commitsByFile.getValue(pair.second).size) / 2.0)
-                if (degree < minDegree) emptyList() else both(pair, degree)
+                if (degree < minDegree) emptyList() else both(pair, degree, together)
             }.groupBy({ it.first }, { it.second })
 
-    private fun both(pair: Pair<Key, Key>, degree: Double): List<Pair<Key, CoupledFile>> =
+    private fun both(pair: Pair<Key, Key>, degree: Double, together: Int): List<Pair<Key, CoupledFile>> =
         listOf(
-            pair.first to CoupledFile(pair.second.repository, pair.second.path, degree),
-            pair.second to CoupledFile(pair.first.repository, pair.first.path, degree),
+            pair.first to CoupledFile(pair.second.repository, pair.second.path, degree, together),
+            pair.second to CoupledFile(pair.first.repository, pair.first.path, degree, together),
         )
 
     private fun sharedCommits(commitsByFile: Map<Key, Set<UUID>>): Map<Pair<Key, Key>, Int> {

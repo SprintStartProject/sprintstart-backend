@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.offboarding.model.response.KnowledgeRe
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSettingsResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSummaryResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.SuccessorResponse
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileRisk
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskMap
 import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
@@ -61,6 +62,7 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
     reasons = reasons,
+    successors = successors.map { SuccessorResponse(it.person.value, rounded(it.score)) },
     coupling = CouplingResponse(
         sum = rounded(coupling.sum),
         partners = coupling.partners.map { CoupledFileResponse(it.repository, it.path, rounded(it.degree)) },

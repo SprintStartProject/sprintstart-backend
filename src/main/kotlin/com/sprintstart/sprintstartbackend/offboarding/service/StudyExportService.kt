@@ -43,5 +43,6 @@ class StudyExportService(
         file.copy(
             remainingKnowers = file.remainingKnowers.map(names::of),
             concentration = file.concentration?.let { it.copy(island = it.island?.let(names::of)) },
+            successors = file.successors.map { it.copy(person = names.of(it.person)) },
         )
 }
