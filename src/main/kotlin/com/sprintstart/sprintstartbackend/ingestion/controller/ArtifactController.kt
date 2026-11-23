@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.controller
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
@@ -15,6 +14,7 @@ import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiStatusServ
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
 import com.sprintstart.sprintstartbackend.ingestion.service.MAX_AI_STATUS_IDS
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.responses.ApiResponse

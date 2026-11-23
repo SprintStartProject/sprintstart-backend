@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.model.mapper
 
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
 import com.sprintstart.sprintstartbackend.user.model.entity.ProjectUserAssignment
 import com.sprintstart.sprintstartbackend.user.model.entity.User

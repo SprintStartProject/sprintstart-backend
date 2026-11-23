@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FinishedTypes
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.justRun
 import io.mockk.mockk

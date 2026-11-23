@@ -4,12 +4,12 @@ import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.RunArtifactsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_STATUS_FAILED
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.RunArtifactsIngestResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ingestion.ArtifactAiMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -51,7 +51,7 @@ class RunArtifactsIngestionService(
      *
      * @param runId The completed ingestion run whose artifacts should be synced to AI.
      * @throws IngestionRunNotFoundException when the run id does not exist.
-     * @throws com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+     * @throws com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
      * when the AI ingestion service rejects the sync request.
      */
     @Tracked("Dispatching AI sync for run")

@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.confluence.client
 
-import com.sprintstart.sprintstartbackend.ConfluenceRetryConfig
+import com.sprintstart.sprintstartbackend.shared.config.ConfluenceRetryConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer

@@ -11,4 +11,7 @@ interface ComponentOwnerRepository : JpaRepository<ComponentOwner, UUID> {
     fun findAllByUserId(userId: UUID): List<ComponentOwner>
 
     fun deleteByComponent(component: String)
+
+    /** Removes the user as owner of every component. */
+    fun deleteAllByUserId(userId: UUID)
 }

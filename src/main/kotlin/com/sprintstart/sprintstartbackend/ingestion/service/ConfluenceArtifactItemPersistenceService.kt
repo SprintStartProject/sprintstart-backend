@@ -1,8 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluencePageArtifactCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipType
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactCommand
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactCodeBlock
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationship
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationshipType
@@ -16,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional

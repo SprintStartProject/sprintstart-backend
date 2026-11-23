@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.config.KeycloakRoleMapper
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
 import com.sprintstart.sprintstartbackend.user.external.enums.GithubLoginSource
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.UserCreatedEvent
 import com.sprintstart.sprintstartbackend.user.external.events.UserDeletedEvent
+import com.sprintstart.sprintstartbackend.user.external.security.KeycloakRoleMapper
 import com.sprintstart.sprintstartbackend.user.model.entity.User
 import com.sprintstart.sprintstartbackend.user.model.mapper.toGetResponse
 import com.sprintstart.sprintstartbackend.user.model.request.user.PatchMeRequest

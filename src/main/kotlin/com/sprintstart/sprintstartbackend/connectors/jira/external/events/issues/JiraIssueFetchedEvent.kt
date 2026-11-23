@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues
 
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueResponse
 import java.util.UUID
 
 data class JiraIssueFetchedEvent(

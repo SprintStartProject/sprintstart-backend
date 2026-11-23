@@ -1,0 +1,35 @@
+package com.sprintstart.sprintstartbackend.path.model.response.step
+
+import com.sprintstart.sprintstartbackend.blueprint.external.enums.StepType
+import com.sprintstart.sprintstartbackend.path.external.enums.StepOrigin
+import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.path.model.response.feedback.GetOnboardingFeedbackResponse
+import com.sprintstart.sprintstartbackend.path.model.response.resource.GetOnboardingResourcesResponse
+import com.sprintstart.sprintstartbackend.path.model.response.skip.GetOnboardingStepSkipResponse
+import com.sprintstart.sprintstartbackend.path.model.response.task.GetOnboardingTasksResponse
+import java.time.Instant
+import java.util.UUID
+
+data class GetOnboardingStepResponse(
+    val id: UUID,
+    val phaseId: UUID,
+    val position: Int,
+    val title: String,
+    val description: String,
+    val type: StepType,
+    val estimatedMinutes: Int,
+    val isAiAssisted: Boolean,
+    val expectedOutcomes: List<String> = emptyList(),
+    val tasks: List<GetOnboardingTasksResponse>,
+    val resources: List<GetOnboardingResourcesResponse>,
+    val status: StepStatus,
+    val startedAt: Instant? = null,
+    val completedAt: Instant?,
+    val feedback: GetOnboardingFeedbackResponse? = null,
+    val skip: GetOnboardingStepSkipResponse?,
+    val graphX: Double? = null,
+    val graphY: Double? = null,
+    val blockerIds: Set<UUID> = emptySet(),
+    /** Who put this step on the path: generated, a PM, the hire, or their buddy. */
+    val origin: StepOrigin = StepOrigin.GENERATED,
+)

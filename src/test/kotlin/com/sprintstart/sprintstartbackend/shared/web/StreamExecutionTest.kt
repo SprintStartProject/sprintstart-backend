@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.shared.web
 
-import com.sprintstart.sprintstartbackend.onboarding.external.model.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest

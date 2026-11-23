@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.controller
 
 import com.ninjasquad.springmockk.MockkBean
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactFilterCriteria
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSort
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadFormat
@@ -16,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactAiStatusService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactQueryService
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.verify
 import org.junit.jupiter.api.Test

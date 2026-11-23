@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.dto.response
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID

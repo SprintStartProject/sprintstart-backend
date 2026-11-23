@@ -42,7 +42,8 @@ measure_duplication() {
     local out
     out=$(mktemp -d)
     npx -y "jscpd@$JSCPD_VERSION" "${DUPLICATION_PATHS[@]}" --min-tokens 70 --reporters json \
-        --output "$out" --silent --format "$DUPLICATION_FORMATS"         ${DUPLICATION_IGNORE:+--ignore "$DUPLICATION_IGNORE"} >/dev/null 2>&1
+        --output "$out" --silent --format "$DUPLICATION_FORMATS"         ${DUPLICATION_IGNORE:+--ignore "$DUPLICATION_IGNORE"} \
+        ${DUPLICATION_IGNORE_PATTERN:+--ignore-pattern "$DUPLICATION_IGNORE_PATTERN"} >/dev/null 2>&1
     grep -oE '"duplicatedLines"[[:space:]]*:[[:space:]]*[0-9]+' "$out/jscpd-report.json" 2>/dev/null \
         | tail -1 | grep -oE '[0-9]+$'
     rm -rf "$out"

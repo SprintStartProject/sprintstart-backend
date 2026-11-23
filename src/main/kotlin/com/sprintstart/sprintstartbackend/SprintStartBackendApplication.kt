@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend
 
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.git.GitConfig
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.EnableConfigurationProperties

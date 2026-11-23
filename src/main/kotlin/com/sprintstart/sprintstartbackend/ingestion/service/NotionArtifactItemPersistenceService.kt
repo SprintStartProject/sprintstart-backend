@@ -1,9 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteOutcome
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteResult
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageArtifactCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteOutcome
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteResult
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactCodeBlock
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSection
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.NotionArtifactMetadata
@@ -16,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional

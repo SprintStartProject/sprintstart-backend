@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiResponse
@@ -11,8 +10,9 @@ import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactProjectRepository
-import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

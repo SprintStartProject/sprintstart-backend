@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.insights.model.mapper
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDetailResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentPreviewResponse
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqDocumentResponse
@@ -9,6 +8,7 @@ import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqOvervie
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.FaqQuestionResponse
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.service.FaqTrendCalculator
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import org.springframework.stereotype.Component
 import java.util.UUID
 

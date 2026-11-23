@@ -10,11 +10,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestComment
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.pullrequests.GithubPullRequestReview
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant

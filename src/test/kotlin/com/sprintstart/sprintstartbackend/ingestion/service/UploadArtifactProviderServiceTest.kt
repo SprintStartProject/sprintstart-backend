@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.UploadArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
@@ -10,6 +9,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRu
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.UploadArtifactProviderService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot

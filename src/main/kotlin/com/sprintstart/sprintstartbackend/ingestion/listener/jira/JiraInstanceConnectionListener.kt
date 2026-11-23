@@ -3,9 +3,9 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.jira
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiatedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.initial.JiraInstanceConnectionInitiationFailedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 

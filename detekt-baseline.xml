@@ -2,7 +2,6 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>CognitiveComplexMethod:BuddyBoardTools.kt:BuddyBoardTools$private fun readBoard(userId: UserId): String</ID>
     <ID>CognitiveComplexMethod:BuddyService.kt:BuddyService$@Suppress("CyclomaticComplexMethod", "ThrowsCount") suspend fun sendMessageForMe( authId: String, sessionId: UUID?, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters?, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
     <ID>CognitiveComplexMethod:IngestionRunLifeCycleService.kt:IngestionRunLifeCycleService$@Transactional @Tracked("Starting ingestion run") fun startOrUpdateRun( transactionId: UUID, sourceSystem: SourceSystem, status: IngestionRunStatus, failureReason: String? = null, sourceInstanceId: UUID? = null, sourceInstanceRef: String? = null, )</ID>
     <ID>CognitiveComplexMethod:OnboardingPersonalizationService.kt:OnboardingPersonalizationService$@Suppress("CyclomaticComplexMethod") private suspend fun streamPhaseContent( phase: PhaseAssemblyTarget, projectId: String, industry: String?, relay: suspend (detail: String) -&gt; Unit, ): PhaseGenerationResult</ID>
@@ -14,7 +13,7 @@
     <ID>CyclomaticComplexMethod:ArtifactFacetRepositoryImpl.kt:ArtifactFacetRepositoryImpl$private fun computeRepositoryFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List&lt;FacetCountResponse&gt;</ID>
     <ID>CyclomaticComplexMethod:ArtifactService.kt:ArtifactService$@Transactional(readOnly = true) @Tracked("Retrieving content of artifact") fun getArtifactContent(projectId: UUID, artifactId: UUID, authId: String): ArtifactContentResult</ID>
     <ID>CyclomaticComplexMethod:BitbucketArtifactProviderService.kt:BitbucketArtifactProviderService$private fun applyChange(artifact: Artifact, command: BitbucketArtifactCommand): BitbucketArtifactChange</ID>
-    <ID>CyclomaticComplexMethod:BoardCardHydrator.kt:BoardCardHydrator$private fun hydrate( card: BoardCard, member: ProjectMember, projectId: ProjectId, diagram: BoardDiagram?, arrivalSteps: List&lt;ResolvedArrivalStep&gt;, pathSteps: Map&lt;UUID, ResolvedPathStep&gt;, matches: () -&gt; List&lt;RankedStarterWorkTaskResponse&gt;, ): BoardCardContent</ID>
+    <ID>CyclomaticComplexMethod:BoardCardHydrator.kt:BoardCardHydrator$private fun hydrate( card: BoardCard, member: ProjectMember, projectId: ProjectId, diagram: BoardDiagram?, arrivalSteps: List&lt;ArrivalStepResponse&gt;, pathSteps: Map&lt;UUID, ResolvedPathStep&gt;, matches: () -&gt; List&lt;RankedStarterWorkTaskResponse&gt;, ): BoardCardContent</ID>
     <ID>CyclomaticComplexMethod:BoardService.kt:BoardService$@Transactional fun place( userId: UserId, projectId: ProjectId, kind: BoardCardKind, subject: String? = null, by: BoardActor = BoardActor.BUDDY, ): PlacementOutcome</ID>
     <ID>CyclomaticComplexMethod:BoardService.kt:BoardService$private fun editableCardOrThrow( userId: UserId, cardId: BoardCardId, kind: BoardCardKind, ): Pair&lt;BoardCard, Board&gt;</ID>
     <ID>CyclomaticComplexMethod:BuddyActionService.kt:BuddyActionService$suspend fun perform(request: BuddyActionRequest, jwt: Jwt): BuddyActionResponse</ID>
@@ -42,7 +41,7 @@
     <ID>CyclomaticComplexMethod:PhaseText.kt:internal fun StringBuilder.appendCurrentPhase( phase: GetOnboardingPhaseForUserResponse, index: Int, phases: List&lt;GetOnboardingPhaseForUserResponse&gt;, lastAnswers: Map&lt;UUID, String&gt; = emptyMap(), )</ID>
     <ID>CyclomaticComplexMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Evaluating project industry automatically") override suspend fun evaluateIndustryAutomatically(projectId: UUID)</ID>
     <ID>CyclomaticComplexMethod:ProjectIndustryService.kt:ProjectIndustryService$@Tracked("Getting or lazily evaluating project industry") override suspend fun getOrEvaluateIndustry(projectId: UUID): String?</ID>
-    <ID>CyclomaticComplexMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): Outcome</ID>
+    <ID>CyclomaticComplexMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): PoolReconciliation</ID>
     <ID>CyclomaticComplexMethod:StepTeamActions.kt:AddStepAction$override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft</ID>
     <ID>CyclomaticComplexMethod:StepTeamActions.kt:UpdateStepAction$private fun badArgument(call: BuddyToolCallDto, slots: Int): String?</ID>
     <ID>LargeClass:BlueprintPathController.kt:BlueprintPathController</ID>
@@ -85,10 +84,10 @@
     <ID>LongMethod:BuddyService.kt:BuddyService$@Suppress("CyclomaticComplexMethod", "ThrowsCount") suspend fun sendMessageForMe( authId: String, sessionId: UUID?, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters?, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
     <ID>LongMethod:BuddyService.kt:BuddyService$private suspend fun FlowCollector&lt;BuddyStreamEvent&gt;.runToolCall( call: BuddyToolCallDto, userId: UUID, currentPage: String?, ): String</ID>
     <ID>LongMethod:BuddySkipActions.kt:BuddySkipActions$fun propose( call: BuddyToolCallDto, type: BuddyActionType, user: UserId, ): BuddyActionService.ProposeOutcome</ID>
-    <ID>LongMethod:BuddyTeamService.kt:BuddyTeamService$suspend fun sendMessageForMe( authId: String, projectId: UUID, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters? = null, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
+    <ID>LongMethod:BuddyTeamService.kt:BuddyTeamService$fun sendMessageForMe( authId: String, projectId: UUID, content: String, capabilitiesEnabled: Boolean = true, filters: BuddySessionFilters? = null, currentPage: String? = null, ): Flow&lt;BuddyStreamEvent&gt;</ID>
     <ID>LongMethod:BuddyToolExecutor.kt:BuddyToolExecutor$private fun getArrivalSteps(userId: UUID): String</ID>
     <ID>LongMethod:BuddyToolExecutor.kt:BuddyToolExecutor$private fun getSuggestedTasks(userId: UUID): String</ID>
-    <ID>LongMethod:CompetencyPlacementService.kt:CompetencyPlacementService$@Transactional fun record(userId: UUID, competencyKey: String, level: ProficiencyLevel): PlacementOutcome</ID>
+    <ID>LongMethod:CompetencyPlacementService.kt:CompetencyPlacementService$@Transactional fun record(userId: UUID, competencyKey: String, level: ProficiencyLevel): PlacementResult</ID>
     <ID>LongMethod:ConfluenceArtifactBatchService.kt:ConfluenceArtifactBatchService$fun persist(command: ConfluenceArtifactBatchCommand): ConfluenceArtifactBatchResult</ID>
     <ID>LongMethod:ConfluenceArtifactItemPersistenceService.kt:ConfluenceArtifactItemPersistenceService$private fun metadataJson(command: ConfluencePageArtifactCommand): String</ID>
     <ID>LongMethod:ConfluenceClient.kt:ConfluenceClient$private suspend fun fetchRestrictions( baseUrl: String, credentials: ConfluenceClientCredentials, pageId: String, ): ConfluencePageRestrictions</ID>
@@ -128,8 +127,8 @@
     <ID>LongMethod:NotionWorkspaceIngestionService.kt:NotionWorkspaceIngestionService$private suspend fun syncWorkspace( runId: UUID, connection: NotionWorkspaceConnection, forceRefresh: Boolean, ): NotionIngestionResult</ID>
     <ID>LongMethod:NotionWorkspaceMigration.kt:NotionWorkspaceMigration$private fun migrate(old: LegacyNotionConnection)</ID>
     <ID>LongMethod:OnboardingMetricsService.kt:OnboardingMetricsService$private fun timelineFor(member: ProjectMember, projectId: UUID): HireTimelineResponse</ID>
-    <ID>LongMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$fun createFrom( blueprintPath: BlueprintPath, userId: UUID, projectRoleIds: Set&lt;UUID&gt; = emptySet(), skillIds: Set&lt;UUID&gt; = emptySet(), generatedContentByBlueprintPhaseId: Map&lt;UUID, GeneratedPhaseContent&gt; = emptyMap(), generationStatusByBlueprintPhaseId: Map&lt;UUID, GenerationStatus&gt; = emptyMap(), ): OnboardingPath</ID>
-    <ID>LongMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$private fun BlueprintPhase.copyTo( onboardingPath: OnboardingPath, nodesByBlueprintId: MutableMap&lt;UUID, OnboardingSubGraphNode&gt;, generated: GeneratedPhaseContent? = null, generationStatus: GenerationStatus? = null, ): CopiedPhase</ID>
+    <ID>LongMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$fun createFrom( blueprint: BlueprintSnapshot, userId: UUID, projectRoleIds: Set&lt;UUID&gt; = emptySet(), skillIds: Set&lt;UUID&gt; = emptySet(), generatedContentByBlueprintPhaseId: Map&lt;UUID, GeneratedPhaseContent&gt; = emptyMap(), generationStatusByBlueprintPhaseId: Map&lt;UUID, GenerationStatus&gt; = emptyMap(), ): OnboardingPath</ID>
+    <ID>LongMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$private fun BlueprintPhaseSnapshot.copyTo( onboardingPath: OnboardingPath, nodesByBlueprintId: MutableMap&lt;UUID, OnboardingSubGraphNode&gt;, generated: GeneratedPhaseContent? = null, generationStatus: GenerationStatus? = null, ): CopiedPhase</ID>
     <ID>LongMethod:OnboardingPathFromBlueprintFactory.kt:OnboardingPathFromBlueprintFactory$private fun GeneratedPhaseContent.copyInto(onboardingPhase: OnboardingPhase)</ID>
     <ID>LongMethod:OnboardingPathService.kt:OnboardingPathService$private fun buildTeamOverviewUserDto( userDto: UserDto, path: OnboardingPath?, ): TeamOverviewUserDto</ID>
     <ID>LongMethod:OnboardingPersonalizationService.kt:OnboardingPersonalizationService$@Suppress("CyclomaticComplexMethod") private suspend fun streamPhaseContent( phase: PhaseAssemblyTarget, projectId: String, industry: String?, relay: suspend (detail: String) -&gt; Unit, ): PhaseGenerationResult</ID>
@@ -142,8 +141,7 @@
     <ID>LongMethod:ProjectRoleService.kt:ProjectRoleService$@Tracked("Suggesting skills for project role") suspend fun suggestSkillsForRole( roleId: UUID, request: SuggestSkillsRequest? = null, ): List&lt;SkillSuggestionItemResponse&gt;</ID>
     <ID>LongMethod:RunArtifactsIngestionService.kt:RunArtifactsIngestionService$@Tracked("Dispatching AI sync for run") suspend fun ingestRunArtifacts(runId: UUID)</ID>
     <ID>LongMethod:StarterWorkMatcher.kt:StarterWorkMatcher$@Suppress("CyclomaticComplexMethod") fun score( profile: HireProfile, task: TaskFeatures, responsiveness: Responsiveness?, ): Score</ID>
-    <ID>LongMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): Outcome</ID>
-    <ID>LongMethod:StarterWorkTeamTools.kt:StarterWorkTeamTools$private fun candidates(projectId: UUID, search: String): String</ID>
+    <ID>LongMethod:StarterWorkPoolReconciler.kt:StarterWorkPoolReconciler$@Transactional fun reconcile(): PoolReconciliation</ID>
     <ID>LongMethod:StepTeamActions.kt:AddStepAction$override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft</ID>
     <ID>LongMethod:StepTeamActions.kt:UpdateStepAction$override fun draft(call: BuddyToolCallDto, context: TeamToolContext): TeamActionDraft</ID>
     <ID>LongMethod:StreamExecution.kt:StreamExecution$@Suppress("CyclomaticComplexMethod") inline fun &lt;reified T&gt; perform( terminationMarkers: Set&lt;String&gt; = setOf("[DONE]"), crossinline onChunkError: (raw: String, error: Throwable) -&gt; Boolean = { raw, err -&gt; System.err.println("WebClient stream: failed to deserialize chunk '$raw': ${err.message}") true // skip and continue by default }, ): Flow&lt;T&gt;</ID>

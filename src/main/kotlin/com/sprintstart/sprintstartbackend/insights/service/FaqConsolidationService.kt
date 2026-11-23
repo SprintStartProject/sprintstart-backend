@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMerge
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqMergeGroupsRequest
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager

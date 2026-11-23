@@ -1,7 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFetchedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueComment
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueHistory
@@ -11,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraProject
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.JiraArtifactCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Component
 
 @Component

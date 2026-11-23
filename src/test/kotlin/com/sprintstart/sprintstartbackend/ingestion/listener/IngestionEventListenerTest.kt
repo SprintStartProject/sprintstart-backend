@@ -1,13 +1,13 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.events.RunFinishedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
 import com.sprintstart.sprintstartbackend.ingestion.service.RunArtifactsIngestionService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every

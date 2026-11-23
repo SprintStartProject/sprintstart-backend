@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.insights.InsightsAiClient
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyRequest
 import com.sprintstart.sprintstartbackend.insights.model.ai.AiFaqClassifyResponse
@@ -9,8 +8,9 @@ import com.sprintstart.sprintstartbackend.insights.model.entity.FaqGroup
 import com.sprintstart.sprintstartbackend.insights.model.entity.FaqQuestion
 import com.sprintstart.sprintstartbackend.insights.repository.FaqGroupRepository
 import com.sprintstart.sprintstartbackend.insights.repository.FaqQuestionRepository
-import com.sprintstart.sprintstartbackend.onboarding.external.event.QuestionAskedEvent
+import com.sprintstart.sprintstartbackend.knowledge.external.event.QuestionAskedEvent
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory

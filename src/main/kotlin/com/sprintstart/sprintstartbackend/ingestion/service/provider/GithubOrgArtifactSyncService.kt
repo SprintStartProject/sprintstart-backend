@@ -2,14 +2,14 @@ package com.sprintstart.sprintstartbackend.ingestion.service.provider
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.ingestion.ArtifactIngestionClient
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.request.ArtifactProjectsAiSyncRequest
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.AI_SYNC_STATUS_FAILED
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.ArtifactProjectsAiSyncResponse
+import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionResponseException
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import com.sprintstart.sprintstartbackend.upload.model.exceptions.IngestionResponseException
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

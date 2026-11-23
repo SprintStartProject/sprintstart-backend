@@ -1,14 +1,14 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraAuthor
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueChangelog
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueCommentField
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFetchedEvent
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraAuthor
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueChangelog
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueCommentField
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueFields
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueProject
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueStatus
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueStatusCategory
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFields
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueProject
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueResponse
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueStatus
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueStatusCategory
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.OffsetDateTime

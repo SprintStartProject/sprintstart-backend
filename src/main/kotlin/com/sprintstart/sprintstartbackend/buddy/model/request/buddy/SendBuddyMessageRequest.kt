@@ -1,0 +1,40 @@
+package com.sprintstart.sprintstartbackend.buddy.model.request.buddy
+
+import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
+import java.util.UUID
+
+/**
+ * One thing a hire says to their buddy.
+ *
+ * [capabilitiesEnabled] is what separates asking the mentor from asking the corpus. With it off the
+ * buddy answers from the project's material and does nothing else — no tools, no action proposals,
+ * no board writes. Retrieval is unaffected either way: `search_docs` runs AI-side rather than as a
+ * backend tool, so "just let me look something up" costs the hire nothing in what they can find.
+ *
+ * Sent per message rather than held on the session, because it is a mood and not a setting. A hire
+ * who turns capabilities off to look something up and then asks the mentor to do something should
+ * not have to remember which state they left the switch in, and the transcript stays one
+ * conversation either way.
+ */
+data class SendBuddyMessageRequest(
+    val sessionId: UUID? = null,
+    val content: String,
+    /** Defaults to the full mentor, so a client that has never heard of the switch is unaffected. */
+    val capabilitiesEnabled: Boolean = true,
+    /**
+     * Present to speak in team mode about this project; absent for the caller's own onboarding.
+     *
+     * A different conversation, not a flag on the same one: team talk has its own transcript and
+     * memory per project. The caller must manage the project, which is checked on every turn — this
+     * field names the project, it never authorizes anything.
+     */
+    val teamProjectId: UUID? = null,
+    val filters: BuddySessionFilters? = null,
+    /**
+     * The app path the sender was on (`/team-management`, `/team/…`), so "where is this on the page
+     * I'm on?" can be answered. Only ever matched against the app guide, never echoed; absent from
+     * older clients. Not validated: an odd value must cost the guide a line, never the hire their
+     * message.
+     */
+    val currentPage: String? = null,
+)

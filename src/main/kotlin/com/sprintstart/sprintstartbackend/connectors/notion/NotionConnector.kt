@@ -8,7 +8,6 @@ import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSo
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IConnector
 import com.sprintstart.sprintstartbackend.connectors.overview.models.IProjectScopedSourcePatcher
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -21,7 +20,6 @@ internal class NotionConnector(
     IProjectScopedSourcePatcher {
     override val id: String = "notion"
     override val displayName: String = "Notion Cloud Connector"
-    val sourceSystem: SourceSystem = SourceSystem.NOTION
 
     override fun getSources(): List<ConnectorSource> {
         return emptyList()

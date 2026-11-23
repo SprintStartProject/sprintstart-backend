@@ -7,11 +7,11 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.even
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.prs.PrParticipant
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.workspace.BitbucketWorkspaceMetadataFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.workspace.BitbucketWorkspaceMetadataMember
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.BitbucketWorkspaceMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.util.sha256
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant

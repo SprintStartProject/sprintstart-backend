@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraAuthor
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueHistory
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.JiraIssueType
@@ -14,6 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.JiraArtifactProviderService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot

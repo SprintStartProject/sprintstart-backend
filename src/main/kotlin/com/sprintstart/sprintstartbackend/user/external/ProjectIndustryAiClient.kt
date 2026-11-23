@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.external
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
 import com.sprintstart.sprintstartbackend.user.external.model.AiIndustryEvaluationRequest

@@ -6,9 +6,9 @@ import com.sprintstart.sprintstartbackend.connectors.atlassian.external.Atlassia
 import com.sprintstart.sprintstartbackend.connectors.atlassian.model.exception.AtlassianCredentialNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.jira.JiraClient
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFetchedEvent
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingCompleteEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraResourceFetchingFailedEvent
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraInstance
 import com.sprintstart.sprintstartbackend.connectors.jira.model.entity.JiraIssue
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository

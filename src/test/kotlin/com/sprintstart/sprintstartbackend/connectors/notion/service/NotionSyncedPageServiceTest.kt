@@ -1,15 +1,15 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.service
 
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteOutcome
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactWriteResult
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageArtifactCommand
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageMetadataCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionSyncedPage
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.exception.NotionWorkspaceConnectionNotFoundException
 import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionSyncedPageRepository
 import com.sprintstart.sprintstartbackend.connectors.notion.repository.NotionWorkspaceConnectionRepository
-import com.sprintstart.sprintstartbackend.ingestion.external.NotionArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteOutcome
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionArtifactWriteResult
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageArtifactCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.NotionPageMetadataCommand
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify

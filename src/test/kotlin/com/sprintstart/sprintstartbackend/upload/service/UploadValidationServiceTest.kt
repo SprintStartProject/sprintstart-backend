@@ -1,11 +1,11 @@
 package com.sprintstart.sprintstartbackend.upload.service
 
-import com.sprintstart.sprintstartbackend.AiConfig
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.BitbucketConfig
-import com.sprintstart.sprintstartbackend.CryptoConfig
-import com.sprintstart.sprintstartbackend.GithubConfig
-import com.sprintstart.sprintstartbackend.UploadConfig
+import com.sprintstart.sprintstartbackend.shared.config.AiConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.BitbucketConfig
+import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
+import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
+import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows

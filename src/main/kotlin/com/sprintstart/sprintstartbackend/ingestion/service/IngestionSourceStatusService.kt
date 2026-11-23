@@ -10,13 +10,13 @@ import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceA
 import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraSourceInstanceDto
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionConnectionApi
 import com.sprintstart.sprintstartbackend.connectors.notion.external.NotionSourceInstanceDto
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.response.SourceInstanceIngestionStatusResponse
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.escapeLikeLiteral
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID

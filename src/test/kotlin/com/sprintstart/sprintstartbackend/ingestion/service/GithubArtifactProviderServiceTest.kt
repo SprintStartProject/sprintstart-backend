@@ -3,7 +3,6 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFileDeletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubOrgMetadataArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.GithubArtifactCommand
@@ -16,6 +15,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadat
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot

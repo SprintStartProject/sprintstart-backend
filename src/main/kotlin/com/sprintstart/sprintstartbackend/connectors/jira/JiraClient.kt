@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.connectors.jira
 
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
-import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraIssueResponse
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraProjectResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.api.response.JiraServerCapabilitiesResponse
 import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraAuthException

@@ -7,9 +7,9 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceRestrictedGroup
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceRestrictedUser
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceStorageBody
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipCommand
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ParsedConfluenceBody
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipCommand
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluenceRelationshipType
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant

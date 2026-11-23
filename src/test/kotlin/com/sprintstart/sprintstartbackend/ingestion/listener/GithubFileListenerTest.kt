@@ -6,7 +6,6 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchCompletedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesFetchFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.files.GithubFilesResyncedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.listener.github.GithubFileListener
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.GithubArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.command.ArtifactFailedCommand
@@ -18,6 +17,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.mapper.GithubArtifactM
 import com.sprintstart.sprintstartbackend.ingestion.service.FailedArtifactService
 import com.sprintstart.sprintstartbackend.ingestion.service.GithubIngestionRunService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubArtifactProviderService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk

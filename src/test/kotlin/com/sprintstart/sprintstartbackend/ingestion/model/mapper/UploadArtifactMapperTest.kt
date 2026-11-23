@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.UploadArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import com.sprintstart.sprintstartbackend.upload.external.api.UploadedArtifactReader
 import com.sprintstart.sprintstartbackend.upload.external.events.ingestion.ArtifactUploadedEvent
 import io.mockk.every

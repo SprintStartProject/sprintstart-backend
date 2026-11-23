@@ -3,12 +3,12 @@ package com.sprintstart.sprintstartbackend.connectors.notion.service
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionClient
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionResourceNotFoundException
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionFailure
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionOutcome
 import com.sprintstart.sprintstartbackend.connectors.notion.model.ingestion.NotionIngestionResult
-import com.sprintstart.sprintstartbackend.ingestion.external.NotionArtifactIngestionApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers

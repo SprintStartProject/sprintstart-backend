@@ -1,9 +1,9 @@
 package com.sprintstart.sprintstartbackend.connectors.overview.service
 
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceProvider
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceDto
 import org.springframework.stereotype.Service
 import java.util.UUID
 

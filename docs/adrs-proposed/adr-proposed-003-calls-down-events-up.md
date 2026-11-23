@@ -41,6 +41,9 @@ Option 3:
 - Downward calls go through `external` interfaces. Upward and sideways notifications go through
   events, for example `UserDeletedEvent` (every feature deletes its own data) or a goal change
   (`starterwork` → `board`).
+- When a lower module needs an answer from a higher one synchronously, the call is inverted. The
+  lower module declares the interface in its `external` package, and the higher module implements
+  it. For example, `user` owns `ProjectSourceApi` and `connectors` implements it.
 - A listener whose work must survive a rollback or crash (an AI call, an external sync) uses
   `@ApplicationModuleListener`, which records and retries the publication. A listener that must run
   in the publisher's transaction uses `@EventListener` and says so in its KDoc.

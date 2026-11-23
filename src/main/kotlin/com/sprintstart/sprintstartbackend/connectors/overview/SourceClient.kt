@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.connectors.overview
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ai.AiConfigureConnectorRequest
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ai.AiPatchSourcesRequest
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import org.springframework.stereotype.Component
 import java.net.URI

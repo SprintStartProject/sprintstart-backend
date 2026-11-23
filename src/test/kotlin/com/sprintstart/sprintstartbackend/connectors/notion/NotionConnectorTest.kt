@@ -7,7 +7,6 @@ import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionConnec
 import com.sprintstart.sprintstartbackend.connectors.notion.service.NotionWorkspaceIngestionService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -34,7 +33,6 @@ class NotionConnectorTest {
 
         assertThat(connector.id).isEqualTo("notion")
         assertThat(connector.displayName).isEqualTo("Notion Cloud Connector")
-        assertThat(connector.sourceSystem).isEqualTo(SourceSystem.NOTION)
         assertThat(result).containsExactly(
             ConnectorSource(
                 id = source.connectionId.toString(),

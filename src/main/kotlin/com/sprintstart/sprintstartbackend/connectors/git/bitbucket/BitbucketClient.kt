@@ -1,6 +1,5 @@
 package com.sprintstart.sprintstartbackend.connectors.git.bitbucket
 
-import com.sprintstart.sprintstartbackend.ApplicationConfig
 import com.sprintstart.sprintstartbackend.connectors.atlassian.external.AtlassianCredentialSecret
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.BitbucketPage
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoverRepositoriesResponse
@@ -10,6 +9,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.WorkspaceMemberResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.WorkspaceMembersResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.WorkspaceMetadataResponse
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.RequestBuilder
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException

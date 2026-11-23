@@ -1,12 +1,12 @@
 package com.sprintstart.sprintstartbackend.connectors.notion.client
 
-import com.sprintstart.sprintstartbackend.AiConfig
-import com.sprintstart.sprintstartbackend.ApplicationConfig
-import com.sprintstart.sprintstartbackend.BitbucketConfig
-import com.sprintstart.sprintstartbackend.CryptoConfig
-import com.sprintstart.sprintstartbackend.GithubConfig
-import com.sprintstart.sprintstartbackend.NotionConfig
-import com.sprintstart.sprintstartbackend.UploadConfig
+import com.sprintstart.sprintstartbackend.shared.config.AiConfig
+import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
+import com.sprintstart.sprintstartbackend.shared.config.BitbucketConfig
+import com.sprintstart.sprintstartbackend.shared.config.CryptoConfig
+import com.sprintstart.sprintstartbackend.shared.config.GithubConfig
+import com.sprintstart.sprintstartbackend.shared.config.NotionConfig
+import com.sprintstart.sprintstartbackend.shared.config.UploadConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

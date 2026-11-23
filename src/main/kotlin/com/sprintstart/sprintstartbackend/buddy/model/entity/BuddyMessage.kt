@@ -1,0 +1,59 @@
+package com.sprintstart.sprintstartbackend.buddy.model.entity
+
+import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
+import jakarta.persistence.CascadeType
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
+import jakarta.persistence.Id
+import jakarta.persistence.JoinColumn
+import jakarta.persistence.ManyToOne
+import jakarta.persistence.OneToMany
+import jakarta.persistence.Table
+import java.time.Instant
+import java.util.UUID
+
+/**
+ * One turn in a [BuddySession]'s conversation. Referenced by plain FK rather than a cascaded
+ * collection on [BuddySession] -- mirrors the `chat` module's `Chat`/`ChatMessage` split, since a
+ * long-running buddy conversation shouldn't be eagerly loaded through its parent.
+ */
+@Entity
+@Table(name = "buddy_messages")
+class BuddyMessage(
+    @Id
+    val id: UUID = UUID.randomUUID(),
+    @ManyToOne
+    @JoinColumn(name = "session_id", nullable = false)
+    val session: BuddySession,
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    val role: BuddyMessageRole,
+    @Column(nullable = false, columnDefinition = "TEXT")
+    val content: String,
+    @Column(name = "created_at", nullable = false)
+    val createdAt: Instant = Instant.now(),
+    /**
+     * True for the greeting that opens a visit, false for every reply inside one.
+     *
+     * This is what makes "a visit" a fact about the transcript rather than a side effect of
+     * compaction. Both "does this visit already have a greeting?" and "what does the hire see?"
+     * are answered from this flag, never from [BuddySession.summarizedCount]: that cursor is
+     * advanced by a background folding pass, so it marks nothing a person would recognise, and
+     * reading a visit boundary off it regenerates the greeting on every refresh.
+     *
+     * A visit ends when the hire speaks, so the marker is read as *the last message is an opening*,
+     * never as *an opening exists*.
+     */
+    @Column(nullable = false)
+    val opening: Boolean = false,
+    @OneToMany(
+        mappedBy = "message",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+    )
+    val citations: List<BuddyCitation> = emptyList(),
+    @Column(name = "is_incomplete")
+    val isIncomplete: Boolean = false,
+)

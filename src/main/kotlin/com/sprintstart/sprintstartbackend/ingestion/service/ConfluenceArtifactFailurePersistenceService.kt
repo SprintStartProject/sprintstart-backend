@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.ConfluencePageArtifactFailure
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactFailure
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
 import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRunNotFoundException

@@ -1,10 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.GithubRepositoryResourcesFetchingStartedEvent
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import com.sprintstart.sprintstartbackend.ingestion.listener.github.GithubRepositoryResourcesListener
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
 import com.sprintstart.sprintstartbackend.ingestion.service.IngestionRunLifeCycleService
+import com.sprintstart.sprintstartbackend.shared.model.SourceSystem
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk

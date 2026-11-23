@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.user.service
 
+import com.sprintstart.sprintstartbackend.user.external.SessionActivityApi
 import com.sprintstart.sprintstartbackend.user.external.events.UserSessionStartedEvent
 import com.sprintstart.sprintstartbackend.user.repository.UserRepository
 import org.springframework.beans.factory.annotation.Value
@@ -29,7 +30,7 @@ class SessionActivityService(
     @Value("\${sprintstart.session.idle-threshold}")
     private val idleThreshold: Duration,
     private val clock: Clock,
-) {
+) : SessionActivityApi {
     /**
      * Records authenticated activity for the user identified by [authId], publishing
      * [UserSessionStartedEvent] when the gap since their last recorded activity exceeds
@@ -55,7 +56,7 @@ class SessionActivityService(
     }
 
     @Transactional
-    fun recordActivityAndReturnLongAbsence(userId: UUID): Boolean {
+    override fun recordVisit(userId: UUID): Boolean {
         val user = userRepository
             .findById(userId)
             .orElseThrow()

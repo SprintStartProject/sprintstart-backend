@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.insights.service
 
-import com.sprintstart.sprintstartbackend.KnowledgeGapsInsightsConfig
 import com.sprintstart.sprintstartbackend.insights.insightsTestConfig
 import com.sprintstart.sprintstartbackend.insights.model.dto.response.RefreshKnowledgeGapsResponse
+import com.sprintstart.sprintstartbackend.shared.config.KnowledgeGapsInsightsConfig
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk

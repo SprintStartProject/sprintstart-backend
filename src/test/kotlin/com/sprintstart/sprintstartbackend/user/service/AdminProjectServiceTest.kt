@@ -1,10 +1,7 @@
 package com.sprintstart.sprintstartbackend.user.service
 
-import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.BitbucketRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.git.github.external.GithubRepositoryApi
-import com.sprintstart.sprintstartbackend.connectors.jira.external.JiraInstanceApi
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceApi
-import com.sprintstart.sprintstartbackend.connectors.overview.external.ProjectSourceDto
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceApi
+import com.sprintstart.sprintstartbackend.user.external.ProjectSourceDto
 import com.sprintstart.sprintstartbackend.user.external.enums.Role
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import com.sprintstart.sprintstartbackend.user.model.entity.Project
@@ -37,18 +34,12 @@ class AdminProjectServiceTest {
     private val userRepository: UserRepository = mockk()
     private val assignmentRepository: ProjectUserAssignmentRepository = mockk()
     private val projectSourceApi: ProjectSourceApi = mockk()
-    private val githubRepositoryApi: GithubRepositoryApi = mockk()
-    private val bitbucketRepositoryApi: BitbucketRepositoryApi = mockk()
-    private val jiraInstanceApi: JiraInstanceApi = mockk()
     private val eventPublisher: ApplicationEventPublisher = mockk(relaxed = true)
     private val service = AdminProjectService(
         projectRepository = projectRepository,
         userRepository = userRepository,
         assignmentRepository = assignmentRepository,
         projectSourceApi = projectSourceApi,
-        githubRepositoryApi = githubRepositoryApi,
-        bitbucketRepositoryApi = bitbucketRepositoryApi,
-        jiraInstanceApi = jiraInstanceApi,
         eventPublisher = eventPublisher,
     )
 
@@ -546,41 +537,30 @@ class AdminProjectServiceTest {
         every { projectRepository.findById(project.id) } returns Optional.of(project)
         every { assignmentRepository.findAllByProjectId(project.id) } returns listOf(assignment)
         every { assignmentRepository.deleteAll(capture(deletedAssignments)) } just runs
-        every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
-        every { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
-        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
 
         val result = service.deleteProject(project.id)
 
         assertThat(result.deleted).isTrue()
         assertThat(deletedAssignments.captured.toList()).containsExactly(assignment)
-        verify(exactly = 1) { githubRepositoryApi.removeProjectFromAllRepositories(project.id) }
-        // A deleted project must be unlinked from Bitbucket too, or the connection keeps
-        // referencing a project that no longer exists and its artifacts stay keyed to nothing.
-        verify(exactly = 1) { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) }
-        verify(exactly = 1) { jiraInstanceApi.removeProjectFromAllInstances(project.id) }
         verify(exactly = 1) { projectRepository.delete(project) }
     }
 
     @Test
-    fun `deleteProject announces the deletion so the artifact store can drop the project`() {
+    fun `deleteProject announces the deletion so connectors and the artifact store can drop the project`() {
         val project = project()
         val event = slot<ProjectDeletedEvent>()
 
         every { projectRepository.findById(project.id) } returns Optional.of(project)
         every { assignmentRepository.findAllByProjectId(project.id) } returns emptyList()
         every { assignmentRepository.deleteAll(any<Iterable<ProjectUserAssignment>>()) } just runs
-        every { githubRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
-        every { bitbucketRepositoryApi.removeProjectFromAllRepositories(project.id) } just runs
-        every { jiraInstanceApi.removeProjectFromAllInstances(project.id) } just runs
         every { projectRepository.delete(project) } just runs
         every { eventPublisher.publishEvent(capture(event)) } just runs
 
         service.deleteProject(project.id)
 
-        // Without this the deleted project's id stays on artifact_projects and on every indexed
-        // chunk, where nothing would ever clear it again.
+        // The connectors unlink the project and the artifact store drops it only in reaction to
+        // this event; without it the deleted id would stay referenced everywhere.
         assertThat(event.captured.projectId).isEqualTo(project.id)
     }
 

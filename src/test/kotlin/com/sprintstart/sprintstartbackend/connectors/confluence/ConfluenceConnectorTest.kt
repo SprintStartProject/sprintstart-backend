@@ -7,7 +7,6 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.service.Confluen
 import com.sprintstart.sprintstartbackend.connectors.confluence.service.ConfluencePageIngestionService
 import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.connectors.overview.models.exceptions.SourcePatchValidationException
-import com.sprintstart.sprintstartbackend.ingestion.external.model.SourceSystem
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -39,7 +38,6 @@ class ConfluenceConnectorTest {
         val result = connector.getSources(projectId)
 
         assertThat(connector.id).isEqualTo("confluence")
-        assertThat(connector.sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
         assertThat(result.single()).isEqualTo(
             ConnectorSource(
                 id = source.id.toString(),
