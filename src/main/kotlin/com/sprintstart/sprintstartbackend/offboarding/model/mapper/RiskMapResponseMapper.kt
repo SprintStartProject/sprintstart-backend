@@ -58,6 +58,7 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     sourceBreakdown = sourceBreakdown.mapKeys { it.key.value }.mapValues { rounded(it.value) }.toSortedMap(),
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
+    reasons = reasons,
     concentration = ConcentrationResponse(rounded(concentration.effectiveKnowers), concentration.island?.value),
     remainingKnowers = remainingKnowers.map { it.value },
     lastChangedAt = lastChangedAt,

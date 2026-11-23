@@ -62,6 +62,7 @@ data class FileRiskResponse(
     val recentActivity: Double,
     val fragmentation: Double,
     val concentration: ConcentrationResponse? = null,
+    val reasons: List<String> = emptyList(),
     val remainingKnowers: List<String>,
     val lastChangedAt: Instant,
 )

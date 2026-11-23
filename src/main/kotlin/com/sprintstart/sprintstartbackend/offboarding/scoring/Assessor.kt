@@ -38,6 +38,11 @@ internal class Assessor(
     }
 
     private fun risk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
+        val bare = bareRisk(history, remaining)
+        return bare.copy(reasons = Reasons.of(bare, query.asOf))
+    }
+
+    private fun bareRisk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
         val breakdown = departingShareBySource(history)
         val share = weightedShare(breakdown)
         val activity = if (busiest > 0) activity(history) / busiest else 0.0

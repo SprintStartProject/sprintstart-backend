@@ -22,6 +22,7 @@ enum class RiskLevel {
  * @property recentActivity How recently and often the file changes, relative to the busiest file, from 0 to 1.
  * @property fragmentation How spread the changes are across people: 0 for one person, towards 1 for many.
  * @property concentration How unevenly the knowledge of the file is spread over people.
+ * @property reasons Plain sentences that say why the file is on the map; they name nobody.
  * @property remainingKnowers The authors who stay, at most one.
  * @property lastChangedAt When the file last changed.
  */
@@ -37,6 +38,7 @@ data class FileRisk(
     val concentration: Concentration,
     val remainingKnowers: List<PersonKey>,
     val lastChangedAt: Instant,
+    val reasons: List<String> = emptyList(),
 )
 
 /**

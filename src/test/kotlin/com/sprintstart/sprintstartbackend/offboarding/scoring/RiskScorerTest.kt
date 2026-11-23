@@ -69,6 +69,16 @@ class RiskScorerTest {
     }
 
     @Test
+    fun `every file at risk says why it is there`() {
+        val risk = scorer.score(listOf(solo("core.kt", "ada@x.org")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.reasons).contains(
+            "Nobody who knows it is left.",
+            "100% of the evidence about it comes from the leaving people.",
+        )
+    }
+
+    @Test
     fun `a file that keeps two or more authors is not at risk`() {
         val noFading = WeightProfile(halfLifeDays = 1_000_000.0)
         val shared = history(
