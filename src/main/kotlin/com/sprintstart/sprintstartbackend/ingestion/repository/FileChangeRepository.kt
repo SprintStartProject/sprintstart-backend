@@ -37,7 +37,7 @@ interface FileChangeRepository : JpaRepository<FileChange, UUID> {
     @Query(
         """
             SELECT new com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution(
-                f.repository, f.path, f.renamedFrom, f.author.email, f.changedAt)
+                f.repository, f.path, f.renamedFrom, f.author.email, f.changedAt, a.id)
             FROM FileChange f
             JOIN f.artifact a
             JOIN a.projectIdsInternal p

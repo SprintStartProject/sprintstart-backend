@@ -13,5 +13,5 @@ class CommitEvidence(
     override val id: SourceId = SourceId.COMMITS
 
     override fun histories(projectId: ProjectId, asOf: Instant): List<FileHistory> =
-        FileHistories.build(contributions.fileContributions(projectId, asOf))
+        FileHistories.build(Preprocessing.clean(contributions.fileContributions(projectId, asOf)))
 }
