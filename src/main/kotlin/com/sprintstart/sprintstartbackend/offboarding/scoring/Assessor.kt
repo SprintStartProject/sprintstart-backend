@@ -30,6 +30,7 @@ internal class Assessor(
     private val busiest = histories.maxOfOrNull(::activity) ?: 0.0
     private val hotspots =
         Hotspots(histories.associate { FileKey(it.repository, it.path) to activity(it) }, facts.complexities)
+    private val relevance = Relevance(histories, ::activity, hotspots, coupling)
 
     fun assess(history: FileHistory): Assessment {
         val knowers = knowledge.authorsOf(history) - inactive
@@ -44,8 +45,16 @@ internal class Assessor(
 
     private fun risk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
         val bare = bareRisk(history, remaining)
-        return bare.copy(reasons = Reasons.of(bare, query.asOf))
+        return bare.copy(reasons = Reasons.of(bare, query.asOf), placeholderScore = placeholderScore(bare, history))
     }
+
+    private fun placeholderScore(risk: FileRisk, history: FileHistory): Double =
+        PlaceholderScore.of(
+            level = risk.level,
+            abandonedShare = risk.abandonedShare ?: 0.0,
+            effectiveKnowers = risk.concentration.effectiveKnowers,
+            relevance = relevance.of(history),
+        )
 
     private fun bareRisk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
         val breakdown = departingShareBySource(history)

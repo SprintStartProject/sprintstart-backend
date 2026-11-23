@@ -26,6 +26,8 @@ enum class RiskLevel {
  *           `null` when its complexity was never measured.
  * @property abandonedShare The share of the lines of the file written by people who are leaving or are
  *           inactive, from 0 to 1; `null` when it was never blamed.
+ * @property placeholderScore The provisional score of the team's metric selection, from 0 to 1: knowledge at
+ *           risk scaled by how relevant the file is. It does not decide the order of the ranking.
  * @property coupling The files that change together with this one.
  * @property successors People who could take the file over, best first; they know its surroundings.
  * @property reasons Plain sentences that say why the file is on the map; they name nobody.
@@ -47,6 +49,7 @@ data class FileRisk(
     val coupling: Coupling = Coupling.NONE,
     val hotspot: Double? = null,
     val abandonedShare: Double? = null,
+    val placeholderScore: Double = 0.0,
     val successors: List<Successor> = emptyList(),
     val reasons: List<String> = emptyList(),
 )

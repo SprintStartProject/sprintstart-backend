@@ -89,6 +89,7 @@ data class FileRiskResponse(
     val coupling: CouplingResponse? = null,
     val hotspot: Double? = null,
     val abandonedShare: Double? = null,
+    val placeholderScore: Double? = null,
     val successors: List<SuccessorResponse> = emptyList(),
     val reasons: List<String> = emptyList(),
     val remainingKnowers: List<String>,

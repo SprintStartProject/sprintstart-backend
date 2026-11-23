@@ -14,20 +14,14 @@ class Hotspots(
     private val activities: Map<FileKey, Double>,
     private val complexities: Map<FileKey, Double>,
 ) {
-    private val activityValues = activities.values.sorted()
-    private val complexityValues = complexities.filterKeys { it in activities }.values.sorted()
+    private val activityRank = PercentileRank(activities.values)
+    private val complexityRank = PercentileRank(complexities.filterKeys { it in activities }.values)
 
     /** The hotspot of [history]: its file, from 0 to 1, or `null` when its complexity is unknown. */
     fun of(history: FileHistory): Double? {
         val key = FileKey(history.repository, history.path)
         val complexity = complexities[key] ?: return null
         val activity = activities[key] ?: return null
-        return rank(activityValues, activity) * rank(complexityValues, complexity)
-    }
-
-    private fun rank(sorted: List<Double>, value: Double): Double {
-        val below = sorted.count { it < value }
-        val equal = sorted.count { it == value }
-        return (below + equal / 2.0) / sorted.size
+        return activityRank.of(activity) * complexityRank.of(complexity)
     }
 }
