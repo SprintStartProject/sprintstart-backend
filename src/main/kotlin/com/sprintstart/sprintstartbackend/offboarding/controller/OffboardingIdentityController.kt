@@ -1,12 +1,15 @@
 package com.sprintstart.sprintstartbackend.offboarding.controller
 
 import com.sprintstart.sprintstartbackend.offboarding.model.mapper.toIdentitiesResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.mapper.toMembersResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.request.LinkIdentitiesRequest
 import com.sprintstart.sprintstartbackend.offboarding.model.request.parseIdentity
 import com.sprintstart.sprintstartbackend.offboarding.model.response.AliasLinkResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.IdentitiesResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.MembersResponse
 import com.sprintstart.sprintstartbackend.offboarding.service.IdentityLinkService
+import com.sprintstart.sprintstartbackend.offboarding.service.MemberIdentityService
 import com.sprintstart.sprintstartbackend.offboarding.service.SeenIdentityService
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import io.swagger.v3.oas.annotations.Operation
@@ -38,6 +41,7 @@ import java.time.Instant
 class OffboardingIdentityController(
     private val identityLinkService: IdentityLinkService,
     private val seenIdentityService: SeenIdentityService,
+    private val memberIdentityService: MemberIdentityService,
 ) {
     /**
      * Lists the confirmed links and every identity the evidence names.
@@ -62,6 +66,29 @@ class OffboardingIdentityController(
         @RequestParam(required = false) asOf: Instant?,
     ): IdentitiesResponse =
         toIdentitiesResponse(identityLinkService.links(projectId), seenIdentityService.seen(projectId, asOf))
+
+    /**
+     * Matches the project's registered members to the identities in the evidence.
+     */
+    @Operation(
+        summary = "Match the project's members to the identities in its evidence",
+        description = "Lists every registered member with the commit emails and logins that are theirs, found by " +
+            "their registered email or declared GitHub login, and suggests links where one member has several. " +
+            "A member with no identity cannot be ranked. Suggestions are not applied. PM/Admin of the project only.",
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "Members returned"),
+            ApiResponse(responseCode = "401", description = "Authentication required"),
+            ApiResponse(responseCode = "403", description = "Not a manager of this project"),
+        ],
+    )
+    @GetMapping("/members")
+    @PreAuthorize("hasAnyRole('ADMIN', 'PM') and @projectAuth.canManageProject(authentication, #projectId)")
+    fun members(
+        @PathVariable projectId: ProjectId,
+        @RequestParam(required = false) asOf: Instant?,
+    ): MembersResponse = toMembersResponse(memberIdentityService.matches(projectId, asOf))
 
     /**
      * Confirms that two identities are one person.

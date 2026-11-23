@@ -4,12 +4,15 @@ import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.config.SecurityConfig
 import com.sprintstart.sprintstartbackend.offboarding.model.exception.IdentityNotLinkedException
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
+import com.sprintstart.sprintstartbackend.offboarding.scoring.MemberMatch
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
 import com.sprintstart.sprintstartbackend.offboarding.scoring.SeenIdentity
 import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
 import com.sprintstart.sprintstartbackend.offboarding.service.IdentityLinkService
+import com.sprintstart.sprintstartbackend.offboarding.service.MemberIdentityService
 import com.sprintstart.sprintstartbackend.offboarding.service.SeenIdentityService
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.every
 import io.mockk.just
@@ -44,6 +47,9 @@ class OffboardingIdentityControllerTest {
 
     @MockkBean
     private lateinit var seenService: SeenIdentityService
+
+    @MockkBean
+    private lateinit var memberService: MemberIdentityService
 
     @MockkBean(name = "projectAuth")
     private lateinit var projectAuthorization: ProjectAuthorization
@@ -81,6 +87,56 @@ class OffboardingIdentityControllerTest {
             .andExpect(jsonPath("$.seen[0].touches.commits").value(4))
             .andExpect(jsonPath("$.seen[0].touches.reviews").value(1))
             .andExpect(jsonPath("$.seen[0].lastSeenAt").value("2026-03-01T00:00:00Z"))
+    }
+
+    @Test
+    fun `a manager sees which members the evidence is attributed to`() {
+        allowManager()
+        val ada = UUID.randomUUID()
+        val ben = UUID.randomUUID()
+        every { memberService.matches(ProjectId(projectId), null) } returns listOf(
+            MemberMatch(
+                member = UserId(ada),
+                displayName = "Ada",
+                githubLogin = "ada",
+                identities = listOf(
+                    SeenIdentity(
+                        identity = PersonKey("ada@x.org"),
+                        person = PersonKey("ada@x.org"),
+                        touches = mapOf(SourceId.COMMITS to 4),
+                        lastSeenAt = Instant.parse("2026-03-01T00:00:00Z"),
+                    ),
+                ),
+                suggestions = listOf(AliasLink(PersonKey("ada@x.org"), PersonKey("ada"))),
+            ),
+            MemberMatch(UserId(ben), "Ben", null, emptyList(), emptyList()),
+        )
+
+        mockMvc
+            .perform(get("$base/members").with(pmJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.matched").value(1))
+            .andExpect(jsonPath("$.total").value(2))
+            .andExpect(jsonPath("$.members[0].member").value(ada.toString()))
+            .andExpect(jsonPath("$.members[0].displayName").value("Ada"))
+            .andExpect(jsonPath("$.members[0].matched").value(true))
+            .andExpect(jsonPath("$.members[0].identities[0].identity").value("ada@x.org"))
+            .andExpect(jsonPath("$.members[0].suggestions[0].alias").value("ada@x.org"))
+            .andExpect(jsonPath("$.members[0].suggestions[0].person").value("ada"))
+            .andExpect(jsonPath("$.members[1].matched").value(false))
+            .andExpect(jsonPath("$.members[1].identities.length()").value(0))
+    }
+
+    @Test
+    fun `a date is passed on to the member matching`() {
+        allowManager()
+        val moment = Instant.parse("2026-05-01T00:00:00Z")
+        every { memberService.matches(ProjectId(projectId), moment) } returns emptyList()
+
+        mockMvc
+            .perform(get("$base/members").param("asOf", "2026-05-01T00:00:00Z").with(pmJwt))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(0))
     }
 
     @Test
@@ -162,6 +218,7 @@ class OffboardingIdentityControllerTest {
         every { projectAuthorization.canManageProject(any(), projectId) } returns false
 
         mockMvc.perform(get(base).with(pmJwt)).andExpect(status().isForbidden)
+        mockMvc.perform(get("$base/members").with(pmJwt)).andExpect(status().isForbidden)
         mockMvc
             .perform(
                 put("$base/links")

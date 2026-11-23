@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.response
 
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Who the evidence of a project names and which of them a manager has linked.
@@ -31,4 +32,33 @@ data class SeenIdentityResponse(
     val person: String,
     val touches: Map<String, Int>,
     val lastSeenAt: Instant,
+)
+
+/**
+ * Which registered members the evidence can be attributed to.
+ *
+ * @property matched How many members have at least one identity in the evidence.
+ * @property total How many members the project has.
+ * @property members Every member with the identities that are theirs.
+ */
+data class MembersResponse(
+    val matched: Int,
+    val total: Int,
+    val members: List<MemberMatchResponse>,
+)
+
+/**
+ * A registered member and the identities in the evidence that are theirs.
+ *
+ * @property matched Whether any trace in the evidence is attributed to them; a member without one
+ *           cannot be ranked.
+ * @property suggestions Links that would make their identities count as one person, to be confirmed.
+ */
+data class MemberMatchResponse(
+    val member: UUID,
+    val displayName: String,
+    val githubLogin: String?,
+    val matched: Boolean,
+    val identities: List<SeenIdentityResponse>,
+    val suggestions: List<AliasLinkResponse>,
 )
