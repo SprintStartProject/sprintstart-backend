@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyActionResponse
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
 import com.sprintstart.sprintstartbackend.buddy.controller.BuddyController
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
@@ -317,8 +318,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "where are the deploy docs?",
-                false,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
             )
         } returns flowOf(BuddyStreamEvent(type = "done"))
 
@@ -346,8 +346,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "where are the deploy docs?",
-                false,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
             )
         }
     }
@@ -362,8 +361,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "hi",
-                true,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
             )
         } returns flowOf(BuddyStreamEvent(type = "done"))
 
@@ -392,8 +390,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "hi",
-                true,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
             )
         }
     }
@@ -407,9 +404,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "where are roles?",
-                true,
-                null,
-                "/team-management",
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null, currentPage = "/team-management"),
             )
         } returns
             flowOf(BuddyStreamEvent(type = "done"))
@@ -432,9 +427,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "where are roles?",
-                true,
-                null,
-                "/team-management",
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null, currentPage = "/team-management"),
             )
         }
     }
@@ -444,7 +437,7 @@ class BuddyControllerTest(
     fun `sendMessageForMe passes snake_case filters through`() {
         val sessionId = UUID.randomUUID()
         coEvery {
-            buddyService.sendMessageForMe(any(), any(), any(), any(), any(), any())
+            buddyService.sendMessageForMe(any(), any(), any(), any())
         } returns flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
@@ -470,13 +463,14 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "hi",
-                true,
                 match {
-                    it.sourceSystems == listOf(SourceSystem.GITHUB, SourceSystem.JIRA) &&
-                        it.from == "2026-10-01T00:00:00Z" &&
-                        it.to == "2026-10-06T21:59:59.999Z"
+                    val filters = it.filters
+                    it.capabilitiesEnabled &&
+                        it.currentPage == null &&
+                        filters?.sourceSystems == listOf(SourceSystem.GITHUB, SourceSystem.JIRA) &&
+                        filters.from == "2026-10-01T00:00:00Z" &&
+                        filters.to == "2026-10-06T21:59:59.999Z"
                 },
-                null,
             )
         }
     }
@@ -495,8 +489,7 @@ class BuddyControllerTest(
                 authId,
                 sessionId,
                 "How do I get set up?",
-                true,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
             )
         } returns flowOf(*events.toTypedArray())
 

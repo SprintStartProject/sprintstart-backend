@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEventType
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import com.sprintstart.sprintstartbackend.assistant.external.ConversationCompaction
 import com.sprintstart.sprintstartbackend.assistant.external.FALLBACK_REPLY
 import com.sprintstart.sprintstartbackend.assistant.external.HireActionOutcome
@@ -431,8 +432,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "How do I get set up?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             val userMessage = saved.first { it.role == BuddyMessageRole.USER }
@@ -476,8 +476,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(requests.first().projectIds)
@@ -494,7 +493,7 @@ class BuddyServiceTest {
             coEvery { agentAiClient.buddyAgentTurnStream(capture(requests)) } returnsStream finalReply("Here.")
             every { buddyCitationRepository.saveAll(emptyList<BuddyCitation>()) } returns emptyList()
 
-            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", BuddyTurnOptions(filters = null)).toList()
 
             assertThat(requests.first().projectIds).containsExactly(only.toString())
         }
@@ -513,7 +512,13 @@ class BuddyServiceTest {
             stageConversation(session)
             every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
 
-            val events = service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "how do we deploy?",
+                    BuddyTurnOptions(filters = null),
+                ).toList()
 
             // Nothing was searched, because there was nothing to search.
             coVerify(exactly = 0) { agentAiClient.buddyAgentTurnStream(any()) }
@@ -535,7 +540,7 @@ class BuddyServiceTest {
             val requests = mutableListOf<BuddyAgentRequest>()
             coEvery { agentAiClient.buddyAgentTurnStream(capture(requests)) } returnsStream finalReply("Here.")
 
-            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", BuddyTurnOptions(filters = null)).toList()
 
             assertThat(session.projectId).isEqualTo(newProject)
             verify { buddySessionRepository.save(match { it.projectId == newProject }) }
@@ -550,7 +555,13 @@ class BuddyServiceTest {
             every { userApi.getUsersByIds(listOf(userId)) } returns listOf(userOn())
             every { buddySessionRepository.save(any()) } answers { firstArg() }
 
-            val events = service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "how do we deploy?",
+                    BuddyTurnOptions(filters = null),
+                ).toList()
 
             assertThat(session.projectId).isNull()
             verify { buddySessionRepository.save(match { it.projectId == null }) }
@@ -568,7 +579,7 @@ class BuddyServiceTest {
             every { buddyCitationRepository.saveAll(emptyList<BuddyCitation>()) } returns emptyList()
             coEvery { agentAiClient.buddyAgentTurnStream(any()) } returnsStream finalReply("Here.")
 
-            service.sendMessageForMe(authId, session.id, "how do we deploy?", filters = null).toList()
+            service.sendMessageForMe(authId, session.id, "how do we deploy?", BuddyTurnOptions(filters = null)).toList()
 
             assertThat(session.projectId).isEqualTo(defaultProjectId)
             verify(exactly = 0) { buddySessionRepository.save(any()) }
@@ -623,8 +634,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(requests.first().projectIds)
@@ -653,7 +663,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "what happened?",
-                    filters = filters,
+                    BuddyTurnOptions(filters = filters),
                 ).toList()
 
             assertThat(requests.first().filters).isEqualTo(filters)
@@ -683,8 +693,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "How does this work?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(events.map { it.type })
@@ -735,7 +744,7 @@ class BuddyServiceTest {
             every { buddyToolExecutor.execute(toolCall, userId) } returns "openContributionCount=1"
 
             service
-                .sendMessageForMe(authId, session.id, "is my PR stuck?", true, null)
+                .sendMessageForMe(authId, session.id, "is my PR stuck?", BuddyTurnOptions(capabilitiesEnabled = true))
                 .collect { shown.add(it) }
 
             assertThat(shownWhenResumed.map { it.type }).containsExactly("token", "tool_use", "tool_use")
@@ -767,8 +776,12 @@ class BuddyServiceTest {
 
             val job = launch {
                 service
-                    .sendMessageForMe(authId, session.id, "is my PR stuck?", true, null)
-                    .collect { event ->
+                    .sendMessageForMe(
+                        authId,
+                        session.id,
+                        "is my PR stuck?",
+                        BuddyTurnOptions(capabilitiesEnabled = true),
+                    ).collect { event ->
                         if (event.type == "tool_use") {
                             cancel()
                         }
@@ -796,7 +809,13 @@ class BuddyServiceTest {
                 BuddyAgentStreamEvent(type = BuddyAgentStreamEvent.ERROR, message = "model unavailable"),
             )
 
-            val events = service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "hi",
+                    BuddyTurnOptions(capabilitiesEnabled = true),
+                ).toList()
 
             assertThat(events.map { it.type }).containsExactly(BuddyStreamEventType.TOKEN, BuddyStreamEventType.ERROR)
             // The provider's text stays in the log; the client gets a fixed sentence.
@@ -816,7 +835,13 @@ class BuddyServiceTest {
             stageConversation(session)
             every { agentAiClient.buddyAgentTurnStream(any()) } returns streamOf(token("Part of "))
 
-            val events = service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "hi",
+                    BuddyTurnOptions(capabilitiesEnabled = true),
+                ).toList()
 
             assertThat(events.last().type).isEqualTo(BuddyStreamEventType.ERROR)
             assertThat(events.map { it.type }).doesNotContain(BuddyStreamEventType.DONE)
@@ -837,7 +862,13 @@ class BuddyServiceTest {
             every { agentAiClient.buddyAgentTurnStream(any()) } returns
                 streamOf(result(finalReply("Whole answer here.")))
 
-            val events = service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
+            val events = service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "hi",
+                    BuddyTurnOptions(capabilitiesEnabled = true),
+                ).toList()
 
             assertThat(events.filter { it.type == "token" }.joinToString("") { it.content.orEmpty() })
                 .isEqualTo("Whole answer here.")
@@ -866,7 +897,7 @@ class BuddyServiceTest {
             } answers { streamOf(token("Looking."), result(paused)) }
             every { buddyToolExecutor.execute(any(), any()) } returns "m"
 
-            service.sendMessageForMe(authId, session.id, "hi", true, null).toList()
+            service.sendMessageForMe(authId, session.id, "hi", BuddyTurnOptions(capabilitiesEnabled = true)).toList()
 
             val reply = saved.single { it.role == BuddyMessageRole.ASSISTANT }
             assertThat(reply.content).startsWith("Looking.\n\nLooking.")
@@ -904,8 +935,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "How do I get set up?",
-                    false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
 
             coVerify(exactly = 1) {
@@ -941,8 +971,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "How do I get set up?",
-                    false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
 
             assertThat(session.title).isEqualTo("New beginnings ahead")
@@ -986,8 +1015,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    capabilitiesEnabled = false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
 
             assertThat(requests.first().backendTools).isEmpty()
@@ -1012,8 +1040,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(requests.first().backendTools.map { it.name })
@@ -1038,8 +1065,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    capabilitiesEnabled = false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
 
             assertThat(requests.first().capabilitiesEnabled).isFalse()
@@ -1073,8 +1099,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how do we deploy?",
-                    capabilitiesEnabled = false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
 
             assertThat(requests).hasSizeGreaterThan(1)
@@ -1100,16 +1125,14 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "where are the deploy docs?",
-                    capabilitiesEnabled = false,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = false, filters = null),
                 ).toList()
             service
                 .sendMessageForMe(
                     authId,
                     session.id,
                     "escalate that for me",
-                    capabilitiesEnabled = true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(saved).allMatch { it.session.id == session.id }
@@ -1138,8 +1161,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Can you say more?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(requests.first().messages).containsExactly(
@@ -1175,8 +1197,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "how am I doing?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             // Every hop, unlike the summary: the persona is rebuilt whenever the running
@@ -1203,16 +1224,14 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "First",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
             service
                 .sendMessageForMe(
                     authId,
                     session.id,
                     "Second",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             verify(exactly = 0) {
@@ -1244,8 +1263,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Hi",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             val assistantMessage = saved.first { it.role == BuddyMessageRole.ASSISTANT }
@@ -1282,8 +1300,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "is my PR stuck?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             // The tool is executed on the caller's behalf...
@@ -1338,8 +1355,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "help me start my first task",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             // The proposal is emitted as its own gate-able event, carrying the action + button label...
@@ -1409,8 +1425,7 @@ class BuddyServiceTest {
                         authId,
                         session.id,
                         "can Ana confirm my retro?",
-                        true,
-                        null,
+                        BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                     ).toList()
 
                 val proposal = events.first { it.type == "action_proposal" }
@@ -1435,8 +1450,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Hi",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(events.single().type).isEqualTo(BuddyStreamEventType.ERROR)
@@ -1459,8 +1473,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Hi",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(events.last().type).isEqualTo("done")
@@ -1493,8 +1506,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Can you say more?",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             // The summarized prefix stays out of the prompt; the summary stands in for it...
@@ -1542,8 +1554,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "m26",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             // The over-long window goes to the AI as it stands, rather than being trimmed by a fold
@@ -1575,8 +1586,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Hi",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             coVerify { buddyCompactionService.compactIfNeeded(userId, session.id) }
@@ -1602,8 +1612,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Hi",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             coVerify(exactly = 0) { buddyCompactionService.compactIfNeeded(any(), session.id) }
@@ -1637,8 +1646,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "m26",
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             assertThat(requests[0].priorSummary).isEqualTo("Earlier notes.")
@@ -1674,8 +1682,7 @@ class BuddyServiceTest {
 
                     How do we deploy this?
                     """.trimIndent(),
-                    true,
-                    null,
+                    BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
                 ).toList()
 
             verify {
@@ -1761,7 +1768,7 @@ class BuddyServiceTest {
                     authId,
                     session.id,
                     "Where is the architecture documented?",
-                    filters = null,
+                    BuddyTurnOptions(filters = null),
                 ).toList()
 
             coVerify {
@@ -1836,7 +1843,7 @@ class BuddyServiceTest {
                         authId = authId,
                         sessionId = sessionId,
                         content = "Where is the architecture documented?",
-                        filters = null,
+                        BuddyTurnOptions(filters = null),
                     ).collect { event ->
                         if (event.type == BuddyStreamEventType.TOKEN) {
                             cancel()
@@ -1920,7 +1927,7 @@ class BuddyServiceTest {
                         authId = authId,
                         sessionId = sessionId,
                         content = "Where is the architecture documented?",
-                        filters = null,
+                        BuddyTurnOptions(filters = null),
                     ).toList()
             }
 
@@ -1960,7 +1967,13 @@ class BuddyServiceTest {
                 listOf(paused, finalReply("Done."))
             every { buddyActionService.isAction(actionCall.name) } returns true
             every { buddyActionService.propose(actionCall, userId) } returns outcome
-            return service.sendMessageForMe(authId, session.id, "please", true, null).toList()
+            return service
+                .sendMessageForMe(
+                    authId,
+                    session.id,
+                    "please",
+                    BuddyTurnOptions(capabilitiesEnabled = true),
+                ).toList()
         }
 
         @Test

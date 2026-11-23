@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.connectors.jira.model.exceptions.JiraI
 import com.sprintstart.sprintstartbackend.connectors.jira.repository.JiraInstanceRepository
 import com.sprintstart.sprintstartbackend.connectors.jira.service.internal.JiraIssueService
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.springframework.context.ApplicationEventPublisher
@@ -33,16 +34,15 @@ internal class JiraUpdateService(
 
         eventPublisher.publishEvent(JiraInstanceUpdateStartedEvent(transactionId, instanceUrl))
 
-        val instance = try {
+        val instance = reportingFailure(onFailure = { e ->
+            eventPublisher.publishEvent(
+                JiraInstanceUpdateFailedEvent(transactionId, instanceUrl, e.message ?: "Unknown error"),
+            )
+        }) {
             // The collections are fetched eagerly: the update runs on a background coroutine without a
             // Hibernate session.
             instanceRepository.findByInstanceUrlWithCollections(instanceUrl)
                 ?: throw JiraInstanceNotConnectedException(instanceUrl)
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                JiraInstanceUpdateFailedEvent(transactionId, instanceUrl, e.message ?: "Unknown error"),
-            )
-            throw e
         }
 
         if (performUpdate) {

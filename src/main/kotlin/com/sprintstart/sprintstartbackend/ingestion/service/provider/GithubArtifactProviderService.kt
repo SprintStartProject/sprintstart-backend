@@ -162,59 +162,11 @@ class GithubArtifactProviderService(
                 error("GitHub artifact commands do not support PAGE artifacts")
             }
 
-            ArtifactType.FILE -> {
-                if (artifact.hash == command.hash) {
-                    ArtifactChange.NOTHING
-                } else {
-                    artifact.content = command.bodyText
-                    artifact.hash = command.hash
-                    ArtifactChange(content = true)
-                }
-            }
+            ArtifactType.FILE -> applyFile(artifact, command)
 
-            // State and labels refresh on every fetch: closing or re-labelling an issue moves no text.
-            // Neither is a content change, but both travel in the AI payload.
-            ArtifactType.ISSUE -> {
-                // Compared as sets: GitHub returns labels in no guaranteed order.
-                val trackingChanged =
-                    artifact.state != command.state ||
-                        artifact.labels.toSet() != command.labels.toSet()
-                artifact.state = command.state
-                artifact.labels.clear()
-                artifact.labels.addAll(command.labels)
+            ArtifactType.ISSUE -> applyIssue(artifact, command)
 
-                val contentChanged = artifact.hash != command.hash
-                if (contentChanged) {
-                    artifact.title = command.title
-                    artifact.content = command.bodyText
-                    artifact.hash = command.hash
-                }
-                ArtifactChange(content = contentChanged, tracking = trackingChanged)
-            }
-
-            // Pull requests carry no content hash, so title and body are compared; overwriting them would
-            // count every re-fetch as an update and re-embed it.
-            ArtifactType.PULL_REQUEST -> {
-                val trackingChanged = artifact.state != command.state
-                // Refreshed on every fetch, for the same reason as an issue's state: a pull request
-                // being merged or reviewed moves none of its text.
-                artifact.state = command.state
-                artifact.mergedAtSource = command.mergedAtSource
-                artifact.firstResponseAtSource = command.firstResponseAtSource
-                artifact.changesRequestedCount = command.changesRequestedCount
-                // Backfills rows written before these were persisted; a source creation time never changes.
-                if (artifact.createdAtSource == null) {
-                    artifact.createdAtSource = command.createdAtSource
-                }
-
-                val contentChanged =
-                    artifact.title != command.title || artifact.content != command.bodyText
-                if (contentChanged) {
-                    artifact.title = command.title
-                    artifact.content = command.bodyText
-                }
-                ArtifactChange(content = contentChanged, tracking = trackingChanged)
-            }
+            ArtifactType.PULL_REQUEST -> applyPullRequest(artifact, command)
         }
 
     /**
@@ -331,6 +283,62 @@ class GithubArtifactProviderService(
             run.artifactIdsToDeindex.add(artifact.id.toString())
         }
     }
+}
+
+private fun applyFile(artifact: Artifact, command: GithubArtifactCommand): ArtifactChange {
+    if (artifact.hash == command.hash) return ArtifactChange.NOTHING
+
+    artifact.content = command.bodyText
+    artifact.hash = command.hash
+    return ArtifactChange(content = true)
+}
+
+/**
+ * State and labels refresh on every fetch: closing or re-labelling an issue moves no text. Neither is a
+ * content change, but both travel in the AI payload.
+ */
+private fun applyIssue(artifact: Artifact, command: GithubArtifactCommand): ArtifactChange {
+    // Compared as sets: GitHub returns labels in no guaranteed order.
+    val trackingChanged =
+        artifact.state != command.state ||
+            artifact.labels.toSet() != command.labels.toSet()
+    artifact.state = command.state
+    artifact.labels.clear()
+    artifact.labels.addAll(command.labels)
+
+    val contentChanged = artifact.hash != command.hash
+    if (contentChanged) {
+        artifact.title = command.title
+        artifact.content = command.bodyText
+        artifact.hash = command.hash
+    }
+    return ArtifactChange(content = contentChanged, tracking = trackingChanged)
+}
+
+/**
+ * Pull requests carry no content hash, so title and body are compared; overwriting them would count every
+ * re-fetch as an update and re-embed it.
+ */
+private fun applyPullRequest(artifact: Artifact, command: GithubArtifactCommand): ArtifactChange {
+    val trackingChanged = artifact.state != command.state
+    // Refreshed on every fetch, for the same reason as an issue's state: a pull request
+    // being merged or reviewed moves none of its text.
+    artifact.state = command.state
+    artifact.mergedAtSource = command.mergedAtSource
+    artifact.firstResponseAtSource = command.firstResponseAtSource
+    artifact.changesRequestedCount = command.changesRequestedCount
+    // Backfills rows written before these were persisted; a source creation time never changes.
+    if (artifact.createdAtSource == null) {
+        artifact.createdAtSource = command.createdAtSource
+    }
+
+    val contentChanged =
+        artifact.title != command.title || artifact.content != command.bodyText
+    if (contentChanged) {
+        artifact.title = command.title
+        artifact.content = command.bodyText
+    }
+    return ArtifactChange(content = contentChanged, tracking = trackingChanged)
 }
 
 /**

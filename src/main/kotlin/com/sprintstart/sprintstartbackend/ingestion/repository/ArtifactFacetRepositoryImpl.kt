@@ -13,46 +13,19 @@ import jakarta.persistence.EntityManager
 import jakarta.persistence.PersistenceContext
 import jakarta.persistence.criteria.CompoundSelection
 import jakarta.persistence.criteria.CriteriaBuilder
-import jakarta.persistence.criteria.Expression
-import jakarta.persistence.criteria.Join
 import jakarta.persistence.criteria.Nulls
 import jakarta.persistence.criteria.Order
-import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
-import jakarta.persistence.criteria.Selection
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
-
-private enum class FacetKind {
-    TYPES,
-    SOURCES,
-    FORMATS,
-    REPOSITORIES,
-    LANGUAGES,
-}
-
-private val SOURCES_EXCLUDED_FACETS = setOf(FacetKind.SOURCES, FacetKind.FORMATS, FacetKind.REPOSITORIES)
-
-/** The source systems whose artifacts belong to a repository and therefore feed the repository facet. */
-private val REPOSITORY_SOURCE_SYSTEMS = listOf(SourceSystem.GITHUB, SourceSystem.BITBUCKET)
 
 /** Lower-cased language names the facet never offers: the format facet covers documents. */
 private val DOCUMENT_LANGUAGES = setOf("markdown", "plain text")
-
-/** Selected languages, trimmed, blanks dropped, deduplicated ignoring case. */
-private fun ArtifactFilterCriteria.selectedLanguages(): List<String> =
-    languages
-        .orEmpty()
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
-        .distinctBy { it.lowercase() }
 
 /**
  * Shapes counted `(display name, count)` language groups into facet options.
@@ -81,6 +54,8 @@ internal fun languageFacetOptions(
 class ArtifactFacetRepositoryImpl(
     @PersistenceContext private val entityManager: EntityManager,
 ) : ArtifactFacetRepository {
+    private val facetCounter = ArtifactFacetCounter(entityManager)
+
     override fun findProjectArtifactsWithCriteria(
         projectId: UUID,
         criteria: ArtifactFilterCriteria,
@@ -95,7 +70,7 @@ class ArtifactFacetRepositoryImpl(
 
         query.select(artifactProjection(cb, root))
 
-        val predicates = buildPredicates(cb, root, projectJoin, projectId, criteria, null)
+        val predicates = ArtifactFilterPredicates.predicates(cb, root, projectJoin, projectId, criteria, null)
         query.where(*predicates.toTypedArray())
 
         query.orderBy(orderFor(cb, root, sort))
@@ -110,13 +85,18 @@ class ArtifactFacetRepositoryImpl(
         val countJoin = countRoot.join<Artifact, UUID>("projectIdsInternal")
 
         countQuery.select(cb.countDistinct(countRoot.get<UUID>("id")))
-        val countPredicates = buildPredicates(cb, countRoot, countJoin, projectId, criteria, null)
+        val countPredicates = ArtifactFilterPredicates.predicates(cb, countRoot, countJoin, projectId, criteria, null)
         countQuery.where(*countPredicates.toTypedArray())
 
         val totalElements = entityManager.createQuery(countQuery).singleResult ?: 0L
 
         return PageImpl(items, pageable, totalElements)
     }
+
+    override fun findFacets(
+        projectId: UUID,
+        criteria: ArtifactFilterCriteria,
+    ): ArtifactFacetsResponse = facetCounter.facets(projectId, criteria)
 
     /**
      * Builds the ORDER BY clause for [sort], always ending in `id ASC`.
@@ -187,391 +167,8 @@ class ArtifactFacetRepositoryImpl(
         root.get<String?>("language"),
     )
 
-    override fun findFacets(
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-    ): ArtifactFacetsResponse {
-        return ArtifactFacetsResponse(
-            types = computeTypeFacets(projectId, criteria),
-            sources = computeSourceFacets(projectId, criteria),
-            formats = computeFormatFacets(projectId, criteria),
-            repositories = computeRepositoryFacets(projectId, criteria),
-            languages = computeLanguageFacets(projectId, criteria),
-        )
-    }
-
-    /** What one facet asks of the artifacts: the columns it reads, its own conditions, and its grouping. */
-    private class FacetQuery(
-        val columns: List<Selection<*>>,
-        val conditions: List<Predicate> = emptyList(),
-        val groupBy: Expression<*>? = null,
-    )
-
-    /**
-     * The rows one facet counts from: the artifacts of [projectId] that pass every active filter but
-     * [kind]'s own — a facet that narrowed itself could never offer the other values — and the
-     * facet's own conditions.
-     */
-    private fun facetRows(
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-        kind: FacetKind,
-        facet: (CriteriaBuilder, Root<Artifact>) -> FacetQuery,
-    ): List<Array<Any>> {
-        val cb = entityManager.criteriaBuilder
-        val query = cb.createQuery(Array<Any>::class.java)
-        val root = query.from(Artifact::class.java)
-        val join = root.join<Artifact, UUID>("projectIdsInternal")
-        val spec = facet(cb, root)
-        query.select(cb.array(*spec.columns.toTypedArray()))
-        query.where(*(buildPredicates(cb, root, join, projectId, criteria, kind) + spec.conditions).toTypedArray())
-        spec.groupBy?.let { query.groupBy(it) }
-        return entityManager.createQuery(query).resultList
-    }
-
-    private fun computeTypeFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
-        val typeCountsMap = mutableMapOf<ArtifactType, Long>()
-        val rows = facetRows(projectId, criteria, FacetKind.TYPES) { cb, root ->
-            val type = root.get<ArtifactType>("artifactType")
-            FacetQuery(listOf(type, cb.countDistinct(root.get<UUID>("id"))), groupBy = type)
-        }
-        for (row in rows) {
-            val type = row[0] as ArtifactType
-            val count = (row[1] as Number).toLong()
-            typeCountsMap[type] = count
-        }
-        criteria.types?.forEach { type ->
-            typeCountsMap.putIfAbsent(type, 0L)
-        }
-        return typeCountsMap.map { (type, count) ->
-            FacetCountResponse(type.name, count)
-        }
-    }
-
-    private fun computeSourceFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
-        val sourceCountsMap = mutableMapOf<SourceSystem, Long>()
-        val rows = facetRows(projectId, criteria, FacetKind.SOURCES) { cb, root ->
-            val source = root.get<SourceSystem>("sourceSystem")
-            FacetQuery(listOf(source, cb.countDistinct(root.get<UUID>("id"))), groupBy = source)
-        }
-        for (row in rows) {
-            val source = row[0] as SourceSystem
-            val count = (row[1] as Number).toLong()
-            sourceCountsMap[source] = count
-        }
-        criteria.sources?.forEach { source ->
-            sourceCountsMap.putIfAbsent(source, 0L)
-        }
-        return sourceCountsMap.map { (source, count) ->
-            FacetCountResponse(source.name, count)
-        }
-    }
-
-    private fun computeFormatFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
-        val formatCountsMap = mutableMapOf(
-            UploadFormat.PDF to 0L,
-            UploadFormat.MARKDOWN to 0L,
-            UploadFormat.IMAGE to 0L,
-            UploadFormat.OTHER to 0L,
-        )
-        val rows = facetRows(projectId, criteria, FacetKind.FORMATS) { cb, root ->
-            FacetQuery(
-                columns = listOf("title", "sourceUrl", "sourceId", "mime", "language").map { root.get<String?>(it) },
-                conditions = listOf(cb.equal(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD)),
-            )
-        }
-        for (row in rows) {
-            val title = row[0] as? String
-            val sourceUrl = row[1] as? String
-            val sourceId = row[2] as String
-            val mime = row[3] as? String
-            val language = row[4] as? String
-            val format = classifyUploadFormat(title, sourceUrl, sourceId, mime, language)
-            formatCountsMap[format] = (formatCountsMap[format] ?: 0L) + 1L
-        }
-
-        return formatCountsMap
-            .filter { (fmt, count) -> count > 0L || criteria.format == fmt }
-            .map { (fmt, count) -> FacetCountResponse(fmt.name, count) }
-    }
-
-    /**
-     * Counts artifacts per repository, over GitHub and Bitbucket alike.
-     *
-     * A repository is offered as `owner/repo` (GitHub) or `workspace/slug` (Bitbucket). The owner's
-     * profile artifact (the GitHub org, the Bitbucket workspace) names no repository but belongs to
-     * every chosen repository of its owner, so its count is added to each repository of the same
-     * system; owners of different systems are kept apart even when they share a name. When both
-     * systems have a repository under the same `a/b` name, the two are one option and their counts add
-     * up, which is exactly what the repository filter returns for that value.
-     */
-    private fun computeRepositoryFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
-        val repoCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
-        val orgCountsBySystem = mutableMapOf<Pair<SourceSystem, String>, Long>()
-        val rows = facetRows(projectId, criteria, FacetKind.REPOSITORIES) { _, root ->
-            val system = root.get<SourceSystem>("sourceSystem")
-            FacetQuery(
-                columns = listOf(system, root.get<String>("sourceId"), root.get<ArtifactType>("artifactType")),
-                conditions = listOf(system.`in`(REPOSITORY_SOURCE_SYSTEMS)),
-            )
-        }
-        for (row in rows) {
-            val system = row[0] as SourceSystem
-            val sourceId = row[1] as String
-            val artifactType = row[2] as ArtifactType
-
-            if (artifactType == ArtifactType.ORG_METADATA) {
-                val owner = extractOwnerFromOrgSourceId(system, sourceId)
-                if (owner != null) {
-                    val key = system to owner
-                    orgCountsBySystem[key] = (orgCountsBySystem[key] ?: 0L) + 1L
-                }
-            } else {
-                val repo = extractRepositoryFromSourceId(system, sourceId)
-                if (repo != null) {
-                    val key = system to repo
-                    repoCountsBySystem[key] = (repoCountsBySystem[key] ?: 0L) + 1L
-                }
-            }
-        }
-
-        val repoCountsMap = mutableMapOf<String, Long>()
-        for ((key, count) in repoCountsBySystem) {
-            val (system, repo) = key
-            val owner = repo.substringBefore('/').trim().lowercase()
-            val orgCount = orgCountsBySystem[system to owner] ?: 0L
-            repoCountsMap[repo] = (repoCountsMap[repo] ?: 0L) + count + orgCount
-        }
-        criteria.repositories?.forEach { repo ->
-            repoCountsMap.putIfAbsent(repo, 0L)
-        }
-        return repoCountsMap
-            .filter { (repo, count) -> count > 0L || criteria.repositories?.contains(repo) == true }
-            .entries
-            .sortedBy { it.key }
-            .map { (repo, count) -> FacetCountResponse(repo, count) }
-    }
-
-    /**
-     * Counts artifacts per language under every active filter except the language one.
-     *
-     * Groups by lower(language) so the counts use the same case folding as the filter predicate;
-     * min(language) then picks one stored spelling to display for the group.
-     */
-    private fun computeLanguageFacets(projectId: UUID, criteria: ArtifactFilterCriteria): List<FacetCountResponse> {
-        val rows = facetRows(projectId, criteria, FacetKind.LANGUAGES) { cb, root ->
-            val language = root.get<String>("language")
-            FacetQuery(
-                columns = listOf(cb.least(language), cb.countDistinct(root.get<UUID>("id"))),
-                conditions = listOf(cb.isNotNull(language)),
-                groupBy = cb.lower(language),
-            )
-        }
-        val counted = rows.map { row ->
-            (row[0] as String) to (row[1] as Number).toLong()
-        }
-        return languageFacetOptions(counted, criteria.selectedLanguages())
-    }
-
-    private fun buildPredicates(
-        cb: CriteriaBuilder,
-        root: Root<Artifact>,
-        projectJoin: Join<Artifact, UUID>,
-        projectId: UUID,
-        criteria: ArtifactFilterCriteria,
-        exclude: FacetKind?,
-    ): List<Predicate> {
-        val predicates = mutableListOf<Predicate>()
-        predicates.add(cb.equal(projectJoin, projectId))
-
-        if (!criteria.search.isNullOrBlank()) {
-            val pattern = "%${criteria.search.trim().lowercase()}%"
-            val titleMatch = cb.like(cb.lower(root.get("title")), pattern)
-            val sourceIdMatch = cb.like(cb.lower(root.get("sourceId")), pattern)
-            val sourceUrlMatch = cb.like(cb.lower(root.get("sourceUrl")), pattern)
-            predicates.add(cb.or(titleMatch, sourceIdMatch, sourceUrlMatch))
-        }
-
-        if (exclude != FacetKind.TYPES && !criteria.types.isNullOrEmpty()) {
-            predicates.add(root.get<ArtifactType>("artifactType").`in`(criteria.types))
-        }
-
-        if (exclude !in SOURCES_EXCLUDED_FACETS && !criteria.sources.isNullOrEmpty()) {
-            predicates.add(root.get<SourceSystem>("sourceSystem").`in`(criteria.sources))
-        }
-
-        if (exclude != FacetKind.FORMATS && criteria.format != null) {
-            val notUpload = cb.notEqual(root.get<SourceSystem>("sourceSystem"), SourceSystem.UPLOAD)
-            val uploadMatchesFormat = buildUploadFormatPredicate(cb, root, criteria.format)
-            predicates.add(cb.or(notUpload, uploadMatchesFormat))
-        }
-
-        if (exclude != FacetKind.REPOSITORIES && !criteria.repositories.isNullOrEmpty()) {
-            val sourceSystem = root.get<SourceSystem>("sourceSystem")
-            // Artifacts of other systems are outside the repository facet's reach and always pass;
-            // within GitHub and Bitbucket the selection narrows strictly, each by its own source ids.
-            val outsideFacet = cb.not(sourceSystem.`in`(REPOSITORY_SOURCE_SYSTEMS))
-            val githubMatchesRepo = cb.and(
-                cb.equal(sourceSystem, SourceSystem.GITHUB),
-                buildGithubRepoPredicate(cb, root, criteria.repositories),
-            )
-            val bitbucketMatchesRepo = cb.and(
-                cb.equal(sourceSystem, SourceSystem.BITBUCKET),
-                buildBitbucketRepoPredicate(cb, root, criteria.repositories),
-            )
-            predicates.add(cb.or(outsideFacet, githubMatchesRepo, bitbucketMatchesRepo))
-        }
-
-        val languages = criteria.selectedLanguages()
-        if (exclude != FacetKind.LANGUAGES && languages.isNotEmpty()) {
-            val languageLower = cb.lower(root.get("language"))
-            predicates.add(languageLower.`in`(languages.map { it.lowercase() }))
-        }
-
-        // No facet counts the activity date, so the window applies to every query alike -- which is
-        // what keeps facet counts equal to the list's totalElements under the same filter.
-        predicates.addAll(buildActivityWindowPredicates(cb, root, criteria.from, criteria.to))
-
-        return predicates
-    }
-
-    /**
-     * Restricts an artifact's last activity to the inclusive UTC calendar-day window `[from, to]`.
-     *
-     * Activity is `COALESCE(lastChangedAt, ingestedAt)`: the last content change, or the import for
-     * an artifact that never changed. It is the same key `CHANGED_DESC` sorts by, so "changed in
-     * the last 7 days" and "most recently changed first" always agree. An artifact imported long
-     * ago but edited inside the window matches; one imported inside the window and changed after
-     * it does not, because its latest activity lies outside.
-     *
-     * The end bound is `< start of the day after [to]` rather than `<= end of [to]`, so activity
-     * in the last microsecond of that day still matches, whatever precision the column keeps.
-     */
-    private fun buildActivityWindowPredicates(
-        cb: CriteriaBuilder,
-        root: Root<Artifact>,
-        from: LocalDate?,
-        to: LocalDate?,
-    ): List<Predicate> {
-        val activityAt = cb.coalesce(root.get<Instant>("lastChangedAt"), root.get<Instant>("ingestedAt"))
-        return listOfNotNull(
-            from?.let { cb.greaterThanOrEqualTo(activityAt, it.atStartOfDay(ZoneOffset.UTC).toInstant()) },
-            to?.let { cb.lessThan(activityAt, it.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()) },
-        )
-    }
-
-    private fun buildUploadFormatPredicate(
-        cb: CriteriaBuilder,
-        root: Root<Artifact>,
-        format: UploadFormat,
-    ): Predicate {
-        // Nullable columns fold to "" exactly as `classifyUploadFormat` does. Without the coalesce,
-        // `NOT(OR(...))` is NULL for a row with unset columns, and the OTHER bucket would match nothing.
-        val titleLower = cb.coalesce(cb.lower(root.get("title")), "")
-        val sourceUrlLower = cb.coalesce(cb.lower(root.get("sourceUrl")), "")
-        val sourceIdLower = cb.lower(root.get("sourceId"))
-        val mimeLower = cb.coalesce(cb.lower(root.get("mime")), "")
-        val languageLower = cb.coalesce(cb.lower(root.get("language")), "")
-
-        val isPdf = cb.or(
-            cb.equal(mimeLower, "application/pdf"),
-            cb.like(titleLower, "%.pdf"),
-            cb.like(sourceUrlLower, "%.pdf"),
-            cb.like(sourceIdLower, "%.pdf"),
-        )
-
-        val isMarkdown = cb.or(
-            languageLower.`in`("markdown", "md"),
-            cb.like(mimeLower, "%markdown%"),
-            cb.like(titleLower, "%.md"),
-            cb.like(titleLower, "%.markdown"),
-            cb.like(sourceUrlLower, "%.md"),
-            cb.like(sourceUrlLower, "%.markdown"),
-            cb.like(sourceIdLower, "%.md"),
-            cb.like(sourceIdLower, "%.markdown"),
-        )
-
-        val imageExtPredicates = IMAGE_EXTENSIONS.flatMap { ext ->
-            listOf(cb.like(titleLower, "%$ext"), cb.like(sourceUrlLower, "%$ext"))
-        }
-        val isImage = cb.or(
-            cb.like(mimeLower, "image/%"),
-            *imageExtPredicates.toTypedArray(),
-        )
-
-        return when (format) {
-            UploadFormat.PDF -> isPdf
-            UploadFormat.MARKDOWN -> cb.and(cb.not(isPdf), isMarkdown)
-            UploadFormat.IMAGE -> cb.and(cb.not(cb.or(isPdf, isMarkdown)), isImage)
-            UploadFormat.OTHER -> cb.not(cb.or(isPdf, isMarkdown, isImage))
-        }
-    }
-
-    private fun buildGithubRepoPredicate(
-        cb: CriteriaBuilder,
-        root: Root<Artifact>,
-        repositories: Set<String>,
-    ): Predicate {
-        val sourceId = root.get<String>("sourceId")
-        val artifactType = root.get<ArtifactType>("artifactType")
-
-        val repoPrefixPredicates = repositories.map { repo ->
-            val escapedPrefix = escapeLikeLiteral("github:$repo:")
-            cb.like(sourceId, "$escapedPrefix%", LIKE_ESCAPE.single())
-        }
-        val isNonOrgRepoMatch = cb.and(
-            cb.notEqual(artifactType, ArtifactType.ORG_METADATA),
-            cb.or(*repoPrefixPredicates.toTypedArray()),
-        )
-
-        val owners = repositories.map { it.substringBefore('/').trim().lowercase() }.toSet()
-        val isOrgMatch = cb.and(
-            cb.equal(artifactType, ArtifactType.ORG_METADATA),
-            cb.lower(sourceId).`in`(owners),
-        )
-
-        return cb.or(isNonOrgRepoMatch, isOrgMatch)
-    }
-
-    /**
-     * Matches the Bitbucket artifacts of the chosen `workspace/slug` repositories, plus the profile of
-     * each workspace that owns one of them.
-     *
-     * The repository half is a literal prefix match on `bitbucket:workspace/slug:`, escaped the same
-     * way as the GitHub one so an underscore in a slug is not a wildcard. The workspace profile's
-     * source id is `bitbucket:<workspace>:ORG_METADATA`, which that prefix cannot match, so it is
-     * compared by its whole lower-cased value instead.
-     */
-    private fun buildBitbucketRepoPredicate(
-        cb: CriteriaBuilder,
-        root: Root<Artifact>,
-        repositories: Set<String>,
-    ): Predicate {
-        val sourceId = root.get<String>("sourceId")
-        val artifactType = root.get<ArtifactType>("artifactType")
-
-        val repoPrefixPredicates = repositories.map { repo ->
-            val escapedPrefix = escapeLikeLiteral("bitbucket:$repo:")
-            cb.like(sourceId, "$escapedPrefix%", LIKE_ESCAPE.single())
-        }
-        val isNonOrgRepoMatch = cb.and(
-            cb.notEqual(artifactType, ArtifactType.ORG_METADATA),
-            cb.or(*repoPrefixPredicates.toTypedArray()),
-        )
-
-        val workspaceSourceIds = repositories
-            .map { "bitbucket:${it.substringBefore('/').trim().lowercase()}:${ArtifactType.ORG_METADATA}".lowercase() }
-            .toSet()
-        val isWorkspaceMatch = cb.and(
-            cb.equal(artifactType, ArtifactType.ORG_METADATA),
-            cb.lower(sourceId).`in`(workspaceSourceIds),
-        )
-
-        return cb.or(isNonOrgRepoMatch, isWorkspaceMatch)
-    }
-
     companion object {
-        private val IMAGE_EXTENSIONS = listOf(
+        internal val IMAGE_EXTENSIONS = listOf(
             ".png",
             ".jpg",
             ".jpeg",

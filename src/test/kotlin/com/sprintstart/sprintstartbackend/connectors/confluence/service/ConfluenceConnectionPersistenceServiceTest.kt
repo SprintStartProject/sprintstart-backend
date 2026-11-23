@@ -51,10 +51,13 @@ class ConfluenceConnectionPersistenceServiceTest {
     fun `concurrent insert losing the unique constraint is reported as a duplicate`() {
         val connection = connection()
         every { connectionRepository.existsByProjectIdAndBaseUrlAndSpaceId(any(), any(), any()) } returns false
-        every { connectionRepository.saveAndFlush(connection) } throws DataIntegrityViolationException("duplicate")
+        val conflict = DataIntegrityViolationException("duplicate")
+        every { connectionRepository.saveAndFlush(connection) } throws conflict
 
-        assertThatThrownBy { service.persist(connection) }
-            .isInstanceOf(ConfluenceConnectionAlreadyExistsException::class.java)
+        val thrown = runCatching { service.persist(connection) }.exceptionOrNull()
+
+        assertThat(thrown).isInstanceOf(ConfluenceConnectionAlreadyExistsException::class.java)
+        assertThat(thrown?.cause).isSameAs(conflict)
     }
 
     /**

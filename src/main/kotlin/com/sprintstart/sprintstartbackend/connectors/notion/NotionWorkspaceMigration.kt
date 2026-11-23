@@ -52,31 +52,43 @@ internal class NotionWorkspaceMigration(
                 old.credentialName,
             ).firstOrNull()
         val targetId = existing ?: old.id.also { copyConnection(old) }
+        moveSyncedPages(old.id, targetId)
+        renameArtifacts(old.id, targetId)
+        repointRuns(old, targetId)
+        jdbc.update("DELETE FROM notion_page_connections WHERE id = ?", old.id)
+    }
+
+    private fun moveSyncedPages(old: UUID, target: UUID) {
         jdbc.update(
             "INSERT INTO notion_synced_pages " +
                 "(id, connection_id, page_id, page_title, page_url, last_edited_time, content_hash, last_synced_at) " +
                 "SELECT id, ?, page_id, page_title, page_url, last_edited_time, NULL, last_synced_at " +
                 "FROM notion_page_connections WHERE id = ?",
-            targetId,
-            old.id,
+            target,
+            old,
         )
+    }
+
+    private fun renameArtifacts(old: UUID, target: UUID) {
         jdbc.update(
             "UPDATE artifact SET source_id = REPLACE(source_id, ?, ?), metadata = REPLACE(metadata, ?, ?), " +
                 "content_hash = NULL WHERE source_system = 'NOTION' AND source_id LIKE ?",
-            "notion:${old.id}:page:",
-            "notion:$targetId:page:",
-            old.id.toString(),
-            targetId.toString(),
-            "notion:${old.id}:page:%",
+            "notion:$old:page:",
+            "notion:$target:page:",
+            old.toString(),
+            target.toString(),
+            "notion:$old:page:%",
         )
+    }
+
+    private fun repointRuns(old: LegacyNotionConnection, target: UUID) {
         jdbc.update(
             "UPDATE ingestion_run SET source_instance_id = ?, source_instance_ref = ? " +
                 "WHERE source_system = 'NOTION' AND source_instance_id = ?",
-            targetId,
+            target,
             old.credentialName,
             old.id,
         )
-        jdbc.update("DELETE FROM notion_page_connections WHERE id = ?", old.id)
     }
 
     private fun copyConnection(old: LegacyNotionConnection) {

@@ -4,9 +4,7 @@ import com.sprintstart.sprintstartbackend.blueprint.external.enums.BlueprintStat
 import com.sprintstart.sprintstartbackend.blueprint.model.BlueprintScope
 import com.sprintstart.sprintstartbackend.blueprint.model.request.path.CreateBlueprintPathRequest
 import com.sprintstart.sprintstartbackend.blueprint.model.request.path.UpdateBlueprintPathRequest
-import com.sprintstart.sprintstartbackend.blueprint.model.response.graphNode.GetBlueprintGraphResponse
 import com.sprintstart.sprintstartbackend.blueprint.model.response.path.CreateBlueprintPathResponse
-import com.sprintstart.sprintstartbackend.blueprint.model.response.path.GetBlueprintPathOverviewResponse
 import com.sprintstart.sprintstartbackend.blueprint.model.response.path.GetBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.blueprint.model.response.path.UpdateBlueprintPathResponse
 import com.sprintstart.sprintstartbackend.blueprint.service.BlueprintGraphNodeService
@@ -15,7 +13,6 @@ import io.mockk.clearMocks
 import io.mockk.mockk
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import java.util.UUID
@@ -40,61 +37,12 @@ class BlueprintPathControllerTest : BlueprintControllerTestSupport() {
         )
     private val service: BlueprintPathService = mockk()
     private val graphNodeService: BlueprintGraphNodeService = mockk()
-    override val controller = BlueprintPathController(service, graphNodeService)
+    override val controller = BlueprintPathController(service)
     override val controllerClass = BlueprintPathController::class
     override val expectedPreAuthorize = "@projectAuth.canManageProject(authentication, #projectId)"
 
     override val endpointCases =
         listOf(
-            EndpointCase(
-                name = "GET /",
-                request = get("/api/v1/projects/$projectId/onboarding/blueprints"),
-                expectedStatus = 200,
-                response = emptyList<GetBlueprintPathOverviewResponse>(),
-                serviceCall = {
-                    service.getBlueprintPathOverviewsGroupedByBlueprintKey(BlueprintScope.Project(projectId))
-                },
-                documentsNotFound = false,
-            ),
-            EndpointCase(
-                name = "GET /{blueprintKey}",
-                request = get("/api/v1/projects/$projectId/onboarding/blueprints/$blueprintKey"),
-                expectedStatus = 200,
-                response = emptyList<GetBlueprintPathResponse>(),
-                serviceCall = {
-                    service.getBlueprintPathHistoryByBlueprintKey(BlueprintScope.Project(projectId), blueprintKey)
-                },
-                documentsNotFound = false,
-            ),
-            EndpointCase(
-                name = "GET /paths",
-                request = get("/api/v1/projects/$projectId/onboarding/blueprints/paths"),
-                expectedStatus = 200,
-                response = emptyList<GetBlueprintPathOverviewResponse>(),
-                serviceCall = {
-                    service.getBlueprintPathOverviewsForProjectId(projectId)
-                },
-                documentsNotFound = false,
-            ),
-            EndpointCase(
-                name = "GET /paths/{pathId}/graph",
-                request = get("/api/v1/projects/$projectId/onboarding/blueprints/paths/$pathId/graph"),
-                expectedStatus = 200,
-                response = GetBlueprintGraphResponse(nodes = emptyList()),
-                serviceCall = {
-                    graphNodeService.getGraph(BlueprintScope.Project(projectId), pathId)
-                },
-                documentsNotFound = false,
-            ),
-            EndpointCase(
-                name = "GET /paths/{pathId}",
-                request = get("/api/v1/projects/$projectId/onboarding/blueprints/paths/$pathId"),
-                expectedStatus = 200,
-                response = pathResponse,
-                serviceCall = {
-                    service.getBlueprintPathById(BlueprintScope.Project(projectId), pathId)
-                },
-            ),
             EndpointCase(
                 name = "POST /paths",
                 request =

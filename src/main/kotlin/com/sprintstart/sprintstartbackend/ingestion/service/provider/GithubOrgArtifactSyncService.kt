@@ -48,19 +48,7 @@ class GithubOrgArtifactSyncService(
      */
     @Tracked("Reconciling GitHub org artifact project memberships")
     suspend fun syncOrgArtifact(owner: String) {
-        val (artifactId, targetProjectIds) = withContext(ioDispatcher) {
-            transactionTemplate.execute {
-                val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, owner)
-                    ?: return@execute null
-                val targetProjectIds = githubRepositoryApi.getProjectIdsByOwner(owner)
-                if (artifact.setProjectIds(targetProjectIds)) {
-                    artifactRepository.save(artifact)
-                    artifact.id to targetProjectIds
-                } else {
-                    null
-                }
-            }
-        } ?: return
+        val (artifactId, targetProjectIds) = relinkProjects(owner) ?: return
 
         logger.info(
             "Syncing org artifact {} for owner {} with {} project(s) to AI index",
@@ -93,5 +81,20 @@ class GithubOrgArtifactSyncService(
             "Org artifact for $owner was updated locally but kept its old membership in the AI index" +
                 (failed.firstNotNullOfOrNull { it.errorMessage }?.let { " (first reported cause: $it)" }.orEmpty()),
         )
+    }
+
+    /** Points the org artifact of [owner] at the projects its repositories belong to, or null when nothing changed. */
+    private suspend fun relinkProjects(owner: String): Pair<UUID, Set<UUID>>? = withContext(ioDispatcher) {
+        transactionTemplate.execute {
+            val artifact = artifactRepository.findOrgMetadataArtifact(SourceSystem.GITHUB, owner)
+                ?: return@execute null
+            val targetProjectIds = githubRepositoryApi.getProjectIdsByOwner(owner)
+            if (artifact.setProjectIds(targetProjectIds)) {
+                artifactRepository.save(artifact)
+                artifact.id to targetProjectIds
+            } else {
+                null
+            }
+        }
     }
 }

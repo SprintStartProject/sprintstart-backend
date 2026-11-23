@@ -10,19 +10,12 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.WorkspaceMembersResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.WorkspaceMetadataResponse
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
-import com.sprintstart.sprintstartbackend.shared.web.RequestBuilder
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
-import kotlinx.coroutines.delay
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.time.Duration
-import java.time.Instant
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Base64
 
 /**
  * Talks to the Bitbucket Cloud REST API, version 2.0.
@@ -300,8 +293,8 @@ class BitbucketClient(
         credentials: AtlassianCredentialSecret,
         requestContext: String,
     ): T =
-        withRateLimitRetry(requestContext) {
-            authorizedGet(uri, credentials).sync().perform<T>()
+        withRateLimitRetry(requestContext, logger) {
+            webClient.authorizedGet(uri, credentials).sync().perform<T>()
         }
 
     /**
@@ -315,92 +308,10 @@ class BitbucketClient(
      * @throws WebClientException if the request still fails after the retry budget is spent.
      */
     private suspend fun executeRawGet(uri: String, credentials: AtlassianCredentialSecret, requestContext: String) {
-        withRateLimitRetry(requestContext) {
-            authorizedGet(uri, credentials).sync().performRaw()
+        withRateLimitRetry(requestContext, logger) {
+            webClient.authorizedGet(uri, credentials).sync().performRaw()
         }
     }
-
-    /**
-     * Runs [request], retrying it while Bitbucket is rate limiting or failing.
-     *
-     * Only `429` and `5xx` are retried: those are the statuses where the same request can plausibly
-     * succeed later. A `404` or a `401` is an answer, and retrying it would only delay the caller's
-     * error.
-     *
-     * Bitbucket's `Retry-After` header wins over the local backoff when present, because Bitbucket
-     * knows better than we do when the rate limit window closes; the value is capped so a
-     * nonsensical header cannot stall a sync indefinitely. Both the header and the backoff are
-     * bounded, and the attempt counter is shared, so a request that keeps being rate limited fails
-     * with the last `WebClientException` rather than looping.
-     *
-     * @param requestContext Describes the resource for retry log messages.
-     * @param request The request to run and possibly re-run.
-     * @return The result of the first successful attempt.
-     * @throws WebClientException if the request is not retryable or the budget is spent.
-     */
-    private suspend inline fun <T> withRateLimitRetry(
-        requestContext: String,
-        crossinline request: suspend () -> T,
-    ): T {
-        var attempt = 1
-
-        while (true) {
-            try {
-                return request()
-            } catch (exception: WebClientException) {
-                if (!exception.isRetryableHttpStatus() || attempt >= MAX_ATTEMPTS) {
-                    throw exception
-                }
-                val waitMillis = exception.retryAfterMillis() ?: backoffMillis(attempt)
-                logger.warn(
-                    "Retrying Bitbucket request '{}' after attempt {} with status {}; delay={}ms",
-                    requestContext,
-                    attempt,
-                    exception.statusCode,
-                    waitMillis,
-                )
-                delay(waitMillis)
-                attempt++
-            }
-        }
-    }
-
-    /**
-     * Builds an authenticated `GET` request for a Bitbucket URI.
-     *
-     * Every call in this client goes through here, so the transport concerns — the authorization
-     * scheme and the accepted content type — are decided in exactly one place.
-     *
-     * Authentication uses HTTP Basic with the credential's email as the username and its API token
-     * as the password, which is the scheme Bitbucket Cloud accepts for personal API tokens. Bearer
-     * only authenticates OAuth and workspace access tokens, so it cannot authenticate the stored
-     * credentials this client is handed.
-     *
-     * @param uri The absolute request URI. Collection URLs taken from a `next` link are passed
-     * through unchanged.
-     * @param credentials The caller's stored Atlassian credential; its email and API token authenticate the request.
-     * @return The prepared request, ready for `.sync()`.
-     */
-    private fun authorizedGet(uri: String, credentials: AtlassianCredentialSecret): RequestBuilder =
-        webClient
-            .get()
-            .uri(uri)
-            .header("Accept", "application/json")
-            .header("Authorization", "Basic ${basicCredentials(credentials)}")
-
-    /**
-     * Encodes one credential pair for the `Authorization` header.
-     *
-     * Base64 of `email:token` in UTF-8, per RFC 7617. Kept separate so no call site ever logs or
-     * concatenates the plaintext pair itself.
-     *
-     * @param credentials The credential whose email and API token to encode.
-     * @return The Base64 `email:token` pair, without the `Basic` prefix.
-     */
-    private fun basicCredentials(credentials: AtlassianCredentialSecret): String =
-        Base64.getEncoder().encodeToString(
-            "${credentials.userEmail}:${credentials.apiToken}".toByteArray(StandardCharsets.UTF_8),
-        )
 
     /** Builds the URI of a workspace resource. */
     private fun workspaceUri(workspace: String): String =
@@ -463,56 +374,3 @@ class BitbucketClient(
                 "values.user,values.deleted"
     }
 }
-
-/** Attempts made per request, including the first one. */
-private const val MAX_ATTEMPTS = 4
-
-/** Backoff before the second attempt; doubled for each attempt after it. */
-private const val INITIAL_BACKOFF_MILLIS = 1_000L
-
-/** Upper bound for both the backoff and a server-supplied `Retry-After`, so a sync cannot park for long. */
-private const val MAX_RETRY_DELAY_MILLIS = 60_000L
-
-/**
- * Whether the same request can plausibly succeed later.
- *
- * `429` is Bitbucket's rate limit and `5xx` is Bitbucket failing to answer. Everything else is an
- * answer about the resource.
- */
-private fun WebClientException.isRetryableHttpStatus(): Boolean = statusCode == 429 || statusCode in 500..599
-
-/**
- * The delay Bitbucket asked for in its `Retry-After` header, or null when it sent none we understand.
- *
- * The header may be either a number of seconds or an HTTP date, both of which appear in the wild.
- * A value we cannot parse, cannot represent, or that has already passed yields null rather than a
- * guess, and the caller falls back to its own backoff.
- *
- * @return a non-negative delay in milliseconds, capped at the maximum, or null.
- */
-private fun WebClientException.retryAfterMillis(): Long? {
-    val value = retryAfter?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-
-    value.toLongOrNull()?.let { seconds ->
-        return runCatching { Duration.ofSeconds(seconds).toMillis() }
-            .getOrNull()
-            ?.takeIf { millis -> millis >= 0 }
-            ?.coerceAtMost(MAX_RETRY_DELAY_MILLIS)
-    }
-
-    return runCatching {
-        val retryAt = ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
-        Duration.between(Instant.now(), retryAt).toMillis()
-    }.getOrNull()
-        ?.takeIf { millis -> millis > 0 }
-        ?.coerceAtMost(MAX_RETRY_DELAY_MILLIS)
-}
-
-/**
- * Exponential backoff for a failed attempt, capped at the maximum.
- *
- * @param failedAttempt The attempt that just failed, counting from one.
- * @return the delay before the next attempt, in milliseconds.
- */
-private fun backoffMillis(failedAttempt: Int): Long =
-    (INITIAL_BACKOFF_MILLIS shl (failedAttempt - 1)).coerceAtMost(MAX_RETRY_DELAY_MILLIS)

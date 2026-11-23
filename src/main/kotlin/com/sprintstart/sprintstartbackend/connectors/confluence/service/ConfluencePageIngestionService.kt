@@ -5,18 +5,13 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.client.Confluenc
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePage
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchCommand
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactCommand
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactFailure
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipCommand
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceIngestionException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailure
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionResult
-import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionStatus
 import com.sprintstart.sprintstartbackend.connectors.confluence.parser.ConfluenceStorageFormatParser
 import kotlinx.coroutines.CancellationException
 import org.slf4j.LoggerFactory
@@ -42,73 +37,7 @@ internal class ConfluencePageIngestionService(
         ingestionApi.startRun(runId, connection.id, "${connection.baseUrl}|${connection.spaceId}")
 
         try {
-            val fetched = confluenceClient.getPages(
-                connection.baseUrl,
-                connection.credentials,
-                connection.spaceId,
-            )
-            val pages = fetched.successfulPages.distinctBy { page -> page.id }
-            val relationshipIndex = buildRelationshipIndex(pages)
-            val eligiblePages = pages.filter { page -> connection.allowsPage(page.id) }
-            val failures = fetched.failures
-                .map { failure ->
-                    ConfluenceIngestionFailure(
-                        pageId = failure.pageId,
-                        stage = ConfluenceIngestionFailureStage.RESTRICTIONS,
-                        httpStatus = failure.httpStatus,
-                        attempts = failure.attempts,
-                        message = RESTRICTIONS_FAILURE_MESSAGE,
-                    )
-                }.toMutableList()
-            val artifactCommands = mapEligiblePages(
-                connection = connection,
-                pages = eligiblePages,
-                relationshipIndex = relationshipIndex,
-                failures = failures,
-            )
-            val failureCommands = failures.map { failure ->
-                ConfluencePageArtifactFailure(
-                    pageId = failure.pageId,
-                    sourceUrl = null,
-                    stage = failure.stage.toArtifactFailureStage(),
-                    httpStatus = failure.httpStatus,
-                    attempts = failure.attempts,
-                    reason = failure.message,
-                )
-            }
-            val persisted = ingestionApi.persistBatch(
-                ConfluenceArtifactBatchCommand(
-                    runId = runId,
-                    projectId = projectId,
-                    artifacts = artifactCommands,
-                    failures = failureCommands,
-                ),
-            )
-            val persistenceFailures = persisted.persistenceFailures.map { failure ->
-                ConfluenceIngestionFailure(
-                    pageId = failure.pageId,
-                    stage = ConfluenceIngestionFailureStage.PERSISTENCE,
-                    httpStatus = failure.httpStatus,
-                    attempts = failure.attempts,
-                    message = PERSISTENCE_FAILURE_MESSAGE,
-                )
-            }
-            val allFailures = failures + persistenceFailures
-            val successfulItemCount = persisted.created + persisted.updated + persisted.unchanged
-            ingestionApi.finishRun(runId, successfulItemCount)
-            return ConfluenceIngestionResult(
-                runId = runId,
-                connectionId = connectionId,
-                discovered = fetched.successfulPages.size + fetched.failures.size,
-                eligible = eligiblePages.size,
-                filtered = pages.size - eligiblePages.size,
-                created = persisted.created,
-                updated = persisted.updated,
-                unchanged = persisted.unchanged,
-                failed = persisted.failed,
-                failures = allFailures,
-                status = resultStatus(successfulItemCount, persisted.failed),
-            )
+            return ingestRun(connection, projectId, runId)
         } catch (exception: CancellationException) {
             markFailedAndPropagate(runId, exception)
         } catch (exception: InterruptedException) {
@@ -118,6 +47,62 @@ internal class ConfluencePageIngestionService(
             throw sanitizedTerminalException(exception)
         }
     }
+
+    private suspend fun ingestRun(
+        connection: ConfluenceConnectionIngestionSnapshot,
+        project: UUID,
+        run: UUID,
+    ): ConfluenceIngestionResult {
+        val collected = collect(connection)
+        val persisted = ingestionApi.persistBatch(
+            ConfluenceArtifactBatchCommand(
+                runId = run,
+                projectId = project,
+                artifacts = collected.commands,
+                failures = collected.failures.map { it.toArtifactFailure() },
+            ),
+        )
+        val persistenceFailures = persisted.persistenceFailures.map { it.toIngestionFailure() }
+        val successfulItemCount = persisted.created + persisted.updated + persisted.unchanged
+        ingestionApi.finishRun(run, successfulItemCount)
+        return ConfluenceIngestionResult(
+            runId = run,
+            connectionId = connection.id,
+            discovered = collected.discovered,
+            eligible = collected.eligible,
+            filtered = collected.filtered,
+            created = persisted.created,
+            updated = persisted.updated,
+            unchanged = persisted.unchanged,
+            failed = persisted.failed,
+            failures = collected.failures + persistenceFailures,
+            status = resultStatus(successfulItemCount, persisted.failed),
+        )
+    }
+
+    /** Fetches the space's pages and maps the ones the connection lets through, recording what could not be. */
+    private suspend fun collect(connection: ConfluenceConnectionIngestionSnapshot): Collected {
+        val fetched = confluenceClient.getPages(connection.baseUrl, connection.credentials, connection.spaceId)
+        val pages = fetched.successfulPages.distinctBy { page -> page.id }
+        val eligiblePages = pages.filter { page -> connection.allowsPage(page.id) }
+        val failures = fetched.failures.map { it.toIngestionFailure() }.toMutableList()
+        val commands = mapEligiblePages(connection, eligiblePages, buildRelationshipIndex(pages), failures)
+        return Collected(
+            discovered = fetched.successfulPages.size + fetched.failures.size,
+            eligible = eligiblePages.size,
+            filtered = pages.size - eligiblePages.size,
+            commands = commands,
+            failures = failures,
+        )
+    }
+
+    private class Collected(
+        val discovered: Int,
+        val eligible: Int,
+        val filtered: Int,
+        val commands: List<ConfluencePageArtifactCommand>,
+        val failures: List<ConfluenceIngestionFailure>,
+    )
 
     private fun mapEligiblePages(
         connection: ConfluenceConnectionIngestionSnapshot,
@@ -134,83 +119,35 @@ internal class ConfluencePageIngestionService(
                 )
                 return@mapNotNull null
             }
-            val parsedBody = try {
+            val parsedBody = recording(failures, page.id, ConfluenceIngestionFailureStage.PARSING) {
                 parser.parse(page.storage.value)
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (@Suppress("SwallowedException") exception: RuntimeException) {
-                failures += ConfluenceIngestionFailure(
-                    pageId = page.id,
-                    stage = ConfluenceIngestionFailureStage.PARSING,
-                    message = PARSING_FAILURE_MESSAGE,
-                )
-                return@mapNotNull null
-            }
-            try {
+            } ?: return@mapNotNull null
+            recording(failures, page.id, ConfluenceIngestionFailureStage.MAPPING) {
                 pageMapper.toCommand(
                     connection = connection,
                     page = page,
                     parsedBody = parsedBody,
                     relationships = relationshipIndex.byPageId[page.id].orEmpty(),
                 )
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (@Suppress("SwallowedException") exception: RuntimeException) {
-                failures += ConfluenceIngestionFailure(
-                    pageId = page.id,
-                    stage = ConfluenceIngestionFailureStage.MAPPING,
-                    message = MAPPING_FAILURE_MESSAGE,
-                )
-                null
             }
         }
     }
 
-    private fun buildRelationshipIndex(pages: List<ConfluencePage>): RelationshipIndex {
-        val selfParentPageIds = pages
-            .filter { page -> page.parentType.equals("page", ignoreCase = true) && page.parentId == page.id }
-            .map { page -> page.id }
-            .toSet()
-        val childIdsByParentId = pages
-            .filter { page ->
-                page.parentType.equals("page", ignoreCase = true) &&
-                    page.parentId != null &&
-                    page.parentId != page.id
-            }.groupBy { page -> requireNotNull(page.parentId) }
-            .mapValues { (_, children) -> children.map { child -> child.id }.distinct().sorted() }
-        val byPageId = pages.associate { page ->
-            val relationships = buildList {
-                if (
-                    page.parentType.equals("page", ignoreCase = true) &&
-                    page.parentId != null &&
-                    page.parentId != page.id
-                ) {
-                    add(ConfluenceRelationshipCommand(ConfluenceRelationshipType.CHILD_OF, page.parentId))
-                }
-                childIdsByParentId[page.id].orEmpty().forEach { childId ->
-                    add(ConfluenceRelationshipCommand(ConfluenceRelationshipType.PARENT_OF, childId))
-                }
-            }.distinct().sortedWith(
-                compareBy(
-                    { relationship -> relationship.type.name },
-                    { relationship -> relationship.targetSourceArtifactId },
-                ),
-            )
-            page.id to relationships
+    /** Runs [block] for one page; a failure is recorded against the page at [stage], and yields null. */
+    private inline fun <T> recording(
+        failures: MutableList<ConfluenceIngestionFailure>,
+        page: String,
+        stage: ConfluenceIngestionFailureStage,
+        block: () -> T,
+    ): T? =
+        try {
+            block()
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (@Suppress("SwallowedException") exception: RuntimeException) {
+            failures += ConfluenceIngestionFailure(pageId = page, stage = stage, message = failureMessage(stage))
+            null
         }
-        return RelationshipIndex(byPageId, selfParentPageIds)
-    }
-
-    private fun resultStatus(successfulItemCount: Int, failed: Int): ConfluenceIngestionStatus {
-        if (failed == 0) {
-            return ConfluenceIngestionStatus.COMPLETED
-        }
-        return if (successfulItemCount > 0) {
-            ConfluenceIngestionStatus.PARTIAL
-        } else {
-            ConfluenceIngestionStatus.FAILED
-        }
-    }
 
     private fun requireEnabled(connection: ConfluenceConnectionIngestionSnapshot) {
         if (!connection.sourceEnabled) {
@@ -256,27 +193,7 @@ internal class ConfluencePageIngestionService(
         throw exception
     }
 
-    private fun ConfluenceIngestionFailureStage.toArtifactFailureStage(): ConfluenceArtifactFailureStage {
-        return when (this) {
-            ConfluenceIngestionFailureStage.RESTRICTIONS -> ConfluenceArtifactFailureStage.RESTRICTIONS
-            ConfluenceIngestionFailureStage.HIERARCHY -> ConfluenceArtifactFailureStage.HIERARCHY
-            ConfluenceIngestionFailureStage.PARSING -> ConfluenceArtifactFailureStage.PARSING
-            ConfluenceIngestionFailureStage.MAPPING -> ConfluenceArtifactFailureStage.MAPPING
-            ConfluenceIngestionFailureStage.PERSISTENCE -> ConfluenceArtifactFailureStage.PERSISTENCE
-        }
-    }
-
-    private data class RelationshipIndex(
-        val byPageId: Map<String, List<ConfluenceRelationshipCommand>>,
-        val selfParentPageIds: Set<String>,
-    )
-
     private companion object {
-        const val RESTRICTIONS_FAILURE_MESSAGE = "Confluence page restrictions were unavailable"
-        const val SELF_PARENT_FAILURE_MESSAGE = "Confluence page cannot be its own parent"
-        const val PARSING_FAILURE_MESSAGE = "Confluence page storage format could not be parsed"
-        const val MAPPING_FAILURE_MESSAGE = "Confluence page could not be mapped to an artifact"
-        const val PERSISTENCE_FAILURE_MESSAGE = "Confluence page artifact could not be persisted"
         const val TERMINAL_FAILURE_MESSAGE = "Confluence page ingestion terminated before persistence"
     }
 }

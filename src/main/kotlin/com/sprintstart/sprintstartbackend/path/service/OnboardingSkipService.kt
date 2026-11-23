@@ -100,12 +100,7 @@ class OnboardingSkipService(
     @Transactional(readOnly = true)
     @Tracked("Retrieving specific skip request for user")
     fun getSkipByIdForMe(authId: String, skipId: UUID): GetOnboardingSkipResponse {
-        val userId = getUserId(authId)
-
-        return onboardingSkipRepository
-            .findByIdAndStepPhasePathUserId(skipId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
-            .toGetResponse()
+        return ownSkip(authId, skipId).toGetResponse()
     }
 
     /**
@@ -134,10 +129,7 @@ class OnboardingSkipService(
 
         ensureStepCanReceivePendingSkip(step)
 
-        val onboardingSkip = OnboardingSkip(
-            step = step,
-            reason = request.reason,
-        )
+        val onboardingSkip = OnboardingSkip(step = step, reason = request.reason)
         step.skips += onboardingSkip
 
         return onboardingSkip.toCreateResponse()
@@ -160,10 +152,7 @@ class OnboardingSkipService(
         skipId: UUID,
         request: UpdateOnboardingSkipRequest,
     ): UpdateOnboardingStepResponse {
-        val userId = getUserId(authId)
-        val skip = onboardingSkipRepository
-            .findByIdAndStepPhasePathUserId(skipId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
+        val skip = ownSkip(authId, skipId)
 
         ensurePending(skip)
 
@@ -186,10 +175,7 @@ class OnboardingSkipService(
     @Transactional
     @Tracked("Deleting skip request for user")
     fun deleteSkipByIdForMe(authId: String, skipId: UUID) {
-        val userId = getUserId(authId)
-        val skip = onboardingSkipRepository
-            .findByIdAndStepPhasePathUserId(skipId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
+        val skip = ownSkip(authId, skipId)
 
         ensurePending(skip, "deleted")
         deleteSkip(skip)
@@ -208,10 +194,7 @@ class OnboardingSkipService(
     @Transactional
     @Tracked("Marking skip review as seen by user")
     fun markSkipAnswerSeenForMe(authId: String, skipId: UUID) {
-        val userId = getUserId(authId)
-        val skip = onboardingSkipRepository
-            .findByIdAndStepPhasePathUserId(skipId, userId)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $skipId") }
+        val skip = ownSkip(authId, skipId)
 
         if (skip.status != SkipStatus.PENDING && skip.answerSeenAt == null) {
             skip.answerSeenAt = Instant.now()
@@ -372,17 +355,20 @@ class OnboardingSkipService(
         deleteSkip(skip)
     }
 
-    private fun getUserId(authId: String): UUID {
-        return userApi
+    private fun getUserId(authId: String): UUID =
+        userApi
             .getUserIdByAuthId(authId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
-    }
 
-    private fun ensureUserOwnsStep(userId: UUID, stepId: UUID): OnboardingStep {
-        return onboardingStepRepository
+    private fun ownSkip(authSubject: String, target: UUID): OnboardingSkip =
+        onboardingSkipRepository
+            .findByIdAndStepPhasePathUserId(target, getUserId(authSubject))
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No skip found with id: $target") }
+
+    private fun ensureUserOwnsStep(userId: UUID, stepId: UUID): OnboardingStep =
+        onboardingStepRepository
             .findByIdAndPhasePathUserId(stepId, userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "No step found with id: $stepId") }
-    }
 
     private fun ensureStepCanReceivePendingSkip(step: OnboardingStep) {
         if (step.status != StepStatus.WAITING && step.status != StepStatus.IN_PROGRESS) {
@@ -402,10 +388,7 @@ class OnboardingSkipService(
 
     private fun ensurePending(skip: OnboardingSkip, action: String = "modified") {
         if (skip.status != SkipStatus.PENDING) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Only pending skips can be $action",
-            )
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Only pending skips can be $action")
         }
     }
 

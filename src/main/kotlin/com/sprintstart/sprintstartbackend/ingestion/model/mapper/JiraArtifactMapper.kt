@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component
 @Component
 class JiraArtifactMapper {
     fun toCommand(event: JiraIssueFetchedEvent): JiraArtifactCommand {
+        val fields = event.issue.fields
+
         return JiraArtifactCommand(
             ingestionRunId = event.transactionId,
             sourceSystem = SourceSystem.JIRA,
@@ -25,27 +27,21 @@ class JiraArtifactMapper {
             issueType = event.getIssueType(),
             issueId = event.issue.id,
             issueKey = event.issue.key,
-            summary = event.issue.fields.summary,
-            description = event.issue.fields.description
-                ?.content
-                .orEmpty(),
+            summary = fields.summary,
+            description = fields.description?.content.orEmpty(),
             createdBy = event.getCreator(),
             reportedBy = event.getReporter(),
             assignee = event.getAssignee(),
-            createdAt = event.issue.fields.created
-                .toInstant(),
-            updatedAt = event.issue.fields.updated
-                .toInstant(),
+            createdAt = fields.created.toInstant(),
+            updatedAt = fields.updated.toInstant(),
             project = event.getProject(),
             history = event.getChangelog(),
             comments = event.getComments(),
-            statusName = event.issue.fields.status.name,
-            statusDescription = event.issue.fields.status.description,
+            statusName = fields.status.name,
+            statusDescription = fields.status.description,
             // The category key, not its name: Jira localizes the name ("Fertig", "Done"). Without a category,
             // the status name stands in.
-            statusCategory = event.issue.fields.status.category
-                ?.key
-                ?: event.issue.fields.status.name,
+            statusCategory = fields.status.category?.key ?: fields.status.name,
             projectIds = event.projectIds,
         )
     }

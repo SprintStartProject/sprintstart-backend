@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.external.events.
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
 import com.sprintstart.sprintstartbackend.ingestion.service.provider.GithubOrgArtifactSyncService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -41,14 +42,7 @@ internal class GithubRepositoryProjectsListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: GithubRepositoryProjectLinkChangedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.applyProjectLink(
-                    ArtifactSourceRef.GithubRepository(event.owner, event.name),
-                    event.projectId,
-                    event.linked,
-                )
-                githubOrgArtifactSyncService.syncOrgArtifact(event.owner)
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.error(
                     "Failed to propagate project {} ({}) for repository {}/{} to the AI index",
                     event.projectId,
@@ -57,6 +51,13 @@ internal class GithubRepositoryProjectsListener(
                     event.name,
                     e,
                 )
+            }) {
+                artifactProjectService.applyProjectLink(
+                    ArtifactSourceRef.GithubRepository(event.owner, event.name),
+                    event.projectId,
+                    event.linked,
+                )
+                githubOrgArtifactSyncService.syncOrgArtifact(event.owner)
             }
         }
     }

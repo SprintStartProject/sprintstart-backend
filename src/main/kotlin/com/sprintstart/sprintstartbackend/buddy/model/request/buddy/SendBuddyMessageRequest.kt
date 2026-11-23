@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.buddy.model.request.buddy
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import java.util.UUID
 
 /**
@@ -37,4 +38,7 @@ data class SendBuddyMessageRequest(
      * message.
      */
     val currentPage: String? = null,
-)
+) {
+    /** The turn's choices, as the buddy services take them. */
+    fun turnOptions() = BuddyTurnOptions(capabilitiesEnabled, filters, currentPage)
+}

@@ -1,13 +1,11 @@
 package com.sprintstart.sprintstartbackend.starterwork.service
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
-import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IngestedIssue
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
-import com.sprintstart.sprintstartbackend.shared.ids.SourceId
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
+import com.sprintstart.sprintstartbackend.shared.ids.UserId
 import com.sprintstart.sprintstartbackend.starterwork.external.StarterWorkAiClient
-import com.sprintstart.sprintstartbackend.starterwork.external.enums.CandidatePoolState
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
-import com.sprintstart.sprintstartbackend.starterwork.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.starterwork.external.model.StarterWorkOutcome
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.StarterWorkTaskProposal
 import com.sprintstart.sprintstartbackend.starterwork.model.mapper.toResponse
@@ -21,7 +19,6 @@ import com.sprintstart.sprintstartbackend.starterwork.model.response.starterwork
 import com.sprintstart.sprintstartbackend.starterwork.repository.CompetencyRepository
 import com.sprintstart.sprintstartbackend.starterwork.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.starterwork.repository.UserCompetencyStateRepository
-import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -58,7 +55,6 @@ class StarterWorkTaskProposalService(
     private val githubHistoryPriorService: GithubHistoryPriorService,
     private val artifactIngestionApi: ArtifactIngestionApi,
     private val userApi: UserApi,
-    private val projectMembershipApi: ProjectMembershipApi,
     private val starterWorkScope: StarterWorkScope,
     private val json: Json,
     transactionManager: PlatformTransactionManager,
@@ -68,6 +64,15 @@ class StarterWorkTaskProposalService(
     private val txTemplate = TransactionTemplate(transactionManager)
     private val readTxTemplate = TransactionTemplate(transactionManager).apply { isReadOnly = true }
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val matching = StarterWorkMatching(
+        userApi,
+        starterWorkScope,
+        starterWorkTaskProposalRepository,
+        userCompetencyStateRepository,
+        githubHistoryPriorService,
+        artifactIngestionApi,
+    )
+    private val candidates = StarterWorkCandidates(starterWorkTaskProposalRepository, artifactIngestionApi)
 
     /**
      * Triggers AI starter-work mining and persists the results as `LIVE`.
@@ -290,174 +295,6 @@ class StarterWorkTaskProposalService(
     }
 
     /**
-     * The open issues in a project's corpus, each marked with where it stands in the pool.
-     *
-     * Deterministic and LLM-free: the same material mining reads, shown to a person instead.
-     *
-     * Assigned issues are returned, and so are issues already pooled or removed — filtering is
-     * the client's to do. [CandidatePoolState] and the three-valued `hasAssignee` carry that, so an
-     * absence from the list never has to stand in for "somebody else has this".
-     *
-     * Ordered newest-changed first; ties fall back to the source id so the order is stable.
-     */
-    @Transactional(readOnly = true)
-    fun listCandidates(projectId: UUID): List<StarterWorkCandidateResponse> {
-        val poolStateBySourceId = starterWorkTaskProposalRepository
-            .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.REJECTED, ProposalStatus.STALE))
-            .associate { it.sourceId to it.status.toPoolState() }
-
-        return artifactIngestionApi
-            .getOpenIssues(projectId)
-            .mapNotNull { issue ->
-                // An issue with no title is dropped rather than shown as an empty row.
-                val title = issue.title?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                val body = issue.body?.takeIf { it.isNotBlank() }
-                StarterWorkCandidateResponse(
-                    sourceId = issue.sourceId,
-                    tracker = issue.tracker,
-                    title = title,
-                    excerpt = body?.take(CANDIDATE_EXCERPT_CHARS),
-                    excerptTruncated = (body?.length ?: 0) > CANDIDATE_EXCERPT_CHARS,
-                    labels = issue.labels,
-                    sourceUrl = issue.sourceUrl,
-                    hasAssignee = issue.hasAssignee,
-                    poolState = poolStateBySourceId[issue.sourceId] ?: CandidatePoolState.AVAILABLE,
-                    updatedAtSource = issue.updatedAtSource,
-                )
-            }.sortedWith(
-                compareByDescending<StarterWorkCandidateResponse> { it.updatedAtSource }
-                    .thenBy { it.sourceId },
-            )
-    }
-
-    private fun ProposalStatus.toPoolState(): CandidatePoolState =
-        when (this) {
-            ProposalStatus.LIVE -> CandidatePoolState.IN_POOL
-            ProposalStatus.REJECTED -> CandidatePoolState.REMOVED
-            // A stale row appears here only when its issue reopened; promoting it revives the row, so it is
-            // offered as AVAILABLE.
-            ProposalStatus.STALE -> CandidatePoolState.AVAILABLE
-        }
-
-    /**
-     * Puts one browsed corpus issue into the pool, live and reviewed.
-     *
-     * The same landing place as [createTask]: somebody looked at this issue and vouched for it.
-     * This is not an approval gate in front of mining — mining keeps landing tasks live without
-     * anybody's involvement, and this only adds a way in for an issue mining did not pick.
-     *
-     * The title and link come from the ingested issue, so the pool cannot disagree with the tracker
-     * about what an issue is called.
-     *
-     * Refuses an issue already in the pool or removed from it (409 — rejection is sticky,
-     * and promotion must not undo it), and one closed at its source (409). An assigned
-     * issue is accepted: mining skips those, and a person promoting one can see who holds it.
-     *
-     * @throws ResponseStatusException 404 if no issue with that source id is ingested; 400 if the
-     * ingested issue has no title; 409 if it is already pooled, was removed, or is closed.
-     */
-    @Transactional
-    fun promoteCandidate(request: PromoteStarterWorkCandidateRequest): StarterWorkTaskProposalResponse {
-        val sourceId = SourceId(request.sourceId.trim())
-        val issue = loadPromotableIssue(sourceId)
-        val title = titleOf(sourceId, issue)
-        reviveOrRefuse(sourceId, request)?.let { return it.toResponse() }
-
-        val proposal = starterWorkTaskProposalRepository.save(
-            StarterWorkTaskProposal(
-                sourceId = sourceId.value,
-                title = title,
-                summary = request.summary?.trim()?.takeIf { it.isNotBlank() },
-                // Nothing judged this issue, so there is no rationale to state.
-                rationale = null,
-                sourceUrl = issue.sourceUrl,
-                competencyKeys = request.competencyKeys.toMutableList(),
-                status = ProposalStatus.LIVE,
-                reviewed = true,
-                decidedAt = Instant.now(),
-            ),
-        )
-        return proposal.toResponse()
-    }
-
-    /** The ingested issue, if there is one and it is still work somebody could be handed. */
-    private fun loadPromotableIssue(sourceId: SourceId): IngestedIssue {
-        val issue = artifactIngestionApi.getIssue(sourceId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "No ingested issue found with source id: $sourceId",
-            )
-        // Only a definite "CLOSED" refuses — an uncaptured state is unknown, never "closed".
-        if (CLOSED_STATE.equals(issue.state, ignoreCase = true)) {
-            throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Issue $sourceId is closed at its source and is not work to hand a newcomer",
-            )
-        }
-        return issue
-    }
-
-    private fun titleOf(sourceId: SourceId, issue: IngestedIssue): String =
-        issue.title?.takeIf { it.isNotBlank() }
-            ?: throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Issue $sourceId has no title and cannot be put in the pool",
-            )
-
-    /**
-     * Handles an issue that already has a proposal: revives a stale one, refuses the rest.
-     *
-     * The rejected branch is the load-bearing one: rejection is sticky, so promotion must not
-     * become the accidental way to undo it.
-     *
-     * A stale row is the opposite case. [loadPromotableIssue] has already established that this
-     * issue is open, so the row is out of date rather than unwanted, and reviving it is both what
-     * the caller asked for and what the next reconciliation pass would do anyway. Reviving rather
-     * than inserting is not a preference either — `sourceId` is unique per proposal, so a second
-     * row for the same issue cannot exist.
-     *
-     * A revived row lands in the same state a fresh promotion does: live *and reviewed*, because
-     * this endpoint's whole premise is that somebody looked at the issue and vouched for it. Coming
-     * back still carrying the unreviewed demotion would contradict the act that revived it.
-     *
-     * What the promoter sent is applied; what they left out is kept. Both fields are optional and
-     * default to empty, so reading silence as "clear this" would let a promotion that said nothing
-     * destroy competency keys mining had already worked out.
-     *
-     * @return the revived proposal, or null when the issue has no proposal at all.
-     */
-    private fun reviveOrRefuse(
-        sourceId: SourceId,
-        request: PromoteStarterWorkCandidateRequest,
-    ): StarterWorkTaskProposal? {
-        val existing = starterWorkTaskProposalRepository.findBySourceId(sourceId.value) ?: return null
-        return when (existing.status) {
-            ProposalStatus.STALE -> {
-                existing.status = ProposalStatus.LIVE
-                existing.reviewed = true
-                request.summary
-                    ?.trim()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { existing.summary = it }
-                request.competencyKeys.takeIf { it.isNotEmpty() }?.let {
-                    existing.competencyKeys.clear()
-                    existing.competencyKeys.addAll(it)
-                }
-                existing.decidedAt = Instant.now()
-                starterWorkTaskProposalRepository.save(existing)
-            }
-            ProposalStatus.LIVE -> throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Issue $sourceId is already in the starter-work pool",
-            )
-            ProposalStatus.REJECTED -> throw ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "Issue $sourceId was removed from the starter-work pool and is not re-addable",
-            )
-        }
-    }
-
-    /**
      * Takes a task out of the pool, permanently.
      *
      * Sticky: the row is kept and mining consults it, so a task somebody turned down is
@@ -474,159 +311,37 @@ class StarterWorkTaskProposalService(
         return proposal.toResponse()
     }
 
-    /**
-     * Ranks the current `LIVE` starter-work pool by fit for the authenticated user on a project.
-     *
-     * Deterministic, local and self-explaining (see [StarterWorkMatcher]): no model call on a
-     * hire's request path, and every task carries the sentence justifying its rank.
-     *
-     * @throws ResponseStatusException 404 if no user matches [authId].
-     */
+    /** See [StarterWorkMatching.matchForUser]. */
     @Transactional(readOnly = true)
-    fun matchForUser(authId: String, projectId: UUID): List<RankedStarterWorkTaskResponse> {
-        val userId = userApi.getUserIdByAuthId(authId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "No user found with authId: $authId")
-        }
-        return matchForUserId(userId, projectId)
-    }
+    fun matchForUser(authId: String, projectId: UUID): List<RankedStarterWorkTaskResponse> =
+        matching.matchForUser(authId, ProjectId(projectId))
 
-    /**
-     * Ranks the current `LIVE` starter-work pool by fit for an already-resolved user on a
-     * project.
-     *
-     * The user-id counterpart of [matchForUser], for callers that hold a user id rather than an
-     * auth subject (e.g. the buddy agent ranking tasks for the caller). Only this project's work and
-     * the shared pool are ranked (see [StarterWorkScope.forHiresOn]).
-     */
+    /** See [StarterWorkMatching.matchForUserId]. */
     @Transactional(readOnly = true)
-    fun matchForUserId(userId: UUID, projectId: UUID): List<RankedStarterWorkTaskResponse> {
-        val pool = starterWorkScope.forHiresOn(
-            starterWorkTaskProposalRepository.findAllByStatus(ProposalStatus.LIVE),
-            projectId,
-        ) { it.sourceId }
-        if (pool.isEmpty()) return emptyList()
+    fun matchForUserId(userId: UUID, projectId: UUID): List<RankedStarterWorkTaskResponse> =
+        matching.matchForUserId(UserId(userId), ProjectId(projectId))
 
-        val profile = buildProfile(userId)
-        val responsivenessByRepo = artifactIngestionApi
-            .getRepositoryResponsiveness(projectId)
-            .associateBy { it.repositoryFullName }
+    /** See [StarterWorkCandidates.listCandidates]. */
+    @Transactional(readOnly = true)
+    fun listCandidates(projectId: UUID): List<StarterWorkCandidateResponse> =
+        candidates.listCandidates(ProjectId(projectId))
 
-        return pool
-            .map { proposal ->
-                val features = featuresOf(proposal)
-                val responsiveness = features.repositoryFullName
-                    ?.let { responsivenessByRepo[it] }
-                    ?.let { StarterWorkMatcher.Responsiveness(it.medianHoursToFirstResponse, it.unansweredCount) }
-                val scored = StarterWorkMatcher.score(profile, features, responsiveness)
-                RankedStarterWorkTaskResponse(
-                    task = proposal.toResponse(),
-                    score = scored.score,
-                    matchedCompetencyKeys = scored.matchedCompetencyKeys,
-                    taskType = features.taskType,
-                    reasons = scored.reasons,
-                )
-            }
-            // Ties broken by title, so the ranking is stable across reloads.
-            .sortedWith(compareByDescending<RankedStarterWorkTaskResponse> { it.score }.thenBy { it.task.title })
-    }
-
-    /**
-     * What is known about one hire, from data already held.
-     *
-     * The GitHub-history half is consent-gated and may simply be absent. An empty prior means
-     * *no evidence*, never "beginner".
-     */
-    private fun buildProfile(userId: UUID): StarterWorkMatcher.HireProfile {
-        // Level 0 means "unknown/not yet placed", not a competency the hire has met.
-        val competencyKeys = userCompetencyStateRepository
-            .findAllByUserId(userId)
-            .filter { it.level > 0 }
-            .map { it.competencyKey }
-            .toSet()
-
-        // Null when the hire never consented, which is a legitimate and common state.
-        val signals = githubHistoryPriorService.getPrior(userId)?.signals.orEmpty()
-        val repositories = signals.keys
-            .filter { it.startsWith(REPO_SIGNAL_PREFIX) }
-            .map { it.removePrefix(REPO_SIGNAL_PREFIX) }
-            .toSet()
-        val labels = signals.keys
-            .filter { it.startsWith(LABEL_SIGNAL_PREFIX) }
-            .map { it.removePrefix(LABEL_SIGNAL_PREFIX).lowercase() }
-            .toSet()
-
-        return StarterWorkMatcher.HireProfile(
-            competencyKeys = competencyKeys,
-            familiarRepositories = repositories,
-            familiarLabels = labels,
-            // Derived from the same labels a task's type is read from, so the two cannot
-            // disagree about the vocabulary.
-            familiarTaskTypes = labels
-                .mapNotNull { label ->
-                    TaskType.fromLabels(listOf(label)).takeIf { it != TaskType.OTHER }
-                }.toSet(),
-        )
-    }
-
-    /**
-     * The ranking features of one pool task.
-     *
-     * Labels and repository come from the ingested issue, not from the proposal row. Falls back
-     * to no labels when the issue is no longer ingested, costing the task its type signal rather
-     * than inventing one.
-     */
-    private fun featuresOf(proposal: StarterWorkTaskProposal): StarterWorkMatcher.TaskFeatures {
-        val source = artifactIngestionApi.getTaskSource(SourceId(proposal.sourceId))
-        val labels = source
-            ?.labels
-            .orEmpty()
-            .map { it.lowercase() }
-            .toSet()
-        return StarterWorkMatcher.TaskFeatures(
-            competencyKeys = proposal.competencyKeys.toSet(),
-            taskType = TaskType.fromLabels(labels),
-            labels = labels,
-            repositoryFullName = repositoryOf(SourceId(proposal.sourceId)),
-            reviewed = proposal.reviewed,
-            // Only a definite yes demotes; unknown is not "free". Written by
-            // StarterWorkPoolReconciler, so ranking the pool stays one read per task.
-            assigned = proposal.sourceHasAssignee == true,
-        )
-    }
-
-    /**
-     * The `owner/name` a mined task's source id points at.
-     *
-     * Source ids are built by `SourceIdFactory` as `github:owner/name:TYPE:number`, so the
-     * repository is already in the identifier and needs no extra lookup.
-     */
-    private fun repositoryOf(sourceId: SourceId): String? =
-        with(sourceId.value) { split(':').getOrNull(1)?.takeIf { it.contains('/') } }
+    /** See [StarterWorkCandidates.promoteCandidate]. */
+    @Transactional
+    fun promoteCandidate(request: PromoteStarterWorkCandidateRequest): StarterWorkTaskProposalResponse =
+        candidates.promoteCandidate(request)
 
     companion object {
         // Matches the AI service's operation name and the frontend consumer's switch.
         private const val STARTER_WORK = "starter_work"
 
-        /** Namespaces used by `GithubHistoryPrior.signals`; see that entity's docs. */
-        private const val REPO_SIGNAL_PREFIX = "repo:"
-        private const val LABEL_SIGNAL_PREFIX = "label:"
-
         /**
          * Source-id namespace for a hand-authored task. Not the `github:owner/name:...` shape a
-         * mined task carries: [repositoryOf] finds no `owner/name` in it and
+         * mined task carries: `StarterWorkMatching.repositoryOf` finds no `owner/name` in it and
          * `ArtifactIngestionApi.getTaskSource` finds no ingested artifact, so both degrade to "no
          * signal" rather than misattributing.
          */
         private const val HAND_AUTHORED_SOURCE_PREFIX = "authored:"
-
-        /** How the ingestion mappers spell "finished at the source", for GitHub and Jira alike. */
-        private const val CLOSED_STATE = "CLOSED"
-
-        /**
-         * How much of a browsed issue's body a list row carries. The response flags when
-         * something was cut, so a truncated body is never mistaken for a short one.
-         */
-        private const val CANDIDATE_EXCERPT_CHARS = 600
     }
 
     private fun findLiveProposal(id: UUID): StarterWorkTaskProposal {

@@ -57,26 +57,7 @@ class BitbucketArtifactMapper {
             artifactType = ArtifactType.ORG_METADATA,
             title = event.name,
             bodyText = null,
-            mime = null,
-            language = null,
-            createdAtSource = null,
-            updatedAtSource = null,
-            hash = null,
-            metadata = BitbucketWorkspaceMetadataArtifactMetadata(
-                workspace = event.workspace,
-                uuid = event.uuid,
-                name = event.name,
-                isPrivate = event.isPrivate,
-                createdOn = event.createdOn,
-                url = event.url,
-                members = event.members.map { member ->
-                    BitbucketWorkspaceMetadataMember(
-                        accountId = member.accountId,
-                        nickname = member.nickname,
-                        displayName = member.displayName,
-                    )
-                },
-            ),
+            metadata = workspaceMetadata(event),
         )
     }
 
@@ -104,11 +85,7 @@ class BitbucketArtifactMapper {
             artifactType = ArtifactType.COMMIT,
             title = event.subject.take(BITBUCKET_COMMIT_MESSAGE_LENGTH),
             bodyText = event.subject,
-            mime = null,
-            language = null,
             createdAtSource = event.committedAt,
-            updatedAtSource = null,
-            hash = null,
             metadata = BitbucketArtifactMetadata(
                 repositoryId = event.repositoryId,
                 workspace = event.workspace,
@@ -148,8 +125,6 @@ class BitbucketArtifactMapper {
             bodyText = event.content,
             mime = FileMetaDataResolver.mimeFor(extension),
             language = FileMetaDataResolver.languageFor(extension),
-            createdAtSource = null,
-            updatedAtSource = null,
             hash = event.content.toByteArray().sha256(),
             metadata = BitbucketArtifactMetadata(
                 repositoryId = event.repositoryId,
@@ -186,12 +161,8 @@ class BitbucketArtifactMapper {
             artifactType = ArtifactType.PULL_REQUEST,
             title = "PR #${event.number} ${event.title}",
             bodyText = pullRequestBody(event),
-            mime = null,
-            language = null,
             createdAtSource = Instant.parse(event.createdOn),
-            updatedAtSource = null,
             // PRs are always re-ingested on updates; change detection compares title and body.
-            hash = null,
             metadata = BitbucketArtifactMetadata(
                 repositoryId = event.repositoryId,
                 workspace = event.workspace,
@@ -313,3 +284,20 @@ class BitbucketArtifactMapper {
     private fun parseOrNull(value: String?): Instant? =
         value?.let { parsed -> runCatching { Instant.parse(parsed) }.getOrNull() }
 }
+
+private fun workspaceMetadata(event: BitbucketWorkspaceMetadataFetchedEvent) =
+    BitbucketWorkspaceMetadataArtifactMetadata(
+        workspace = event.workspace,
+        uuid = event.uuid,
+        name = event.name,
+        isPrivate = event.isPrivate,
+        createdOn = event.createdOn,
+        url = event.url,
+        members = event.members.map { member ->
+            BitbucketWorkspaceMetadataMember(
+                accountId = member.accountId,
+                nickname = member.nickname,
+                displayName = member.displayName,
+            )
+        },
+    )

@@ -282,28 +282,22 @@ class BlueprintCheckQuestionService(
         }
 
         val oldPosition = question.position
-        var questionsToShift: MutableList<BlueprintCheckQuestion> = mutableListOf()
-
-        if (oldPosition < newPosition) {
-            questionsToShift = blueprintCheckQuestionRepository
-                .findAllByBlueprintPhaseIdAndPositionBetween(
-                    question.blueprintPhase.id,
-                    oldPosition + 1,
-                    newPosition,
-                )
-
-            questionsToShift.forEach { it.position -= 1 }
-        }
-
-        if (oldPosition > newPosition) {
-            questionsToShift = blueprintCheckQuestionRepository
-                .findAllByBlueprintPhaseIdAndPositionBetween(
-                    question.blueprintPhase.id,
-                    newPosition,
-                    oldPosition - 1,
-                )
-
-            questionsToShift.forEach { it.position += 1 }
+        val questionsToShift: MutableList<BlueprintCheckQuestion> = when {
+            oldPosition < newPosition ->
+                blueprintCheckQuestionRepository
+                    .findAllByBlueprintPhaseIdAndPositionBetween(
+                        question.blueprintPhase.id,
+                        oldPosition + 1,
+                        newPosition,
+                    ).also { list -> list.forEach { it.position -= 1 } }
+            oldPosition > newPosition ->
+                blueprintCheckQuestionRepository
+                    .findAllByBlueprintPhaseIdAndPositionBetween(
+                        question.blueprintPhase.id,
+                        newPosition,
+                        oldPosition - 1,
+                    ).also { list -> list.forEach { it.position += 1 } }
+            else -> mutableListOf()
         }
 
         return questionsToShift

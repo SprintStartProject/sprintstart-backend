@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.ingestion.listener.confluence
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.events.projects.ConfluenceSpaceConnectionDeletedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -36,18 +37,18 @@ internal class ConfluenceSpaceProjectsListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: ConfluenceSpaceConnectionDeletedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.applyProjectLink(
-                    ArtifactSourceRef.ConfluenceConnection(event.connectionId),
-                    event.projectId,
-                    linked = false,
-                )
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.error(
                     "Failed to unlink project {} from the pages of deleted Confluence connection {}",
                     event.projectId,
                     event.connectionId,
                     e,
+                )
+            }) {
+                artifactProjectService.applyProjectLink(
+                    ArtifactSourceRef.ConfluenceConnection(event.connectionId),
+                    event.projectId,
+                    linked = false,
                 )
             }
         }

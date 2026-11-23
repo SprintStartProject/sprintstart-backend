@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service
 import com.sprintstart.sprintstartbackend.connectors.ConnectionState
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.translatingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -64,11 +65,11 @@ internal class BitbucketConnectionStateService(
         repositoryId: UUID,
         collectors: List<Deferred<Unit>>,
     ) {
-        try {
-            collectors.awaitAll()
-        } catch (first: Exception) {
+        translatingFailure(translate = { first ->
             persistState(repositoryId, ConnectionState.FAILED)
-            throw IllegalStateException("Updating Bitbucket repository $repositoryId failed", first)
+            IllegalStateException("Updating Bitbucket repository $repositoryId failed", first)
+        }) {
+            collectors.awaitAll()
         }
         persistState(repositoryId, ConnectionState.UP_TO_DATE)
     }

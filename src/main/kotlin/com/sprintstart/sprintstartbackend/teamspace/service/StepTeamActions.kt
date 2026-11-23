@@ -22,6 +22,7 @@ import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.path.external.model.PathElementKind
 import com.sprintstart.sprintstartbackend.path.model.request.step.CreateOnboardingStepRequest
 import com.sprintstart.sprintstartbackend.path.model.request.step.UpdateOnboardingStepRequest
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepResponse
 import com.sprintstart.sprintstartbackend.shared.ids.PhaseId
 import com.sprintstart.sprintstartbackend.shared.ids.StepId
 import kotlinx.serialization.SerialName
@@ -116,34 +117,50 @@ class AddStepAction(
         if (title.isEmpty()) return TeamActionDraft.Refused("A step needs a title.")
         val type = stepTypeOf(call.textArgument("type"))
             ?: return TeamActionDraft.Refused("Type must be one of ${STEP_TYPES.joinToString(", ")}.")
-        val minutesText = call.textArgument("estimated_minutes")
-        val minutes = if (minutesText.isEmpty()) DEFAULT_MINUTES else minutesText.toIntOrNull()?.takeIf { it > 0 }
-        if (minutes == null) {
-            return TeamActionDraft.Refused("estimated_minutes must be a whole number of minutes above zero.")
-        }
+        val minutes = minutesOf(call)
+            ?: return TeamActionDraft.Refused("estimated_minutes must be a whole number of minutes above zero.")
 
         val slots = target.element.children + 1
         val placeText = call.textArgument("place")
         val position = if (placeText.isEmpty()) slots - 1 else placeToPosition(placeText, slots)
         if (position == null) return TeamActionDraft.Refused("Place must be a number from 1 to $slots.")
-        val description = call.textArgument("description")
-        val outcome = call.textArgument("expected_outcome")
+        val params = AddStepParams(
+            phaseId = target.element.id,
+            title = title,
+            description = call.textArgument("description"),
+            type = type,
+            estimatedMinutes = minutes,
+            expectedOutcome = call.textArgument("expected_outcome"),
+            position = position,
+        )
 
         return proposed(
-            params = AddStepParams(target.element.id, title, description, type, minutes, outcome, position),
+            params = params,
             label = "Add step “${title.forLabel()}”",
-            preview = buildString {
-                appendLine("Add a step to “${target.element.title}” on ${target.owner.displayName}'s path:")
-                appendLine("“$title” — ${type.name.lowercase()}, about $minutes min, ${placeOf(position, slots)}")
-                if (description.isNotEmpty()) appendLine(description)
-                if (outcome.isNotEmpty()) appendLine("Expected outcome: $outcome")
-                appendLine()
-                if (position < slots - 1) appendLine("The steps after it move down one place.")
-                append("It starts waiting; nobody is marked as having started or finished it.")
-                scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
-            }.trim(),
+            preview = addPreview(target, params, slots, context),
         )
     }
+
+    /** The step's length: the default when absent, null when it is not a whole number above zero. */
+    private fun minutesOf(call: BuddyToolCallDto): Int? {
+        val text = call.textArgument("estimated_minutes")
+        return if (text.isEmpty()) DEFAULT_MINUTES else text.toIntOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun addPreview(target: ScopedElement, params: AddStepParams, slots: Int, context: TeamToolContext) =
+        buildString {
+            appendLine("Add a step to “${target.element.title}” on ${target.owner.displayName}'s path:")
+            appendLine(
+                "“${params.title}” — ${params.type.name.lowercase()}, about ${params.estimatedMinutes} min, " +
+                    placeOf(params.position, slots),
+            )
+            if (params.description.isNotEmpty()) appendLine(params.description)
+            if (params.expectedOutcome.isNotEmpty()) appendLine("Expected outcome: ${params.expectedOutcome}")
+            appendLine()
+            if (params.position < slots - 1) appendLine("The steps after it move down one place.")
+            append("It starts waiting; nobody is marked as having started or finished it.")
+            scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
+        }.trim()
 
     override fun recheckParams(params: AddStepParams, context: TeamToolContext): String? {
         val target = scope.element(PathElementKind.PHASE, params.phaseId, context.projectId)
@@ -204,32 +221,12 @@ class UpdateStepAction(
 
         badArgument(call, siblings)?.let { return TeamActionDraft.Refused(it) }
 
-        val newTitle = call.changedText("title", current.title, allowBlank = false)
-        val newDescription = call.changedText("description", current.description)
-        val newType = stepTypeOf(call.textArgument("type"))?.takeIf { it != current.type }
-        val newMinutes = call.textArgument("estimated_minutes").toIntOrNull()?.takeIf { it != current.estimatedMinutes }
-        val newOutcome = call.changedText("expected_outcome", current.expectedOutcomes.firstOrNull().orEmpty())
-        val newPosition = placeToPosition(call.textArgument("place"), siblings)?.takeIf { it != current.position }
-
-        val changes = ChangeLines()
-        changes.add(newTitle) { "Title: “${current.title}” becomes “$it”" }
-        changes.add(newDescription) { "Description becomes: ${it.ifEmpty { "(empty)" }}" }
-        changes.add(newType) { "Type: ${current.type.name.lowercase()} becomes ${it.name.lowercase()}" }
-        changes.add(newMinutes) { "Length: ${current.estimatedMinutes} min becomes $it min" }
-        changes.add(newOutcome) { "Expected outcome becomes: ${it.ifEmpty { "(empty)" }}" }
-        changes.add(newPosition) { "Place: ${placeOf(current.position, siblings)} becomes ${placeOf(it, siblings)}" }
+        val params = changesIn(call, current, siblings)
+        val changes = changeLinesOf(current, params, siblings)
         if (changes.isEmpty) return TeamActionDraft.Refused("Nothing would change: that is already how the step is.")
 
         return proposed(
-            params = UpdateStepParams(
-                current.id,
-                newTitle,
-                newDescription,
-                newType,
-                newMinutes,
-                newOutcome,
-                newPosition,
-            ),
+            params = params,
             label = "Change step “${current.title.forLabel()}”",
             preview = buildString {
                 appendLine("Change the step “${current.title}” on ${target.owner.displayName}'s path:")
@@ -240,20 +237,60 @@ class UpdateStepAction(
         )
     }
 
+    private fun changesIn(call: BuddyToolCallDto, current: GetOnboardingStepResponse, siblings: Int) =
+        UpdateStepParams(
+            stepId = current.id,
+            title = call.changedText("title", current.title, allowBlank = false),
+            description = call.changedText("description", current.description),
+            type = stepTypeOf(call.textArgument("type"))?.takeIf { it != current.type },
+            estimatedMinutes = call
+                .textArgument("estimated_minutes")
+                .toIntOrNull()
+                ?.takeIf { it != current.estimatedMinutes },
+            expectedOutcome = call.changedText("expected_outcome", current.expectedOutcomes.firstOrNull().orEmpty()),
+            position = placeToPosition(call.textArgument("place"), siblings)?.takeIf { it != current.position },
+        )
+
+    private fun changeLinesOf(
+        current: GetOnboardingStepResponse,
+        params: UpdateStepParams,
+        siblings: Int,
+    ): ChangeLines {
+        val changes = ChangeLines()
+        changes.add(params.title) { "Title: “${current.title}” becomes “$it”" }
+        changes.add(params.description) { "Description becomes: ${it.ifEmpty { "(empty)" }}" }
+        changes.add(params.type) { "Type: ${current.type.name.lowercase()} becomes ${it.name.lowercase()}" }
+        changes.add(params.estimatedMinutes) { "Length: ${current.estimatedMinutes} min becomes $it min" }
+        changes.add(params.expectedOutcome) { "Expected outcome becomes: ${it.ifEmpty { "(empty)" }}" }
+        changes.add(params.position) {
+            "Place: ${placeOf(current.position, siblings)} becomes ${placeOf(it, siblings)}"
+        }
+        return changes
+    }
+
     /** Why the call's type, length or place cannot be used, or null when each is either absent or fine. */
     private fun badArgument(call: BuddyToolCallDto, slots: Int): String? =
-        when {
-            call.textArgument("type").let { it.isNotEmpty() && stepTypeOf(it) == null } ->
-                "Type must be one of ${STEP_TYPES.joinToString(", ")}."
-            call.textArgument("estimated_minutes").let {
-                it.isNotEmpty() &&
-                    it.toIntOrNull()?.takeIf { m -> m > 0 } == null
-            } ->
-                "estimated_minutes must be a whole number of minutes above zero."
-            call.textArgument("place").let { it.isNotEmpty() && placeToPosition(it, slots) == null } ->
-                "Place must be a number from 1 to $slots."
-            else -> null
-        }
+        badType(call) ?: badMinutes(call) ?: badPlace(call, slots)
+
+    private fun badType(call: BuddyToolCallDto): String? {
+        val text = call.textArgument("type")
+        return "Type must be one of ${STEP_TYPES.joinToString(", ")}."
+            .takeIf { text.isNotEmpty() && stepTypeOf(text) == null }
+    }
+
+    private fun badMinutes(call: BuddyToolCallDto): String? {
+        val text = call.textArgument("estimated_minutes")
+        return "estimated_minutes must be a whole number of minutes above zero."
+            .takeIf { text.isNotEmpty() && minutesOf(text) == null }
+    }
+
+    private fun minutesOf(text: String): Int? = text.toIntOrNull()?.takeIf { it > 0 }
+
+    private fun badPlace(call: BuddyToolCallDto, slots: Int): String? {
+        val text = call.textArgument("place")
+        return "Place must be a number from 1 to $slots."
+            .takeIf { text.isNotEmpty() && placeToPosition(text, slots) == null }
+    }
 
     override fun recheckParams(params: UpdateStepParams, context: TeamToolContext): String? =
         scope.missing(PathElementKind.STEP, params.stepId, context.projectId)

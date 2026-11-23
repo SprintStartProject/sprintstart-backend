@@ -21,14 +21,6 @@ internal class ConfluencePageArtifactMapper {
         relationships: List<ConfluenceRelationshipCommand>,
     ): ConfluencePageArtifactCommand {
         val sourceUrl = safePageUrl(connection.baseUrl, page.webUiPath)
-        val userAccountIds = page.restrictions.users
-            .map { user -> user.accountId }
-            .distinct()
-            .sorted()
-        val groupIds = page.restrictions.groups
-            .map { group -> group.id }
-            .distinct()
-            .sorted()
         return ConfluencePageArtifactCommand(
             sourceId = confluencePageSourceId(connection.id.toString(), page.id),
             sourceUrl = sourceUrl,
@@ -36,30 +28,43 @@ internal class ConfluencePageArtifactMapper {
             title = page.title,
             bodyText = parsedBody.bodyText,
             versionCreatedAt = page.version.createdAt,
-            metadata = ConfluencePageMetadataCommand(
-                connectionId = connection.id,
-                tenantBaseUrl = connection.baseUrl,
-                spaceId = connection.spaceId,
-                spaceKey = connection.spaceKey,
-                pageId = page.id,
-                versionNumber = page.version.number,
-                versionCreatedAt = page.version.createdAt,
-                parentId = page.parentId,
-                parentType = page.parentType,
-                webUiPath = sourceUrl?.let { url -> URI.create(url).rawPath },
-                sections = parsedBody.sections.map { section ->
-                    ConfluenceSectionCommand(section.heading, section.level)
-                },
-                tables = parsedBody.tables,
-                codeBlocks = parsedBody.codeBlocks.map { block ->
-                    ConfluenceCodeBlockCommand(block.language, block.code)
-                },
-                relationships = relationships,
-                sourceAcl = ConfluenceSourceAclCommand(
-                    userAccountIds = userAccountIds,
-                    groupIds = groupIds,
-                ),
-            ),
+            metadata = metadata(connection, page, parsedBody, relationships),
+        )
+    }
+
+    private fun metadata(
+        connection: ConfluenceConnectionIngestionSnapshot,
+        page: ConfluencePage,
+        parsedBody: ParsedConfluenceBody,
+        relationships: List<ConfluenceRelationshipCommand>,
+    ) = ConfluencePageMetadataCommand(
+        connectionId = connection.id,
+        tenantBaseUrl = connection.baseUrl,
+        spaceId = connection.spaceId,
+        spaceKey = connection.spaceKey,
+        pageId = page.id,
+        versionNumber = page.version.number,
+        versionCreatedAt = page.version.createdAt,
+        parentId = page.parentId,
+        parentType = page.parentType,
+        webUiPath = safePageUrl(connection.baseUrl, page.webUiPath)?.let { url -> URI.create(url).rawPath },
+        sections = parsedBody.sections.map { section ->
+            ConfluenceSectionCommand(section.heading, section.level)
+        },
+        tables = parsedBody.tables,
+        codeBlocks = parsedBody.codeBlocks.map { block ->
+            ConfluenceCodeBlockCommand(block.language, block.code)
+        },
+        relationships = relationships,
+        sourceAcl = sourceAcl(page),
+    )
+
+    private fun sourceAcl(page: ConfluencePage): ConfluenceSourceAclCommand {
+        val users = page.restrictions.users
+        val groups = page.restrictions.groups
+        return ConfluenceSourceAclCommand(
+            userAccountIds = users.map { it.accountId }.distinct().sorted(),
+            groupIds = groups.map { it.id }.distinct().sorted(),
         )
     }
 }

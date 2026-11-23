@@ -52,14 +52,11 @@ class StarterWorkPoolReconciler(
             .findAllByStatusIn(listOf(ProposalStatus.LIVE, ProposalStatus.STALE))
         if (rows.isEmpty()) return PoolReconciliation(0, 0, 0, 0)
 
-        var markedStale = 0
-        var revived = 0
-        var assigneeChanged = 0
-        var skipped = 0
         val now = Instant.now()
         // Rows the pass looked at and found nothing to change on. Collected rather than saved one
         // by one: the only thing they need written is the timestamp, and that is one statement.
         val unchanged = mutableListOf<UUID>()
+        val tally = ReconciliationTally()
 
         // One lookup for the whole pool rather than one per row.
         val issues = artifactIngestionApi.getIssues(rows.map { it.sourceId })
@@ -69,19 +66,12 @@ class StarterWorkPoolReconciler(
             if (issue == null) {
                 // An issue missing from the corpus says nothing about whether the work is open: the row is left
                 // as it is, timestamp included.
-                skipped++
+                tally.skipped++
                 return@forEach
             }
 
             val applied = apply(proposal, issue.state, issue.hasAssignee, now)
-            when (applied.transition) {
-                Transition.TO_STALE -> markedStale++
-                Transition.TO_LIVE -> revived++
-                Transition.NONE -> Unit
-            }
-            // Counted separately rather than as an else-branch: a row can both go stale and change
-            // hands in the same pass, and collapsing the two would under-report the quieter one.
-            if (applied.assigneeChanged) assigneeChanged++
+            tally.record(applied)
             if (!applied.changed) unchanged += proposal.id
         }
 
@@ -89,25 +79,8 @@ class StarterWorkPoolReconciler(
             starterWorkTaskProposalRepository.markSourceChecked(unchanged, now)
         }
 
-        val outcome = PoolReconciliation(rows.size, markedStale, revived, assigneeChanged, skipped)
-        if (markedStale > 0 || revived > 0 || assigneeChanged > 0) {
-            logger.info(
-                "Starter-work reconciliation examined {} rows: {} went stale, {} came back, {} changed assignee",
-                outcome.examined,
-                outcome.markedStale,
-                outcome.revived,
-                outcome.assigneeChanged,
-            )
-        }
-        if (skipped > 0) {
-            // Warned rather than folded into the line above: these rows were not reconciled at all,
-            // and a pool quietly serving work nobody can look up is worth somebody's attention.
-            logger.warn(
-                "Starter-work reconciliation could not find {} of {} pooled issues in the corpus",
-                skipped,
-                rows.size,
-            )
-        }
+        val outcome = tally.toOutcome(rows.size)
+        logOutcome(outcome)
         return outcome
     }
 
@@ -133,6 +106,27 @@ class StarterWorkPoolReconciler(
             starterWorkTaskProposalRepository.markSourceChecked(listOf(proposal.id), now)
         }
         return applied.transition != Transition.NONE
+    }
+
+    /** What one reconciliation pass has found so far, row by row. */
+    private class ReconciliationTally {
+        var markedStale = 0
+        var revived = 0
+        var assigneeChanged = 0
+        var skipped = 0
+
+        fun record(applied: Applied) {
+            when (applied.transition) {
+                Transition.TO_STALE -> markedStale++
+                Transition.TO_LIVE -> revived++
+                Transition.NONE -> Unit
+            }
+            // Counted separately rather than as an else-branch: a row can both go stale and change
+            // hands in the same pass, and collapsing the two would under-report the quieter one.
+            if (applied.assigneeChanged) assigneeChanged++
+        }
+
+        fun toOutcome(examined: Int) = PoolReconciliation(examined, markedStale, revived, assigneeChanged, skipped)
     }
 
     /** What one row's reconciliation did: the status move, if any, and whether it changed hands. */
@@ -211,5 +205,26 @@ class StarterWorkPoolReconciler(
     private companion object {
         /** How the ingestion mappers spell "finished at the source", for GitHub and Jira alike. */
         const val CLOSED_STATE = "CLOSED"
+    }
+
+    private fun logOutcome(outcome: PoolReconciliation) {
+        if (outcome.markedStale > 0 || outcome.revived > 0 || outcome.assigneeChanged > 0) {
+            logger.info(
+                "Starter-work reconciliation examined {} rows: {} went stale, {} came back, {} changed assignee",
+                outcome.examined,
+                outcome.markedStale,
+                outcome.revived,
+                outcome.assigneeChanged,
+            )
+        }
+        if (outcome.skipped > 0) {
+            // Warned rather than folded into the line above: these rows were not reconciled at all,
+            // and a pool quietly serving work nobody can look up is worth somebody's attention.
+            logger.warn(
+                "Starter-work reconciliation could not find {} of {} pooled issues in the corpus",
+                outcome.skipped,
+                outcome.examined,
+            )
+        }
     }
 }

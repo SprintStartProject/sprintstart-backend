@@ -147,41 +147,9 @@ class BitbucketArtifactProviderService(
             // link is ever worth acting on.
             ArtifactType.COMMIT -> BitbucketArtifactChange.NOTHING
 
-            ArtifactType.FILE -> {
-                if (artifact.hash == command.hash) {
-                    BitbucketArtifactChange.NOTHING
-                } else {
-                    artifact.content = command.bodyText
-                    artifact.hash = command.hash
-                    artifact.sourceUrl = command.sourceUrl
-                    BitbucketArtifactChange(content = true)
-                }
-            }
+            ArtifactType.FILE -> applyFile(artifact, command)
 
-            // Pull requests carry no content hash, so title and body are compared; overwriting them would
-            // count every re-fetch as an update and re-embed it.
-            ArtifactType.PULL_REQUEST -> {
-                val trackingChanged = artifact.state != command.state
-                // Refreshed on every fetch, for the same reason as GitHub's: a pull request being
-                // merged or reviewed moves none of its text.
-                artifact.state = command.state
-                artifact.mergedAtSource = command.mergedAtSource
-                artifact.firstResponseAtSource = command.firstResponseAtSource
-                artifact.changesRequestedCount = command.changesRequestedCount
-                // Backfills rows written before these were persisted; a source creation time never changes.
-                if (artifact.createdAtSource == null) {
-                    artifact.createdAtSource = command.createdAtSource
-                }
-
-                val contentChanged =
-                    artifact.title != command.title || artifact.content != command.bodyText
-                if (contentChanged) {
-                    artifact.title = command.title
-                    artifact.content = command.bodyText
-                    artifact.sourceUrl = command.sourceUrl
-                }
-                BitbucketArtifactChange(content = contentChanged, tracking = trackingChanged)
-            }
+            ArtifactType.PULL_REQUEST -> applyPullRequest(artifact, command)
 
             // Workspace metadata changes as members come and go; a re-fetch overwrites it and re-indexes only
             // when it changed.
@@ -316,6 +284,42 @@ class BitbucketArtifactProviderService(
             run.artifactIdsToDeindex.add(artifact.id.toString())
         }
     }
+}
+
+private fun applyFile(artifact: Artifact, command: BitbucketArtifactCommand): BitbucketArtifactChange {
+    if (artifact.hash == command.hash) return BitbucketArtifactChange.NOTHING
+
+    artifact.content = command.bodyText
+    artifact.hash = command.hash
+    artifact.sourceUrl = command.sourceUrl
+    return BitbucketArtifactChange(content = true)
+}
+
+/**
+ * Pull requests carry no content hash, so title and body are compared; overwriting them would count every
+ * re-fetch as an update and re-embed it.
+ */
+private fun applyPullRequest(artifact: Artifact, command: BitbucketArtifactCommand): BitbucketArtifactChange {
+    val trackingChanged = artifact.state != command.state
+    // Refreshed on every fetch, for the same reason as GitHub's: a pull request being
+    // merged or reviewed moves none of its text.
+    artifact.state = command.state
+    artifact.mergedAtSource = command.mergedAtSource
+    artifact.firstResponseAtSource = command.firstResponseAtSource
+    artifact.changesRequestedCount = command.changesRequestedCount
+    // Backfills rows written before these were persisted; a source creation time never changes.
+    if (artifact.createdAtSource == null) {
+        artifact.createdAtSource = command.createdAtSource
+    }
+
+    val contentChanged =
+        artifact.title != command.title || artifact.content != command.bodyText
+    if (contentChanged) {
+        artifact.title = command.title
+        artifact.content = command.bodyText
+        artifact.sourceUrl = command.sourceUrl
+    }
+    return BitbucketArtifactChange(content = contentChanged, tracking = trackingChanged)
 }
 
 /**

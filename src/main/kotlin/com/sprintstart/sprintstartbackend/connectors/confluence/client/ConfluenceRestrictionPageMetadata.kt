@@ -23,8 +23,8 @@ internal fun ConfluenceSpaceResponse.toDomain(): ConfluenceSpace {
 internal fun ConfluencePageResponse.toDomain(restrictions: ConfluencePageRestrictions): ConfluencePage {
     val createdAt = try {
         OffsetDateTime.parse(version.createdAt).toInstant()
-    } catch (@Suppress("SwallowedException") exception: DateTimeException) {
-        throw ConfluenceInvalidResponseException("mapping page $id")
+    } catch (exception: DateTimeException) {
+        throw ConfluenceInvalidResponseException("mapping page $id", exception)
     }
     return ConfluencePage(
         id = id,
@@ -61,8 +61,8 @@ internal fun ConfluenceRestrictionsResponse.validatePage(
 
     val nextStart = try {
         Math.addExact(requestedStart, users.limit)
-    } catch (@Suppress("SwallowedException") exception: ArithmeticException) {
-        throw ConfluenceInvalidResponseException(requestContext)
+    } catch (exception: ArithmeticException) {
+        throw ConfluenceInvalidResponseException(requestContext, exception)
     }
     return ConfluenceRestrictionPageMetadata(
         nextStart = nextStart,
@@ -77,16 +77,8 @@ private fun validateSharedRestrictionMetadata(
     requestedLimit: Int,
     requestContext: String,
 ) {
-    val invalid = users.start != requestedStart ||
-        groups.start != requestedStart ||
-        users.limit <= 0 ||
-        groups.limit <= 0 ||
-        users.limit != groups.limit ||
-        users.limit > requestedLimit ||
-        users.size != users.results.size ||
-        groups.size != groups.results.size ||
-        users.size !in 0..users.limit ||
-        groups.size !in 0..groups.limit ||
+    val invalid = windowMismatch(users, groups, requestedStart, requestedLimit) ||
+        sizeMismatch(users, groups) ||
         users.results.any { user -> user.accountId.isBlank() } ||
         groups.results.any { group -> group.id.isBlank() }
 
@@ -94,5 +86,27 @@ private fun validateSharedRestrictionMetadata(
         throw ConfluenceInvalidResponseException(requestContext)
     }
 }
+
+private fun windowMismatch(
+    users: ConfluenceRestrictedUsersResponse,
+    groups: ConfluenceRestrictedGroupsResponse,
+    requestedStart: Int,
+    requestedLimit: Int,
+): Boolean =
+    users.start != requestedStart ||
+        groups.start != requestedStart ||
+        users.limit <= 0 ||
+        groups.limit <= 0 ||
+        users.limit != groups.limit ||
+        users.limit > requestedLimit
+
+private fun sizeMismatch(
+    users: ConfluenceRestrictedUsersResponse,
+    groups: ConfluenceRestrictedGroupsResponse,
+): Boolean =
+    users.size != users.results.size ||
+        groups.size != groups.results.size ||
+        users.size !in 0..users.limit ||
+        groups.size !in 0..groups.limit
 
 private const val READ_OPERATION = "read"

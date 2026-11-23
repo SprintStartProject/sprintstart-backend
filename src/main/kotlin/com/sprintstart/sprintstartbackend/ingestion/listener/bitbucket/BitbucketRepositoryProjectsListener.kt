@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.Bitb
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.projects.BitbucketRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSourceRef
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -48,14 +49,7 @@ internal class BitbucketRepositoryProjectsListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     fun on(event: BitbucketRepositoryProjectLinkChangedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.applyProjectLink(
-                    ArtifactSourceRef.BitbucketRepository(event.workspace, event.slug),
-                    event.projectId,
-                    event.linked,
-                )
-                applyWorkspaceLink(event.workspace, event.projectId, event.linked)
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.error(
                     "Failed to propagate project {} ({}) for repository {}/{} to the AI index",
                     event.projectId,
@@ -64,6 +58,13 @@ internal class BitbucketRepositoryProjectsListener(
                     event.slug,
                     e,
                 )
+            }) {
+                artifactProjectService.applyProjectLink(
+                    ArtifactSourceRef.BitbucketRepository(event.workspace, event.slug),
+                    event.projectId,
+                    event.linked,
+                )
+                applyWorkspaceLink(event.workspace, event.projectId, event.linked)
             }
         }
     }

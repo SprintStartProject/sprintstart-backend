@@ -23,7 +23,6 @@ import com.sprintstart.sprintstartbackend.starterwork.model.request.starterwork.
 import com.sprintstart.sprintstartbackend.starterwork.repository.CompetencyRepository
 import com.sprintstart.sprintstartbackend.starterwork.repository.StarterWorkTaskProposalRepository
 import com.sprintstart.sprintstartbackend.starterwork.repository.UserCompetencyStateRepository
-import com.sprintstart.sprintstartbackend.user.external.ProjectMembershipApi
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.every
@@ -60,7 +59,6 @@ class StarterWorkTaskProposalServiceTest {
     private val githubHistoryPriorService: GithubHistoryPriorService = mockk()
     private val artifactIngestionApi: ArtifactIngestionApi = mockk()
     private val userApi: UserApi = mockk()
-    private val projectMembershipApi: ProjectMembershipApi = mockk(relaxed = true)
     private val json: Json = Json { ignoreUnknownKeys = true }
     private val transactionManager: PlatformTransactionManager = mockk(relaxed = true)
     private val projectId = UUID.randomUUID()
@@ -77,7 +75,6 @@ class StarterWorkTaskProposalServiceTest {
         githubHistoryPriorService,
         artifactIngestionApi,
         userApi,
-        projectMembershipApi,
         StarterWorkScope(githubRepositoryApi),
         json,
         transactionManager,

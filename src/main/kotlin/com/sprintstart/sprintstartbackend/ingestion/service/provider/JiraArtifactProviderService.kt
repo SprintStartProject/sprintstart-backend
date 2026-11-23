@@ -10,6 +10,7 @@ import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepos
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
 import java.time.Instant
+import java.util.UUID
 
 /**
  * Owns writes to the ingestion artifact store for Jira issue artifacts and the mutable parts
@@ -39,43 +40,44 @@ class JiraArtifactProviderService(
      */
     @Transactional
     fun persistArtifact(command: JiraArtifactCommand) {
-        val runId = command.ingestionRunId
-
         val existing = artifactRepository.findBySourceId(command.issueId)
         if (existing != null) {
-            val linked = existing.addProjectIds(command.projectIds)
-            // Jira issues carry no content hash, so the fields are compared: a re-import that changed nothing
-            // must not count as an update or be embedded again.
-            val contentChanged = existing.title != command.summary || existing.content != command.description
-            if (contentChanged) {
-                existing.title = command.summary
-                existing.content = command.description
-                existing.lastChangedAt = Instant.now()
-            }
-            // State and assignee refresh unconditionally: neither moves any text, and both decide whether the
-            // AI service still offers the issue as starter work.
-            val state = command.toState()
-            val hasAssignee = command.toHasAssignee()
-            val trackingChanged = existing.state != state || existing.hasAssignee != hasAssignee
-            existing.state = state
-            existing.hasAssignee = hasAssignee
-            existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
-
-            if (!linked && !contentChanged && !trackingChanged) return
-
-            val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-                IngestionRunNotFoundException(runId)
-            }
-            if (contentChanged) ingestionRun.updatedCount++
-            // The artifact still belongs to the run that first stored it, so the AI sync would not
-            // pick up this update -- nor a project this import just linked it to.
-            ingestionRun.artifactIdsToReingest.add(existing.id)
-            return
+            updateExisting(existing, command)
+        } else {
+            createNew(command)
         }
+    }
 
-        val ingestionRun = ingestionRunRepository.findByIdForUpdate(runId).orElseThrow {
-            IngestionRunNotFoundException(runId)
+    private fun updateExisting(existing: Artifact, command: JiraArtifactCommand) {
+        val linked = existing.addProjectIds(command.projectIds)
+        // Jira issues carry no content hash, so the fields are compared: a re-import that changed nothing
+        // must not count as an update or be embedded again.
+        val contentChanged = existing.title != command.summary || existing.content != command.description
+        if (contentChanged) {
+            existing.title = command.summary
+            existing.content = command.description
+            existing.lastChangedAt = Instant.now()
         }
+        // State and assignee refresh unconditionally: neither moves any text, and both decide whether the
+        // AI service still offers the issue as starter work.
+        val state = command.toState()
+        val hasAssignee = command.toHasAssignee()
+        val trackingChanged = existing.state != state || existing.hasAssignee != hasAssignee
+        existing.state = state
+        existing.hasAssignee = hasAssignee
+        existing.metadata = artifactMetadataJsonMapper.toJson(command.toMetadata())
+
+        if (!linked && !contentChanged && !trackingChanged) return
+
+        val ingestionRun = lockedRun(command.ingestionRunId)
+        if (contentChanged) ingestionRun.updatedCount++
+        // The artifact still belongs to the run that first stored it, so the AI sync would not
+        // pick up this update -- nor a project this import just linked it to.
+        ingestionRun.artifactIdsToReingest.add(existing.id)
+    }
+
+    private fun createNew(command: JiraArtifactCommand) {
+        val ingestionRun = lockedRun(command.ingestionRunId)
         val artifact = Artifact(
             sourceSystem = command.sourceSystem,
             sourceId = command.issueId,
@@ -96,6 +98,10 @@ class JiraArtifactProviderService(
         )
         artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
+    }
+
+    private fun lockedRun(run: UUID) = ingestionRunRepository.findByIdForUpdate(run).orElseThrow {
+        IngestionRunNotFoundException(run)
     }
 
     /**

@@ -196,22 +196,21 @@ private object InlineMarkdown {
         if (node is TextNode) {
             return escape(node.wholeText)
         }
-        if (node !is Element) {
-            return ""
-        }
-
-        return when (node.tagName().lowercase()) {
-            LINE_BREAK_TAG -> LINE_BREAK
-            PARAGRAPH_TAG -> "${renderChildren(node)} "
-            in STRONG_TAGS -> emphasis(renderChildren(node), STRONG_MARKER)
-            in EMPHASIS_TAGS -> emphasis(renderChildren(node), EMPHASIS_MARKER)
-            CODE_TAG -> inlineCode(node.text())
-            ANCHOR_TAG -> link(node)
-            CONFLUENCE_LINK_TAG -> confluenceLink(node)
-            in SKIPPED_INLINE_TAGS -> ""
-            else -> renderChildren(node)
-        }
+        return if (node is Element) renderInlineElement(node) else ""
     }
+
+    private fun renderInlineElement(element: Element): String =
+        when (element.tagName().lowercase()) {
+            LINE_BREAK_TAG -> LINE_BREAK
+            PARAGRAPH_TAG -> "${renderChildren(element)} "
+            in STRONG_TAGS -> emphasis(renderChildren(element), STRONG_MARKER)
+            in EMPHASIS_TAGS -> emphasis(renderChildren(element), EMPHASIS_MARKER)
+            CODE_TAG -> inlineCode(element.text())
+            ANCHOR_TAG -> link(element)
+            CONFLUENCE_LINK_TAG -> confluenceLink(element)
+            in SKIPPED_INLINE_TAGS -> ""
+            else -> renderChildren(element)
+        }
 
     fun tableMarkdown(table: Element): String? {
         val rows = table

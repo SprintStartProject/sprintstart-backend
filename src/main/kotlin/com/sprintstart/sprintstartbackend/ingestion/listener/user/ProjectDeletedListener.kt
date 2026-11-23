@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener.user
 
 import com.sprintstart.sprintstartbackend.ingestion.service.ArtifactProjectService
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import com.sprintstart.sprintstartbackend.user.external.events.ProjectDeletedEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -27,14 +28,14 @@ internal class ProjectDeletedListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun on(event: ProjectDeletedEvent) {
         applicationScope.launch {
-            try {
-                artifactProjectService.purgeProject(event.projectId)
-            } catch (e: Exception) {
+            recovering(fallback = { e ->
                 logger.error(
                     "Failed to purge deleted project {} from the artifact store",
                     event.projectId,
                     e,
                 )
+            }) {
+                artifactProjectService.purgeProject(event.projectId)
             }
         }
     }

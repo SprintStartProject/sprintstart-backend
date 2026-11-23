@@ -29,8 +29,6 @@ class BuddyTeamConversation(
             authId.value,
             project.value,
             message.content,
-            message.capabilitiesEnabled,
-            message.filters,
-            message.currentPage,
+            message.turnOptions(),
         )
 }

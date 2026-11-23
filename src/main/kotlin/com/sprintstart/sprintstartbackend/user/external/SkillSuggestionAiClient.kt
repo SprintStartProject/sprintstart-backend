@@ -36,11 +36,12 @@ class SkillSuggestionAiClient(
                 .body(request)
                 .sync()
                 .perform<SkillSuggestionResponseDto>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
+        } catch (e: WebClientException) {
             throw SkillSuggestionAiException(
                 statusCode = e.statusCode,
                 body = e.body,
                 message = "Failed to suggest skills from AI service (HTTP ${e.statusCode}): ${e.body}",
+                cause = e,
             )
         }
 

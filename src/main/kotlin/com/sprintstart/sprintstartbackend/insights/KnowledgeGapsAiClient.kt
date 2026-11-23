@@ -38,8 +38,8 @@ class KnowledgeGapsAiClient(
                 .body(request)
                 .sync()
                 .perform<AiKnowledgeGapsResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw KnowledgeGapsAiException("Failed to detect knowledge gaps (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw KnowledgeGapsAiException("Failed to detect knowledge gaps (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

@@ -61,24 +61,8 @@ class BlueprintPathCopyFactory {
             .map { copyPhase(it, copy, newPhasesByOldId, newNodesByOldId) }
             .forEach(copy.blueprintPhases::add)
 
-        path.blueprintPhases
-            .forEach { oldPhase ->
-                val newPhase = newPhasesByOldId.getValue(oldPhase.id)
-
-                oldPhase.blockedBy.forEach { oldBlocker ->
-                    newPhase.blockedBy.add(newPhasesByOldId.getValue(oldBlocker.id))
-                }
-            }
-
-        path.blueprintPhases
-            .flatMap { it.blueprintSteps + it.blueprintCheckQuestions }
-            .forEach { oldNode ->
-                val newNode = newNodesByOldId.getValue(oldNode.id)
-
-                oldNode.blockedBy.forEach { oldBlocker ->
-                    newNode.blockedBy.add(newNodesByOldId.getValue(oldBlocker.id))
-                }
-            }
+        rewirePhaseBlockers(path, newPhasesByOldId)
+        rewireNodeBlockers(path, newNodesByOldId)
 
         return copy
     }
@@ -221,4 +205,26 @@ class BlueprintPathCopyFactory {
             correct = option.correct,
         )
     }
+}
+
+private fun rewirePhaseBlockers(path: BlueprintPath, newPhasesByOldId: Map<UUID, BlueprintPhase>) {
+    path.blueprintPhases.forEach { oldPhase ->
+        val newPhase = newPhasesByOldId.getValue(oldPhase.id)
+
+        oldPhase.blockedBy.forEach { oldBlocker ->
+            newPhase.blockedBy.add(newPhasesByOldId.getValue(oldBlocker.id))
+        }
+    }
+}
+
+private fun rewireNodeBlockers(path: BlueprintPath, newNodesByOldId: Map<UUID, BlueprintSubGraphNode>) {
+    path.blueprintPhases
+        .flatMap { it.blueprintSteps + it.blueprintCheckQuestions }
+        .forEach { oldNode ->
+            val newNode = newNodesByOldId.getValue(oldNode.id)
+
+            oldNode.blockedBy.forEach { oldBlocker ->
+                newNode.blockedBy.add(newNodesByOldId.getValue(oldBlocker.id))
+            }
+        }
 }

@@ -37,27 +37,12 @@ internal object PhaseReadingOrder {
         val rows = List(ranks.values.max() + 1) { mutableListOf<UUID>() }
         ids.forEach { rows[ranks.getValue(it)].add(it) }
 
-        val inputIndex = ids.withIndex().associate { it.value to it.index }
-        val column = HashMap<UUID, Int>()
-        val indexRow = { row: List<UUID> -> row.forEachIndexed { index, id -> column[id] = index } }
-        rows.forEach(indexRow)
-
-        val sortRow = { row: MutableList<UUID>, neighboursOf: (UUID) -> List<UUID> ->
-            val weight = row.associateWith { id ->
-                val neighbours = neighboursOf(id).filter { it in column }
-                if (neighbours.isEmpty()) {
-                    column.getValue(id).toDouble()
-                } else {
-                    neighbours.sumOf { column.getValue(it).toDouble() } / neighbours.size
-                }
-            }
-            row.sortWith(compareBy<UUID> { weight.getValue(it) }.thenBy { inputIndex.getValue(it) })
-            indexRow(row)
-        }
+        val sorter = RowSorter(ids.withIndex().associate { it.value to it.index })
+        rows.forEach(sorter::index)
 
         repeat(PASSES) { _ ->
-            for (index in 1 until rows.size) sortRow(rows[index]) { blockers[it].orEmpty() }
-            for (index in rows.size - 2 downTo 0) sortRow(rows[index]) { dependents[it].orEmpty() }
+            for (index in 1 until rows.size) sorter.sort(rows[index]) { blockers[it].orEmpty() }
+            for (index in rows.size - 2 downTo 0) sorter.sort(rows[index]) { dependents[it].orEmpty() }
         }
         return rows.flatten()
     }
@@ -78,5 +63,29 @@ internal object PhaseReadingOrder {
 
         ids.forEach { rankOf(it) }
         return ranks
+    }
+}
+
+/** Orders a row by the average column of its neighbours in the adjacent row, ties by input order. */
+private class RowSorter(
+    private val inputIndex: Map<UUID, Int>,
+) {
+    private val column = HashMap<UUID, Int>()
+
+    fun index(row: List<UUID>) {
+        row.forEachIndexed { index, id -> column[id] = index }
+    }
+
+    fun sort(row: MutableList<UUID>, neighboursOf: (UUID) -> List<UUID>) {
+        val weight = row.associateWith { id ->
+            val neighbours = neighboursOf(id).filter { it in column }
+            if (neighbours.isEmpty()) {
+                column.getValue(id).toDouble()
+            } else {
+                neighbours.sumOf { column.getValue(it).toDouble() } / neighbours.size
+            }
+        }
+        row.sortWith(compareBy<UUID> { weight.getValue(it) }.thenBy { inputIndex.getValue(it) })
+        index(row)
     }
 }

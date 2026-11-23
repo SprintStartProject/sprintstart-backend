@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.HireActionScope
 import com.sprintstart.sprintstartbackend.path.external.HirePathActionsApi
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
 import com.sprintstart.sprintstartbackend.path.model.request.skip.CreateOnboardingSkipRequest
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.shared.ids.AuthId
 import com.sprintstart.sprintstartbackend.shared.ids.StepId
 import com.sprintstart.sprintstartbackend.shared.ids.UserId
@@ -66,44 +67,14 @@ class RequestSkipAction(
                 "No step of this hire's own path has that id. Read get_my_onboarding_path again.",
             )
         val reason = call.textArgument("reason")
-        val previous = step.skip
-
-        val refusal = when {
-            step.status == StepStatus.FINISHED ->
-                "“${step.title}” is already done, so there is nothing to skip."
-            step.status == StepStatus.SKIPPED ->
-                "“${step.title}” is already skipped — their PM accepted it."
-            step.hasPendingSkip() ->
-                "They already asked to skip “${step.title}” and their PM has not decided yet. A second " +
-                    "request cannot be sent; they can change the reason on the step's own page " +
-                    "(${MyPathTool.STEP_PAGE_LINK}${step.id})."
-            reason.isBlank() ->
-                "No reason was provided. Their PM decides on the reason, so ask why they want to skip " +
-                    "it — already know it, not relevant to their role, covered elsewhere — and put " +
-                    "that into a sentence or two before offering this again."
-            else -> null
-        }
-        if (refusal != null) return notProposed(refusal)
-
-        // A declined request can be asked again, and the PM said why the first time. The new reason
-        // should answer that, or it will be declined for the same thing.
-        val declinedBefore = previous
-            ?.takeIf { it.accepted == false }
-            ?.let { declined ->
-                " Their PM declined an earlier request" +
-                    declined.reviewComment
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { " with: “$it”" }
-                        .orEmpty() +
-                    " — make sure this reason addresses that."
-            }.orEmpty()
+        refusalFor(step, reason)?.let { return notProposed(it) }
 
         return HireActionOutcome(
             toolResult = "Proposed to the hire: ask their PM to skip “${step.title}”, with the reason " +
                 "“$reason”. They see a confirm button showing that reason, and nothing is sent unless " +
                 "they click it. Their PM decides; until then the step stays on their path, and if it " +
                 "is accepted it counts as done and unlocks what waits on it. Do not promise it will " +
-                "be accepted.$declinedBefore",
+                "be accepted.${declinedBefore(step)}",
             proposal = HireActionProposal(
                 action = REQUEST_SKIP,
                 label = "Ask your PM to skip “${step.title}”",
@@ -113,6 +84,40 @@ class RequestSkipAction(
             ),
         )
     }
+
+    private fun refusalFor(step: GetOnboardingStepsResponse, reason: String): String? = when {
+        step.status == StepStatus.FINISHED ->
+            "“${step.title}” is already done, so there is nothing to skip."
+        step.status == StepStatus.SKIPPED ->
+            "“${step.title}” is already skipped — their PM accepted it."
+        step.hasPendingSkip() ->
+            "They already asked to skip “${step.title}” and their PM has not decided yet. A second " +
+                "request cannot be sent; they can change the reason on the step's own page " +
+                "(${MyPathTool.STEP_PAGE_LINK}${step.id})."
+        reason.isBlank() ->
+            "No reason was provided. Their PM decides on the reason, so ask why they want to skip " +
+                "it — already know it, not relevant to their role, covered elsewhere — and put " +
+                "that into a sentence or two before offering this again."
+        else -> null
+    }
+
+    /**
+     * What the mentor is told when the PM declined an earlier request for [step].
+     *
+     * A declined request can be asked again, and the PM said why the first time. The new reason
+     * should answer that, or it will be declined for the same thing.
+     */
+    private fun declinedBefore(step: GetOnboardingStepsResponse): String =
+        step.skip
+            ?.takeIf { it.accepted == false }
+            ?.let { declined ->
+                " Their PM declined an earlier request" +
+                    declined.reviewComment
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { " with: “$it”" }
+                        .orEmpty() +
+                    " — make sure this reason addresses that."
+            }.orEmpty()
 
     /** Files the confirmed skip request through the hire's own route, which owns every rule about it. */
     override suspend fun perform(

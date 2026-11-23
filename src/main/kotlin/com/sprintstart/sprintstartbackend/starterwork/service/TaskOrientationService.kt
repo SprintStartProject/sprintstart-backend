@@ -3,17 +3,14 @@ package com.sprintstart.sprintstartbackend.starterwork.service
 import com.sprintstart.sprintstartbackend.ingestion.external.ArtifactIngestionApi
 import com.sprintstart.sprintstartbackend.path.external.model.AiProgressEvent
 import com.sprintstart.sprintstartbackend.shared.ai.AiServiceException
+import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import com.sprintstart.sprintstartbackend.shared.ids.SourceId
 import com.sprintstart.sprintstartbackend.starterwork.external.OrientationAiClient
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationOrigin
-import com.sprintstart.sprintstartbackend.starterwork.external.enums.OrientationStep
 import com.sprintstart.sprintstartbackend.starterwork.external.model.OrientationOutcome
 import com.sprintstart.sprintstartbackend.starterwork.external.model.OrientationPacketSchema
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.StarterWorkTaskProposal
-import com.sprintstart.sprintstartbackend.starterwork.model.entity.TaskOrientationCitation
 import com.sprintstart.sprintstartbackend.starterwork.model.entity.TaskOrientationPacket
-import com.sprintstart.sprintstartbackend.starterwork.model.entity.TaskOrientationSection
-import com.sprintstart.sprintstartbackend.starterwork.model.entity.TaskOrientationSource
 import com.sprintstart.sprintstartbackend.starterwork.model.mapper.toResponse
 import com.sprintstart.sprintstartbackend.starterwork.model.request.orientation.AuthorOrientationRequest
 import com.sprintstart.sprintstartbackend.starterwork.model.response.orientation.MyOrientationResponse
@@ -147,16 +144,8 @@ class TaskOrientationService(
                 labels = context.labels,
                 touchedPaths = emptyList(),
                 lastFingerprint = context.cachedFingerprint,
-            ).onEach { event ->
-                // Persist on `done`, before the event is relayed downstream, so the cache is committed
-                // by the time the client reacts. Decoding the same OrientationOutcome the sync path
-                // gets and running the same `apply` is what keeps the streamed result identical.
-                if (event.type == AiProgressEvent.DONE) {
-                    decodeOutcome(event)?.let { outcome ->
-                        withContext(Dispatchers.IO) { txTemplate.execute { apply(context, outcome) } }
-                    }
-                }
-            }.catch { cause ->
+            ).onEach { event -> persistOnDone(context, event) }
+            .catch { cause ->
                 logger.warn(
                     "Orientation stream failed for hire {} on project {}: {}",
                     hireId,
@@ -165,6 +154,18 @@ class TaskOrientationService(
                 )
                 emit(AiProgressEvent.error(ORIENTATION, "Orientation is temporarily unavailable"))
             }
+    }
+
+    /**
+     * Persists on `done`, before the event is relayed downstream, so the cache is committed by the
+     * time the client reacts. Decoding the same [OrientationOutcome] the sync path gets and running
+     * the same [apply] is what keeps the streamed result identical.
+     */
+    private suspend fun persistOnDone(context: TaskContext, event: AiProgressEvent) {
+        if (event.type != AiProgressEvent.DONE) return
+        decodeOutcome(event)?.let { outcome ->
+            withContext(Dispatchers.IO) { txTemplate.execute { apply(context, outcome) } }
+        }
     }
 
     private fun decodeOutcome(event: AiProgressEvent): OrientationOutcome? =
@@ -251,83 +252,18 @@ class TaskOrientationService(
         projectId: UUID,
         request: AuthorOrientationRequest,
     ): OrientationPacketResponse {
-        validate(request)
-
-        // Replaced wholesale: the request is the whole packet, so there is nothing to merge.
-        taskOrientationPacketRepository
-            .findByTaskProposalIdAndProjectId(proposal.id, projectId)
-            ?.let { taskOrientationPacketRepository.delete(it) }
-        taskOrientationPacketRepository.flush()
-
-        val packet = TaskOrientationPacket(
-            taskProposalId = proposal.id,
-            projectId = projectId,
-            taskTitle = proposal.title,
-            origin = OrientationOrigin.HUMAN,
-            summary = request.summary?.trim()?.takeIf { it.isNotBlank() },
-            // A human packet stands on nothing the corpus fingerprint tracks, so it carries none: this
-            // is exactly why getForHire never revalidates it.
-            corpusFingerprint = null,
-            model = null,
-            assembledAt = clock.instant(),
-        )
-
-        request.sections.forEachIndexed { index, section ->
-            packet.sections.add(
-                TaskOrientationSection(
-                    packet = packet,
-                    step = section.step,
-                    title = section.title.trim(),
-                    body = section.body.trim(),
-                    position = index,
-                ).apply {
-                    section.citations.forEachIndexed { citationIndex, citation ->
-                        citations.add(
-                            TaskOrientationCitation(
-                                section = this,
-                                filename = citation.filename.trim(),
-                                // A human citation has no retrieval chunk; the client never reads
-                                // chunkId, so an empty string keeps the column non-null harmlessly.
-                                chunkId = "",
-                                sourceUrl = citation.sourceUrl?.trim()?.takeIf { it.isNotBlank() },
-                                position = citationIndex,
-                            ),
-                        )
-                    }
-                },
-            )
-        }
-
-        // Sources are derived from the distinct citation links, never authored separately. A
-        // packet with no citations simply has no sources.
-        request.sections
-            .flatMap { it.citations }
-            .map { it.filename.trim() to it.sourceUrl?.trim()?.takeIf { url -> url.isNotBlank() } }
-            .distinct()
-            .forEachIndexed { index, (filename, sourceUrl) ->
-                packet.sources.add(
-                    TaskOrientationSource(
-                        packet = packet,
-                        filename = filename,
-                        sourceUrl = sourceUrl,
-                        artifactType = null,
-                        position = index,
-                    ),
-                )
-            }
-
+        requireValidAuthoring(request)
+        replacePacketOf(proposal.id, ProjectId(projectId))
+        val packet = humanOrientationPacket(proposal, ProjectId(projectId), request, clock.instant())
         return taskOrientationPacketRepository.save(packet).toResponse()
     }
 
-    private fun validate(request: AuthorOrientationRequest) {
-        val invalid = request.sections.isEmpty() ||
-            request.sections.any { it.title.isBlank() || it.body.isBlank() }
-        if (invalid) {
-            throw ResponseStatusException(
-                HttpStatus.BAD_REQUEST,
-                "Orientation must have at least one section, each with a non-blank title and body",
-            )
-        }
+    /** Replaced wholesale: a packet is the whole answer for its task, so there is nothing to merge. */
+    private fun replacePacketOf(task: UUID, project: ProjectId) {
+        taskOrientationPacketRepository
+            .findByTaskProposalIdAndProjectId(task, project.value)
+            ?.let { taskOrientationPacketRepository.delete(it) }
+        taskOrientationPacketRepository.flush()
     }
 
     private fun requireProposal(taskProposalId: UUID): StarterWorkTaskProposal =
@@ -369,67 +305,9 @@ class TaskOrientationService(
         outcome: OrientationOutcome,
         schema: OrientationPacketSchema,
     ): TaskOrientationPacket {
-        // Replaced wholesale: an AI packet holds no human edits, so there is nothing to merge.
-        taskOrientationPacketRepository
-            .findByTaskProposalIdAndProjectId(context.proposalId, context.projectId)
-            ?.let { taskOrientationPacketRepository.delete(it) }
-        taskOrientationPacketRepository.flush()
-
-        val packet = TaskOrientationPacket(
-            taskProposalId = context.proposalId,
-            projectId = context.projectId,
-            taskTitle = schema.taskTitle.ifBlank { context.title },
-            origin = OrientationOrigin.AI,
-            summary = schema.summary.takeIf { it.isNotBlank() },
-            corpusFingerprint = outcome.provenance?.corpusFingerprint,
-            model = outcome.provenance?.model,
-            assembledAt = clock.instant(),
-        )
-
-        schema.sections
-            .mapNotNull { section -> section.step.toStepOrNull()?.let { it to section } }
-            .forEachIndexed { index, (step, section) ->
-                packet.sections.add(
-                    TaskOrientationSection(
-                        packet = packet,
-                        step = step,
-                        title = section.title,
-                        body = section.body,
-                        position = index,
-                    ).apply {
-                        section.citations.forEachIndexed { citationIndex, citation ->
-                            citations.add(
-                                TaskOrientationCitation(
-                                    section = this,
-                                    filename = citation.filename,
-                                    chunkId = citation.chunkId,
-                                    sourceUrl = citation.sourceUrl,
-                                    position = citationIndex,
-                                ),
-                            )
-                        }
-                    },
-                )
-            }
-
-        schema.sources.forEachIndexed { index, source ->
-            packet.sources.add(
-                TaskOrientationSource(
-                    packet = packet,
-                    filename = source.filename,
-                    sourceUrl = source.sourceUrl,
-                    artifactType = source.artifactType,
-                    position = index,
-                ),
-            )
-        }
-
-        return taskOrientationPacketRepository.save(packet)
+        replacePacketOf(context.proposalId, ProjectId(context.projectId))
+        return taskOrientationPacketRepository.save(aiOrientationPacket(context, outcome, schema, clock.instant()))
     }
-
-    /** An unrecognised step is dropped rather than stored: the enum is the contract, not a hint. */
-    private fun String.toStepOrNull(): OrientationStep? =
-        OrientationStep.entries.firstOrNull { it.name == trim().uppercase() }
 
     private fun loadContext(hireId: UUID, projectId: UUID): TaskContext? {
         requireMember(hireId, projectId)
@@ -459,32 +337,6 @@ class TaskOrientationService(
                 HttpStatus.NOT_FOUND,
                 "User $hireId is not a member of project $projectId",
             )
-    }
-
-    private data class TaskContext(
-        val proposalId: UUID,
-        val projectId: UUID,
-        val title: String,
-        val body: String,
-        val labels: List<String>,
-        val taskUrl: String?,
-        val cachedFingerprint: String?,
-        val cachedPacket: OrientationPacketResponse?,
-    ) {
-        fun respond(packet: OrientationPacketResponse?, reason: String? = null) =
-            MyOrientationResponse(
-                taskId = proposalId,
-                taskTitle = title,
-                taskUrl = taskUrl,
-                packet = packet,
-                reason = reason,
-            )
-
-        /**
-         * The cached packet when there is one, otherwise the honest empty state with [reason]. The
-         * reason is dropped when a packet is served, so a served packet never carries an apology.
-         */
-        fun cachedOrEmpty(reason: String?) = respond(cachedPacket, reason.takeIf { cachedPacket == null })
     }
 
     private companion object {

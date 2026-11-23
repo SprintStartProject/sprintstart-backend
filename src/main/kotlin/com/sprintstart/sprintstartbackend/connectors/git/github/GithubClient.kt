@@ -6,25 +6,18 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.respo
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMemberResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMembersResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.api.responses.OrgMetadataResponse
-import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubIssuesResponse
-import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubPrSearchResponse
-import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.GithubSinglePrResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Issue
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Member
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.MemberConnection
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.OrganizationTeamMembersResponse
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.OrganizationTeamsResponse
-import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PageableResponse
-import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PrNode
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.PullRequest
 import com.sprintstart.sprintstartbackend.connectors.git.github.models.client.graphql.Team
 import com.sprintstart.sprintstartbackend.connectors.git.github.util.GithubQueryLoader
 import com.sprintstart.sprintstartbackend.shared.config.ApplicationConfig
 import com.sprintstart.sprintstartbackend.shared.web.WebClient
 import com.sprintstart.sprintstartbackend.shared.web.WebClientException
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
-import tools.jackson.module.kotlin.jacksonObjectMapper
 
 /**
  * Handles interactions with the GitHub API, including repository existence checks,
@@ -52,8 +45,8 @@ class GithubClient(
     private val applicationConfig: ApplicationConfig,
     private val queryLoader: GithubQueryLoader,
 ) {
-    private val objectMapper = jacksonObjectMapper()
-    private val logger = LoggerFactory.getLogger(GithubClient::class.java)
+    private val graphql = GithubGraphql(webClient, applicationConfig)
+    private val content = GithubRepositoryContent(graphql, queryLoader)
 
     /**
      * Retrieves the list of members belonging to the specified GitHub organization.
@@ -99,7 +92,7 @@ class GithubClient(
         val query = queryLoader.load("github/graphql/org-teams.graphql")
 
         val teams =
-            doFetchAll<Team, OrganizationTeamsResponse>(
+            graphql.fetchAll<Team, OrganizationTeamsResponse>(
                 query,
                 token,
             ) { cursor ->
@@ -241,11 +234,7 @@ class GithubClient(
      * @throws kotlinx.serialization.SerializationException if the response data cannot be deserialized.
      */
     suspend fun fetchIssues(repository: GithubRepositoryConnection, sinceTimestamp: String? = null): List<Issue> {
-        return if (sinceTimestamp != null) {
-            fetchAllIssuesSince(repository, sinceTimestamp)
-        } else {
-            fetchAllIssues(repository)
-        }
+        return content.fetchIssues(repository, sinceTimestamp)
     }
 
     /**
@@ -266,34 +255,7 @@ class GithubClient(
         repository: GithubRepositoryConnection,
         sinceTimestamp: String? = null,
     ): List<PullRequest> {
-        val listQuery = queryLoader.load("github/graphql/pullrequests-since.graphql")
-
-        val searchQueryString = buildString {
-            append("repo:${repository.owner}/${repository.name} is:pr")
-            if (sinceTimestamp != null) {
-                append(" updated:>=$sinceTimestamp")
-            }
-        }
-
-        val prNumbers = doFetchAll<PrNode, GithubPrSearchResponse>(
-            listQuery,
-            repository.user.token,
-        ) { cursor ->
-            mapOf("searchQuery" to searchQueryString, "cursor" to cursor)
-        }.map { it.number }
-
-        val detailsQuery = queryLoader.load("github/graphql/100-pullrequests-deep.graphql")
-
-        val pullRequests = mutableListOf<PullRequest>()
-
-        for (prNumber in prNumbers) {
-            val prDetails = fetchSinglePullRequest(repository, prNumber, detailsQuery)
-            if (prDetails != null) {
-                pullRequests.add(prDetails)
-            }
-        }
-
-        return pullRequests
+        return content.fetchAllPullRequests(repository, sinceTimestamp)
     }
 
     /**
@@ -348,7 +310,7 @@ class GithubClient(
         val initialMembers = team.members.nodes
 
         return initialMembers +
-            doFetchAll<Member, OrganizationTeamMembersResponse>(
+            graphql.fetchAll<Member, OrganizationTeamMembersResponse>(
                 query = query,
                 token = token,
                 initialCursor = team.members.pageInfo.endCursor,
@@ -365,139 +327,5 @@ class GithubClient(
             .sync()
             .perform<Array<DiscoveredRepository>>()
         return DiscoverRepositoriesResponse(result.toList())
-    }
-
-    /**
-     * Fetches all issues from a GitHub repository.
-     *
-     * This method retrieves all the issues for the specified repository, traversing through
-     * paginated results to collect all available issues.
-     *
-     * @param repository the repository to fetch issues from.
-     * @return a list of issues associated with the specified repository.
-     */
-    private suspend fun fetchAllIssues(repository: GithubRepositoryConnection): List<Issue> {
-        val query = queryLoader.load("github/graphql/100-issues.graphql")
-
-        return doFetchAll<Issue, GithubIssuesResponse>(
-            query,
-            repository.user.token,
-        ) { cursor ->
-            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor)
-        }
-    }
-
-    /**
-     * Fetches all issues from a GitHub repository updated since a specific timestamp.
-     *
-     * This method retrieves all the issues for the specified repository that have been updated
-     * on or after the given timestamp. It traverses through paginated results to collect all
-     * available issues.
-     *
-     * @param repository the repository to fetch issues from.
-     * @param sinceTimestamp an ISO 8601 formatted timestamp string. Only issues updated
-     * after this timestamp will be fetched.
-     * @return a list of issues associated with the specified repository that have been updated
-     * since the given timestamp.
-     */
-    private suspend fun fetchAllIssuesSince(
-        repository: GithubRepositoryConnection,
-        sinceTimestamp: String,
-    ): List<Issue> {
-        val query = queryLoader.load("github/graphql/issues-since.graphql")
-
-        return doFetchAll<Issue, GithubIssuesResponse>(
-            query,
-            repository.user.token,
-        ) { cursor ->
-            mapOf("owner" to repository.owner, "name" to repository.name, "cursor" to cursor, "since" to sinceTimestamp)
-        }
-    }
-
-    /**
-     * Fetches a single pull request from a GitHub repository.
-     *
-     * This method queries the GitHub API to retrieve details of a specific pull request
-     * identified by its number within the specified repository.
-     *
-     * @param repository the repository containing the pull request.
-     * @param prNumber the number of the pull request to fetch.
-     * @param query the GraphQL query used to retrieve the pull request data.
-     * @return the details of the requested pull request as a [PullRequest] object, or null if
-     *         the pull request does not exist or the API response is incomplete.
-     */
-    private suspend fun fetchSinglePullRequest(
-        repository: GithubRepositoryConnection,
-        prNumber: Int,
-        query: String,
-    ): PullRequest? {
-        val body = mapOf(
-            "query" to query,
-            "variables" to mapOf(
-                "owner" to repository.owner,
-                "name" to repository.name,
-                "prNumber" to prNumber,
-            ),
-        )
-
-        val response = webClient
-            .post()
-            .uri(applicationConfig.github.baseUrl + "/graphql")
-            .header("Authorization", "Bearer ${repository.user.token}")
-            .header("Content-Type", "application/json")
-            .rawBody(objectMapper.writeValueAsString(body))
-            .sync()
-            .perform<GithubSinglePrResponse>()
-
-        return response.pullRequest
-    }
-
-    /**
-     * Fetches all paginated data using the provided GraphQL query and variables.
-     *
-     * This method sends a GraphQL request repeatedly until all pages of data have been fetched
-     * by leveraging the pagination information available in the response.
-     *
-     * @param query the GraphQL query used to fetch data.
-     * @param token the GitHub PAT used for authentication.
-     * @param variablesBuilder a function that builds the variables map for the query. The function takes
-     * a cursor as input and returns a map of variables. The cursor is used to navigate through
-     * the paginated results.
-     * @return a list of all fetched entities of type [S].
-     */
-    private suspend inline fun <S, reified T : PageableResponse<S>> doFetchAll(
-        query: String,
-        token: String,
-        initialCursor: String? = null,
-        variablesBuilder: (cursor: String?) -> Map<String, Any?>,
-    ): List<S> {
-        val entities = mutableListOf<S>()
-        var cursor: String? = initialCursor
-
-        do {
-            val body = mapOf(
-                "query" to query,
-                "variables" to variablesBuilder(cursor).filterValues { it != null },
-            )
-
-            val response = webClient
-                .post()
-                .uri(applicationConfig.github.baseUrl + "/graphql")
-                .header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
-                .rawBody(objectMapper.writeValueAsString(body))
-                .sync()
-                .perform<T>()
-
-            entities.addAll(response.results)
-
-            cursor = if (response.hasNextPage) {
-                response.endCursor
-            } else {
-                null
-            }
-        } while (cursor != null)
-
-        return entities
     }
 }

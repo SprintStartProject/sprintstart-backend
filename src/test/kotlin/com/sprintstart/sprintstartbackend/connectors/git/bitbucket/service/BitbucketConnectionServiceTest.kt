@@ -7,12 +7,14 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.BitbucketClie
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryAlreadyConnectedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionFailedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.BitbucketRepositoryConnectionInitiatedEvent
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.external.events.projects.BitbucketRepositoryProjectLinkChangedEvent
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoverRepositoriesResponse
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.DiscoveredRepository
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketConnection
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketRepositoryConfig
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketProjectAccessDeniedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryDoesNotExistException
+import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.exceptions.BitbucketRepositoryNotConnectedException
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.ConnectBitbucketRepositoryRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.request.DiscoverBitbucketRepositoriesRequest
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketConnectionRepository
@@ -22,6 +24,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.inter
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketFileService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketPullRequestsService
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.service.internal.BitbucketWorkspaceService
+import com.sprintstart.sprintstartbackend.connectors.overview.models.ConnectorSource
 import com.sprintstart.sprintstartbackend.user.external.UserApi
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -186,6 +189,68 @@ class BitbucketConnectionServiceTest {
         service.connectRepositoryIfExists("auth-id", request)
 
         verify(exactly = 0) { connectionRepository.save(any()) }
+    }
+
+    @Test
+    fun `announces the repository and the project link, even when the project was already linked`() = runTest {
+        every { userApi.userHasAccessToProject("auth-id", projectId) } returns true
+        every { credentialApi.findSecret("auth-id", "team-token") } returns secret()
+        coEvery { bitbucketClient.repositoryExists(any(), any(), any()) } returns true
+        every {
+            connectionRepository.findWithProjectIdsByWorkspaceAndSlug("sprintstart", "sprintstart-backend")
+        } returns existingConnection(projectIdsInternal = mutableSetOf(projectId))
+
+        val response = service.connectRepositoryIfExists("auth-id", request)
+
+        val connected = slot<BitbucketRepositoryAlreadyConnectedEvent>()
+        val linked = slot<BitbucketRepositoryProjectLinkChangedEvent>()
+        verify { eventPublisher.publishEvent(capture(connected)) }
+        verify { eventPublisher.publishEvent(capture(linked)) }
+        assertThat(connected.captured.transactionId).isEqualTo(response.transactionId)
+        assertThat(connected.captured.workspace).isEqualTo("sprintstart")
+        assertThat(connected.captured.slug).isEqualTo("sprintstart-backend")
+        assertThat(linked.captured.workspace).isEqualTo("sprintstart")
+        assertThat(linked.captured.slug).isEqualTo("sprintstart-backend")
+        assertThat(linked.captured.projectId).isEqualTo(projectId)
+        assertThat(linked.captured.linked).isTrue()
+    }
+
+    @Test
+    fun `lists all sources, or the ones of a project`() {
+        val all = listOf(existingConnection())
+        val ofProject = listOf(existingConnection(projectIdsInternal = mutableSetOf(projectId)))
+        every { connectionRepository.findAll() } returns all
+        every { connectionRepository.findAllByProjectId(projectId) } returns ofProject
+
+        assertThat(service.getSources()).isEqualTo(all)
+        assertThat(service.getSources(projectId)).isEqualTo(ofProject)
+    }
+
+    @Test
+    fun `patching a source enables or disables the repository`() {
+        val existing = existingConnection()
+        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "sprintstart-backend") } returns existing
+        every { connectionRepository.save(any<BitbucketConnection>()) } answers { firstArg() }
+        val source = ConnectorSource(
+            id = "sprintstart/sprintstart-backend",
+            name = "backend",
+            url = "https://bitbucket.org/sprintstart/sprintstart-backend",
+            enabled = true,
+        )
+
+        service.patchSource(source, newStatus = false)
+
+        assertThat(existing.sourceEnabled).isFalse()
+        verify(exactly = 1) { connectionRepository.save(existing) }
+    }
+
+    @Test
+    fun `patching a source that is not connected is refused`() {
+        every { connectionRepository.findByWorkspaceAndSlug("sprintstart", "gone") } returns null
+        val source = ConnectorSource(id = "sprintstart/gone", name = "gone", url = "", enabled = true)
+
+        assertThrows<BitbucketRepositoryNotConnectedException> { service.patchSource(source, newStatus = true) }
+        verify(exactly = 0) { connectionRepository.save(any<BitbucketConnection>()) }
     }
 
     private fun existingConnection(projectIdsInternal: MutableSet<UUID> = mutableSetOf()) =

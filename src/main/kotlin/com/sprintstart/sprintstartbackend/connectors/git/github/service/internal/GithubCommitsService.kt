@@ -10,8 +10,8 @@ import com.sprintstart.sprintstartbackend.connectors.git.github.repository.Githu
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitCommitSink
 import com.sprintstart.sprintstartbackend.connectors.git.utils.GitIngestionEngine
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import com.sprintstart.sprintstartbackend.shared.git.GitCommit
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -58,7 +58,16 @@ class GithubCommitsService(
             GithubCommitsFetchStartedEvent(transactionId, githubRepository.owner, githubRepository.name),
         )
 
-        try {
+        reportingFailure(onFailure = { e ->
+            eventPublisher.publishEvent(
+                GithubCommitsFetchFailedEvent(
+                    transactionId,
+                    githubRepository.owner,
+                    githubRepository.name,
+                    e.message ?: "Unknown error",
+                ),
+            )
+        }) {
             val ingested = ingestionEngine.ingestCommitsSince(
                 coordinates = coordinatesFactory.of(githubRepository),
                 sinceRevision = githubRepository.lastCommitsSyncedSha,
@@ -70,20 +79,6 @@ class GithubCommitsService(
             withContext(ioDispatcher) {
                 repoConnectionRepository.updateCommitsCursor(githubRepository.id, ingested.revision)
             }
-        } catch (e: CancellationException) {
-            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
-            // happened.
-            throw e
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(
-                GithubCommitsFetchFailedEvent(
-                    transactionId,
-                    githubRepository.owner,
-                    githubRepository.name,
-                    e.message ?: "Unknown error",
-                ),
-            )
-            throw e
         }
 
         eventPublisher.publishEvent(

@@ -39,29 +39,19 @@ class UploadValidationService(
     }
 
     private fun validateEmpty(file: MultipartFile) {
-        if (file.isEmpty) {
-            throw IllegalArgumentException("File is empty")
-        }
+        require(!file.isEmpty) { "File is empty" }
     }
 
     private fun validateSize(file: MultipartFile) {
-        if (file.size > applicationConfig.upload.maxFileSizeBytes) {
-            throw IllegalArgumentException(
-                "File exceeds maximum allowed size",
-            )
-        }
+        require(file.size <= applicationConfig.upload.maxFileSizeBytes) { "File exceeds maximum allowed size" }
     }
 
     private fun validateFilename(file: MultipartFile) {
         val filename = file.originalFilename
             ?: throw IllegalArgumentException("Missing filename")
 
-        if (
-            filename.contains("..") ||
-            filename.contains("/") ||
-            filename.contains("\\")
-        ) {
-            throw IllegalArgumentException("Invalid filename")
+        require(!filename.contains("..") && !filename.contains("/") && !filename.contains("\\")) {
+            "Invalid filename"
         }
     }
 
@@ -71,11 +61,7 @@ class UploadValidationService(
 
         val extension = extensionFor(filename)
 
-        if (extension !in allowedExtensions) {
-            throw IllegalArgumentException(
-                "Unsupported file extension: $extension",
-            )
-        }
+        require(extension in allowedExtensions) { "Unsupported file extension: $extension" }
     }
 
     private fun extensionFor(filename: String): String {

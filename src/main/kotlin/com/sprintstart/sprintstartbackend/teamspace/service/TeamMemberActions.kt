@@ -131,29 +131,36 @@ class AddMembersAction(
                 "Somebody in that list is already on this project. Call find_member to see who is here.",
             )
         }
-        val found = userApi.getUsersByIds(wanted).associateBy { it.id }
-        val people = wanted.map { id ->
-            val person = found[id]
-                ?: return TeamActionDraft.Refused(
-                    "One of those user_ids is not a person any more. Call find_user_to_add again.",
-                )
-            id to "${person.firstname} ${person.lastname}".trim().ifBlank { person.username }
-        }
+        val people = namesOf(wanted)
+            ?: return TeamActionDraft.Refused(
+                "One of those user_ids is not a person any more. Call find_user_to_add again.",
+            )
 
         return proposed(
             params = AddMembersParams(people.map { it.first }),
             label = if (people.size == 1) "Add ${people.single().second.forLabel()}" else "Add ${people.size} people",
-            preview = buildString {
-                appendLine(if (people.size == 1) "Put this person on the project:" else "Put these people on it:")
-                people.forEach { (_, name) -> appendLine("- $name") }
-                appendLine()
-                append(
-                    "They get access to everything on this project — its material, its board and its " +
-                        "onboarding — and start with no role here until one is given.",
-                )
-            }.trim(),
+            preview = addPreview(people),
         )
     }
+
+    /** Each of [wanted] with the name to show for them, or null when one of them is not a person any more. */
+    private fun namesOf(wanted: List<UUID>): List<Pair<UUID, String>>? {
+        val found = userApi.getUsersByIds(wanted).associateBy { it.id }
+        return wanted.map { id ->
+            val person = found[id] ?: return null
+            id to "${person.firstname} ${person.lastname}".trim().ifBlank { person.username }
+        }
+    }
+
+    private fun addPreview(people: List<Pair<UUID, String>>) = buildString {
+        appendLine(if (people.size == 1) "Put this person on the project:" else "Put these people on it:")
+        people.forEach { (_, name) -> appendLine("- $name") }
+        appendLine()
+        append(
+            "They get access to everything on this project — its material, its board and its " +
+                "onboarding — and start with no role here until one is given.",
+        )
+    }.trim()
 
     override fun recheckParams(params: AddMembersParams, context: TeamToolContext): String? {
         val alreadyHere = projectMembershipApi.getProjectMembers(context.projectId).map { it.userId }.toSet()

@@ -44,7 +44,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
-@WebMvcTest(AdminProjectController::class)
+@WebMvcTest(AdminProjectController::class, AdminProjectMembersController::class)
 @Import(SecurityConfig::class)
 @AutoConfigureMockMvc
 class AdminProjectControllerTest(

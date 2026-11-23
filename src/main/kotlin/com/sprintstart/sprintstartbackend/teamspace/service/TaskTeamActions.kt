@@ -97,31 +97,39 @@ class AddTaskAction(
         val placeText = call.textArgument("place")
         val position = if (placeText.isEmpty()) slots - 1 else placeToPosition(placeText, slots)
         if (position == null) return TeamActionDraft.Refused("Place must be a number from 1 to $slots.")
-        val description = call.textArgument("description")
-        val reopens = target.element.stepStatus == StepStatus.FINISHED
+        val params = AddTaskParams(
+            stepId = target.element.id,
+            title = title,
+            description = call.textArgument("description"),
+            position = position,
+            reopens = target.element.stepStatus == StepStatus.FINISHED,
+        )
 
         return proposed(
-            params = AddTaskParams(target.element.id, title, description, position, reopens),
+            params = params,
             label = "Add task “${title.forLabel()}”",
-            preview = buildString {
-                appendLine("Add a task to “${target.element.title}” on ${target.owner.displayName}'s path:")
-                appendLine("“$title” — ${placeOf(position, slots)}")
-                if (description.isNotEmpty()) appendLine(description)
-                appendLine()
-                if (position < slots - 1) appendLine("The tasks after it move down one place.")
-                append("It starts unfinished.")
-                if (reopens) {
-                    // The service does this, and it is a change to progress the manager has to agree to.
-                    append(
-                        "\n\nThe step is already finished. A step can only stay finished while all its tasks " +
-                            "are done, so this reopens it: it goes back to in progress for " +
-                            "${target.owner.displayName}.",
-                    )
-                }
-                scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
-            }.trim(),
+            preview = addPreview(target, params, slots, context),
         )
     }
+
+    private fun addPreview(target: ScopedElement, params: AddTaskParams, slots: Int, context: TeamToolContext) =
+        buildString {
+            appendLine("Add a task to “${target.element.title}” on ${target.owner.displayName}'s path:")
+            appendLine("“${params.title}” — ${placeOf(params.position, slots)}")
+            if (params.description.isNotEmpty()) appendLine(params.description)
+            appendLine()
+            if (params.position < slots - 1) appendLine("The tasks after it move down one place.")
+            append("It starts unfinished.")
+            if (params.reopens) {
+                // The service does this, and it is a change to progress the manager has to agree to.
+                append(
+                    "\n\nThe step is already finished. A step can only stay finished while all its tasks " +
+                        "are done, so this reopens it: it goes back to in progress for " +
+                        "${target.owner.displayName}.",
+                )
+            }
+            scope.sharedNote(target.owner, context.projectId).takeIf { it.isNotEmpty() }?.let { append("\n\n$it") }
+        }.trim()
 
     override fun recheckParams(params: AddTaskParams, context: TeamToolContext): String? {
         val target = scope.element(PathElementKind.STEP, params.stepId, context.projectId)

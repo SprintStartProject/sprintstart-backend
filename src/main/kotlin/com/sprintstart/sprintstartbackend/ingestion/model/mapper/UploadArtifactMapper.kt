@@ -31,13 +31,6 @@ class UploadArtifactMapper(
             else -> event.filename.substringAfterLast(".", "").lowercase()
         }
         val language = FileMetaDataResolver.languageFor(extension)
-        val content = when {
-            isSupportedBinaryMime(event.mime) -> Base64.getEncoder().encodeToString(
-                uploadedArtifactReader.readBytes(event.artifactId),
-            )
-            language != null -> uploadedArtifactReader.readText(event.artifactId)
-            else -> null
-        }
         return UploadArtifactCommand(
             ingestionRunId = event.transactionId,
             projectId = event.projectId,
@@ -45,11 +38,10 @@ class UploadArtifactMapper(
             sourceId = event.artifactId.toString(),
             artifactType = ArtifactType.FILE,
             title = event.filename,
-            content = content,
+            content = contentOf(event, language),
             mime = event.mime,
             language = language,
             createdAtSource = event.uploadedAt,
-            updatedAtSource = null,
             hash = event.hash,
             metadata = UploadArtifactMetadata(
                 storagePath = event.storagePath,
@@ -57,6 +49,16 @@ class UploadArtifactMapper(
             ),
         )
     }
+
+    /** Binary formats travel Base64 encoded, known text formats as text, anything else without content. */
+    private fun contentOf(event: ArtifactUploadedEvent, language: String?): String? =
+        when {
+            isSupportedBinaryMime(event.mime) -> Base64.getEncoder().encodeToString(
+                uploadedArtifactReader.readBytes(event.artifactId),
+            )
+            language != null -> uploadedArtifactReader.readText(event.artifactId)
+            else -> null
+        }
 
     private fun isSupportedBinaryMime(mime: String): Boolean {
         return mime.startsWith("image/") || mime == "application/pdf"

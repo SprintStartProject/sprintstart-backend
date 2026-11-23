@@ -361,6 +361,62 @@ class GithubArtifactMapperTest {
         assertThat(result.firstResponseAtSource).isNull()
     }
 
+    @Test
+    fun `toCommand counts change requests from reviewers other than the author, whatever the case`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                reviews = listOf(
+                    review(author = "carol", state = "CHANGES_REQUESTED"),
+                    review(author = "dave", state = "changes_requested"),
+                    review(author = "BOB", state = "CHANGES_REQUESTED"),
+                    review(author = "erin", state = "APPROVED"),
+                ),
+            ),
+        )
+
+        assertThat(result.changesRequestedCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `toCommand counts no change requests when there are no reviews`() {
+        assertThat(mapper.toCommand(pullRequestEvent(reviews = null)).changesRequestedCount).isZero()
+    }
+
+    @Test
+    fun `toCommand takes the earliest response among several and ignores the author's reviews`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                reviews = listOf(
+                    review(author = "BOB", state = "COMMENTED", submittedAt = "2024-01-02T01:00:00Z"),
+                    review(author = "carol", state = "APPROVED", submittedAt = "2024-01-05T00:00:00Z"),
+                    review(author = "dave", state = "APPROVED", submittedAt = "2024-01-04T00:00:00Z"),
+                ),
+                comments = listOf(
+                    GithubPullRequestComment(body = "late", author = "erin", createdAt = "2024-01-06T00:00:00Z"),
+                ),
+            ),
+        )
+
+        assertThat(result.firstResponseAtSource).isEqualTo(Instant.parse("2024-01-04T00:00:00Z"))
+    }
+
+    @Test
+    fun `toCommand skips a timestamp it cannot parse and uses the next response`() {
+        val result = mapper.toCommand(
+            pullRequestEvent(
+                reviews = listOf(review(author = "carol", state = "APPROVED", submittedAt = "not-a-timestamp")),
+                comments = listOf(
+                    GithubPullRequestComment(body = "hi", author = "dave", createdAt = "2024-01-03T00:00:00Z"),
+                ),
+            ),
+        )
+
+        assertThat(result.firstResponseAtSource).isEqualTo(Instant.parse("2024-01-03T00:00:00Z"))
+    }
+
+    private fun review(author: String?, state: String, submittedAt: String? = "2024-01-04T00:00:00Z") =
+        GithubPullRequestReview(body = "text", state = state, author = author, submittedAt = submittedAt)
+
     private fun pullRequestEvent(
         state: String = "OPEN",
         mergedAt: String? = null,

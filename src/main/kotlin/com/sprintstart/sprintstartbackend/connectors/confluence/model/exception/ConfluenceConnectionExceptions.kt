@@ -5,7 +5,8 @@ import java.util.UUID
 internal sealed class ConfluenceConnectionException(
     message: String,
     val httpStatus: Int,
-) : RuntimeException(message)
+    cause: Throwable? = null,
+) : RuntimeException(message, cause)
 
 internal class ConfluenceProjectAccessDeniedException(
     projectId: UUID,
@@ -25,15 +26,18 @@ internal class ConfluenceConnectionNotFoundException(
 internal class ConfluenceConnectionAlreadyExistsException(
     projectId: UUID,
     spaceId: String,
+    cause: Throwable? = null,
 ) : ConfluenceConnectionException(
         message = "Confluence space $spaceId is already connected to project $projectId",
         httpStatus = 409,
+        cause = cause,
     )
 
 internal class ConfluenceConnectionConfigurationException(
     message: String,
     httpStatus: Int = 400,
-) : ConfluenceConnectionException(message, httpStatus)
+    cause: Throwable? = null,
+) : ConfluenceConnectionException(message, httpStatus, cause)
 
 internal class ConfluenceCredentialNotFoundException(
     credentialName: String,

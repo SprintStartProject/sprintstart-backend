@@ -70,27 +70,67 @@ class AddPathStepAction(
             ?: return notProposed(
                 "No phase of this hire's own path has that id. Read get_my_onboarding_path again.",
             )
-        val title = call.textArgument("title")
-        val description = call.textArgument("description")
-        val placement = PathStepPlacement.inferred(
-            phase,
-            call.lenientUuidSetArgument("waits_on"),
-            call.lenientUuidSetArgument("unlocks"),
+        val draft = StepDraft(
+            title = call.textArgument("title"),
+            description = call.textArgument("description"),
+            placement = PathStepPlacement.inferred(
+                phase,
+                call.lenientUuidSetArgument("waits_on"),
+                call.lenientUuidSetArgument("unlocks"),
+            ),
         )
+        refusalFor(user.value, phase, draft)?.let { return notProposed(it) }
 
-        val refusal = when {
+        return offerOf(phase, draft)
+    }
+
+    private fun offerOf(phase: GetOnboardingPhaseForUserResponse, draft: StepDraft): HireActionOutcome {
+        val title = draft.title
+        val placement = draft.placement
+        val where = placement.describe()
+
+        return HireActionOutcome(
+            toolResult = "Proposed to the hire: add the step “$title” to the phase " +
+                "“${phase.title}” of their own path. They see a confirm button; nothing is added " +
+                "unless they click it. This changes their copy only — their PM's blueprint is " +
+                "untouched — and they can edit or remove it afterwards. Say what the step is for " +
+                "and where it goes before you offer it.${placementNotes(placement, where)}",
+            proposal = HireActionProposal(
+                action = ADD_PATH_STEP,
+                label = if (where.isEmpty()) "Add “$title” to your path" else "Add “$title” $where",
+                question = null,
+                phaseId = phase.id,
+                title = title,
+                description = draft.description,
+                waitsOnIds = placement.waitsOn.toList(),
+                unlocksIds = placement.unlocks.toList(),
+            ),
+        )
+    }
+
+    /** What the model passed for the step it wants added, with the placement worked out from it. */
+    private class StepDraft(
+        val title: String,
+        val description: String,
+        val placement: PathStepPlacement,
+    )
+
+    private fun refusalFor(userId: UUID, phase: GetOnboardingPhaseForUserResponse, draft: StepDraft): String? {
+        val title = draft.title
+        return when {
             title.isBlank() -> "No title was provided. Say what the step is, in a few words."
-            description.isBlank() ->
+            draft.description.isBlank() ->
                 "No description was provided. A step with a title and nothing else is one the hire " +
                     "has to guess at — say what doing it involves, then offer it again."
             phase.steps.any { it.title.trim().equals(title, ignoreCase = true) } ->
                 "“$title” is already a step of “${phase.title}”, so nothing needs adding. Point them " +
                     "at the one that is there."
-            else -> reopensFinishedPhase(user.value, phase) ?: placement.problem()
+            else -> reopensFinishedPhase(userId, phase) ?: draft.placement.problem()
         }
-        if (refusal != null) return notProposed(refusal)
+    }
 
-        val where = placement.describe()
+    /** What the mentor is told about where the step lands: its connections, its entry and what it re-locks. */
+    private fun placementNotes(placement: PathStepPlacement, where: String): String {
         val connection = if (placement.isConnected) {
             " It goes $where in the phase's graph: it opens once what it waits on is done, and what " +
                 "it unlocks now waits on it."
@@ -111,24 +151,7 @@ class AddPathStepAction(
                 " ${it.joinToString(", ")} is already started and will lock again until this step is " +
                     "done — say so before they click."
             }.orEmpty()
-
-        return HireActionOutcome(
-            toolResult = "Proposed to the hire: add the step “$title” to the phase " +
-                "“${phase.title}” of their own path. They see a confirm button; nothing is added " +
-                "unless they click it. This changes their copy only — their PM's blueprint is " +
-                "untouched — and they can edit or remove it afterwards. Say what the step is for " +
-                "and where it goes before you offer it.$connection$entry$relocks",
-            proposal = HireActionProposal(
-                action = ADD_PATH_STEP,
-                label = if (where.isEmpty()) "Add “$title” to your path" else "Add “$title” $where",
-                question = null,
-                phaseId = phase.id,
-                title = title,
-                description = description,
-                waitsOnIds = placement.waitsOn.toList(),
-                unlocksIds = placement.unlocks.toList(),
-            ),
-        )
+        return connection + entry + relocks
     }
 
     /**
@@ -181,24 +204,7 @@ class AddPathStepAction(
         val created = hirePathActionsApi.placeMyStep(
             authId = authId,
             phaseId = PhaseId(phaseId),
-            step = NewConnectedStep(
-                step = CreateOnboardingStepRequest(
-                    // Next to what it waits on (or in front of what it unlocks), so the list reads in the
-                    // order the graph opens it. The end, when it is connected to nothing.
-                    position = placement.position(),
-                    title = title,
-                    description = request.description.orEmpty(),
-                    type = StepType.TASK,
-                    estimatedMinutes = ADDED_STEP_MINUTES,
-                    // Left empty on purpose: an expected outcome is a promise about what doing the step
-                    // will leave somebody able to do, and the mentor is not in a position to make one.
-                    expectedOutcome = "",
-                ),
-                // Theirs, but not their idea: the card says it came from the buddy, not from their team.
-                origin = StepOrigin.BUDDY,
-                waitsOn = placement.waitsOn,
-                unlocks = placement.unlocks,
-            ),
+            step = newStep(title, request.description.orEmpty(), placement),
         )
         return BuddyActionResponse(
             ok = true,
@@ -206,6 +212,25 @@ class AddPathStepAction(
                 "is yours — edit it or delete it there like any other step.",
         )
     }
+
+    private fun newStep(title: String, description: String, placement: PathStepPlacement) = NewConnectedStep(
+        step = CreateOnboardingStepRequest(
+            // Next to what it waits on (or in front of what it unlocks), so the list reads in the
+            // order the graph opens it. The end, when it is connected to nothing.
+            position = placement.position(),
+            title = title,
+            description = description,
+            type = StepType.TASK,
+            estimatedMinutes = ADDED_STEP_MINUTES,
+            // Left empty on purpose: an expected outcome is a promise about what doing the step
+            // will leave somebody able to do, and the mentor is not in a position to make one.
+            expectedOutcome = "",
+        ),
+        // Theirs, but not their idea: the card says it came from the buddy, not from their team.
+        origin = StepOrigin.BUDDY,
+        waitsOn = placement.waitsOn,
+        unlocks = placement.unlocks,
+    )
 
     companion object {
         const val ADD_PATH_STEP = "add_path_step"

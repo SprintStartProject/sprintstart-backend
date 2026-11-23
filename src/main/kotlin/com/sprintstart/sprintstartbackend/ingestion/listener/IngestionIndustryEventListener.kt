@@ -1,8 +1,8 @@
 package com.sprintstart.sprintstartbackend.ingestion.listener
 
 import com.sprintstart.sprintstartbackend.ingestion.external.events.ArtifactsIndexedEvent
+import com.sprintstart.sprintstartbackend.shared.failure.recovering
 import com.sprintstart.sprintstartbackend.user.external.ProjectIndustryApi
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
@@ -28,17 +28,15 @@ class IngestionIndustryEventListener(
     fun handleArtifactsIndexed(event: ArtifactsIndexedEvent) {
         applicationScope.launch {
             for (projectId in event.projectIds) {
-                try {
-                    projectIndustryApi.evaluateIndustryAutomatically(projectId)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
+                recovering(fallback = { e ->
                     logger.warn(
                         "Failed to auto-evaluate industry for project {} after run {}",
                         projectId,
                         event.runId,
                         e,
                     )
+                }) {
+                    projectIndustryApi.evaluateIndustryAutomatically(projectId)
                 }
             }
         }

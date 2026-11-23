@@ -13,7 +13,7 @@ import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.client.
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.model.entity.BitbucketWorkspace
 import com.sprintstart.sprintstartbackend.connectors.git.bitbucket.repository.BitbucketWorkspaceRepository
 import com.sprintstart.sprintstartbackend.shared.annotations.Tracked
-import kotlinx.coroutines.CancellationException
+import com.sprintstart.sprintstartbackend.shared.failure.reportingFailure
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -106,7 +106,9 @@ internal class BitbucketWorkspaceService(
         credentialName: String,
         transactionId: UUID,
     ) {
-        try {
+        reportingFailure(onFailure = { e ->
+            eventPublisher.publishEvent(BitbucketWorkspaceMetadataFetchingFailedEvent(transactionId, e.message))
+        }) {
             val credential = credentialApi.findSecret(authId, credentialName)
                 ?: throw AtlassianCredentialNotFoundException(authId, credentialName)
 
@@ -120,13 +122,6 @@ internal class BitbucketWorkspaceService(
                     BitbucketWorkspace(slug = workspace, name = metadata.name, fetchedAt = Instant.now()),
                 )
             }
-        } catch (e: CancellationException) {
-            // Cancellation abandons the run; reporting it as a failure would close a fetch that never
-            // happened.
-            throw e
-        } catch (e: Exception) {
-            eventPublisher.publishEvent(BitbucketWorkspaceMetadataFetchingFailedEvent(transactionId, e.message))
-            throw e
         }
     }
 

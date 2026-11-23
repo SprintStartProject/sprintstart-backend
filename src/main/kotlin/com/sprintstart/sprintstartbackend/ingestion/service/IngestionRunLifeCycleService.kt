@@ -53,30 +53,43 @@ class IngestionRunLifeCycleService(
         sourceInstanceId: UUID? = null,
         sourceInstanceRef: String? = null,
     ) {
-        val ingestionRun = ingestionRunRepository.findByIdOrNull(transactionId)
-        if (ingestionRun == null) {
-            val initialAiSyncStatus =
-                if (status == IngestionRunStatus.FAILED) AiSyncStatus.NOT_APPLICABLE else AiSyncStatus.PENDING
-            val ingestionRun = IngestionRun(
-                id = transactionId,
-                sourceSystem = sourceSystem,
-                sourceInstanceId = sourceInstanceId,
-                sourceInstanceRef = sourceInstanceRef,
-                status = status,
-                failureReason = failureReason.truncateToDbLimit(),
-                finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null,
-                aiSyncStatus = initialAiSyncStatus,
-            )
-            ingestionRunRepository.save(ingestionRun)
+        val start = RunStart(transactionId, sourceSystem, status, failureReason, sourceInstanceId, sourceInstanceRef)
+        val existing = ingestionRunRepository.findByIdOrNull(transactionId)
+        if (existing == null) {
+            ingestionRunRepository.save(start.toNewRun())
         } else {
-            ingestionRun.status = status
-            ingestionRun.finishedAt = if (status == IngestionRunStatus.FAILED) Instant.now() else null
-            ingestionRun.failureReason = failureReason.truncateToDbLimit()
-            if (status == IngestionRunStatus.FAILED) {
-                ingestionRun.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
-            }
-            if (ingestionRun.sourceInstanceId == null) ingestionRun.sourceInstanceId = sourceInstanceId
-            if (ingestionRun.sourceInstanceRef == null) ingestionRun.sourceInstanceRef = sourceInstanceRef
+            start.applyTo(existing)
+        }
+    }
+
+    private class RunStart(
+        val run: UUID,
+        val sourceSystem: SourceSystem,
+        val status: IngestionRunStatus,
+        val failureReason: String?,
+        val instance: UUID?,
+        val instanceRef: String?,
+    ) {
+        private val failed = status == IngestionRunStatus.FAILED
+
+        fun toNewRun() = IngestionRun(
+            id = run,
+            sourceSystem = sourceSystem,
+            sourceInstanceId = instance,
+            sourceInstanceRef = instanceRef,
+            status = status,
+            failureReason = failureReason.truncateToDbLimit(),
+            finishedAt = if (failed) Instant.now() else null,
+            aiSyncStatus = if (failed) AiSyncStatus.NOT_APPLICABLE else AiSyncStatus.PENDING,
+        )
+
+        fun applyTo(existing: IngestionRun) {
+            existing.status = status
+            existing.finishedAt = if (failed) Instant.now() else null
+            existing.failureReason = failureReason.truncateToDbLimit()
+            if (failed) existing.aiSyncStatus = AiSyncStatus.NOT_APPLICABLE
+            if (existing.sourceInstanceId == null) existing.sourceInstanceId = instance
+            if (existing.sourceInstanceRef == null) existing.sourceInstanceRef = instanceRef
         }
     }
 

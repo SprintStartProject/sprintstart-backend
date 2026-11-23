@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 
-@WebMvcTest(OnboardingStepController::class)
+@WebMvcTest(OnboardingStepController::class, OnboardingStepAdminController::class)
 @Import(
     SecurityConfig::class,
 )

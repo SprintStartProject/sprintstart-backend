@@ -12,6 +12,7 @@ import com.sprintstart.sprintstartbackend.assistant.external.HireActionRequest
 import com.sprintstart.sprintstartbackend.assistant.external.HireActionScope
 import com.sprintstart.sprintstartbackend.path.external.HirePathActionsApi
 import com.sprintstart.sprintstartbackend.path.external.enums.StepStatus
+import com.sprintstart.sprintstartbackend.path.model.response.step.GetOnboardingStepsResponse
 import com.sprintstart.sprintstartbackend.shared.ids.AuthId
 import com.sprintstart.sprintstartbackend.shared.ids.StepId
 import com.sprintstart.sprintstartbackend.shared.ids.UserId
@@ -56,20 +57,25 @@ class CompleteStepAction(
                     "id from anywhere else is not theirs to tick off.",
             )
 
-        val refusal = when {
-            step.status == StepStatus.FINISHED ->
-                "“${step.title}” is already done, so there is nothing to tick. Tell them it is " +
-                    "already behind them."
-            step.status == StepStatus.SKIPPED ->
-                "“${step.title}” was skipped, so it cannot be completed. If that was wrong, their PM " +
-                    "is the one who can undo it."
-            step.locked ->
-                "“${step.title}” is locked: something it waits on is not finished. Say what it is " +
-                    "waiting on rather than offering to tick it."
-            else -> null
-        }
-        if (refusal != null) return notProposed(refusal)
+        refusalFor(step)?.let { return notProposed(it) }
 
+        return proposalFor(step)
+    }
+
+    private fun refusalFor(step: GetOnboardingStepsResponse): String? = when {
+        step.status == StepStatus.FINISHED ->
+            "“${step.title}” is already done, so there is nothing to tick. Tell them it is " +
+                "already behind them."
+        step.status == StepStatus.SKIPPED ->
+            "“${step.title}” was skipped, so it cannot be completed. If that was wrong, their PM " +
+                "is the one who can undo it."
+        step.locked ->
+            "“${step.title}” is locked: something it waits on is not finished. Say what it is " +
+                "waiting on rather than offering to tick it."
+        else -> null
+    }
+
+    private fun proposalFor(step: GetOnboardingStepsResponse): HireActionOutcome {
         // Finishing a step withdraws a skip request still waiting on the PM. Allowed -- somebody who
         // did the step anyway should be able to close it -- but never without saying so, on the
         // button and to the mentor, because nothing else would tell them the request is gone.

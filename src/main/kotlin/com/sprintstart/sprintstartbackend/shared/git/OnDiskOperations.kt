@@ -173,7 +173,7 @@ class OnDiskOperations {
                 val command = op.command().joinToString(" ") { sanitizeCommandPart(it) }
                 val details = output.trim()
                 val suffix = if (details.isBlank()) "" else ": $details"
-                throw RuntimeException("$command failed (exit $exitCode)$suffix")
+                error("$command failed (exit $exitCode)$suffix")
             }
 
             return output

@@ -22,8 +22,8 @@ class BuddyAiClient(
                 .body(request)
                 .sync()
                 .perform<AiGenerateSessionTitleResponse>()
-        } catch (@Suppress("SwallowedException") e: WebClientException) {
-            throw AiResponseException("Failed to generate session title (HTTP ${e.statusCode}): ${e.body}")
+        } catch (e: WebClientException) {
+            throw AiResponseException("Failed to generate session title (HTTP ${e.statusCode}): ${e.body}", e)
         }
 
     private fun uri(path: String): URI = URI.create("${applicationConfig.ai.baseUrl}$path")

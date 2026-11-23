@@ -40,44 +40,25 @@ class KeycloakEventService(
     @Transactional
     @Tracked("Handling Keycloak event")
     fun handleEvent(request: KeycloakEventRequest) {
-        if (request.resourceType == "USER") {
-            when (request.eventType) {
-                "REGISTER" -> {
-                    registerUser(request)
-                }
-
-                "UPDATE" -> {
-                    updateUser(request)
-                }
-
-                "UPDATE_PROFILE" -> {
-                    updateUser(request)
-                }
-
-                "DELETE" -> {
-                    deleteUser(request)
-                }
-
-                else -> {
-                    logger.warn("Unknown Keycloak USER event type: {}", request.eventType)
-                }
-            }
+        when (request.resourceType) {
+            "USER" -> handleUserEvent(request)
+            "REALM_ROLE_MAPPING" -> handleRoleMappingEvent(request)
         }
+    }
 
-        if (request.resourceType == "REALM_ROLE_MAPPING") {
-            when (request.eventType) {
-                "CREATE" -> {
-                    syncPermissionGroups(request)
-                }
+    private fun handleUserEvent(request: KeycloakEventRequest) {
+        when (request.eventType) {
+            "REGISTER" -> registerUser(request)
+            "UPDATE", "UPDATE_PROFILE" -> updateUser(request)
+            "DELETE" -> deleteUser(request)
+            else -> logger.warn("Unknown Keycloak USER event type: {}", request.eventType)
+        }
+    }
 
-                "DELETE" -> {
-                    syncPermissionGroups(request)
-                }
-
-                else -> {
-                    logger.warn("Unknown Keycloak REALM_ROLE_MAPPING event type: {}", request.eventType)
-                }
-            }
+    private fun handleRoleMappingEvent(request: KeycloakEventRequest) {
+        when (request.eventType) {
+            "CREATE", "DELETE" -> syncPermissionGroups(request)
+            else -> logger.warn("Unknown Keycloak REALM_ROLE_MAPPING event type: {}", request.eventType)
         }
     }
 

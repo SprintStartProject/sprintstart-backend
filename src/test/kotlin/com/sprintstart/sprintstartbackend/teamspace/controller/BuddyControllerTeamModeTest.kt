@@ -2,8 +2,8 @@ package com.sprintstart.sprintstartbackend.teamspace.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ninjasquad.springmockk.MockkBean
-import com.sprintstart.sprintstartbackend.assistant.external.BuddySessionFilters
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyStreamEvent
+import com.sprintstart.sprintstartbackend.assistant.external.BuddyTurnOptions
 import com.sprintstart.sprintstartbackend.buddy.controller.BuddyController
 import com.sprintstart.sprintstartbackend.buddy.external.enums.BuddyMessageRole
 import com.sprintstart.sprintstartbackend.buddy.model.request.buddy.SendBuddyMessageRequest
@@ -136,7 +136,14 @@ class BuddyControllerTeamModeTest(
 
     @Test
     fun `sendMessageForMe with a teamProjectId speaks in team mode and keeps the capability mode`() {
-        coEvery { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", false) } returns
+        coEvery {
+            buddyTeamService.sendMessageForMe(
+                authId,
+                projectId,
+                "who is stuck?",
+                BuddyTurnOptions(capabilitiesEnabled = false),
+            )
+        } returns
             flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
@@ -158,14 +165,20 @@ class BuddyControllerTeamModeTest(
 
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
-        coVerify { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", false) }
+        coVerify {
+            buddyTeamService.sendMessageForMe(
+                authId,
+                projectId,
+                "who is stuck?",
+                BuddyTurnOptions(capabilitiesEnabled = false),
+            )
+        }
         coVerify(exactly = 0) {
             buddyService.sendMessageForMe(
                 any(),
                 null,
                 any(),
                 any(),
-                null,
             )
         }
     }
@@ -174,7 +187,7 @@ class BuddyControllerTeamModeTest(
     @Test
     fun `sendMessageForMe with a teamProjectId passes snake_case filters through`() {
         coEvery {
-            buddyTeamService.sendMessageForMe(any(), any(), any(), any(), any(), any())
+            buddyTeamService.sendMessageForMe(any(), any(), any(), any())
         } returns flowOf(BuddyStreamEvent(type = "done"))
 
         val asyncResult = mockMvc
@@ -195,13 +208,12 @@ class BuddyControllerTeamModeTest(
 
         mockMvc.perform(asyncDispatch(asyncResult)).andExpect(status().isOk)
 
-        val filters = slot<BuddySessionFilters>()
-        coVerify {
-            buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", true, capture(filters), null)
-        }
-        assertThat(filters.captured.sourceSystems).containsExactly(SourceSystem.GITHUB, SourceSystem.JIRA)
-        assertThat(filters.captured.from).isEqualTo("2026-10-01T00:00:00Z")
-        assertThat(filters.captured.to).isEqualTo("2026-10-06T21:59:59.999Z")
+        val options = slot<BuddyTurnOptions>()
+        coVerify { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", capture(options)) }
+        val filters = options.captured.filters!!
+        assertThat(filters.sourceSystems).containsExactly(SourceSystem.GITHUB, SourceSystem.JIRA)
+        assertThat(filters.from).isEqualTo("2026-10-01T00:00:00Z")
+        assertThat(filters.to).isEqualTo("2026-10-06T21:59:59.999Z")
     }
 
     /** A client that never names a project stays in the caller's own buddy, exactly as before. */
@@ -212,8 +224,7 @@ class BuddyControllerTeamModeTest(
                 authId,
                 null,
                 "hi",
-                true,
-                null,
+                BuddyTurnOptions(capabilitiesEnabled = true, filters = null),
             )
         } returns flowOf(BuddyStreamEvent(type = "done"))
 
@@ -233,7 +244,7 @@ class BuddyControllerTeamModeTest(
 
     @Test
     fun `sendMessageForMe returns 403 when the caller does not manage the project`() {
-        coEvery { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", true) } throws
+        coEvery { buddyTeamService.sendMessageForMe(authId, projectId, "who is stuck?", BuddyTurnOptions()) } throws
             ResponseStatusException(HttpStatus.FORBIDDEN, "not yours")
 
         val asyncResult = mockMvc

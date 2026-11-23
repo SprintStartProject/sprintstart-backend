@@ -166,39 +166,19 @@ internal class BitbucketConnectionService(
         )
 
         if (!userApi.userHasAccessToProject(authId, request.projectId)) {
-            eventPublisher.publishEvent(
-                BitbucketRepositoryConnectionFailedEvent(
-                    transactionId,
-                    request.workspace,
-                    request.slug,
-                    "No access to project ${request.projectId}",
-                ),
-            )
+            announceFailure(transactionId, request, "No access to project ${request.projectId}")
             throw BitbucketProjectAccessDeniedException(request.projectId)
         }
 
         val cred = credentialApi.findSecret(authId, request.credentialName)
         if (cred == null) {
-            eventPublisher.publishEvent(
-                BitbucketRepositoryConnectionFailedEvent(
-                    transactionId,
-                    request.workspace,
-                    request.slug,
-                    "Credential ${request.credentialName} not found",
-                ),
-            )
+            announceFailure(transactionId, request, "Credential ${request.credentialName} not found")
             throw AtlassianCredentialNotFoundException(authId, request.credentialName)
         }
 
         if (!bitbucketClient.repositoryExists(request.workspace, request.slug, cred)) {
-            eventPublisher.publishEvent(
-                BitbucketRepositoryConnectionFailedEvent(
-                    transactionId,
-                    request.workspace,
-                    request.slug,
-                    "Bitbucket repository ${request.workspace}/${request.slug} not found or out of reach",
-                ),
-            )
+            val reason = "Bitbucket repository ${request.workspace}/${request.slug} not found or out of reach"
+            announceFailure(transactionId, request, reason)
             throw BitbucketRepositoryDoesNotExistException(request.workspace, request.slug, request.credentialName)
         }
 
@@ -259,24 +239,7 @@ internal class BitbucketConnectionService(
             connectionRepository.findWithProjectIdsByWorkspaceAndSlug(request.workspace, request.slug)
         }
         if (alreadyConnected != null) {
-            linkProject(alreadyConnected, request.projectId)
-            eventPublisher.publishEvent(
-                BitbucketRepositoryAlreadyConnectedEvent(
-                    transactionId = transactionId,
-                    workspace = request.workspace,
-                    slug = request.slug,
-                ),
-            )
-            // Announced even when the project was already linked, so a repeated connect repairs a
-            // membership that never reached the artifacts or the AI index.
-            eventPublisher.publishEvent(
-                BitbucketRepositoryProjectLinkChangedEvent(
-                    workspace = request.workspace,
-                    slug = request.slug,
-                    projectId = request.projectId,
-                    linked = true,
-                ),
-            )
+            linkExisting(alreadyConnected, request, transactionId)
             return transactionId
         }
 
@@ -297,36 +260,76 @@ internal class BitbucketConnectionService(
             configRepository.save(config)
         }
 
+        startFirstIngest(connection, authId, request, transactionId)
+
+        return transactionId
+    }
+
+    private fun announceFailure(transaction: UUID, request: ConnectBitbucketRepositoryRequest, reason: String) {
+        eventPublisher.publishEvent(
+            BitbucketRepositoryConnectionFailedEvent(transaction, request.workspace, request.slug, reason),
+        )
+    }
+
+    private fun linkExisting(
+        connection: BitbucketConnection,
+        request: ConnectBitbucketRepositoryRequest,
+        transaction: UUID,
+    ) {
+        linkProject(connection, request.projectId)
+        eventPublisher.publishEvent(
+            BitbucketRepositoryAlreadyConnectedEvent(
+                transactionId = transaction,
+                workspace = request.workspace,
+                slug = request.slug,
+            ),
+        )
+        // Announced even when the project was already linked, so a repeated connect repairs a
+        // membership that never reached the artifacts or the AI index.
+        eventPublisher.publishEvent(
+            BitbucketRepositoryProjectLinkChangedEvent(
+                workspace = request.workspace,
+                slug = request.slug,
+                projectId = request.projectId,
+                linked = true,
+            ),
+        )
+    }
+
+    private fun startFirstIngest(
+        connection: BitbucketConnection,
+        subject: String,
+        request: ConnectBitbucketRepositoryRequest,
+        transaction: UUID,
+    ) {
         connectionStateService.markUpdating(connection.id)
 
         // The collectors finalize like an update, so the connection reads UPDATING during its first ingest
         // and settles to UP_TO_DATE or FAILED.
         val collectors = listOf(
             applicationScope.async {
-                fileService.fetchAndIngestFilesOfRepository(connection.id, transactionId)
+                fileService.fetchAndIngestFilesOfRepository(connection.id, transaction)
             },
             applicationScope.async {
-                commitsService.fetchAndIngestCommitsOfRepository(connection.id, transactionId)
+                commitsService.fetchAndIngestCommitsOfRepository(connection.id, transaction)
             },
             applicationScope.async {
-                prService.fetchAndIngestPullRequests(connection.id, transactionId)
+                prService.fetchAndIngestPullRequests(connection.id, transaction)
             },
             // Announced per repository connect; the workspace service's marker guard makes the fetch of
             // an already-ingested workspace a no-op that still closes its ingestion phase.
             applicationScope.async {
                 workspaceService.connectWorkspaceIfNecessary(
                     workspace = request.workspace,
-                    authId = authId,
+                    authId = subject,
                     credentialName = request.credentialName,
-                    transactionId = transactionId,
+                    transactionId = transaction,
                 )
             },
         )
         applicationScope.launch {
             connectionStateService.awaitCollectorsAndFinalize(connection.id, collectors)
         }
-
-        return transactionId
     }
 
     /**

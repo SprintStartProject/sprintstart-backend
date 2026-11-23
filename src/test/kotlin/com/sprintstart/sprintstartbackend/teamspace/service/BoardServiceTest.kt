@@ -16,6 +16,7 @@ import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardKind
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardOwner
 import com.sprintstart.sprintstartbackend.board.external.enums.BoardCardState
 import com.sprintstart.sprintstartbackend.board.external.enums.PlacementOutcome
+import com.sprintstart.sprintstartbackend.board.external.model.HireBoard
 import com.sprintstart.sprintstartbackend.board.model.entity.Board
 import com.sprintstart.sprintstartbackend.board.model.entity.BoardCard
 import com.sprintstart.sprintstartbackend.board.model.entity.BoardCardPayload
@@ -585,7 +586,7 @@ class BoardServiceTest {
         val saved = slot<BoardCard>()
         every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
 
-        val outcome = service.place(hire, project, BoardCardKind.SUGGESTED_TASKS)
+        val outcome = service.place(HireBoard(hire, project), BoardCardKind.SUGGESTED_TASKS)
 
         assertEquals(PlacementOutcome.PLACED, outcome)
         assertEquals(board.id, saved.captured.boardId)
@@ -604,7 +605,7 @@ class BoardServiceTest {
         // conversation undoes.
         assertEquals(
             PlacementOutcome.DISMISSED_BY_HIRE,
-            service.place(hire, project, BoardCardKind.SUGGESTED_TASKS),
+            service.place(HireBoard(hire, project), BoardCardKind.SUGGESTED_TASKS),
         )
         verify(exactly = 0) { boardCardRepository.save(any()) }
     }
@@ -619,7 +620,7 @@ class BoardServiceTest {
         // Re-placing would let the mentor reshuffle a board the hire has arranged.
         assertEquals(
             PlacementOutcome.ALREADY_THERE,
-            service.place(hire, project, BoardCardKind.SUGGESTED_TASKS),
+            service.place(HireBoard(hire, project), BoardCardKind.SUGGESTED_TASKS),
         )
         verify(exactly = 0) { boardCardRepository.save(any()) }
     }
@@ -630,7 +631,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.NOT_A_MEMBER,
-            service.place(hire, project, BoardCardKind.SUGGESTED_TASKS),
+            service.place(HireBoard(hire, project), BoardCardKind.SUGGESTED_TASKS),
         )
     }
 
@@ -661,7 +662,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.DISMISSED_BY_HIRE,
-            service.place(hire, project, BoardCardKind.CURRENT_TASK),
+            service.place(HireBoard(hire, project), BoardCardKind.CURRENT_TASK),
         )
         assertEquals(BoardCardState.DISMISSED, dismissed.state)
     }
@@ -1013,7 +1014,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.NEEDS_A_SUBJECT,
-            service.place(hire, project, BoardCardKind.PATH_STEP),
+            service.place(HireBoard(hire, project), BoardCardKind.PATH_STEP),
         )
     }
 
@@ -1024,7 +1025,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.NO_SUCH_STEP,
-            service.place(hire, project, BoardCardKind.PATH_STEP, "Learn the deploy pipeline"),
+            service.place(HireBoard(hire, project), BoardCardKind.PATH_STEP, "Learn the deploy pipeline"),
         )
         verify(exactly = 0) { boardCardRepository.save(any()) }
     }
@@ -1038,8 +1039,7 @@ class BoardServiceTest {
         every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
 
         val outcome = service.place(
-            hire,
-            project,
+            HireBoard(hire, project),
             BoardCardKind.PATH_STEP,
             "  set up   YOUR laptop ",
         )
@@ -1057,7 +1057,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.ALREADY_THERE,
-            service.place(hire, project, BoardCardKind.PATH_STEP, "SET UP YOUR LAPTOP"),
+            service.place(HireBoard(hire, project), BoardCardKind.PATH_STEP, "SET UP YOUR LAPTOP"),
         )
         verify(exactly = 0) { boardCardRepository.save(any()) }
     }
@@ -1072,7 +1072,7 @@ class BoardServiceTest {
 
         assertEquals(
             PlacementOutcome.DISMISSED_BY_HIRE,
-            service.place(hire, project, BoardCardKind.PATH_STEP, "Set up your laptop"),
+            service.place(HireBoard(hire, project), BoardCardKind.PATH_STEP, "Set up your laptop"),
         )
         verify(exactly = 0) { boardCardRepository.save(any()) }
     }
@@ -1259,7 +1259,7 @@ class BoardServiceTest {
     // -- A buddy edit is only as good as the card it was proposed against -------------------------
 
     private fun buddyEdit(card: BoardCard, basedOn: String?, request: AuthoredCardRequest) =
-        service.editAuthoredCardForBuddy(hire, project, BoardCardId(card.id), request, basedOn)
+        service.editAuthoredCardForBuddy(HireBoard(hire, project), BoardCardId(card.id), request, basedOn)
 
     private fun secondLineChecklist() = ChecklistCardRequest(
         title = "Getting started",
@@ -1449,8 +1449,7 @@ class BoardServiceTest {
 
         assertFailsWith<ResponseStatusException> {
             service.rewordChecklistItem(
-                hire,
-                project,
+                HireBoard(hire, project),
                 BoardCardId(card.id),
                 "Fix it",
                 "Fix the redirect",
@@ -1532,8 +1531,7 @@ class BoardServiceTest {
         onBoard(card, board)
 
         val reworded = service.rewordChecklistItem(
-            hire,
-            project,
+            HireBoard(hire, project),
             BoardCardId(card.id),
             before = " run IT locally",
             after = "Run it locally with the seed data",
@@ -1560,8 +1558,7 @@ class BoardServiceTest {
         onBoard(card, board)
 
         val reworded = service.rewordChecklistItem(
-            hire,
-            project,
+            HireBoard(hire, project),
             BoardCardId(card.id),
             "Fix it",
             "Fix the redirect",
@@ -1596,7 +1593,7 @@ class BoardServiceTest {
         val saved = slot<BoardCard>()
         every { boardCardRepository.save(capture(saved)) } answers { firstArg() }
 
-        service.place(hire, project, BoardCardKind.CURRENT_TASK)
+        service.place(HireBoard(hire, project), BoardCardKind.CURRENT_TASK)
 
         assertEquals(BoardCardChange.CREATED, saved.captured.lastChange)
         assertEquals(BoardActor.BUDDY, saved.captured.lastChangedBy)
@@ -1672,8 +1669,7 @@ class BoardServiceTest {
         onBoard(card, board)
 
         service.editAuthoredCardForBuddy(
-            hire,
-            project,
+            HireBoard(hire, project),
             BoardCardId(card.id),
             NoteCardRequest(text = "Deploys run on Tuesdays"),
             versionOf(card),
@@ -1697,8 +1693,7 @@ class BoardServiceTest {
         onBoard(card, board)
 
         service.editAuthoredCardForBuddy(
-            hire,
-            project,
+            HireBoard(hire, project),
             BoardCardId(card.id),
             ChecklistCardRequest(
                 title = "First week",
@@ -1728,8 +1723,7 @@ class BoardServiceTest {
 
         assertFailsWith<ResponseStatusException> {
             service.editAuthoredCardForBuddy(
-                hire,
-                project,
+                HireBoard(hire, project),
                 BoardCardId(card.id),
                 LinkCardRequest(url = "https://example.com"),
                 versionOf(card),

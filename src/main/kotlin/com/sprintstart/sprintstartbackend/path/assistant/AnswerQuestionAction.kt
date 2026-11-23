@@ -92,54 +92,64 @@ class AnswerQuestionAction(
             ).ifEmpty { listOf(answer) }
             .filter { it.isNotBlank() }
 
-        val refusal = when {
-            (if (isChoice) picks.isEmpty() else answer.isBlank()) ->
-                "No answer was provided. This has to be the hire's own answer in their own words — " +
-                    "ask them what they want to send, and never answer it for them."
-            question.status == QuestionStatus.PASSED ->
-                "They have already passed “${question.question}”, so there is nothing to send. Tell " +
-                    "them it is behind them."
-            question.status == QuestionStatus.LOCKED ->
-                "“${question.question}” is locked: something it waits on is not finished yet. Say " +
-                    "what it is waiting on rather than offering to answer it."
-            else -> null
-        }
-        if (refusal != null) return notProposed(refusal)
+        refusalFor(question, isChoice, picks, answer)?.let { return notProposed(it) }
 
-        val chosen = if (isChoice) {
-            val matched = picks
-                .map { pick ->
-                    matchOption(question, pick)
-                        ?: return notProposed(
-                            "“$pick” does not match exactly one of the options for that question. The " +
-                                "options are: ${question.options.joinToString("; ") { it.label }}. Ask the " +
-                                "hire which of them they mean and pass that back — if they picked more than " +
-                                "one, pass each as its own entry in selected_options.",
-                        )
-                }.toSet()
-            // In the question's own order, so the button reads the way the options are listed.
-            question.options.filter { it in matched }
-        } else {
-            emptyList()
-        }
-        val shown = if (isChoice) shownChoice(chosen) else answer
+        val unmatched = if (isChoice) picks.firstOrNull { matchOption(question, it) == null } else null
+        if (unmatched != null) return notProposed(noMatch(question, unmatched))
 
-        return HireActionOutcome(
-            toolResult = "Proposed to the hire: send “$shown” as their answer to " +
-                "“${question.question}”. They see a confirm button showing that answer, and nothing " +
-                "is recorded unless they click it. An attempt is kept whether it is right or not, so " +
-                "make sure it is the answer they meant — and do not tell them whether it is correct, " +
-                "because you have not been told either.",
-            proposal = HireActionProposal(
-                action = ANSWER_QUESTION,
-                label = "Send this answer: “${shown.take(ANSWER_LABEL_LIMIT)}”",
-                question = null,
-                questionId = question.id,
-                answer = shown,
-                optionIds = chosen.map { it.id },
-            ),
-        )
+        val chosen = if (isChoice) chosenIn(question, picks) else emptyList()
+        return offerOf(question, if (isChoice) shownChoice(chosen) else answer, chosen)
     }
+
+    private fun offerOf(
+        question: GetOnboardingQuestionForUserResponse,
+        shown: String,
+        chosen: List<QuestionOptionForUserResponse>,
+    ) = HireActionOutcome(
+        toolResult = "Proposed to the hire: send “$shown” as their answer to " +
+            "“${question.question}”. They see a confirm button showing that answer, and nothing " +
+            "is recorded unless they click it. An attempt is kept whether it is right or not, so " +
+            "make sure it is the answer they meant — and do not tell them whether it is correct, " +
+            "because you have not been told either.",
+        proposal = HireActionProposal(
+            action = ANSWER_QUESTION,
+            label = "Send this answer: “${shown.take(ANSWER_LABEL_LIMIT)}”",
+            question = null,
+            questionId = question.id,
+            answer = shown,
+            optionIds = chosen.map { it.id },
+        ),
+    )
+
+    private fun refusalFor(
+        question: GetOnboardingQuestionForUserResponse,
+        isChoice: Boolean,
+        picks: List<String>,
+        answer: String,
+    ): String? = when {
+        (if (isChoice) picks.isEmpty() else answer.isBlank()) ->
+            "No answer was provided. This has to be the hire's own answer in their own words — " +
+                "ask them what they want to send, and never answer it for them."
+        question.status == QuestionStatus.PASSED ->
+            "They have already passed “${question.question}”, so there is nothing to send. Tell " +
+                "them it is behind them."
+        question.status == QuestionStatus.LOCKED ->
+            "“${question.question}” is locked: something it waits on is not finished yet. Say " +
+                "what it is waiting on rather than offering to answer it."
+        else -> null
+    }
+
+    /** The options the picks stand for, in the question's own order so the button reads the way they are listed. */
+    private fun chosenIn(question: GetOnboardingQuestionForUserResponse, picks: List<String>) =
+        picks.mapNotNull { matchOption(question, it) }.toSet().let { matched ->
+            question.options.filter { it in matched }
+        }
+
+    private fun noMatch(question: GetOnboardingQuestionForUserResponse, pick: String): String =
+        "“$pick” does not match exactly one of the options for that question. The " +
+            "options are: ${question.options.joinToString("; ") { it.label }}. Ask the " +
+            "hire which of them they mean and pass that back — if they picked more than " +
+            "one, pass each as its own entry in selected_options."
 
     /**
      * Records the confirmed answer, and relays what came back.
@@ -163,36 +173,13 @@ class AnswerQuestionAction(
         val question = myPathTool.findQuestion(userId.value, questionId)
             ?: return BuddyActionResponse(ok = false, message = "That question isn't on your path.")
 
-        // Checked again at confirm time, for the same reason completing a step checks its lock: the
-        // attempt route grades whatever it is sent, and a button left in the conversation can be
-        // clicked after the hire already passed the question on their page. A second attempt there
-        // would be kept for no reason, and a wrong one would read as having lost the pass.
-        when (question.status) {
-            QuestionStatus.PASSED ->
-                return BuddyActionResponse(ok = false, message = "You've already passed that one — nothing was sent.")
-            QuestionStatus.LOCKED ->
-                return BuddyActionResponse(
-                    ok = false,
-                    message = "That question is locked right now — something it waits on isn't finished yet.",
-                )
-            else -> Unit
-        }
+        stateRefusal(question)?.let { return BuddyActionResponse(ok = false, message = it) }
 
-        val submission = if (question.type == CheckQuestionType.MULTIPLE_CHOICE) {
-            // The options the button stood for, still there and still reading the way it showed
-            // them. Anything else is a proposal about a question that has since changed.
-            val byId = question.options.associateBy { it.id }
-            val chosen = request.optionIds.mapNotNull { byId[it] }
-            if (chosen.isEmpty() || chosen.size != request.optionIds.size || shownChoice(chosen) != answer) {
-                return BuddyActionResponse(
-                    ok = false,
-                    message = "That question changed since this was suggested, so nothing was sent — ask me again.",
-                )
-            }
-            SubmitQuestionAttemptRequest(selectedOptionIds = chosen.map { it.id }.distinct())
-        } else {
-            SubmitQuestionAttemptRequest(textAnswer = answer)
-        }
+        val submission = submissionFor(question, request, answer)
+            ?: return BuddyActionResponse(
+                ok = false,
+                message = "That question changed since this was suggested, so nothing was sent — ask me again.",
+            )
 
         val result = hirePathActionsApi.answerCheck(authId, CheckQuestionId(questionId), submission)
         // The submit response is the one user-facing place correct answers are revealed, and the
@@ -207,6 +194,42 @@ class AnswerQuestionAction(
                 "Not quite. It stays open, so you can try again whenever you like. $learning".trim()
             },
         )
+    }
+
+    /**
+     * Why a confirmed answer must not be sent, or null.
+     *
+     * Checked again at confirm time, for the same reason completing a step checks its lock: the
+     * attempt route grades whatever it is sent, and a button left in the conversation can be
+     * clicked after the hire already passed the question on their page. A second attempt there
+     * would be kept for no reason, and a wrong one would read as having lost the pass.
+     */
+    private fun stateRefusal(question: GetOnboardingQuestionForUserResponse): String? = when (question.status) {
+        QuestionStatus.PASSED -> "You've already passed that one — nothing was sent."
+        QuestionStatus.LOCKED -> "That question is locked right now — something it waits on isn't finished yet."
+        else -> null
+    }
+
+    /**
+     * The attempt the confirmed proposal stands for, or null when the question changed under it.
+     *
+     * For multiple choice these are the options the button stood for, still there and still reading
+     * the way it showed them. Anything else is a proposal about a question that has since changed.
+     */
+    private fun submissionFor(
+        question: GetOnboardingQuestionForUserResponse,
+        request: HireActionRequest,
+        answer: String,
+    ): SubmitQuestionAttemptRequest? {
+        if (question.type != CheckQuestionType.MULTIPLE_CHOICE) {
+            return SubmitQuestionAttemptRequest(textAnswer = answer)
+        }
+        val byId = question.options.associateBy { it.id }
+        val chosen = request.optionIds.mapNotNull { byId[it] }
+        if (chosen.isEmpty() || chosen.size != request.optionIds.size || shownChoice(chosen) != answer) {
+            return null
+        }
+        return SubmitQuestionAttemptRequest(selectedOptionIds = chosen.map { it.id }.distinct())
     }
 
     /**
@@ -233,8 +256,7 @@ class AnswerQuestionAction(
         val labelContains = question.options.filter { it.label.contains(needle, ignoreCase = true) }
         if (labelContains.size == 1) return labelContains.single()
 
-        val answerContains = question.options.filter { needle.contains(it.label.trim(), ignoreCase = true) }
-        return answerContains.singleOrNull()
+        return question.options.singleOrNull { needle.contains(it.label.trim(), ignoreCase = true) }
     }
 
     /** What the confirm button shows for a set of options, and what the confirm checks it against. */

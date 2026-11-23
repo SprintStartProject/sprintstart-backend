@@ -46,6 +46,95 @@ class IngestionRunLifeCycleServiceTest {
     }
 
     @Test
+    fun `startOrUpdateRun stores the source instance and finish time of a new failed run`() {
+        val transactionId = UUID.randomUUID()
+        val instance = UUID.randomUUID()
+        every { ingestionRunRepository.findById(transactionId) } returns Optional.empty()
+        val saved = slot<IngestionRun>()
+        every { ingestionRunRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.startOrUpdateRun(
+            transactionId,
+            SourceSystem.GITHUB,
+            IngestionRunStatus.FAILED,
+            failureReason = "boom",
+            sourceInstanceId = instance,
+            sourceInstanceRef = "acme/app",
+        )
+
+        assertThat(saved.captured.id).isEqualTo(transactionId)
+        assertThat(saved.captured.sourceInstanceId).isEqualTo(instance)
+        assertThat(saved.captured.sourceInstanceRef).isEqualTo("acme/app")
+        assertThat(saved.captured.failureReason).isEqualTo("boom")
+        assertThat(saved.captured.finishedAt).isNotNull()
+    }
+
+    @Test
+    fun `startOrUpdateRun leaves a new running run unfinished`() {
+        val transactionId = UUID.randomUUID()
+        every { ingestionRunRepository.findById(transactionId) } returns Optional.empty()
+        val saved = slot<IngestionRun>()
+        every { ingestionRunRepository.save(capture(saved)) } answers { firstArg() }
+
+        service.startOrUpdateRun(transactionId, SourceSystem.GITHUB, IngestionRunStatus.RUNNING)
+
+        assertThat(saved.captured.finishedAt).isNull()
+    }
+
+    @Test
+    fun `startOrUpdateRun updates an existing run without saving a second row`() {
+        val existing = run()
+        every { ingestionRunRepository.findById(existing.id) } returns Optional.of(existing)
+
+        service.startOrUpdateRun(existing.id, SourceSystem.GITHUB, IngestionRunStatus.FAILED, "late failure")
+
+        assertThat(existing.status).isEqualTo(IngestionRunStatus.FAILED)
+        assertThat(existing.failureReason).isEqualTo("late failure")
+        assertThat(existing.finishedAt).isNotNull()
+        assertThat(existing.aiSyncStatus).isEqualTo(AiSyncStatus.NOT_APPLICABLE)
+        verify(exactly = 0) { ingestionRunRepository.save(any()) }
+    }
+
+    @Test
+    fun `startOrUpdateRun clears the finish time when an existing run restarts`() {
+        val existing = run().also { it.finishedAt = java.time.Instant.now() }
+        every { ingestionRunRepository.findById(existing.id) } returns Optional.of(existing)
+
+        service.startOrUpdateRun(existing.id, SourceSystem.GITHUB, IngestionRunStatus.RUNNING)
+
+        assertThat(existing.finishedAt).isNull()
+        assertThat(existing.aiSyncStatus).isEqualTo(AiSyncStatus.PENDING)
+    }
+
+    @Test
+    fun `startOrUpdateRun fills a missing source instance but never overwrites a known one`() {
+        val known = UUID.randomUUID()
+        val withInstance = run().also {
+            it.sourceInstanceId = known
+            it.sourceInstanceRef = "acme/app"
+        }
+        val withoutInstance = run()
+        every { ingestionRunRepository.findById(withInstance.id) } returns Optional.of(withInstance)
+        every { ingestionRunRepository.findById(withoutInstance.id) } returns Optional.of(withoutInstance)
+        val other = UUID.randomUUID()
+
+        listOf(withInstance, withoutInstance).forEach { target ->
+            service.startOrUpdateRun(
+                target.id,
+                SourceSystem.GITHUB,
+                IngestionRunStatus.RUNNING,
+                sourceInstanceId = other,
+                sourceInstanceRef = "x/y",
+            )
+        }
+
+        assertThat(withInstance.sourceInstanceId).isEqualTo(known)
+        assertThat(withInstance.sourceInstanceRef).isEqualTo("acme/app")
+        assertThat(withoutInstance.sourceInstanceId).isEqualTo(other)
+        assertThat(withoutInstance.sourceInstanceRef).isEqualTo("x/y")
+    }
+
+    @Test
     fun `markAiSyncSucceeded records success on the matching run`() {
         val run = run()
         every { ingestionRunRepository.findById(run.id) } returns Optional.of(run)

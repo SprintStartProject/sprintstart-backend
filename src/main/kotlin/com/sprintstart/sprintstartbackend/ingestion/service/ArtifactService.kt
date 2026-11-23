@@ -57,26 +57,34 @@ class ArtifactService(
                 "This artifact does not belong to project with id $projectId.",
             )
         }
-        artifact.content?.let {
-            val bytes = if (artifact.mime?.startsWith("image/") == true || artifact.mime == "application/pdf") {
-                Base64.getDecoder().decode(it)
-            } else {
-                it.toByteArray(Charsets.UTF_8)
-            }
-            return ArtifactContentResponse(
-                content = bytes,
-                mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
-            )
-        }
+        storedContent(artifact)?.let { return it }
+        externalContent(artifact)?.let { return it }
 
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact content not found")
+    }
+
+    /** The content the ingestion run stored on the artifact itself, decoded when it is binary. */
+    private fun storedContent(artifact: Artifact): ArtifactContentResult? {
+        val content = artifact.content ?: return null
+        val bytes = if (artifact.mime?.startsWith("image/") == true || artifact.mime == "application/pdf") {
+            Base64.getDecoder().decode(content)
+        } else {
+            content.toByteArray(Charsets.UTF_8)
+        }
+        return ArtifactContentResponse(
+            content = bytes,
+            mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
+        )
+    }
+
+    /** The content of an artifact that stored none: an upload's file, or its page at the source. */
+    private fun externalContent(artifact: Artifact): ArtifactContentResult? =
         when (artifact.sourceSystem) {
-            SourceSystem.UPLOAD -> {
-                readUploadedBytes(artifact)?.let {
-                    return ArtifactContentResponse(
-                        content = it,
-                        mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
-                    )
-                }
+            SourceSystem.UPLOAD -> readUploadedBytes(artifact)?.let {
+                ArtifactContentResponse(
+                    content = it,
+                    mime = artifact.mime ?: MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                )
             }
 
             SourceSystem.GITHUB,
@@ -84,15 +92,8 @@ class ArtifactService(
             SourceSystem.JIRA,
             SourceSystem.CONFLUENCE,
             SourceSystem.NOTION,
-            -> {
-                artifact.sourceUrl?.let {
-                    return ArtifactContentRedirectResponse(it)
-                }
-            }
+            -> artifact.sourceUrl?.let { ArtifactContentRedirectResponse(it) }
         }
-
-        throw ResponseStatusException(HttpStatus.NOT_FOUND, "Artifact content not found")
-    }
 
     /**
      * Reads the uploaded bytes associated with the provided artifact.

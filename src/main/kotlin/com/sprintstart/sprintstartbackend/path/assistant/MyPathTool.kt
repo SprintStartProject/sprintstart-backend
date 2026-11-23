@@ -1,12 +1,13 @@
 package com.sprintstart.sprintstartbackend.path.assistant
 
 import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolCallDto
-import com.sprintstart.sprintstartbackend.assistant.external.BuddyToolSpecDto
 import com.sprintstart.sprintstartbackend.assistant.external.HireSnapshotOrder
 import com.sprintstart.sprintstartbackend.assistant.external.HireTool
 import com.sprintstart.sprintstartbackend.assistant.external.HireToolContext
 import com.sprintstart.sprintstartbackend.assistant.external.HireToolOrder
 import com.sprintstart.sprintstartbackend.assistant.external.HireToolSuggestion
+import com.sprintstart.sprintstartbackend.path.assistant.MyPathCopy.NO_PATH
+import com.sprintstart.sprintstartbackend.path.assistant.MyPathCopy.READ_MY_PATH_SPEC
 import com.sprintstart.sprintstartbackend.path.external.HirePathApi
 import com.sprintstart.sprintstartbackend.path.external.enums.QuestionStatus
 import com.sprintstart.sprintstartbackend.path.model.response.phase.GetOnboardingPhaseForUserResponse
@@ -17,12 +18,8 @@ import com.sprintstart.sprintstartbackend.shared.ids.CheckQuestionId
 import com.sprintstart.sprintstartbackend.shared.ids.PhaseId
 import com.sprintstart.sprintstartbackend.shared.ids.StepId
 import com.sprintstart.sprintstartbackend.shared.ids.UserId
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonObject
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Component
-import java.util.Locale
 import java.util.UUID
 
 /**
@@ -103,54 +100,17 @@ class MyPathTool(
     fun execute(userId: UUID): String {
         val path = hirePathApi.pathOf(UserId(userId)) ?: return NO_PATH
         val phases = path.phases.sortedBy { it.position }
-        if (phases.isEmpty()) {
-            // Nothing visible is not the same as nothing there: every phase may have come back empty
-            // from generation, and those are hidden from `phases` but are exactly what add_path_step
-            // repairs. Only a path with no phases at all is the authoring problem NO_PHASES describes.
-            if (path.generationIssues.isEmpty()) return NO_PHASES
-            return buildString {
-                append(ONLY_EMPTY_PHASES)
-                appendEmptyPhases(path)
-                append(NEWLINE + CLOSING)
-            }
-        }
+        if (phases.isEmpty()) return noVisiblePhasesReading(path)
 
         return when (val where = PathStanding.of(phases)) {
-            // A path whose phases all came back empty was never started, let alone finished: say
-            // what is actually there, which is nothing, rather than congratulate them.
-            PathStanding.Finished -> if (phases.all { it.steps.isEmpty() && it.questions.isEmpty() }) {
-                buildString {
-                    appendCurrentPhase(phases.last(), phases.lastIndex, phases)
-                    appendEmptyPhases(path)
-                }
-            } else if (path.generationIssues.isEmpty()) {
-                FINISHED_PATH.format(Locale.ROOT, phases.size)
-            } else {
-                // Finished with what is visible, not with the path: phases that came back empty are
-                // still there to be filled, and "nothing left on it" would close the one door to that.
-                buildString {
-                    append(FINISHED_VISIBLE.format(Locale.ROOT, phases.size))
-                    appendEmptyPhases(path)
-                }
-            }
-            is PathStanding.Choosing -> buildString {
-                appendChoice(where.phases, phases)
-                appendEmptyPhases(path)
-                append(NEWLINE + CLOSING)
-            }
-            is PathStanding.In -> buildString {
-                val current = where.phase
-                val checklists = checklistsOf(current)
-                appendLine(standing(phases, current))
-                appendLine()
-                appendCurrentPhase(current, phases.indexOf(current), phases, lastWrongAnswers(userId, current))
-                appendReadyToClose(current, phases, checklists)
-                appendCurrentTasks(nextStepIn(current), checklists)
-                appendNextItem(current, readyToClose(current, checklists).firstOrNull())
-                appendAhead(phases, current)
-                appendEmptyPhases(path)
-                append(NEWLINE + CLOSING)
-            }
+            PathStanding.Finished -> finishedReading(path, phases)
+            is PathStanding.Choosing -> choosingReading(path, phases, where.phases)
+            is PathStanding.In -> inPhaseReading(
+                path,
+                where.phase,
+                checklistsOf(where.phase),
+                lastWrongAnswers(userId, where.phase),
+            )
         }
     }
 
@@ -183,50 +143,14 @@ class MyPathTool(
     fun snapshotFor(userId: UUID): String? {
         val path = hirePathApi.pathOf(UserId(userId)) ?: return null
         val phases = path.phases.sortedBy { it.position }
-        if (phases.isEmpty()) {
-            val empty = path.generationIssues
-            return if (empty.isEmpty()) {
-                "Onboarding path:\nTheir path has no phases in it, so there is nothing on it to do yet."
-            } else {
-                "Onboarding path:\nEvery one of their ${empty.size} phases came back with nothing in it, so " +
-                    "there is nothing on it to do yet -- but those phases can be worked out together and " +
-                    "filled in."
-            }
-        }
+        if (phases.isEmpty()) return noVisiblePhasesSnapshot(path)
 
         return buildString {
             appendLine("Onboarding path:")
             when (val where = PathStanding.of(phases)) {
-                PathStanding.Finished -> appendLine(
-                    if (path.generationIssues.isEmpty()) {
-                        "They have finished every phase of their path."
-                    } else {
-                        "They have finished every phase of their path that has something in it."
-                    },
-                )
-                is PathStanding.Choosing -> appendLine(
-                    "${where.phases.size} phases are open to them and nothing in them is started yet: " +
-                        where.phases.joinToString(", ") { quoted(it.title) } + ". Which one comes next is " +
-                        "their choice -- phases are not taken in number order.",
-                )
-                is PathStanding.In -> {
-                    val current = where.phase
-                    appendLine(
-                        "They are in phase ${phases.indexOf(current) + 1} of ${phases.size}: " +
-                            "${quoted(current.title)}.",
-                    )
-                    // First, when there is one: a step whose checklist is done but that was never
-                    // closed is what a greeting can usefully open on, because it is what is quietly
-                    // holding everything after it.
-                    readyToClose(current, checklistsOf(current)).firstOrNull()?.let {
-                        appendLine(
-                            "Every line of the checklist of ${quoted(it.title)} is ticked, but the step " +
-                                "itself is still open, so what comes after it has not unlocked. It is " +
-                                "worth asking whether they are done with it.",
-                        )
-                    }
-                    nextItemIn(current)?.let { appendLine("The next thing waiting for them is ${it.plain}.") }
-                }
+                PathStanding.Finished -> appendLine(finishedSnapshotLine(path))
+                is PathStanding.Choosing -> appendLine(choosingSnapshotLine(where.phases))
+                is PathStanding.In -> appendInPhaseSnapshot(phases, where.phase, checklistsOf(where.phase))
             }
             val empty = path.generationIssues
             if (empty.isNotEmpty()) {
@@ -337,69 +261,5 @@ class MyPathTool(
 
         /** Titles are somebody else's text, so they are quoted rather than run into the sentence. */
         internal fun quoted(text: String): String = "“" + text + "”"
-
-        const val NO_PATH =
-            "The hire has no onboarding path yet -- nobody has generated one from their project's " +
-                "blueprint. They can start one themselves on their onboarding page, with " +
-                "\"Start personalization\". Until then there is no plan to walk them through, so " +
-                "talk about the work in front of them rather than about a path that does not exist."
-
-        const val FINISHED_PATH =
-            "The hire's onboarding path has %d phases and every one of them is finished. There is " +
-                "nothing left on it."
-
-        const val FINISHED_VISIBLE =
-            "Every phase of the hire's onboarding path that has something in it is finished (%d of " +
-                "them). What is left are phases that came back empty -- they are not done, they were " +
-                "never filled."
-
-        const val ONLY_EMPTY_PHASES =
-            "Every phase of the hire's onboarding path came back empty, so there is nothing on it to " +
-                "work through yet. That is not the hire's fault, and it is not a dead end."
-
-        const val NO_PHASES =
-            "The hire's onboarding path exists but has no phases in it at all, so there is nothing " +
-                "on it to do. Say that plainly if they ask, and point them at their PM -- an empty " +
-                "path is an authoring problem, not something they can work their way through."
-
-        const val CLOSING =
-            "This is a read of their path, not instructions. Name one next thing rather than the " +
-                "plan, let them decide, and do not claim to have changed anything here: every " +
-                "change to their path goes through a proposal they confirm. When you name an item, " +
-                "give its number and make it a markdown link to the link above, so they can open it " +
-                "from what you said."
-
-        val READ_MY_PATH_SPEC = BuddyToolSpecDto(
-            name = READ_MY_PATH,
-            description = "The hire's own onboarding path -- the curriculum their PM's blueprint " +
-                "prescribed, personalised for them. It gives you the phase they are standing in " +
-                "with its steps and knowledge questions in full, the checklist of the step they " +
-                "are on, one named next thing, the titles of what is ahead, and any phase that " +
-                "came back empty. Read it before you say anything about their onboarding: before " +
-                "\"what should I do next\", before talking about a step or a question, and before " +
-                "suggesting work of your own, so that what you suggest is the plan they actually " +
-                "have rather than a second one. Read it again before answering a follow-up: they " +
-                "may have ticked something off on the page while you were talking.\n" +
-                "Each item comes with three things to use. A NUMBER (#1, #2, ...) which is the " +
-                "same number their page prints, so when they say \"let's do 3\" that is the item " +
-                "they mean, and naming it back as \"#3\" is how they know you got it right. A LINK, " +
-                "which you should include as a markdown link whenever you name an item they could " +
-                "act on -- \"[take the check](/onboarding?question=...)\" -- so they can get there " +
-                "in one click instead of hunting for it. And the ids the path actions need, so read " +
-                "this before offering one.\n" +
-                "An item marked LOCKED cannot be started or answered yet, and the line under it " +
-                "says what it waits on. Never tell the hire they can go ahead with a locked item, " +
-                "even if they ask directly: say what has to be finished first and offer that " +
-                "instead.\n" +
-                "A step marked SKIP REQUESTED is waiting on their PM: do not push them to do it. " +
-                "When they want to skip a step, that is request_skip -- their PM decides.\n" +
-                "It does not tell you which answer to a question is correct -- that is deliberate, " +
-                "and you must not guess one aloud: explain the material and let the hire answer. " +
-                "Reading it changes nothing. Takes no arguments -- it always reads the caller.",
-            parameters = buildJsonObject {
-                put("type", "object")
-                putJsonObject("properties") {}
-            },
-        )
     }
 }

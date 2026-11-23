@@ -8,6 +8,7 @@ import com.sprintstart.sprintstartbackend.starterwork.external.enums.CandidatePo
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.ProposalStatus
 import com.sprintstart.sprintstartbackend.starterwork.external.enums.TaskType
 import com.sprintstart.sprintstartbackend.starterwork.external.model.PoolReconciliation
+import com.sprintstart.sprintstartbackend.starterwork.model.response.goal.GoalView
 import com.sprintstart.sprintstartbackend.starterwork.model.response.starterwork.GenerateStarterWorkResponse
 import com.sprintstart.sprintstartbackend.starterwork.model.response.starterwork.RankedStarterWorkTaskResponse
 import com.sprintstart.sprintstartbackend.starterwork.model.response.starterwork.StarterWorkCandidateResponse
@@ -19,6 +20,9 @@ import com.sprintstart.sprintstartbackend.starterwork.service.UserGoalService
 import com.sprintstart.sprintstartbackend.user.external.security.ProjectAuthorization
 import io.mockk.coEvery
 import io.mockk.every
+import io.mockk.just
+import io.mockk.runs
+import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -34,6 +38,7 @@ import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequ
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -43,7 +48,7 @@ import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.test.assertTrue
 
-@WebMvcTest(StarterWorkController::class)
+@WebMvcTest(StarterWorkController::class, MyStarterWorkController::class)
 @Import(SecurityConfig::class)
 @AutoConfigureMockMvc
 class StarterWorkControllerTest(
@@ -511,5 +516,54 @@ class StarterWorkControllerTest(
         mockMvc
             .perform(post("/api/v1/onboarding/starter-work/reconcile").with(jwtWithRoles("USER")))
             .andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `claimGoalForMe should claim the task for the caller and return the goal`() {
+        every { userGoalService.claimForMe("test-subject", projectId, taskId) } returns
+            GoalView(proposalId = taskId, title = "Fix typo", summary = null, sourceUrl = null)
+
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/me/goal")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("taskId" to taskId))),
+            ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.title").value("Fix typo"))
+    }
+
+    @Test
+    fun `claimGoalForMe should return 403 for a PM`() {
+        mockMvc
+            .perform(
+                post("/api/v1/onboarding/starter-work/me/goal")
+                    .param("projectId", projectId.toString())
+                    .with(pmJwt)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(mapOf("taskId" to taskId))),
+            ).andExpect(status().isForbidden)
+    }
+
+    @Test
+    fun `clearGoalForMe should drop the caller's goal and return 204`() {
+        every { userGoalService.clearForMe("test-subject", projectId) } just runs
+
+        mockMvc
+            .perform(
+                delete("/api/v1/onboarding/starter-work/me/goal")
+                    .param("projectId", projectId.toString())
+                    .with(userJwt),
+            ).andExpect(status().isNoContent)
+
+        verify(exactly = 1) { userGoalService.clearForMe("test-subject", projectId) }
+    }
+
+    @Test
+    fun `clearGoalForMe should return 401 when not authenticated`() {
+        mockMvc
+            .perform(delete("/api/v1/onboarding/starter-work/me/goal").param("projectId", projectId.toString()))
+            .andExpect(status().isUnauthorized)
     }
 }
