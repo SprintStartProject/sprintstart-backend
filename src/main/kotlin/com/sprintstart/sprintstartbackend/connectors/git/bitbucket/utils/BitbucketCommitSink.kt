@@ -33,6 +33,7 @@ internal class BitbucketCommitSink(
                     sha = commit.sha,
                 ),
                 files = commit.files,
+                coAuthorEmails = commit.coAuthorEmails,
             ),
         )
     }

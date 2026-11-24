@@ -11,7 +11,7 @@ class RiskScorerTest {
     private fun departure(
         vararg leaving: String,
         asOf: Instant = NOW,
-        profile: ScoringProfile = ScoringProfile(),
+        profile: WeightProfile = WeightProfile(),
     ) = DepartureQuery(leaving.map(PersonKey::parse).toSet(), asOf, profile)
 
     private fun solo(path: String, email: String, firstAgo: Long = 300, times: Int = 3) =
@@ -53,8 +53,34 @@ class RiskScorerTest {
     }
 
     @Test
+    fun `a file only its leaving author changed is a knowledge island of one`() {
+        val risk = scorer.score(listOf(solo("core.kt", "ada@x.org")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.concentration.effectiveKnowers).isCloseTo(1.0, within(1e-9))
+        assertThat(risk.concentration.island).isEqualTo(PersonKey("ada@x.org"))
+    }
+
+    @Test
+    fun `a file two people maintain about equally is worth almost two knowers and has no island`() {
+        val risk = scorer.score(listOf(pair("util.kt")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.concentration.effectiveKnowers).isBetween(1.5, 2.0)
+        assertThat(risk.concentration.island).isNull()
+    }
+
+    @Test
+    fun `every file at risk says why it is there`() {
+        val risk = scorer.score(listOf(solo("core.kt", "ada@x.org")), departure("ada@x.org")).files.single()
+
+        assertThat(risk.reasons).contains(
+            "Nobody who knows it is left.",
+            "100% of the evidence about it comes from the leaving people.",
+        )
+    }
+
+    @Test
     fun `a file that keeps two or more authors is not at risk`() {
-        val noFading = ScoringProfile(halfLifeDays = 1_000_000.0)
+        val noFading = WeightProfile(halfLifeDays = 1_000_000.0)
         val shared = history(
             "shared.kt",
             *repeated("ada@x.org", 10, 90),
@@ -105,7 +131,7 @@ class RiskScorerTest {
     fun `the inactivity limit decides who still counts as active`() {
         val file = history("legacy.kt", *repeated("old@x.org", 5, 800), *repeated("ada@x.org", 5, 400))
         val adaStaysActive = solo("recent.kt", "ada@x.org", firstAgo = 12)
-        val patient = ScoringProfile(inactiveAfterDays = 3_000)
+        val patient = WeightProfile(inactiveAfterDays = 3_000)
 
         val map = scorer.score(listOf(file, adaStaysActive), departure("ada@x.org", profile = patient))
 
@@ -182,8 +208,8 @@ class RiskScorerTest {
     @Test
     fun `the weights decide how knowledge and activity make up the score`() {
         val files = listOf(solo("busy.kt", "ada@x.org", firstAgo = 30, times = 10), pair("util.kt"))
-        val onlyActivity = ScoringProfile(knowledgeWeight = 0.0, activityWeight = 1.0)
-        val onlyKnowledge = ScoringProfile(knowledgeWeight = 1.0, activityWeight = 0.0)
+        val onlyActivity = WeightProfile(knowledgeWeight = 0.0, activityWeight = 1.0)
+        val onlyKnowledge = WeightProfile(knowledgeWeight = 1.0, activityWeight = 0.0)
 
         val byActivity = scorer.score(files, departure("ada@x.org", profile = onlyActivity))
         val byKnowledge = scorer.score(files, departure("ada@x.org", profile = onlyKnowledge))
@@ -215,7 +241,7 @@ class RiskScorerTest {
 
     @Test
     fun `the map records the settings and the date it was computed with`() {
-        val profile = ScoringProfile(halfLifeDays = 30.0)
+        val profile = WeightProfile(halfLifeDays = 30.0)
 
         val map = scorer.score(emptyList(), departure("ada@x.org", asOf = daysAgo(5), profile = profile))
 

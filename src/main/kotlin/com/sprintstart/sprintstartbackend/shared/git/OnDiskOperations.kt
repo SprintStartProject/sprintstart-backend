@@ -112,6 +112,16 @@ class OnDiskOperations {
     fun gitListFiles() = ProcessBuilder("git", "ls-files", "-z")
 
     /**
+     * Constructs a `git blame` command that says who wrote each line of one file.
+     *
+     * `--line-porcelain` describes every line on its own, so the author of a line never has to be
+     * inferred from the line before it. `-w` ignores whitespace changes, and `-M -C` follow lines that
+     * were moved or copied, so a reformat or a move does not take the lines from their author.
+     */
+    fun gitBlame(relativePath: String) =
+        ProcessBuilder("git", "blame", "--line-porcelain", "-w", "-M", "-C", "--", relativePath)
+
+    /**
      * Constructs a `git log` command that reads commit metadata in [GIT_LOG_FORMAT] together with the
      * files each commit changed.
      *
@@ -189,15 +199,18 @@ class OnDiskOperations {
         }
 
         /**
-         * Record format of [gitLog]: SHA, author name, author email, commit time and subject.
+         * Record format of [gitLog]: SHA, author name, author email, commit time, the `Co-authored-by`
+         * trailers and subject.
          *
          * Each record starts with the ASCII record separator, and its fields are separated by the
          * ASCII unit separator rather than a printable character, because a printable one can occur
-         * inside an author name or a subject and would then split the record. The subject is last and
+         * inside an author name or a subject and would then split the record. The trailers are separated
+         * from each other by the group separator, and unfolded so that none spans lines. The subject is last and
          * single-line, so it cannot truncate a later field; whatever follows it belongs to the file
          * list.
          */
-        const val GIT_LOG_FORMAT = "%x1e%H%x1f%an%x1f%ae%x1f%cI%x1f%s"
+        const val GIT_LOG_FORMAT =
+            "%x1e%H%x1f%an%x1f%ae%x1f%cI%x1f%(trailers:key=Co-authored-by,valueonly,unfold,separator=%x1d)%x1f%s"
 
         /**
          * Sanitizes a command part by masking sensitive information such as user credentials in a URI.

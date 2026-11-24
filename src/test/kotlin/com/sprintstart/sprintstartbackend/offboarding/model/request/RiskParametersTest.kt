@@ -1,7 +1,11 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.request
 
+import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeModel
+import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeSettings
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.Ranking
+import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -25,7 +29,7 @@ class RiskParametersTest {
 
     @Test
     fun `settings that are not given keep their defaults`() {
-        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile).isEqualTo(ScoringProfile())
+        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile).isEqualTo(WeightProfile())
     }
 
     @Test
@@ -38,8 +42,53 @@ class RiskParametersTest {
         ).toRequest()
 
         assertThat(request.profile).isEqualTo(
-            ScoringProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.5),
+            WeightProfile(halfLifeDays = 30.0, inactiveAfterDays = 90, authorThreshold = 0.5),
         )
+    }
+
+    @Test
+    fun `the way knowledge is decided can be chosen by name`() {
+        val request = RiskParameters(
+            leaving = listOf("ada"),
+            knowledge = "time-weighted",
+            knowsAtLeast = 2.0,
+        ).toRequest()
+
+        assertThat(request.profile.knowledge)
+            .isEqualTo(KnowledgeSettings(KnowledgeModel.TIME_WEIGHTED, knowsAtLeast = 2.0))
+    }
+
+    @Test
+    fun `the ranking can be chosen by name and defaults to the departing share`() {
+        assertThat(RiskParameters(leaving = listOf("ada"), ranking = "placeholder").toRequest().profile.ranking)
+            .isEqualTo(Ranking.PLACEHOLDER)
+        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile.ranking)
+            .isEqualTo(Ranking.DEPARTING_SHARE)
+    }
+
+    @Test
+    fun `an unknown ranking is a bad request`() {
+        badRequestFor(RiskParameters(leaving = listOf("ada"), ranking = "luck"))
+    }
+
+    @Test
+    fun `an unknown way of deciding knowledge is a bad request`() {
+        badRequestFor(RiskParameters(leaving = listOf("ada"), knowledge = "guess"))
+        badRequestFor(RiskParameters(leaving = listOf("ada"), knowsAtLeast = 0.0))
+    }
+
+    @Test
+    fun `reviews count only when a weight for them is given`() {
+        val without = RiskParameters(leaving = listOf("ada")).toRequest().profile
+        val with = RiskParameters(leaving = listOf("ada"), reviewWeight = 0.5).toRequest().profile
+
+        assertThat(without.sourceWeights).containsOnlyKeys(SourceId.COMMITS)
+        assertThat(with.sourceWeights).containsEntry(SourceId.COMMITS, 1.0).containsEntry(SourceId.REVIEWS, 0.5)
+    }
+
+    @Test
+    fun `a negative review weight is a bad request`() {
+        badRequestFor(RiskParameters(leaving = listOf("ada"), reviewWeight = -0.1))
     }
 
     @Test

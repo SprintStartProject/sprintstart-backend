@@ -16,9 +16,21 @@ enum class RiskLevel {
  *
  * Every number is a separate, explainable measure, so a reader can see what put the file here.
  *
- * @property departingShare The fraction of the file's changes made by the leaving people, from 0 to 1.
+ * @property departingShare The fraction of the file's evidence that comes from the leaving people, from 0
+ *           to 1: the per-source shares averaged with the profile's weights.
+ * @property sourceBreakdown For each kind of evidence on the file, the leaving people's share of it.
  * @property recentActivity How recently and often the file changes, relative to the busiest file, from 0 to 1.
  * @property fragmentation How spread the changes are across people: 0 for one person, towards 1 for many.
+ * @property concentration How unevenly the knowledge of the file is spread over people.
+ * @property hotspot How complicated and how often changed the file is against the other files, from 0 to 1;
+ *           `null` when its complexity was never measured.
+ * @property abandonedShare The share of the lines of the file written by people who are leaving or are
+ *           inactive, from 0 to 1; `null` when it was never blamed.
+ * @property placeholderScore The provisional score of the team's metric selection, from 0 to 1: knowledge at
+ *           risk scaled by how relevant the file is. It does not decide the order of the ranking.
+ * @property coupling The files that change together with this one.
+ * @property successors People who could take the file over, best first; they know its surroundings.
+ * @property reasons Plain sentences that say why the file is on the map; they name nobody.
  * @property remainingKnowers The authors who stay, at most one.
  * @property lastChangedAt When the file last changed.
  */
@@ -28,10 +40,18 @@ data class FileRisk(
     val level: RiskLevel,
     val score: Double,
     val departingShare: Double,
+    val sourceBreakdown: Map<SourceId, Double>,
     val recentActivity: Double,
     val fragmentation: Double,
+    val concentration: Concentration,
     val remainingKnowers: List<PersonKey>,
     val lastChangedAt: Instant,
+    val coupling: Coupling = Coupling.NONE,
+    val hotspot: Double? = null,
+    val abandonedShare: Double? = null,
+    val placeholderScore: Double = 0.0,
+    val successors: List<Successor> = emptyList(),
+    val reasons: List<String> = emptyList(),
 )
 
 /**
@@ -60,7 +80,7 @@ data class RiskSummary(
  */
 data class RiskMap(
     val asOf: Instant,
-    val profile: ScoringProfile,
+    val profile: WeightProfile,
     val departing: Set<PersonKey>,
     val unknownDeparting: Set<PersonKey>,
     val summary: RiskSummary,
@@ -71,5 +91,5 @@ data class RiskMap(
 data class DepartureQuery(
     val departing: Set<PersonKey>,
     val asOf: Instant,
-    val profile: ScoringProfile = ScoringProfile(),
+    val profile: WeightProfile = WeightProfile(),
 )

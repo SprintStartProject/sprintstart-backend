@@ -21,13 +21,19 @@ internal sealed interface Assessment {
 internal class Assessor(
     private val query: DepartureQuery,
     histories: List<FileHistory>,
+    private val coupling: ChangeCoupling = ChangeCoupling(histories),
+    private val facts: FileFacts = FileFacts(),
 ) {
-    private val authorship = Authorship(query.profile, query.asOf)
+    private val knowledge = Knowledge.of(query.profile, query.asOf)
     private val inactive = inactivePeople(histories)
+    private val successors = SuccessorFinder(histories, coupling, inactive + query.departing)
     private val busiest = histories.maxOfOrNull(::activity) ?: 0.0
+    private val hotspots =
+        Hotspots(histories.associate { FileKey(it.repository, it.path) to activity(it) }, facts.complexities)
+    private val relevance = Relevance(histories, ::activity, hotspots, coupling)
 
     fun assess(history: FileHistory): Assessment {
-        val knowers = authorship.authorsOf(history) - inactive
+        val knowers = knowledge.authorsOf(history) - inactive
         val remaining = knowers - query.departing
         return when {
             knowers.isEmpty() -> Assessment.AlreadyOrphaned
@@ -38,7 +44,21 @@ internal class Assessor(
     }
 
     private fun risk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
-        val share = history.touches.count { it.person in query.departing }.toDouble() / history.touches.size
+        val bare = bareRisk(history, remaining)
+        return bare.copy(reasons = Reasons.of(bare, query.asOf), placeholderScore = placeholderScore(bare, history))
+    }
+
+    private fun placeholderScore(risk: FileRisk, history: FileHistory): Double =
+        PlaceholderScore.of(
+            level = risk.level,
+            abandonedShare = risk.abandonedShare ?: 0.0,
+            effectiveKnowers = risk.concentration.effectiveKnowers,
+            relevance = relevance.of(history),
+        )
+
+    private fun bareRisk(history: FileHistory, remaining: Set<PersonKey>): FileRisk {
+        val breakdown = departingShareBySource(history)
+        val share = weightedShare(breakdown)
         val activity = if (busiest > 0) activity(history) / busiest else 0.0
         return FileRisk(
             repository = history.repository,
@@ -46,14 +66,42 @@ internal class Assessor(
             level = if (remaining.isEmpty()) RiskLevel.ORPHANED else RiskLevel.HOARDED,
             score = query.profile.knowledgeWeight * share + query.profile.activityWeight * activity,
             departingShare = share,
+            sourceBreakdown = breakdown,
             recentActivity = activity,
             fragmentation = fragmentation(history),
+            concentration = Concentration.of(knowledge.knowledgeOf(history)),
+            coupling = coupling.of(history),
+            hotspot = hotspots.of(history),
+            abandonedShare = abandonedShare(history),
+            successors = successors.suggest(history, remaining),
             remainingKnowers = remaining.toList(),
             lastChangedAt = history.touches.last().at,
         )
     }
 
-    private fun activity(history: FileHistory): Double = history.touches.sumOf(authorship::weight)
+    /** The share of the lines of the file written by people who are leaving or are inactive, when blame said. */
+    private fun abandonedShare(history: FileHistory): Double? {
+        val lines = facts.authorship[FileKey(history.repository, history.path)].orEmpty()
+        val total = lines.values.sum()
+        if (total == 0) return null
+        return lines
+            .filterKeys { it in query.departing || it in inactive }
+            .values
+            .sum()
+            .toDouble() / total
+    }
+
+    private fun departingShareBySource(history: FileHistory): Map<SourceId, Double> =
+        history.touches.groupBy { it.source }.mapValues { (_, touches) ->
+            touches.count { it.person in query.departing }.toDouble() / touches.size
+        }
+
+    private fun weightedShare(breakdown: Map<SourceId, Double>): Double {
+        val weights = breakdown.keys.associateWith { query.profile.weightOf(it) }
+        return breakdown.entries.sumOf { (source, share) -> weights.getValue(source) * share } / weights.values.sum()
+    }
+
+    private fun activity(history: FileHistory): Double = history.touches.sumOf(knowledge::weight)
 
     private fun fragmentation(history: FileHistory): Double {
         val shares = history.touches

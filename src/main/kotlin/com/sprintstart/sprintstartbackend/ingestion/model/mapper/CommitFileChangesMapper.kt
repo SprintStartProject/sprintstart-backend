@@ -38,6 +38,7 @@ class CommitFileChangesMapper {
             authorEmail = event.authorEmail,
             changedAt = event.date,
             files = event.files,
+            coAuthorEmails = event.coAuthorEmails,
         )
 
     /**
@@ -58,5 +59,6 @@ class CommitFileChangesMapper {
             authorEmail = event.authorEmail,
             changedAt = event.committedAt,
             files = event.files,
+            coAuthorEmails = event.coAuthorEmails,
         )
 }

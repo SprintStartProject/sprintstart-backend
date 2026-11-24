@@ -1,12 +1,17 @@
 package com.sprintstart.sprintstartbackend.offboarding.model.mapper
 
+import com.sprintstart.sprintstartbackend.offboarding.model.response.ConcentrationResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.CoupledFileResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.CouplingResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.FileRiskResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.KnowledgeResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskMapResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSettingsResponse
 import com.sprintstart.sprintstartbackend.offboarding.model.response.RiskSummaryResponse
+import com.sprintstart.sprintstartbackend.offboarding.model.response.SuccessorResponse
 import com.sprintstart.sprintstartbackend.offboarding.scoring.FileRisk
 import com.sprintstart.sprintstartbackend.offboarding.scoring.RiskMap
-import com.sprintstart.sprintstartbackend.offboarding.scoring.ScoringProfile
+import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import kotlin.math.round
 
 private const val THOUSAND = 1000.0
@@ -30,12 +35,24 @@ fun RiskMap.toResponse(limit: Int): RiskMapResponse {
     )
 }
 
-private fun ScoringProfile.toResponse() = RiskSettingsResponse(
+private fun WeightProfile.toResponse() = RiskSettingsResponse(
     halfLifeDays = halfLifeDays,
     inactiveAfterDays = inactiveAfterDays,
     authorThreshold = authorThreshold,
     knowledgeWeight = knowledgeWeight,
     activityWeight = activityWeight,
+    name = name,
+    sourceWeights = sourceWeights.mapKeys { it.key.value }.toSortedMap(),
+    knowledge = KnowledgeResponse(
+        model = knowledge.model.name
+            .lowercase()
+            .replace('_', '-'),
+        knowsAtLeast = knowledge.knowsAtLeast,
+        foundingBonus = knowledge.foundingBonus,
+    ),
+    ranking = ranking.name
+        .lowercase()
+        .replace('_', '-'),
 )
 
 private fun FileRisk.toResponse() = FileRiskResponse(
@@ -44,8 +61,19 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     level = level.name,
     score = rounded(score),
     departingShare = rounded(departingShare),
+    sourceBreakdown = sourceBreakdown.mapKeys { it.key.value }.mapValues { rounded(it.value) }.toSortedMap(),
     recentActivity = rounded(recentActivity),
     fragmentation = rounded(fragmentation),
+    reasons = reasons,
+    hotspot = hotspot?.let(::rounded),
+    abandonedShare = abandonedShare?.let(::rounded),
+    placeholderScore = rounded(placeholderScore),
+    successors = successors.map { SuccessorResponse(it.person.value, rounded(it.score)) },
+    coupling = CouplingResponse(
+        sum = rounded(coupling.sum),
+        partners = coupling.partners.map { CoupledFileResponse(it.repository, it.path, rounded(it.degree)) },
+    ),
+    concentration = ConcentrationResponse(rounded(concentration.effectiveKnowers), concentration.island?.value),
     remainingKnowers = remainingKnowers.map { it.value },
     lastChangedAt = lastChangedAt,
 )

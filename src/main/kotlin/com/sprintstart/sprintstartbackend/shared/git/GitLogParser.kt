@@ -42,6 +42,7 @@ internal class GitLogParser(
             committedAt = header.committedAt,
             subject = header.subject,
             files = files,
+            coAuthorEmails = coAuthors(header),
         )
     }
 
@@ -53,8 +54,22 @@ internal class GitLogParser(
         if (sha.isEmpty()) return null
         val committedAt = runCatching { Instant.parse(fields[COMMITTED_AT].trim()) }.getOrNull() ?: return null
 
-        return Header(sha, fields[AUTHOR_NAME], fields[AUTHOR_EMAIL], committedAt, fields[SUBJECT])
+        return Header(sha, fields[AUTHOR_NAME], fields[AUTHOR_EMAIL], committedAt, fields[TRAILERS], fields[SUBJECT])
     }
+
+    /** The emails in the `Co-authored-by` trailers, except the one of the author, each once. */
+    private fun coAuthors(header: Header): List<String> =
+        header.trailers
+            .split(TRAILER_SEPARATOR)
+            .mapNotNull {
+                EMAIL_PATTERN
+                    .find(it)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.trim()
+                    ?.lowercase()
+            }.filter { it.isNotEmpty() && it != header.authorEmail.trim().lowercase() }
+            .distinct()
 
     private fun parseEntries(tokens: List<String>): List<CommitFile> {
         val files = mutableListOf<CommitFile>()
@@ -92,6 +107,7 @@ internal class GitLogParser(
         val authorName: String,
         val authorEmail: String,
         val committedAt: Instant,
+        val trailers: String,
         val subject: String,
     )
 
@@ -104,12 +120,17 @@ internal class GitLogParser(
         const val RECORD_SEPARATOR = '\u001E'
         const val FIELD_SEPARATOR = '\u001F'
         const val NUL = '\u0000'
-        const val HEADER_FIELD_COUNT = 5
+        const val TRAILER_SEPARATOR = '\u001D'
+        const val HEADER_FIELD_COUNT = 6
         const val SHA = 0
         const val AUTHOR_NAME = 1
         const val AUTHOR_EMAIL = 2
         const val COMMITTED_AT = 3
-        const val SUBJECT = 4
+        const val TRAILERS = 4
+        const val SUBJECT = 5
+
+        /** The address in `Name <address>`. */
+        val EMAIL_PATTERN = Regex("<([^>]*)>")
 
         /** A rename entry is the stat token plus the old and the new name. */
         const val RENAME_TOKENS = 3

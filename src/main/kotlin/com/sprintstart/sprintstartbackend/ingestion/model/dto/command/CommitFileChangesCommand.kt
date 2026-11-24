@@ -17,6 +17,7 @@ import java.time.Instant
  * @property authorEmail The Git author email recorded in the commit.
  * @property changedAt The commit time.
  * @property files The files the commit changed.
+ * @property coAuthorEmails The emails of the people the commit credits next to its author.
  */
 data class CommitFileChangesCommand(
     val sourceId: String,
@@ -25,4 +26,5 @@ data class CommitFileChangesCommand(
     val authorEmail: String,
     val changedAt: Instant,
     val files: CommitFiles,
+    val coAuthorEmails: List<String> = emptyList(),
 )

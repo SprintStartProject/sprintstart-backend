@@ -1,6 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.external.model.dto
 
 import java.time.Instant
+import java.util.UUID
 
 /**
  * One change of one file by one commit author, as the project's repositories recorded it.
@@ -12,6 +13,8 @@ import java.time.Instant
  *           when it kept its path.
  * @property authorEmail The commit author's email, exactly as Git recorded it.
  * @property changedAt When the commit was made.
+ * @property commit Identifies the commit, so the files one commit changed can be told together; `null`
+ *           when the source does not know it.
  */
 data class FileContribution(
     val repository: String,
@@ -19,4 +22,5 @@ data class FileContribution(
     val renamedFrom: String?,
     val authorEmail: String,
     val changedAt: Instant,
+    val commit: UUID? = null,
 )

@@ -77,6 +77,7 @@ class ContributionQueryTest {
                 renamedFrom = "src/Old.kt",
                 authorEmail = "ada@math.org",
                 changedAt = Instant.parse("2026-03-04T05:06:07Z"),
+                commit = commit.id,
             ),
         )
     }

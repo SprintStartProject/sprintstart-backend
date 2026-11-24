@@ -152,6 +152,7 @@ private class GithubCommitSink(
                 sha = commit.sha,
                 msg = commit.subject,
                 files = commit.files,
+                coAuthorEmails = commit.coAuthorEmails,
             ),
         )
     }

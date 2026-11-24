@@ -21,7 +21,7 @@ class GitLogTest {
         )
 
     private fun output(vararg paths: String) =
-        "\u001Eabc\u001FAda\u001Fada@example.com\u001F2026-01-02T03:04:05Z\u001FFix\n" +
+        "\u001Eabc\u001FAda\u001Fada@example.com\u001F2026-01-02T03:04:05Z\u001F\u001FFix\n" +
             paths.joinToString("") { "1\t0\t$it\u0000" } + "\u0000"
 
     @Test
