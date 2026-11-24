@@ -37,11 +37,21 @@ class RiskScorer {
                 hoarded = atRisk.count { it.level == RiskLevel.HOARDED },
                 alreadyOrphaned = assessments.count { it == Assessment.AlreadyOrphaned },
             ),
-            files = atRisk.sortedWith(MOST_URGENT_FIRST),
+            files = atRisk.sortedWith(order(query.profile.ranking)),
         )
     }
 
+    private fun order(ranking: Ranking): Comparator<FileRisk> =
+        when (ranking) {
+            Ranking.DEPARTING_SHARE -> MOST_URGENT_FIRST
+            Ranking.PLACEHOLDER -> HIGHEST_PLACEHOLDER_FIRST
+        }
+
     private companion object {
+        val HIGHEST_PLACEHOLDER_FIRST = compareByDescending<FileRisk> { it.placeholderScore }
+            .thenBy { it.repository }
+            .thenBy { it.path }
+
         val MOST_URGENT_FIRST = compareBy<FileRisk> { it.level }
             .thenByDescending { it.score }
             .thenBy { it.repository }

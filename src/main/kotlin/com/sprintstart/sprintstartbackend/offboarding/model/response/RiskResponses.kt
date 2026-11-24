@@ -22,6 +22,7 @@ data class RiskSettingsResponse(
     val name: String,
     val sourceWeights: Map<String, Double>,
     val knowledge: KnowledgeResponse = KnowledgeResponse(),
+    val ranking: String = "departing-share",
 )
 
 /** How a ranking decided who knows a file; maps stored before there was a choice used authorship. */

@@ -112,7 +112,7 @@ class RelevanceTest {
     }
 
     @Test
-    fun `a ranking carries the placeholder score of the files at risk without changing their order`() {
+    fun `a ranking carries the placeholder score of the files at risk without changing their order by default`() {
         val departure = DepartureQuery(setOf(PersonKey("ada@x.org")), NOW)
         val first = file("first.kt", 0, 1, 2)
         val second = file("second.kt", 3)
@@ -121,5 +121,19 @@ class RelevanceTest {
 
         assertThat(map.files).hasSize(2)
         assertThat(map.files.all { it.placeholderScore > 0.0 && it.placeholderScore <= 1.0 }).isTrue()
+    }
+
+    @Test
+    fun `the placeholder ranking orders the files by their placeholder score`() {
+        val departure = DepartureQuery(
+            setOf(PersonKey("ada@x.org")),
+            NOW,
+            WeightProfile(ranking = Ranking.PLACEHOLDER),
+        )
+        val files = listOf(file("first.kt", 0, 1, 2), file("second.kt", 3), file("third.kt", 0, 3))
+
+        val map = RiskScorer().score(files, departure)
+
+        assertThat(map.files.map { it.placeholderScore }).isSortedAccordingTo(Comparator.reverseOrder())
     }
 }

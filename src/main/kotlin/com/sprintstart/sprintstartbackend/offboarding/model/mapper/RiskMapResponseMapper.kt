@@ -50,6 +50,9 @@ private fun WeightProfile.toResponse() = RiskSettingsResponse(
         knowsAtLeast = knowledge.knowsAtLeast,
         foundingBonus = knowledge.foundingBonus,
     ),
+    ranking = ranking.name
+        .lowercase()
+        .replace('_', '-'),
 )
 
 private fun FileRisk.toResponse() = FileRiskResponse(

@@ -3,6 +3,7 @@ package com.sprintstart.sprintstartbackend.offboarding.model.request
 import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeModel
 import com.sprintstart.sprintstartbackend.offboarding.scoring.KnowledgeSettings
 import com.sprintstart.sprintstartbackend.offboarding.scoring.PersonKey
+import com.sprintstart.sprintstartbackend.offboarding.scoring.Ranking
 import com.sprintstart.sprintstartbackend.offboarding.scoring.SourceId
 import com.sprintstart.sprintstartbackend.offboarding.scoring.WeightProfile
 import org.assertj.core.api.Assertions.assertThat
@@ -55,6 +56,19 @@ class RiskParametersTest {
 
         assertThat(request.profile.knowledge)
             .isEqualTo(KnowledgeSettings(KnowledgeModel.TIME_WEIGHTED, knowsAtLeast = 2.0))
+    }
+
+    @Test
+    fun `the ranking can be chosen by name and defaults to the departing share`() {
+        assertThat(RiskParameters(leaving = listOf("ada"), ranking = "placeholder").toRequest().profile.ranking)
+            .isEqualTo(Ranking.PLACEHOLDER)
+        assertThat(RiskParameters(leaving = listOf("ada")).toRequest().profile.ranking)
+            .isEqualTo(Ranking.DEPARTING_SHARE)
+    }
+
+    @Test
+    fun `an unknown ranking is a bad request`() {
+        badRequestFor(RiskParameters(leaving = listOf("ada"), ranking = "luck"))
     }
 
     @Test
