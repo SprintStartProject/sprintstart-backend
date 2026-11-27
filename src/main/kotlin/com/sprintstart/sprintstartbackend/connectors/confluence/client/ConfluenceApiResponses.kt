@@ -50,6 +50,20 @@ internal data class ConfluencePageVersionResponse(
 )
 
 @Serializable
+internal data class ConfluencePageVersionsResponse(
+    val results: List<ConfluencePageVersionItemResponse>,
+    @SerialName("_links")
+    val links: ConfluenceResponseLinks = ConfluenceResponseLinks(),
+)
+
+@Serializable
+internal data class ConfluencePageVersionItemResponse(
+    val number: Int,
+    val authorId: String? = null,
+    val createdAt: String,
+)
+
+@Serializable
 internal data class ConfluencePageBodyResponse(
     val storage: ConfluenceStorageBodyResponse,
 )

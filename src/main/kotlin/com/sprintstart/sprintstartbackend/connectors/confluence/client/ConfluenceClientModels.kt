@@ -48,6 +48,19 @@ internal data class ConfluencePageVersion(
     val createdAt: Instant,
 )
 
+/**
+ * One saved version of a page and who saved it.
+ *
+ * @property number The version number, 1 for the version that created the page.
+ * @property authorAccountId The Atlassian account ID of the person who saved it.
+ * @property editedAt When it was saved.
+ */
+internal data class ConfluencePageEdit(
+    val number: Int,
+    val authorAccountId: String,
+    val editedAt: Instant,
+)
+
 internal data class ConfluenceStorageBody(
     val representation: String,
     val value: String,

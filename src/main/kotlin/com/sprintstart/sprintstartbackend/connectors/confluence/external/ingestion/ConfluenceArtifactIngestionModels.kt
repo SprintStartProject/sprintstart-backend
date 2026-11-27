@@ -18,6 +18,20 @@ data class ConfluencePageArtifactCommand(
     val bodyText: String,
     val versionCreatedAt: Instant,
     val metadata: ConfluencePageMetadataCommand,
+    val edits: List<ConfluencePageEditCommand>? = null,
+)
+
+/**
+ * One saved version of a page and who saved it, the evidence of who knows the page.
+ *
+ * @property versionNumber The version number, 1 for the version that created the page.
+ * @property authorAccountId The Atlassian account ID of the person who saved it.
+ * @property editedAt When it was saved.
+ */
+data class ConfluencePageEditCommand(
+    val versionNumber: Int,
+    val authorAccountId: String,
+    val editedAt: Instant,
 )
 
 data class ConfluencePageMetadataCommand(

@@ -111,6 +111,38 @@ internal class ConfluenceClient(
         return ConfluencePageBatchResult(successfulPages, failures)
     }
 
+    /**
+     * Retrieves every saved version of a page with the account that saved it, oldest first.
+     *
+     * Versions without an author are left out. Failures are thrown as they come, so the caller decides
+     * whether a page without its history is still worth ingesting.
+     */
+    suspend fun getPageEdits(
+        baseUrl: String,
+        credentials: ConfluenceClientCredentials,
+        pageId: String,
+    ): List<ConfluencePageEdit> {
+        val edits = mutableListOf<ConfluencePageEdit>()
+        val tenantUri = normalizedConfluenceTenantUri(baseUrl)
+        var requestUri: URI? = confluencePageVersionsUri(baseUrl, pageId)
+        val requestContext = "retrieving versions of page $pageId"
+
+        while (requestUri != null) {
+            val currentUri = requestUri
+            val response = performGet<ConfluencePageVersionsResponse>(
+                uri = currentUri,
+                credentials = credentials,
+                requestContext = requestContext,
+            )
+            edits += response.results.mapNotNull { it.toEdit(pageId) }
+            requestUri = response.links.next?.let { next ->
+                confluencePaginationUri(tenantUri, currentUri, next, requestContext)
+            }
+        }
+
+        return edits.sortedBy { it.number }
+    }
+
     private suspend fun fetchAllPageResponses(
         baseUrl: String,
         credentials: ConfluenceClientCredentials,

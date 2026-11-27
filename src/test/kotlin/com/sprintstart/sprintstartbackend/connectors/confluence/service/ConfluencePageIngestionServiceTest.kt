@@ -3,8 +3,10 @@ package com.sprintstart.sprintstartbackend.connectors.confluence.service
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceAuthenticationException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClient
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceClientCredentials
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluenceInvalidResponseException
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePage
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageBatchResult
+import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageEdit
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageFailure
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageFetchStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.client.ConfluencePageRestrictions
@@ -15,6 +17,7 @@ import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingesti
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactBatchResult
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactFailureStage
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceArtifactIngestionApi
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageEditCommand
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.exception.ConfluenceConnectionNotEnabledException
 import com.sprintstart.sprintstartbackend.connectors.confluence.model.ingestion.ConfluenceIngestionFailureStage
@@ -49,6 +52,7 @@ class ConfluencePageIngestionServiceTest {
     fun setUp() {
         every { connectionService.getConnectionForIngestion(projectId, connection.id) } returns connection
         coEvery { client.getSpace(any(), any(), any()) } returns confluenceSpace()
+        coEvery { client.getPageEdits(any(), any(), any()) } returns emptyList()
         every { connectionService.updateSpaceMetadata(any(), any(), any()) } just Runs
         every { ingestionApi.startRun(any(), connection.id, any()) } just Runs
         every { ingestionApi.finishRun(any(), any()) } just Runs
@@ -341,6 +345,7 @@ class ConfluencePageIngestionServiceTest {
         parser,
         mapper,
         ingestionApi,
+        ConfluencePageHistoryReader(client),
     )
 
     private fun connection() = ConfluenceConnectionIngestionSnapshot(
@@ -395,4 +400,39 @@ class ConfluencePageIngestionServiceTest {
         webUiPath = "/wiki/spaces/ENG/pages/$id",
         restrictions = ConfluencePageRestrictions(),
     )
+
+    @Test
+    fun `each page carries who saved which of its versions`() = runTest {
+        val savedAt = Instant.parse("2026-01-01T00:00:00Z")
+        coEvery { client.getPages(any(), any(), any()) } returns
+            ConfluencePageBatchResult(listOf(page("100", null, "<p>Body</p>")), emptyList())
+        coEvery { client.getPageEdits(connection.baseUrl, any(), "100") } returns
+            listOf(ConfluencePageEdit(1, "ada", savedAt))
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns ConfluenceArtifactBatchResult(1, 0, 0, 0)
+
+        service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id)
+
+        assertThat(
+            batchSlot.captured.artifacts
+                .single()
+                .edits,
+        ).containsExactly(ConfluencePageEditCommand(1, "ada", savedAt))
+    }
+
+    @Test
+    fun `a page whose versions cannot be read is still ingested without a history`() = runTest {
+        coEvery { client.getPages(any(), any(), any()) } returns
+            ConfluencePageBatchResult(listOf(page("100", null, "<p>Body</p>")), emptyList())
+        coEvery { client.getPageEdits(any(), any(), "100") } throws ConfluenceInvalidResponseException("versions")
+        every { ingestionApi.persistBatch(capture(batchSlot)) } returns ConfluenceArtifactBatchResult(1, 0, 0, 0)
+
+        val result = service(ConfluenceStorageFormatParser()).ingest(projectId, connection.id)
+
+        assertThat(
+            batchSlot.captured.artifacts
+                .single()
+                .edits,
+        ).isNull()
+        assertThat(result.failures).isEmpty()
+    }
 }

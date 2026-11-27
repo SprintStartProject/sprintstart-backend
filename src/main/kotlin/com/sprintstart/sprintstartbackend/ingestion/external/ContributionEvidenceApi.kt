@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAutho
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import java.time.Instant
 
@@ -37,6 +38,17 @@ interface ContributionEvidenceApi {
      * @return One entry per reviewer and file; empty when the project has no recorded reviews.
      */
     fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview>
+
+    /**
+     * Every saved version of the documentation pages linked to a project, up to a moment, oldest first.
+     *
+     * Pages are named by their space key and current title, so they can be treated like files.
+     *
+     * @param projectId The project whose pages are read.
+     * @param asOf Versions saved after this moment are left out, so a past state can be replayed.
+     * @return One entry per page version; empty when no page history was recorded.
+     */
+    fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading>
 
     /**
      * How complicated each file of the given repositories was when it was last read.

@@ -49,6 +49,18 @@ class FileComplexityServiceTest {
     }
 
     @Test
+    fun `a file whose name tells nothing is measured as the kind it is given`() {
+        every { repository.findByRepositoryAndPath("confluence:ENG", "Setup") } returns null
+        val saved = slot<FileComplexity>()
+        every { repository.save(capture(saved)) } answers { saved.captured }
+
+        service.measure("confluence:ENG", "Setup", "Run the app", FileKind.PROSE)
+
+        assertThat(saved.captured.kind).isEqualTo(FileKind.PROSE)
+        assertThat(saved.captured.complexity).isEqualTo(3.0)
+    }
+
+    @Test
     fun `a file read again replaces its earlier measurement`() {
         val earlier = FileComplexity(null, "github:acme/app", "a.kt", 9.0, 40, now.minusSeconds(3600))
         every { repository.findByRepositoryAndPath("github:acme/app", "a.kt") } returns earlier

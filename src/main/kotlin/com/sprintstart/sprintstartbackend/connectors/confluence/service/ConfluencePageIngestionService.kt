@@ -26,6 +26,7 @@ internal class ConfluencePageIngestionService(
     private val parser: ConfluenceStorageFormatParser,
     private val pageMapper: ConfluencePageArtifactMapper,
     private val ingestionApi: ConfluenceArtifactIngestionApi,
+    private val historyReader: ConfluencePageHistoryReader,
 ) {
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -87,6 +88,7 @@ internal class ConfluencePageIngestionService(
         val eligiblePages = pages.filter { page -> connection.allowsPage(page.id) }
         val failures = fetched.failures.map { it.toIngestionFailure() }.toMutableList()
         val commands = mapEligiblePages(connection, eligiblePages, buildRelationshipIndex(pages), failures)
+            .map { command -> historyReader.withHistory(connection, command) }
         return Collected(
             discovered = fetched.successfulPages.size + fetched.failures.size,
             eligible = eligiblePages.size,

@@ -632,4 +632,43 @@ internal class ConfluenceClientTest : ConfluenceClientTestSupport() {
         assertThat(exception.cause).isNull()
         assertThat(retryDelays).containsExactly(Duration.ofMillis(100), Duration.ofMillis(200))
     }
+
+    @Test
+    fun `getPageEdits follows the next URL and keeps versions with an author, oldest first`() = runTest {
+        enqueueJson(
+            """
+            {"results": [
+              {"number": 3, "authorId": "acc-b", "createdAt": "2026-03-01T10:00:00.000Z", "minorEdit": false},
+              {"number": 2, "authorId": "", "createdAt": "2026-02-01T10:00:00.000Z"}
+            ], "_links": {"next": "/wiki/api/v2/pages/100/versions?limit=250&cursor=next-one"}}
+            """.trimIndent(),
+        )
+        enqueueJson(
+            """
+            {"results": [{"number": 1, "authorId": "acc-a", "createdAt": "2026-01-01T10:00:00.000Z"}], "_links": {}}
+            """.trimIndent(),
+        )
+
+        val edits = client.getPageEdits(baseUrl, credentials, "100")
+
+        assertThat(edits).containsExactly(
+            ConfluencePageEdit(1, "acc-a", Instant.parse("2026-01-01T10:00:00Z")),
+            ConfluencePageEdit(3, "acc-b", Instant.parse("2026-03-01T10:00:00Z")),
+        )
+        val first = mockWebServer.takeRequest()
+        assertThat(first.requestUrl?.encodedPath).isEqualTo("/wiki/api/v2/pages/100/versions")
+        assertThat(first.requestUrl?.queryParameter("limit")).isEqualTo("250")
+        assertThat(mockWebServer.takeRequest().requestUrl?.queryParameter("cursor")).isEqualTo("next-one")
+    }
+
+    @Test
+    fun `getPageEdits fails on a version date it cannot read`() = runTest {
+        enqueueJson("""{"results": [{"number": 1, "authorId": "acc-a", "createdAt": "yesterday"}]}""")
+
+        val exception = assertThrows<ConfluenceInvalidResponseException> {
+            client.getPageEdits(baseUrl, credentials, "100")
+        }
+
+        assertThat(exception.requestContext).isEqualTo("mapping versions of page 100")
+    }
 }

@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileCompl
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
 import com.sprintstart.sprintstartbackend.offboarding.scoring.CommitEvidence
@@ -47,6 +48,8 @@ class OffboardingRiskServiceTest {
         }
 
         override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
+
+        override fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading> = emptyList()
 
         override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> =
             complexities.filter { it.repository in repositories }
