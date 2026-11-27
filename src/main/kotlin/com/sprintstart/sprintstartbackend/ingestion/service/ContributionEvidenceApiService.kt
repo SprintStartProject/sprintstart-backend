@@ -6,10 +6,12 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileCompl
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.PageEditRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.ReviewActivityRepository
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.springframework.stereotype.Service
@@ -23,6 +25,7 @@ internal class ContributionEvidenceApiService(
     private val reviewActivityRepository: ReviewActivityRepository,
     private val fileComplexityRepository: FileComplexityRepository,
     private val fileAuthorshipRepository: FileAuthorshipRepository,
+    private val pageEditRepository: PageEditRepository,
 ) : ContributionEvidenceApi {
     @Transactional(readOnly = true)
     override fun fileContributions(projectId: ProjectId, asOf: Instant): List<FileContribution> =
@@ -31,6 +34,10 @@ internal class ContributionEvidenceApiService(
     @Transactional(readOnly = true)
     override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> =
         reviewActivityRepository.findReviews(projectId.value, asOf)
+
+    @Transactional(readOnly = true)
+    override fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading> =
+        pageEditRepository.findEdits(projectId.value, asOf)
 
     @Transactional(readOnly = true)
     override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> {

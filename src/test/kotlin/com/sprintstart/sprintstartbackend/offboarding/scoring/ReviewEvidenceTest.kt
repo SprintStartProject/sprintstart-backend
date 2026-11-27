@@ -5,6 +5,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAutho
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -23,6 +24,8 @@ class ReviewEvidenceTest {
 
             override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> =
                 if (projectId == project && asOf == NOW) reviews.toList() else emptyList()
+
+            override fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading> = emptyList()
 
             override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
 

@@ -28,9 +28,8 @@ object FileMeasure {
         val lines: Int,
     )
 
-    /** Measures the [text] of the file at [path]. */
-    fun of(path: String, text: String): Measure {
-        val kind = FileKind.of(path)
+    /** Measures the [text] of the file at [path] as a file of [kind], which its name tells by default. */
+    fun of(path: String, text: String, kind: FileKind = FileKind.of(path)): Measure {
         val indentation = IndentationComplexity.of(text)
         val complexity = when (kind) {
             FileKind.CODE -> indentation.indentation

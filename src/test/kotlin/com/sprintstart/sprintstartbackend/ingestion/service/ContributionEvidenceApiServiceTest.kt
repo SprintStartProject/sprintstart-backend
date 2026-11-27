@@ -5,10 +5,12 @@ import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileCompl
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.PageEditRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.ReviewActivityRepository
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import io.mockk.every
@@ -23,7 +25,18 @@ class ContributionEvidenceApiServiceTest {
     private val reviews = mockk<ReviewActivityRepository>()
     private val complexities = mockk<FileComplexityRepository>()
     private val authorship = mockk<FileAuthorshipRepository>()
-    private val service = ContributionEvidenceApiService(repository, reviews, complexities, authorship)
+    private val pages = mockk<PageEditRepository>()
+    private val service = ContributionEvidenceApiService(repository, reviews, complexities, authorship, pages)
+
+    @Test
+    fun `reads the project's page versions up to the date from the repository`() {
+        val project = UUID.randomUUID()
+        val asOf = Instant.parse("2026-05-01T00:00:00Z")
+        val rows = listOf(PageEditReading("confluence:ENG", "Setup", "acc-1", asOf))
+        every { pages.findEdits(project, asOf) } returns rows
+
+        assertThat(service.pageEdits(ProjectId(project), asOf)).isEqualTo(rows)
+    }
 
     @Test
     fun `reads the project's changes up to the date from the repository`() {

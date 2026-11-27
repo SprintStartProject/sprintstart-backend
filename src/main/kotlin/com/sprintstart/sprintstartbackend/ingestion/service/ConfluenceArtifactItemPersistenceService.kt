@@ -38,6 +38,7 @@ internal class ConfluenceArtifactItemPersistenceService(
     private val artifactRepository: ArtifactRepository,
     private val metadataJsonMapper: ArtifactMetadataJsonMapper,
     private val objectMapper: ObjectMapper,
+    private val pageEvidence: PageEvidenceService,
 ) {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun persist(
@@ -52,18 +53,27 @@ internal class ConfluenceArtifactItemPersistenceService(
         val hash = contentHash(command, metadataJson)
         val existing = artifactRepository.findBySourceSystemAndSourceId(SourceSystem.CONFLUENCE, command.sourceId)
         if (existing == null) {
-            artifactRepository.saveAndFlush(command.toArtifact(projectId, run, metadataJson, hash))
+            val created = artifactRepository.saveAndFlush(command.toArtifact(projectId, run, metadataJson, hash))
             run.ingestedCount++
+            recordEvidence(created, null, command)
             return ConfluenceArtifactItemPersistenceResult.CREATED
         }
+        val previousTitle = existing.title
         if (existing.hash == hash) {
+            recordEvidence(existing, previousTitle, command)
             return ConfluenceArtifactItemPersistenceResult.UNCHANGED
         }
 
         updateExisting(existing, command, projectId, run, metadataJson, hash)
         artifactRepository.flush()
         run.updatedCount++
+        recordEvidence(existing, previousTitle, command)
         return ConfluenceArtifactItemPersistenceResult.UPDATED
+    }
+
+    /** Evidence is recorded for an unchanged page too, so a history read for the first time is kept. */
+    private fun recordEvidence(page: Artifact, previousTitle: String?, command: ConfluencePageArtifactCommand) {
+        pageEvidence.record(page, "confluence:${command.metadata.spaceKey}", previousTitle, command.edits)
     }
 
     private fun updateExisting(

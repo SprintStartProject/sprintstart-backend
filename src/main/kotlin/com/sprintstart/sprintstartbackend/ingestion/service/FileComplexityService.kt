@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
 import com.sprintstart.sprintstartbackend.ingestion.util.FileMeasure
@@ -19,10 +20,11 @@ internal class FileComplexityService(
      * @param repositoryKey The repository the file lives in, for example `github:owner/repo`.
      * @param path The path of the file in the repository.
      * @param text The text of the file.
+     * @param kind What the file holds; told by its name unless given, as for a documentation page.
      */
     @Transactional
-    fun measure(repositoryKey: String, path: String, text: String) {
-        val measure = FileMeasure.of(path, text)
+    fun measure(repositoryKey: String, path: String, text: String, kind: FileKind = FileKind.of(path)) {
+        val measure = FileMeasure.of(path, text, kind)
         val existing = repository.findByRepositoryAndPath(repositoryKey, path)
         if (existing == null) {
             repository.save(

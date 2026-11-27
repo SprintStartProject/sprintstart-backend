@@ -68,11 +68,11 @@ internal fun confluencePaginationUri(
     return resolved
 }
 
-private fun confluenceTenantUri(baseUrl: String, path: String): URI {
+internal fun confluenceTenantUri(baseUrl: String, path: String): URI {
     return normalizedConfluenceTenantUri(baseUrl).resolve(path)
 }
 
-private fun String.encodeConfluencePathSegment(): String {
+internal fun String.encodeConfluencePathSegment(): String {
     return URLEncoder.encode(this, Charsets.UTF_8).replace("+", "%20")
 }
 

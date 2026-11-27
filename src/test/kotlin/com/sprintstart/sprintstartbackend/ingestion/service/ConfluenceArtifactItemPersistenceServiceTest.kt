@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceCodeBlockCommand
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageArtifactCommand
+import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageEditCommand
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageMetadataCommand
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipCommand
 import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluenceRelationshipType
@@ -26,6 +27,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -38,11 +40,13 @@ class ConfluenceArtifactItemPersistenceServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val metadataJsonMapper = mockk<ArtifactMetadataJsonMapper>()
+    private val pageEvidence = mockk<PageEvidenceService>(relaxed = true)
     private val service = ConfluenceArtifactItemPersistenceService(
         ingestionRunRepository,
         artifactRepository,
         metadataJsonMapper,
         jacksonObjectMapper(),
+        pageEvidence,
     )
 
     private val projectId = UUID.randomUUID()
@@ -75,6 +79,11 @@ class ConfluenceArtifactItemPersistenceServiceTest {
         assertThat(created).isEqualTo(ConfluenceArtifactItemPersistenceResult.CREATED)
         assertThat(unchanged).isEqualTo(ConfluenceArtifactItemPersistenceResult.UNCHANGED)
         assertThat(updated).isEqualTo(ConfluenceArtifactItemPersistenceResult.UPDATED)
+        verifyOrder {
+            pageEvidence.record(artifact, "confluence:ENG", null, command.edits)
+            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", command.edits)
+            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", edited.edits)
+        }
         assertThat(run.ingestedCount).isEqualTo(1)
         assertThat(run.updatedCount).isEqualTo(1)
         assertThat(artifact.sourceSystem).isEqualTo(SourceSystem.CONFLUENCE)
@@ -206,6 +215,7 @@ class ConfluenceArtifactItemPersistenceServiceTest {
         title = "Sprint Start",
         bodyText = "body",
         versionCreatedAt = Instant.parse("2026-09-27T10:00:00Z"),
+        edits = listOf(ConfluencePageEditCommand(1, "acc-1", Instant.parse("2026-09-01T10:00:00Z"))),
         metadata = ConfluencePageMetadataCommand(
             connectionId = connectionId,
             tenantBaseUrl = "https://example.atlassian.net",
