@@ -27,6 +27,8 @@ data class RiskRequest(
  * @property authorThreshold Override the fraction of a file's top degree of authorship that makes an author.
  * @property reviewWeight Let reviews count with this weight next to commits, which count 1; left out, reviews
  *           are not used.
+ * @property pageEditWeight How much the versions people saved of documentation pages count next to commits,
+ *           which count 1; 1 when left out, 0 leaves pages off the map.
  * @property knowledge How to decide who knows a file: `authorship` (the default) or `time-weighted`.
  * @property knowsAtLeast With `time-weighted`, the weight of evidence that makes a person know a file.
  * @property ranking How to order the files: `departing-share` (the default) or `placeholder`.
@@ -39,6 +41,7 @@ data class RiskParameters(
     val inactiveAfterDays: Long? = null,
     val authorThreshold: Double? = null,
     val reviewWeight: Double? = null,
+    val pageEditWeight: Double? = null,
     val knowledge: String? = null,
     val knowsAtLeast: Double? = null,
     val ranking: String? = null,
@@ -64,7 +67,7 @@ data class RiskParameters(
                     halfLifeDays = halfLifeDays ?: defaults.halfLifeDays,
                     inactiveAfterDays = inactiveAfterDays ?: defaults.inactiveAfterDays,
                     authorThreshold = authorThreshold ?: defaults.authorThreshold,
-                    sourceWeights = sourceWeights(),
+                    sourceWeights = sourceWeights(defaults.sourceWeights),
                     knowledge = knowledgeSettings(defaults.knowledge),
                     ranking = ranking?.let(::rankingNamed) ?: defaults.ranking,
                 ),
@@ -88,8 +91,12 @@ data class RiskParameters(
         Ranking.entries.firstOrNull { it.name.equals(name.replace('-', '_'), ignoreCase = true) }
             ?: throw IllegalArgumentException("Unknown ranking `$name`; use departing-share or placeholder")
 
-    private fun sourceWeights(): Map<SourceId, Double> =
-        mapOf(SourceId.COMMITS to 1.0) + listOfNotNull(reviewWeight?.let { SourceId.REVIEWS to it })
+    private fun sourceWeights(defaults: Map<SourceId, Double>): Map<SourceId, Double> =
+        defaults +
+            listOfNotNull(
+                reviewWeight?.let { SourceId.REVIEWS to it },
+                pageEditWeight?.let { SourceId.PAGE_EDITS to it },
+            )
 
     private companion object {
         const val DEFAULT_LIMIT = 100

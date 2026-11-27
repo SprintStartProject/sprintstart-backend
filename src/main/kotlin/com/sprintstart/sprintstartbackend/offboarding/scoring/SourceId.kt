@@ -19,5 +19,8 @@ value class SourceId(
 
         /** The pull requests a person reviewed, per file. */
         val REVIEWS = SourceId("reviews")
+
+        /** The versions people saved of documentation pages. */
+        val PAGE_EDITS = SourceId("page-edits")
     }
 }

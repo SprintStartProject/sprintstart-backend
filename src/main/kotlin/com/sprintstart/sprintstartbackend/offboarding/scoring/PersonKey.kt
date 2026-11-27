@@ -1,12 +1,15 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
+private const val ATLASSIAN_PREFIX = "atlassian:"
+
 private val NO_REPLY = Regex("""^(?:\d+\+)?([^@\s]+)@users\.noreply\.github\.com$""")
 
 /**
  * Who a change belongs to, reduced to one comparable value.
  *
  * A GitHub no-reply address carries the account's login, so it is reduced to that login and the
- * same person committing under both forms stays one person. Any other email stands for itself.
+ * same person committing under both forms stays one person. Any other email stands for itself. An
+ * Atlassian account is kept apart as `atlassian:<account id>`, since its ID looks like neither.
  * Matching a commit email to a registered user is a separate concern and not done here.
  */
 @JvmInline
@@ -19,6 +22,9 @@ value class PersonKey(
             val normalized = email.trim().lowercase()
             return PersonKey(NO_REPLY.matchEntire(normalized)?.groupValues?.get(1) ?: normalized)
         }
+
+        /** The key of an Atlassian account, as Confluence names the author of a page version. */
+        fun ofAtlassian(accountId: String): PersonKey = PersonKey("$ATLASSIAN_PREFIX${accountId.trim().lowercase()}")
 
         /**
          * The key of a person somebody typed in: an email, or a GitHub login.
