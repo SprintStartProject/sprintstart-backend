@@ -34,10 +34,12 @@ import java.util.UUID
 class JiraArtifactProviderServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
+    private val ticketEvidence = mockk<TicketEvidenceService>(relaxed = true)
     private val service = JiraArtifactProviderService(
         ingestionRunRepository,
         artifactRepository,
         ArtifactMetadataJsonMapper(ObjectMapper()),
+        ticketEvidence,
     )
 
     private val runId = UUID.randomUUID()
@@ -228,5 +230,13 @@ class JiraArtifactProviderServiceTest {
         service.persistArtifact(command("In Progress"))
 
         verify(exactly = 0) { ingestionRunRepository.findByIdForUpdate(any()) }
+        verify { ticketEvidence.record(existing, any()) }
+    }
+
+    @Test
+    fun `a new issue records who worked on it`() {
+        val issue = newIssue("In Progress")
+
+        verify { ticketEvidence.record(issue, match { it.issueKey == command("In Progress").issueKey }) }
     }
 }

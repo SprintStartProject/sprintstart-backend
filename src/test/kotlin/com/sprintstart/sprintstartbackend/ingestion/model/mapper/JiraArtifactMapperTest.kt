@@ -2,6 +2,9 @@ package com.sprintstart.sprintstartbackend.ingestion.model.mapper
 
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraAuthor
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueChangelog
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueChangelogHistory
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueComment
+import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueCommentBody
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueCommentField
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFetchedEvent
 import com.sprintstart.sprintstartbackend.connectors.jira.external.events.issues.JiraIssueFields
@@ -98,5 +101,38 @@ class JiraArtifactMapperTest {
         val command = mapper.toCommand(event(null, "Erledigt"))
 
         assertThat(command.toState()).isEqualTo("OPEN")
+    }
+
+    @Test
+    fun `who worked on the issue keeps their account and the time of each comment`() {
+        val base = event(null, "Open")
+        val ada = JiraAuthor(displayName = "Ada", active = true, accountId = "acc-ada")
+        val issue = base.issue.copy(
+            changelog = JiraIssueChangelog(listOf(JiraIssueChangelogHistory(ada, now, emptyList()))),
+            fields = base.issue.fields.copy(
+                creator = ada,
+                assignee = ada,
+                comment = JiraIssueCommentField(
+                    listOf(JiraIssueComment(ada, JiraIssueCommentBody("Done"), created = now.plusDays(1))),
+                ),
+            ),
+        )
+
+        val command = mapper.toCommand(base.copy(issue = issue))
+
+        assertThat(command.createdBy.accountId).isEqualTo("acc-ada")
+        assertThat(command.assignee?.accountId).isEqualTo("acc-ada")
+        assertThat(
+            command.history.historyItems
+                .single()
+                .author.accountId,
+        ).isEqualTo("acc-ada")
+        assertThat(
+            command.comments
+                .single()
+                .author.accountId,
+        ).isEqualTo("acc-ada")
+        assertThat(command.comments.single().createdAt).isEqualTo(now.plusDays(1).toInstant())
+        assertThat(command.reportedBy.accountId).isNull()
     }
 }

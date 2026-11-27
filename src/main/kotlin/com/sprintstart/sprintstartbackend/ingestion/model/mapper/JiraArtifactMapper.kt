@@ -71,6 +71,7 @@ fun JiraIssueFetchedEvent.getCreator(): JiraAuthor {
             ?.toInstant()
             ?: this.issue.fields.updated
                 .toInstant(),
+        accountId = this.issue.fields.creator.accountId,
     )
 }
 
@@ -86,6 +87,7 @@ fun JiraIssueFetchedEvent.getReporter(): JiraAuthor {
             ?.toInstant()
             ?: this.issue.fields.updated
                 .toInstant(),
+        accountId = this.issue.fields.reporter.accountId,
     )
 }
 
@@ -104,6 +106,7 @@ fun JiraIssueFetchedEvent.getAssignee(): JiraAuthor? {
             updatedAt = it.updated?.toInstant()
                 ?: this.issue.fields.updated
                     .toInstant(),
+            accountId = it.accountId,
         )
     }
 }
@@ -127,6 +130,7 @@ fun JiraIssueFetchedEvent.getChangelog(): JiraIssueHistory {
                         ?: history.created.toInstant(),
                     updatedAt = history.author.updated?.toInstant()
                         ?: history.created.toInstant(),
+                    accountId = history.author.accountId,
                 ),
                 createdAt = history.created.toInstant(),
                 items = history.items.map {
@@ -154,8 +158,10 @@ fun JiraIssueFetchedEvent.getComments(): List<JiraIssueComment> {
                 it.author.updated?.toInstant()
                     ?: this.issue.fields.updated
                         .toInstant(),
+                it.author.accountId,
             ),
             content = it.body.content,
+            createdAt = it.created?.toInstant(),
         )
     }
 }

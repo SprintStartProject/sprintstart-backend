@@ -33,6 +33,7 @@ data class JiraIssueType(
 data class JiraIssueComment(
     val author: JiraAuthor,
     val content: String,
+    val createdAt: Instant? = null,
 ) : ArtifactMetadata
 
 data class JiraIssueHistory(
@@ -57,4 +58,5 @@ data class JiraAuthor(
     val active: Boolean,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val accountId: String? = null,
 )

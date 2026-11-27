@@ -1,15 +1,18 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.CommitTicket
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IssueActivityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
+import com.sprintstart.sprintstartbackend.ingestion.repository.IssueActivityRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.PageEditRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.ReviewActivityRepository
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
@@ -26,7 +29,23 @@ class ContributionEvidenceApiServiceTest {
     private val complexities = mockk<FileComplexityRepository>()
     private val authorship = mockk<FileAuthorshipRepository>()
     private val pages = mockk<PageEditRepository>()
-    private val service = ContributionEvidenceApiService(repository, reviews, complexities, authorship, pages)
+    private val issues = mockk<IssueActivityRepository>()
+    private val tickets = mockk<TicketEvidenceService>()
+    private val service =
+        ContributionEvidenceApiService(repository, reviews, complexities, authorship, pages, issues, tickets)
+
+    @Test
+    fun `reads the project's ticket activity up to the date and the tickets its commits name`() {
+        val project = UUID.randomUUID()
+        val asOf = Instant.parse("2026-05-01T00:00:00Z")
+        val activity = listOf(IssueActivityReading("APP-1", "acc-1", "Ada", asOf))
+        val named = listOf(CommitTicket(UUID.randomUUID(), "APP-1"))
+        every { issues.findActivities(project, asOf) } returns activity
+        every { tickets.commitTickets(ProjectId(project)) } returns named
+
+        assertThat(service.issueActivities(ProjectId(project), asOf)).isEqualTo(activity)
+        assertThat(service.commitTickets(ProjectId(project))).isEqualTo(named)
+    }
 
     @Test
     fun `reads the project's page versions up to the date from the repository`() {

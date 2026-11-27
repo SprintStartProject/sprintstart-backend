@@ -1,9 +1,11 @@
 package com.sprintstart.sprintstartbackend.ingestion.external
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.CommitTicket
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IssueActivityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import java.time.Instant
@@ -49,6 +51,23 @@ interface ContributionEvidenceApi {
      * @return One entry per page version; empty when no page history was recorded.
      */
     fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading>
+
+    /**
+     * Every time a person worked on a ticket linked to a project, up to a moment, oldest first.
+     *
+     * @param projectId The project whose tickets are read.
+     * @param asOf Activity after this moment is left out, so a past state can be replayed.
+     * @return One entry per person and moment; empty when no ticket was recorded.
+     */
+    fun issueActivities(projectId: ProjectId, asOf: Instant): List<IssueActivityReading>
+
+    /**
+     * The tickets the commits of a project name in their messages, such as `APP-42`.
+     *
+     * @param projectId The project whose commits are read.
+     * @return One entry per commit and ticket it names.
+     */
+    fun commitTickets(projectId: ProjectId): List<CommitTicket>
 
     /**
      * How complicated each file of the given repositories was when it was last read.
