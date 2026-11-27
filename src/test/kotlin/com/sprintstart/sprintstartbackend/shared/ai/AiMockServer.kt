@@ -37,6 +37,14 @@ class AiMockServer : AutoCloseable {
         server.enqueue(MockResponse().setResponseCode(status).setBody(body))
     }
 
+    /** Makes the next request answer 200 with [json] as its body. */
+    fun respondNext(json: String) {
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json").setBody(json))
+    }
+
+    /** The body of the oldest request the server received and nobody looked at yet. */
+    fun takeRequestBody(): String = server.takeRequest().body.readUtf8()
+
     /** Makes the next request answer with these lines as a server-sent event stream. */
     fun streamNext(vararg lines: String) {
         server.enqueue(

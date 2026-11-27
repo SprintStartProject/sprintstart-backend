@@ -4,7 +4,7 @@
  * shared only.
  */
 @ApplicationModule(
-        allowedDependencies = {"ingestion :: api", "ingestion :: api.model", "shared :: config", "shared :: ids", "user :: api"}
+        allowedDependencies = {"ingestion :: api", "ingestion :: api.model", "shared :: config", "shared :: ids", "shared :: shared", "user :: api"}
 )
 package com.sprintstart.sprintstartbackend.offboarding;
 
