@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionBody
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionCodeBlockCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageArtifactCommand
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageEditCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageMetadataCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionSectionCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
@@ -29,6 +30,8 @@ internal class NotionPageArtifactMapper {
             title = title,
             bodyText = parsedBody.bodyText,
             lastEditedTime = lastEditedTime,
+            workspaceName = connection.workspaceName,
+            edits = editsOf(page, lastEditedTime),
             metadata = NotionPageMetadataCommand(
                 connectionId = connection.id,
                 pageId = page.id,
@@ -42,6 +45,20 @@ internal class NotionPageArtifactMapper {
             ),
         )
     }
+}
+
+/** Who created the page and who edited it last, as far as Notion says. */
+private fun editsOf(page: NotionApiPageResponse, lastEditedTime: Instant): List<NotionPageEditCommand> {
+    val created = page.createdBy?.let { by ->
+        page.createdTime?.let {
+            NotionPageEditCommand(
+                by.id,
+                Instant.parse(it),
+            )
+        }
+    }
+    val edited = page.lastEditedBy?.let { NotionPageEditCommand(it.id, lastEditedTime) }
+    return listOfNotNull(created, edited).distinct()
 }
 
 internal fun NotionApiPageResponse.titleOr(fallback: String): String {

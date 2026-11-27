@@ -13,6 +13,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationsh
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationshipType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSection
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ConfluenceArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -79,10 +80,11 @@ class ConfluenceArtifactItemPersistenceServiceTest {
         assertThat(created).isEqualTo(ConfluenceArtifactItemPersistenceResult.CREATED)
         assertThat(unchanged).isEqualTo(ConfluenceArtifactItemPersistenceResult.UNCHANGED)
         assertThat(updated).isEqualTo(ConfluenceArtifactItemPersistenceResult.UPDATED)
+        val versions = listOf(PageVersion(1, "acc-1", Instant.parse("2026-09-01T10:00:00Z")))
         verifyOrder {
-            pageEvidence.record(artifact, "confluence:ENG", null, command.edits)
-            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", command.edits)
-            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", edited.edits)
+            pageEvidence.record(artifact, "confluence:ENG", null, versions)
+            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", versions)
+            pageEvidence.record(artifact, "confluence:ENG", "Sprint Start", versions)
         }
         assertThat(run.ingestedCount).isEqualTo(1)
         assertThat(run.updatedCount).isEqualTo(1)

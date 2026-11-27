@@ -51,4 +51,18 @@ class PageEditEvidenceTest {
         assertThat(map.files.single().path).isEqualTo("Setup")
         assertThat(map.files.single().level).isEqualTo(RiskLevel.ORPHANED)
     }
+
+    @Test
+    fun `a notion page is credited to notion users`() {
+        every { api.pageEdits(project, NOW) } returns
+            listOf(PageEditReading("notion:Acme", "Runbook", "U-1", NOW.minusSeconds(60)))
+
+        val touch = source
+            .histories(project, NOW)
+            .single()
+            .touches
+            .single()
+
+        assertThat(touch.person.value).isEqualTo("notion:u-1")
+    }
 }

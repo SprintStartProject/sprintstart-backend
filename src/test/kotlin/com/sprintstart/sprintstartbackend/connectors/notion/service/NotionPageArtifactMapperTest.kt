@@ -7,6 +7,8 @@ import com.sprintstart.sprintstartbackend.connectors.notion.ParsedNotionSection
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPagePropertyResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiPageResponse
 import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiParentResponse
+import com.sprintstart.sprintstartbackend.connectors.notion.client.NotionApiUserReference
+import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionPageEditCommand
 import com.sprintstart.sprintstartbackend.connectors.notion.model.entity.NotionWorkspaceConnection
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -74,14 +76,39 @@ class NotionPageArtifactMapperTest {
 
     private fun page(
         title: List<NotionRichText> = listOf(NotionRichText("Sprint"), NotionRichText(" Start")),
+        createdBy: String? = null,
+        lastEditedBy: String? = null,
     ): NotionApiPageResponse {
         return NotionApiPageResponse(
             id = "page-1",
             url = "https://www.notion.so/page-1",
             lastEditedTime = "2026-09-27T10:00:00Z",
+            createdTime = "2026-09-01T08:00:00Z",
+            createdBy = createdBy?.let(::NotionApiUserReference),
+            lastEditedBy = lastEditedBy?.let(::NotionApiUserReference),
             inTrash = false,
             parent = NotionApiParentResponse(type = "workspace", workspace = true),
             properties = mapOf("Name" to NotionApiPagePropertyResponse("title", title)),
         )
+    }
+
+    @Test
+    fun `carries who created the page and who edited it last with the workspace name`() {
+        val result = mapper.toCommand(
+            connection(),
+            page(createdBy = "u-ada", lastEditedBy = "u-ben"),
+            ParsedNotionBody("b"),
+        )
+
+        assertThat(result.workspaceName).isEqualTo(connection().workspaceName)
+        assertThat(result.edits).containsExactly(
+            NotionPageEditCommand("u-ada", Instant.parse("2026-09-01T08:00:00Z")),
+            NotionPageEditCommand("u-ben", Instant.parse("2026-09-27T10:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `a page whose authors notion does not name has no edits`() {
+        assertThat(mapper.toCommand(connection(), page(), ParsedNotionBody("b")).edits).isEmpty()
     }
 }

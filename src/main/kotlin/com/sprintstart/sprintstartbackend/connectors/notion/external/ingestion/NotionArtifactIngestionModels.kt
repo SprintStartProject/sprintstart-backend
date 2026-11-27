@@ -11,6 +11,19 @@ data class NotionPageArtifactCommand(
     val bodyText: String,
     val lastEditedTime: Instant,
     val metadata: NotionPageMetadataCommand,
+    val workspaceName: String = "Notion workspace",
+    val edits: List<NotionPageEditCommand> = emptyList(),
+)
+
+/**
+ * Somebody who wrote a page: Notion names only who created it and who edited it last.
+ *
+ * @property userId The Notion user ID.
+ * @property editedAt When they created or last edited it.
+ */
+data class NotionPageEditCommand(
+    val userId: String,
+    val editedAt: Instant,
 )
 
 data class NotionPageMetadataCommand(

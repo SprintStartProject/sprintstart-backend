@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.N
 import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.NotionSectionCommand
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactMetadata
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.NotionArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRunStatus
@@ -19,6 +20,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verifyOrder
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -29,10 +31,12 @@ class NotionArtifactItemPersistenceServiceTest {
     private val ingestionRunRepository = mockk<IngestionRunRepository>()
     private val artifactRepository = mockk<ArtifactRepository>()
     private val metadataJsonMapper = mockk<ArtifactMetadataJsonMapper>()
+    private val pageEvidence = mockk<PageEvidenceService>(relaxed = true)
     private val service = NotionArtifactItemPersistenceService(
         ingestionRunRepository,
         artifactRepository,
         metadataJsonMapper,
+        pageEvidence,
     )
 
     @Test
@@ -75,6 +79,12 @@ class NotionArtifactItemPersistenceServiceTest {
         assertThat(run.updatedCount).isEqualTo(1)
         assertThat(metadataSlot.captured).isInstanceOf(NotionArtifactMetadata::class.java)
         assertThat(run.artifactIdsToReingest).contains(artifact.id)
+        val versions = command.edits.mapIndexed { i, edit -> PageVersion(i + 1, edit.userId, edit.editedAt) }
+        verifyOrder {
+            pageEvidence.record(artifact, "notion:${command.workspaceName}", null, versions)
+            pageEvidence.record(artifact, "notion:${command.workspaceName}", command.title, versions)
+            pageEvidence.record(artifact, "notion:${command.workspaceName}", command.title, versions)
+        }
 
         artifact.removeProjectId(projectId)
         val reshared = service.persist(run.id, projectId, command.copy(bodyText = "changed body"))

@@ -6,6 +6,7 @@ import com.sprintstart.sprintstartbackend.connectors.notion.external.ingestion.N
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactCodeBlock
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSection
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.NotionArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FailedArtifact
@@ -30,6 +31,7 @@ internal class NotionArtifactItemPersistenceService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val artifactRepository: ArtifactRepository,
     private val metadataJsonMapper: ArtifactMetadataJsonMapper,
+    private val pageEvidence: PageEvidenceService,
 ) {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun persist(
@@ -45,19 +47,29 @@ internal class NotionArtifactItemPersistenceService(
         val existing = artifactRepository.findBySourceSystemAndSourceId(SourceSystem.NOTION, command.sourceId)
 
         if (existing == null) {
-            artifactRepository.saveAndFlush(command.toArtifact(projectId, run, metadataJson, contentHash))
+            val created = artifactRepository.saveAndFlush(command.toArtifact(projectId, run, metadataJson, contentHash))
             run.ingestedCount++
+            recordEvidence(created, null, command)
             return NotionArtifactWriteResult(NotionArtifactWriteOutcome.CREATED, contentHash)
         }
+        val previousTitle = existing.title
         if (existing.hash == contentHash && projectId in existing.projectIds) {
+            recordEvidence(existing, previousTitle, command)
             return NotionArtifactWriteResult(NotionArtifactWriteOutcome.UNCHANGED, contentHash)
         }
 
         updateExisting(existing, command, projectId, run, metadataJson, contentHash)
+        recordEvidence(existing, previousTitle, command)
         artifactRepository.flush()
         run.updatedCount++
         run.artifactIdsToReingest.add(existing.id)
         return NotionArtifactWriteResult(NotionArtifactWriteOutcome.UPDATED, contentHash)
+    }
+
+    /** Notion names only who created a page and who edited it last; that is all the page's history. */
+    private fun recordEvidence(page: Artifact, previousTitle: String?, command: NotionPageArtifactCommand) {
+        val versions = command.edits.mapIndexed { index, edit -> PageVersion(index + 1, edit.userId, edit.editedAt) }
+        pageEvidence.record(page, "notion:${command.workspaceName}", previousTitle, versions)
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
