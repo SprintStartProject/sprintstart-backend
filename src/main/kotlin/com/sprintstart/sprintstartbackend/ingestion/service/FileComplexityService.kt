@@ -2,7 +2,7 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
-import com.sprintstart.sprintstartbackend.ingestion.util.IndentationComplexity
+import com.sprintstart.sprintstartbackend.ingestion.util.FileMeasure
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -22,7 +22,7 @@ internal class FileComplexityService(
      */
     @Transactional
     fun measure(repositoryKey: String, path: String, text: String) {
-        val measure = IndentationComplexity.of(text)
+        val measure = FileMeasure.of(path, text)
         val existing = repository.findByRepositoryAndPath(repositoryKey, path)
         if (existing == null) {
             repository.save(
@@ -32,12 +32,16 @@ internal class FileComplexityService(
                     indentation = measure.indentation,
                     lines = measure.lines,
                     measuredAt = clock.instant(),
+                    kind = measure.kind,
+                    complexity = measure.complexity,
                 ),
             )
         } else {
             existing.indentation = measure.indentation
             existing.lines = measure.lines
             existing.measuredAt = clock.instant()
+            existing.kind = measure.kind
+            existing.complexity = measure.complexity
         }
     }
 

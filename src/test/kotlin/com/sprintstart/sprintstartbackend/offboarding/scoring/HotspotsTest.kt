@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenc
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.assertj.core.api.Assertions.assertThat
@@ -27,11 +28,14 @@ class HotspotsTest {
         key("complex.kt") to 2.0,
         key("calm.kt") to 1.0,
     )
+
+    private fun code(value: Double) = Complexity(FileKind.CODE, value)
+
     private val complexities = mapOf(
-        key("hot.kt") to 90.0,
-        key("busy.kt") to 5.0,
-        key("complex.kt") to 80.0,
-        key("calm.kt") to 1.0,
+        key("hot.kt") to code(90.0),
+        key("busy.kt") to code(5.0),
+        key("complex.kt") to code(80.0),
+        key("calm.kt") to code(1.0),
     )
     private val hotspots = Hotspots(activities, complexities)
 
@@ -62,7 +66,13 @@ class HotspotsTest {
     @Test
     fun `files that tie share the middle of their rank`() {
         val same =
-            Hotspots(mapOf(key("a.kt") to 1.0, key("b.kt") to 1.0), mapOf(key("a.kt") to 2.0, key("b.kt") to 2.0))
+            Hotspots(
+                mapOf(key("a.kt") to 1.0, key("b.kt") to 1.0),
+                mapOf(
+                    key("a.kt") to code(2.0),
+                    key("b.kt") to code(2.0),
+                ),
+            )
 
         assertThat(same.of(history("a.kt"))!!).isCloseTo(0.25, within(1e-9))
     }
@@ -88,29 +98,48 @@ class HotspotsTest {
             .score(
                 listOf(busyAndComplex),
                 departure,
-                FileFacts(mapOf(key("hot.kt") to 50.0)),
+                FileFacts(mapOf(key("hot.kt") to Complexity(FileKind.PROSE, 50.0))),
             ).files
             .single()
         val without = RiskScorer().score(listOf(busyAndComplex), departure).files.single()
 
         assertThat(with.hotspot).isNotNull()
+        assertThat(with.kind).isEqualTo(FileKind.PROSE)
+        assertThat(without.kind).isNull()
         assertThat(without.hotspot).isNull()
     }
 
     @Test
-    fun `the complexity of files is read through the evidence api by indentation`() {
+    fun `the complexity of files is read through the evidence api with its kind`() {
         val api = object : ContributionEvidenceApi {
             override fun fileContributions(projectId: ProjectId, asOf: Instant): List<FileContribution> = emptyList()
 
             override fun fileReviews(projectId: ProjectId, asOf: Instant): List<FileReview> = emptyList()
 
             override fun fileComplexities(repositories: Collection<String>) =
-                listOf(FileComplexityReading(REPOSITORY, "a.kt", 12.5, 30))
+                listOf(FileComplexityReading(REPOSITORY, "a.md", FileKind.PROSE, 120.0, 30))
 
             override fun fileAuthorship(repositories: Collection<String>): List<FileAuthorshipReading> = emptyList()
         }
 
         assertThat(FileFactsReader(api).of(listOf(REPOSITORY), Identities()).complexities)
-            .isEqualTo(mapOf(key("a.kt") to 12.5))
+            .isEqualTo(mapOf(key("a.md") to Complexity(FileKind.PROSE, 120.0)))
+    }
+
+    @Test
+    fun `complexity is ranked only among files of the same kind`() {
+        val mixed = Hotspots(
+            mapOf(key("a.kt") to 1.0, key("b.kt") to 1.0, key("a.md") to 1.0, key("b.md") to 1.0),
+            mapOf(
+                key("a.kt") to code(1.0),
+                key("b.kt") to code(2.0),
+                key("a.md") to Complexity(FileKind.PROSE, 500.0),
+                key("b.md") to Complexity(FileKind.PROSE, 900.0),
+            ),
+        )
+
+        assertThat(mixed.of(history("b.kt"))!!).isCloseTo(mixed.of(history("b.md"))!!, within(1e-9))
+        assertThat(mixed.of(history("a.md"))!!).isCloseTo(mixed.of(history("a.kt"))!!, within(1e-9))
+        assertThat(mixed.of(history("a.md"))!!).isLessThan(mixed.of(history("b.kt"))!!)
     }
 }

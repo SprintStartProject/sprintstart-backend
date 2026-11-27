@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
@@ -90,9 +91,9 @@ class RelevanceTest {
         val hotspots = Hotspots(
             all.associate { FileKey(it.repository, it.path) to activity(it) },
             mapOf(
-                FileKey(REPOSITORY, "busy.kt") to 50.0,
-                FileKey(REPOSITORY, "calm.kt") to 1.0,
-                FileKey(REPOSITORY, "partner.kt") to 20.0,
+                FileKey(REPOSITORY, "busy.kt") to Complexity(FileKind.CODE, 50.0),
+                FileKey(REPOSITORY, "calm.kt") to Complexity(FileKind.CODE, 1.0),
+                FileKey(REPOSITORY, "partner.kt") to Complexity(FileKind.CODE, 20.0),
             ),
         )
 

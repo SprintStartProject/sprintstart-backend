@@ -4,6 +4,7 @@ import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenc
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
 import com.sprintstart.sprintstartbackend.offboarding.model.request.RiskRequest
 import com.sprintstart.sprintstartbackend.offboarding.scoring.AliasLink
@@ -205,7 +206,11 @@ class OffboardingRiskServiceTest {
 
     @Test
     fun `the complexity ingestion measured makes the files at risk hotspots`() {
-        val evidence = RecordingEvidence(rows, listOf(FileComplexityReading("github:acme/app", "core.kt", 40.0, 90)))
+        val evidence =
+            RecordingEvidence(
+                rows,
+                listOf(FileComplexityReading("github:acme/app", "core.kt", FileKind.CODE, 40.0, 90)),
+            )
         val service = OffboardingRiskService(
             listOf(CommitEvidence(evidence)),
             links,

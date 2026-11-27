@@ -1,7 +1,10 @@
 package com.sprintstart.sprintstartbackend.ingestion.model.entity
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -23,6 +26,8 @@ import java.util.UUID
  * @property path The path of the file in the repository.
  * @property indentation The sum of the indentation levels of the non-blank lines of the file.
  * @property lines The number of non-blank lines of the file.
+ * @property kind What the file holds; `null` for a file measured before kinds were told apart.
+ * @property complexity How much the file holds, in the unit of its [kind]; `null` when [kind] is.
  * @property measuredAt When the file was measured.
  */
 @Entity
@@ -45,4 +50,8 @@ class FileComplexity(
     var lines: Int,
     @Column(name = "measured_at", nullable = false)
     var measuredAt: Instant,
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    var kind: FileKind? = null,
+    var complexity: Double? = null,
 )

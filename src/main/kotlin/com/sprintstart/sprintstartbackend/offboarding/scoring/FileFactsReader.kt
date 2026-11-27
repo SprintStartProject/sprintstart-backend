@@ -2,6 +2,7 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import org.springframework.stereotype.Component
 
 /** Reads what ingestion measured of the files of a project: how complicated they are and who wrote their lines. */
@@ -20,8 +21,10 @@ class FileFactsReader(
             authorship = authorship(repositories, identities),
         )
 
-    private fun complexities(repositories: Collection<String>): Map<FileKey, Double> =
-        api.fileComplexities(repositories).associate { FileKey(it.repository, it.path) to it.indentation }
+    private fun complexities(repositories: Collection<String>): Map<FileKey, Complexity> =
+        api.fileComplexities(repositories).associate { FileKey(it.repository, it.path) to it.toComplexity() }
+
+    private fun FileComplexityReading.toComplexity() = Complexity(kind, complexity)
 
     private fun authorship(
         repositories: Collection<String>,
