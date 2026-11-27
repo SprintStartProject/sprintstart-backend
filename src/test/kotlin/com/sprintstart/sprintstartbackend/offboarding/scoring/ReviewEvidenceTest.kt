@@ -1,10 +1,12 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
 import com.sprintstart.sprintstartbackend.ingestion.external.ContributionEvidenceApi
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.CommitTicket
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.IssueActivityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.PageEditReading
 import com.sprintstart.sprintstartbackend.shared.ids.ProjectId
 import org.assertj.core.api.Assertions.assertThat
@@ -26,6 +28,10 @@ class ReviewEvidenceTest {
                 if (projectId == project && asOf == NOW) reviews.toList() else emptyList()
 
             override fun pageEdits(projectId: ProjectId, asOf: Instant): List<PageEditReading> = emptyList()
+
+            override fun issueActivities(projectId: ProjectId, asOf: Instant): List<IssueActivityReading> = emptyList()
+
+            override fun commitTickets(projectId: ProjectId): List<CommitTicket> = emptyList()
 
             override fun fileComplexities(repositories: Collection<String>): List<FileComplexityReading> = emptyList()
 

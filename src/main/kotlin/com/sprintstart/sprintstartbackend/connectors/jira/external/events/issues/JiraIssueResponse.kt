@@ -94,12 +94,15 @@ data class JiraIssueCommentField(
 data class JiraIssueComment(
     val author: JiraAuthor,
     val body: JiraIssueCommentBody,
+    @Serializable(with = CustomOffsetDateTimeSerializer::class)
+    val created: OffsetDateTime? = null,
 )
 
 @Serializable
 data class JiraAuthor(
     val displayName: String,
     val active: Boolean,
+    val accountId: String? = null,
     @Serializable(with = CustomOffsetDateTimeSerializer::class)
     val created: OffsetDateTime? = null,
     @Serializable(with = CustomOffsetDateTimeSerializer::class)

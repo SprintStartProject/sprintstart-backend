@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.exceptions.IngestionRu
 import com.sprintstart.sprintstartbackend.ingestion.model.mapper.ArtifactMetadataJsonMapper
 import com.sprintstart.sprintstartbackend.ingestion.repository.ArtifactRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.IngestionRunRepository
+import com.sprintstart.sprintstartbackend.ingestion.service.TicketEvidenceService
 import jakarta.transaction.Transactional
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -21,12 +22,14 @@ import java.util.UUID
  * - New issues create a fresh artifact row (`ingestedCount++`).
  * - Re-fetched issues update the existing row in place, tracking churn via `updatedCount++`.
  * - Deleted issues remove the artifact and record it for AI deindexing.
+ * - Every stored issue records who worked on it, as evidence of who knows the files its commits change.
  */
 @Service
 class JiraArtifactProviderService(
     private val ingestionRunRepository: IngestionRunRepository,
     private val artifactRepository: ArtifactRepository,
     private val artifactMetadataJsonMapper: ArtifactMetadataJsonMapper,
+    private val ticketEvidence: TicketEvidenceService,
 ) {
     /**
      * Persists or updates an ingestion artifact for the active ingestion run.
@@ -41,11 +44,8 @@ class JiraArtifactProviderService(
     @Transactional
     fun persistArtifact(command: JiraArtifactCommand) {
         val existing = artifactRepository.findBySourceId(command.issueId)
-        if (existing != null) {
-            updateExisting(existing, command)
-        } else {
-            createNew(command)
-        }
+        val issue = if (existing != null) existing.also { updateExisting(it, command) } else createNew(command)
+        ticketEvidence.record(issue, command)
     }
 
     private fun updateExisting(existing: Artifact, command: JiraArtifactCommand) {
@@ -76,7 +76,7 @@ class JiraArtifactProviderService(
         ingestionRun.artifactIdsToReingest.add(existing.id)
     }
 
-    private fun createNew(command: JiraArtifactCommand) {
+    private fun createNew(command: JiraArtifactCommand): Artifact {
         val ingestionRun = lockedRun(command.ingestionRunId)
         val artifact = Artifact(
             sourceSystem = command.sourceSystem,
@@ -96,8 +96,8 @@ class JiraArtifactProviderService(
             hash = null,
             metadata = artifactMetadataJsonMapper.toJson(command.toMetadata()),
         )
-        artifactRepository.save(artifact)
         ingestionRun.ingestedCount++
+        return artifactRepository.save(artifact)
     }
 
     private fun lockedRun(run: UUID) = ingestionRunRepository.findByIdForUpdate(run).orElseThrow {
