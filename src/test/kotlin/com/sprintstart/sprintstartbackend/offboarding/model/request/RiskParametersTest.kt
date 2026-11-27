@@ -87,6 +87,15 @@ class RiskParametersTest {
     }
 
     @Test
+    fun `tickets count only when a weight for them is given`() {
+        val without = RiskParameters(leaving = listOf("ada")).toRequest().profile
+        val with = RiskParameters(leaving = listOf("ada"), ticketWeight = 0.25).toRequest().profile
+
+        assertThat(without.weightOf(SourceId.TICKETS)).isZero()
+        assertThat(with.weightOf(SourceId.TICKETS)).isEqualTo(0.25)
+    }
+
+    @Test
     fun `documentation pages count like commits unless a weight for them is given`() {
         val without = RiskParameters(leaving = listOf("ada")).toRequest().profile
         val off = RiskParameters(leaving = listOf("ada"), pageEditWeight = 0.0).toRequest().profile

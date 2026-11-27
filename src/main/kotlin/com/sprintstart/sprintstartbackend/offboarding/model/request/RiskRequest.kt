@@ -27,6 +27,8 @@ data class RiskRequest(
  * @property authorThreshold Override the fraction of a file's top degree of authorship that makes an author.
  * @property reviewWeight Let reviews count with this weight next to commits, which count 1; left out, reviews
  *           are not used.
+ * @property ticketWeight Let the people behind the tickets commits name count with this weight next to
+ *           commits, which count 1; left out, tickets are not used.
  * @property pageEditWeight How much the versions people saved of documentation pages count next to commits,
  *           which count 1; 1 when left out, 0 leaves pages off the map.
  * @property knowledge How to decide who knows a file: `authorship` (the default) or `time-weighted`.
@@ -42,6 +44,7 @@ data class RiskParameters(
     val authorThreshold: Double? = null,
     val reviewWeight: Double? = null,
     val pageEditWeight: Double? = null,
+    val ticketWeight: Double? = null,
     val knowledge: String? = null,
     val knowsAtLeast: Double? = null,
     val ranking: String? = null,
@@ -96,6 +99,7 @@ data class RiskParameters(
             listOfNotNull(
                 reviewWeight?.let { SourceId.REVIEWS to it },
                 pageEditWeight?.let { SourceId.PAGE_EDITS to it },
+                ticketWeight?.let { SourceId.TICKETS to it },
             )
 
     private companion object {
