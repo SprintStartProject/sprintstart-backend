@@ -3,7 +3,9 @@ package com.sprintstart.sprintstartbackend.ingestion.service
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileAuthorshipReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileContribution
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileReview
+import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileAuthorshipRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileChangeRepository
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
@@ -43,12 +45,28 @@ class ContributionEvidenceApiServiceTest {
         assertThat(service.fileReviews(ProjectId(project), asOf)).isEqualTo(rows)
     }
 
-    @Test
-    fun `reads the complexity of the files of the given repositories`() {
-        val rows = listOf(FileComplexityReading("github:acme/app", "a.kt", 2.5, 10))
-        every { complexities.readAll(listOf("github:acme/app")) } returns rows
+    private fun measured(path: String, kind: FileKind? = null, complexity: Double? = null) =
+        FileComplexity(null, "github:acme/app", path, 2.5, 10, Instant.parse("2026-05-01T00:00:00Z"), kind, complexity)
 
-        assertThat(service.fileComplexities(listOf("github:acme/app"))).isEqualTo(rows)
+    @Test
+    fun `reads the complexity of the files of the given repositories in the unit of their kind`() {
+        every { complexities.readAll(listOf("github:acme/app")) } returns
+            listOf(measured("a.kt", FileKind.CODE, 2.5), measured("a.md", FileKind.PROSE, 300.0))
+
+        assertThat(service.fileComplexities(listOf("github:acme/app"))).containsExactly(
+            FileComplexityReading("github:acme/app", "a.kt", FileKind.CODE, 2.5, 10),
+            FileComplexityReading("github:acme/app", "a.md", FileKind.PROSE, 300.0, 10),
+        )
+    }
+
+    @Test
+    fun `a file measured before kinds counts by indentation only when it is code`() {
+        every { complexities.readAll(listOf("github:acme/app")) } returns
+            listOf(measured("a.kt"), measured("a.md"), measured("app.yaml"))
+
+        assertThat(service.fileComplexities(listOf("github:acme/app"))).containsExactly(
+            FileComplexityReading("github:acme/app", "a.kt", FileKind.CODE, 2.5, 10),
+        )
     }
 
     @Test

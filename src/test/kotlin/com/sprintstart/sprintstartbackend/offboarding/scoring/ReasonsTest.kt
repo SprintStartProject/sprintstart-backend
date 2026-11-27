@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -13,6 +14,7 @@ class ReasonsTest {
         coupling: Coupling = Coupling.NONE,
         hotspot: Double? = null,
         abandoned: Double? = null,
+        kind: FileKind? = null,
     ) = FileRisk(
         repository = REPOSITORY,
         path = "a.kt",
@@ -28,6 +30,7 @@ class ReasonsTest {
         coupling = coupling,
         hotspot = hotspot,
         abandonedShare = abandoned,
+        kind = kind,
     )
 
     private fun reasons(risk: FileRisk) = Reasons.of(risk, NOW)
@@ -81,6 +84,16 @@ class ReasonsTest {
         assertThat(reasons(risk(hotspot = 0.5))).contains("It is a hotspot: complicated and changed often.")
         assertThat(reasons(risk(hotspot = 0.49))).noneMatch { it.contains("hotspot") }
         assertThat(reasons(risk(hotspot = null))).noneMatch { it.contains("hotspot") }
+    }
+
+    @Test
+    fun `a hotspot is described in the words of what the file holds`() {
+        assertThat(reasons(risk(hotspot = 0.9, kind = FileKind.CODE)))
+            .contains("It is a hotspot: complicated and changed often.")
+        assertThat(reasons(risk(hotspot = 0.9, kind = FileKind.PROSE)))
+            .contains("It is a hotspot: a long document that changes often.")
+        assertThat(reasons(risk(hotspot = 0.9, kind = FileKind.CONFIG)))
+            .contains("It is a hotspot: it holds many settings and changes often.")
     }
 
     @Test

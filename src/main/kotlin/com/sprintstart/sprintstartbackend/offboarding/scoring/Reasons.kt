@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.roundToInt
@@ -31,13 +32,20 @@ object Reasons {
             "${percent(risk.departingShare)}% of the evidence about it comes from the leaving people.",
             "One person holds almost all of the knowledge of it.".takeIf { risk.concentration.island != null },
             "It is among the more active files.".takeIf { risk.recentActivity >= ACTIVE_FROM },
-            "It is a hotspot: complicated and changed often.".takeIf { (risk.hotspot ?: 0.0) >= HOTSPOT_FROM },
+            hotspot(risk.kind).takeIf { (risk.hotspot ?: 0.0) >= HOTSPOT_FROM },
             abandoned(risk.abandonedShare),
             risk.coupling.partners
                 .firstOrNull()
                 ?.let { "It usually changes together with ${it.path}." },
             lastChanged(Duration.between(risk.lastChangedAt, asOf).toDays()),
         )
+
+    private fun hotspot(kind: FileKind?): String =
+        when (kind) {
+            FileKind.PROSE -> "It is a hotspot: a long document that changes often."
+            FileKind.CONFIG -> "It is a hotspot: it holds many settings and changes often."
+            FileKind.CODE, null -> "It is a hotspot: complicated and changed often."
+        }
 
     private fun abandoned(share: Double?): String? =
         when {

@@ -66,6 +66,7 @@ private fun FileRisk.toResponse() = FileRiskResponse(
     fragmentation = rounded(fragmentation),
     reasons = reasons,
     hotspot = hotspot?.let(::rounded),
+    kind = kind?.name,
     abandonedShare = abandonedShare?.let(::rounded),
     placeholderScore = rounded(placeholderScore),
     successors = successors.map { SuccessorResponse(it.person.value, rounded(it.score)) },

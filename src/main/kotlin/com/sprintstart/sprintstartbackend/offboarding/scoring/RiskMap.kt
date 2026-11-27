@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.offboarding.scoring
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import java.time.Instant
 
 /** What a departure does to a file that has people who know it. */
@@ -24,6 +25,7 @@ enum class RiskLevel {
  * @property concentration How unevenly the knowledge of the file is spread over people.
  * @property hotspot How complicated and how often changed the file is against the other files, from 0 to 1;
  *           `null` when its complexity was never measured.
+ * @property kind What the file holds; `null` when it was never measured.
  * @property abandonedShare The share of the lines of the file written by people who are leaving or are
  *           inactive, from 0 to 1; `null` when it was never blamed.
  * @property placeholderScore The provisional score of the team's metric selection, from 0 to 1: knowledge at
@@ -48,6 +50,7 @@ data class FileRisk(
     val lastChangedAt: Instant,
     val coupling: Coupling = Coupling.NONE,
     val hotspot: Double? = null,
+    val kind: FileKind? = null,
     val abandonedShare: Double? = null,
     val placeholderScore: Double = 0.0,
     val successors: List<Successor> = emptyList(),

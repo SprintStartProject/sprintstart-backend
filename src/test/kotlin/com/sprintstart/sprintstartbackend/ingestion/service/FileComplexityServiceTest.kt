@@ -1,5 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.ingestion.repository.FileComplexityRepository
 import io.mockk.every
@@ -30,6 +31,21 @@ class FileComplexityServiceTest {
         assertThat(saved.captured.indentation).isEqualTo(1.0)
         assertThat(saved.captured.lines).isEqualTo(2)
         assertThat(saved.captured.measuredAt).isEqualTo(now)
+        assertThat(saved.captured.kind).isEqualTo(FileKind.CODE)
+        assertThat(saved.captured.complexity).isEqualTo(1.0)
+    }
+
+    @Test
+    fun `a page of documentation is measured by its words`() {
+        every { repository.findByRepositoryAndPath("github:acme/app", "README.md") } returns null
+        val saved = slot<FileComplexity>()
+        every { repository.save(capture(saved)) } answers { saved.captured }
+
+        service.measure("github:acme/app", "README.md", "# Setup\n\n    Run the app locally.\n")
+
+        assertThat(saved.captured.kind).isEqualTo(FileKind.PROSE)
+        assertThat(saved.captured.complexity).isEqualTo(5.0)
+        assertThat(saved.captured.indentation).isEqualTo(1.0)
     }
 
     @Test
@@ -42,6 +58,8 @@ class FileComplexityServiceTest {
         assertThat(earlier.indentation).isEqualTo(2.0)
         assertThat(earlier.lines).isEqualTo(2)
         assertThat(earlier.measuredAt).isEqualTo(now)
+        assertThat(earlier.kind).isEqualTo(FileKind.CODE)
+        assertThat(earlier.complexity).isEqualTo(2.0)
         verify(exactly = 0) { repository.save(any()) }
     }
 

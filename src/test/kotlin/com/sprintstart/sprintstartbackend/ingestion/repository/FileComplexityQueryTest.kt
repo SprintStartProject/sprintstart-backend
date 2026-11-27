@@ -1,6 +1,6 @@
 package com.sprintstart.sprintstartbackend.ingestion.repository
 
-import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileComplexityReading
+import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.FileComplexity
 import com.sprintstart.sprintstartbackend.shared.crypto.CryptoConfiguration
 import org.assertj.core.api.Assertions.assertThat
@@ -32,10 +32,20 @@ class FileComplexityQueryTest {
 
         val read = repository.readAll(listOf("github:acme/app"))
 
-        assertThat(read).containsExactly(
-            FileComplexityReading("github:acme/app", "a.kt", 1.5, 4),
-            FileComplexityReading("github:acme/app", "b.kt", 3.0, 10),
+        assertThat(read.map { Triple(it.path, it.indentation, it.lines) }).containsExactly(
+            Triple("a.kt", 1.5, 4),
+            Triple("b.kt", 3.0, 10),
         )
+    }
+
+    @Test
+    fun `keeps the kind and the complexity of a file`() {
+        this.repository.saveAndFlush(FileComplexity(null, "github:acme/app", "a.md", 0.0, 2, at, FileKind.PROSE, 12.0))
+
+        val read = repository.readAll(listOf("github:acme/app")).single()
+
+        assertThat(read.kind).isEqualTo(FileKind.PROSE)
+        assertThat(read.complexity).isEqualTo(12.0)
     }
 
     @Test

@@ -72,6 +72,7 @@ internal class Assessor(
             concentration = Concentration.of(knowledge.knowledgeOf(history)),
             coupling = coupling.of(history),
             hotspot = hotspots.of(history),
+            kind = facts.complexities[FileKey(history.repository, history.path)]?.kind,
             abandonedShare = abandonedShare(history),
             successors = successors.suggest(history, remaining),
             remainingKnowers = remaining.toList(),
