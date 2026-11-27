@@ -22,5 +22,8 @@ value class SourceId(
 
         /** The versions people saved of documentation pages. */
         val PAGE_EDITS = SourceId("page-edits")
+
+        /** The people who worked on the tickets the commits of a file name. */
+        val TICKETS = SourceId("tickets")
     }
 }
