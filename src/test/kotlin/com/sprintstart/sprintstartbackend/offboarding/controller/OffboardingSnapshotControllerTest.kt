@@ -119,7 +119,7 @@ class OffboardingSnapshotControllerTest {
             .andExpect(jsonPath("$.snapshot.label").value("baseline"))
             .andExpect(jsonPath("$.map.files.length()").value(3))
 
-        assertThat(request.captured.profile.sourceWeights.values).containsExactlyInAnyOrder(1.0, 0.5)
+        assertThat(request.captured.profile.sourceWeights.values).containsExactlyInAnyOrder(1.0, 1.0, 0.5)
     }
 
     @Test

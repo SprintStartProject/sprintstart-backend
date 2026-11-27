@@ -82,8 +82,17 @@ class RiskParametersTest {
         val without = RiskParameters(leaving = listOf("ada")).toRequest().profile
         val with = RiskParameters(leaving = listOf("ada"), reviewWeight = 0.5).toRequest().profile
 
-        assertThat(without.sourceWeights).containsOnlyKeys(SourceId.COMMITS)
+        assertThat(without.sourceWeights).doesNotContainKey(SourceId.REVIEWS)
         assertThat(with.sourceWeights).containsEntry(SourceId.COMMITS, 1.0).containsEntry(SourceId.REVIEWS, 0.5)
+    }
+
+    @Test
+    fun `documentation pages count like commits unless a weight for them is given`() {
+        val without = RiskParameters(leaving = listOf("ada")).toRequest().profile
+        val off = RiskParameters(leaving = listOf("ada"), pageEditWeight = 0.0).toRequest().profile
+
+        assertThat(without.sourceWeights).containsEntry(SourceId.PAGE_EDITS, 1.0)
+        assertThat(off.weightOf(SourceId.PAGE_EDITS)).isZero()
     }
 
     @Test

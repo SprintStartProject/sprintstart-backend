@@ -12,7 +12,7 @@ package com.sprintstart.sprintstartbackend.offboarding.scoring
  * @property activityWeight How much of the score comes from how recently and often the file changes.
  * @property name What the profile is called where its ranking is shown or compared.
  * @property sourceWeights How much each kind of evidence counts, from 0. A source the profile does not
- *           name counts for nothing and is not read.
+ *           name counts for nothing and is not read. By default commits and page versions count alike.
  * @property knowledge How to decide who knows a file.
  * @property ranking How the files at risk are put in order.
  */
@@ -23,7 +23,7 @@ data class WeightProfile(
     val knowledgeWeight: Double = DEFAULT_KNOWLEDGE_WEIGHT,
     val activityWeight: Double = DEFAULT_ACTIVITY_WEIGHT,
     val name: String = DEFAULT_NAME,
-    val sourceWeights: Map<SourceId, Double> = mapOf(SourceId.COMMITS to 1.0),
+    val sourceWeights: Map<SourceId, Double> = mapOf(SourceId.COMMITS to 1.0, SourceId.PAGE_EDITS to 1.0),
     val knowledge: KnowledgeSettings = KnowledgeSettings(),
     val ranking: Ranking = Ranking.DEPARTING_SHARE,
 ) {
