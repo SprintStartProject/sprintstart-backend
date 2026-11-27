@@ -7,6 +7,7 @@ import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationsh
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactRelationshipType
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ArtifactSection
 import com.sprintstart.sprintstartbackend.ingestion.model.dto.ConfluenceArtifactMetadata
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -73,7 +74,8 @@ internal class ConfluenceArtifactItemPersistenceService(
 
     /** Evidence is recorded for an unchanged page too, so a history read for the first time is kept. */
     private fun recordEvidence(page: Artifact, previousTitle: String?, command: ConfluencePageArtifactCommand) {
-        pageEvidence.record(page, "confluence:${command.metadata.spaceKey}", previousTitle, command.edits)
+        val versions = command.edits?.map { PageVersion(it.versionNumber, it.authorAccountId, it.editedAt) }
+        pageEvidence.record(page, "confluence:${command.metadata.spaceKey}", previousTitle, versions)
     }
 
     private fun updateExisting(

@@ -19,10 +19,22 @@ data class NotionApiPageResponse(
     val url: String,
     @SerialName("last_edited_time")
     val lastEditedTime: String,
+    @SerialName("created_time")
+    val createdTime: String? = null,
+    @SerialName("created_by")
+    val createdBy: NotionApiUserReference? = null,
+    @SerialName("last_edited_by")
+    val lastEditedBy: NotionApiUserReference? = null,
     @SerialName("in_trash")
     val inTrash: Boolean,
     val parent: NotionApiParentResponse,
     val properties: Map<String, NotionApiPagePropertyResponse>,
+)
+
+/** A user the Notion API names, such as the creator of a page; only the ID is sent. */
+@Serializable
+data class NotionApiUserReference(
+    val id: String,
 )
 
 @Serializable

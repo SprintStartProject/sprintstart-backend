@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageEditCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.ArtifactType
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.IngestionRun
@@ -45,8 +45,8 @@ class PageEvidenceServiceTest {
         hash = null,
     )
     private val versions = listOf(
-        ConfluencePageEditCommand(1, "ada", Instant.parse("2026-01-01T00:00:00Z")),
-        ConfluencePageEditCommand(2, "bob", Instant.parse("2026-02-01T00:00:00Z")),
+        PageVersion(1, "ada", Instant.parse("2026-01-01T00:00:00Z")),
+        PageVersion(2, "bob", Instant.parse("2026-02-01T00:00:00Z")),
     )
 
     @Test

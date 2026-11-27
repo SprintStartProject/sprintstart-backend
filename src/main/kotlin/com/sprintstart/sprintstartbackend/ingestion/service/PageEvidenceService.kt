@@ -1,7 +1,7 @@
 package com.sprintstart.sprintstartbackend.ingestion.service
 
-import com.sprintstart.sprintstartbackend.connectors.confluence.external.ingestion.ConfluencePageEditCommand
 import com.sprintstart.sprintstartbackend.ingestion.external.model.dto.FileKind
+import com.sprintstart.sprintstartbackend.ingestion.model.dto.PageVersion
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.Artifact
 import com.sprintstart.sprintstartbackend.ingestion.model.entity.PageEdit
 import com.sprintstart.sprintstartbackend.ingestion.repository.PageEditRepository
@@ -27,7 +27,7 @@ internal class PageEvidenceService(
      * its words, and a page that was renamed forgets the measurement under its old title.
      *
      * @param page The stored page artifact.
-     * @param repositoryKey The key of the page's space, for example `confluence:ARCH`.
+     * @param repositoryKey The key of the page's space, for example `confluence:ARCH` or `notion:Acme`.
      * @param previousTitle The title the page had before this read; `null` for a new page.
      * @param versions Who saved which version; `null` when the source would not say.
      */
@@ -36,7 +36,7 @@ internal class PageEvidenceService(
         page: Artifact,
         repositoryKey: String,
         previousTitle: String?,
-        versions: List<ConfluencePageEditCommand>?,
+        versions: List<PageVersion>?,
     ) {
         val title = page.title ?: page.sourceId
         if (previousTitle != null && previousTitle != title) complexity.forget(repositoryKey, previousTitle)
@@ -44,7 +44,7 @@ internal class PageEvidenceService(
         if (versions == null) return
         edits.deleteAllByArtifactId(page.id)
         edits.saveAll(
-            versions.map { PageEdit(null, page, repositoryKey, it.versionNumber, it.authorAccountId, it.editedAt) },
+            versions.map { PageEdit(null, page, repositoryKey, it.number, it.authorId, it.editedAt) },
         )
     }
 }
